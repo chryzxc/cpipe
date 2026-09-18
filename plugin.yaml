@@ -1,8 +1,10 @@
-name: delivery-gates
-version: 0.1.0
+name: delivery-workflow
+version: 0.2.0
 manifest_version: 2
 api_version: 1
-description: Local-first, read-only delivery-gate validation for Hermes Agent.
+description: Single-plugin software delivery workflow for Hermes Agent — orchestration policy skills, deterministic gate tools, board intelligence, and housekeeping, installed from one repo.
 license: MIT
-homepage: https://github.com/chryzxc/hermes-delivery-gates
-tags: [git, delivery, verification, code-review, qa]
+homepage: https://github.com/chryzxc/hermes-delivery-workflow
+tags: [delivery, workflow, verification, code-review, qa, kanban, orchestration]
+hooks:
+  - on_session_end

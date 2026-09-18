@@ -1,192 +1,59 @@
-# Hermes Delivery Gates
+# Hermes Delivery Workflow
 
-**Local-first, read-only delivery-gate validation for [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
+**The complete software-delivery workflow for [Hermes Agent](https://github.com/NousResearch/hermes-agent) as a single plugin + repo** — orchestration policy skills, deterministic gate tools, board intelligence, and housekeeping, deployed from one place.
 
-Hermes Delivery Gates helps an agent or developer answer one narrow question with evidence:
+One repo holds 100% of the workflow. The host machine holds only placements (symlinks, script copies, cron registrations) that `install.sh` creates and re-asserts.
 
-> Does this repository change have the declared scope, policy, and delivery evidence required to move to the next stage?
+## What's inside
 
-It is designed for software-delivery workflows that need repeatable preflight, review, QA, security, and release-readiness checks without giving a plugin authority to change the repository or publish anything.
+```
+├── plugin.yaml                  # native Hermes plugin manifest (v2)
+├── delivery_workflow/           # plugin code: 3 agent tools + doctor CLI + metrics hook
+├── workflow/
+│   ├── skills/                  # my-software-delivery-orchestrator + my-* policy skills
+│   ├── scripts/                 # supervisor scan, validator, warm-build, housekeeping, intelligence
+│   ├── cron.jobs.json           # cron job definitions (stall supervisor, watchers, digests)
+│   └── config.assertions.yaml   # engine caps this workflow expects
+├── install.sh                   # idempotent installer
+└── tests/                       # plugin registration tests
+```
 
-## Status
+## Plugin tools (agent-callable, deterministic — no LLM tokens)
 
-**Pre-alpha — foundation release.**
+- `delivery_check_policy` — validates engine caps vs team-config, roster integrity, open-card requirements
+- `delivery_board_intelligence` — per-stage wall-clock, queue waits, gate rejection rates, rework loops
+- `delivery_mutation_check` — flips one condition in a disposable worktree, requires the focused test to fail (proves tests bite)
 
-Version `0.1.0` is a working native Hermes plugin foundation. Hermes can discover, import, and validate it through Plugin Doctor. The delivery-gate tools described below are not registered yet, so installing this version does not currently add agent-callable tools or hooks.
+Plus `hermes delivery-workflow` doctor CLI and an `on_session_end` metrics hook (append-only JSONL).
 
-The next implementation slice is `delivery_diff_scope`.
+## Install / update
 
-## What this project will do
+```sh
+git clone git@github.com:chryzxc/hermes-delivery-workflow.git
+cd hermes-delivery-workflow
+./install.sh
+hermes plugins enable delivery-workflow
+```
 
-The first functional release will provide deterministic, local checks for:
+Update on any machine:
 
-- **Preflight:** identify the repository, worktree, branch/base state, policy readiness, and required evidence.
-- **Diff scope:** compare changed files with an explicit allowlist and denylist.
-- **Evidence receipts:** validate test, review, QA, security, and OCR receipts against a stable format.
-- **Gate summary:** report whether the change is ready, blocked, incomplete, or has a policy violation.
+```sh
+git pull && ./install.sh
+```
 
-The plugin will provide facts and evidence. It will not decide whether a human should approve a risky action.
+`install.sh` is idempotent: symlinks skills into `~/.hermes/skills` and every profile tree, copies scripts into `~/.hermes/scripts` (cron requires resolution inside that dir), merges cron job definitions by name (never touches engine-owned runtime fields), and asserts `config.yaml` matches `config.assertions.yaml`.
+
+## Why symlinks for skills
+
+Skills physically live here; `~/.hermes/skills/<name>` and each profile's copy are symlinks — explicitly supported by Hermes (`agent/skill_utils.py`). A pull updates every placement instantly, and per-profile skill drift becomes structurally impossible.
 
 ## Safety model
 
-Hermes Delivery Gates is intentionally conservative.
+The plugin is read-only with respect to repositories and Hermes state: tools report facts and evidence, never mutate engine config or publish anything. The metrics hook appends one JSON line per session. `delivery_mutation_check` mutates only a disposable git worktree file and restores it.
 
-It will not:
+## Tests
 
-- edit files in the inspected repository;
-- commit, push, merge, rebase, or deploy;
-- create or update pull requests;
-- read or change credentials;
-- access the network as part of a repository gate;
-- execute arbitrary project commands;
-- start agents, assign work, or manipulate Kanban cards;
-- perform active security testing.
-
-The plugin reads repository metadata and explicitly provided policy/evidence files only. Test execution, reviews, security analysis, and publication remain outside the plugin and under the user's existing workflow and approval boundaries.
-
-## Installation
-
-> The repository is currently private and pre-alpha. Install only a commit you trust.
-
-Use an immutable 40-character commit SHA rather than a floating branch:
-
-```bash
-hermes plugins install chryzxc/hermes-delivery-gates \
-  --ref <40-character-commit-sha> \
-  --no-enable
+```sh
+uv venv && uv pip install --python .venv "pytest>=8,<9"
+.venv/bin/python -m pytest -q
 ```
-
-Validate the installed package:
-
-```bash
-hermes plugins doctor delivery-gates --ci
-hermes plugins compat
-```
-
-Enable it without permission to replace built-in Hermes tools:
-
-```bash
-hermes plugins enable delivery-gates --no-allow-tool-override
-```
-
-### What to expect today
-
-The current foundation version should pass Plugin Doctor and compatibility scanning. It intentionally registers **zero tools and zero hooks**. There is no end-user gate command yet.
-
-## Planned usage
-
-A later release will let repositories opt into validation through a policy file such as:
-
-```yaml
-# .hermes/delivery-gates.yaml
-version: 1
-
-base:
-  expected_branch: dev
-  remote_required: false
-
-scope:
-  allow:
-    - src/**
-    - tests/**
-    - package.json
-    - package-lock.json
-  deny:
-    - .env
-    - infra/production/**
-
-gates:
-  review: required
-  qa: required
-  security: conditional
-  ocr: optional
-
-evidence:
-  directory: .hermes/evidence
-  required:
-    - preflight
-    - tests
-    - review
-```
-
-The eventual `delivery_diff_scope` tool will return structured results rather than vague prose:
-
-```json
-{
-  "status": "BLOCKED",
-  "checks": [
-    {
-      "id": "scope.changed_files",
-      "status": "FAIL",
-      "details": [
-        "infra/production/deploy.yml is outside the configured allowlist"
-      ]
-    }
-  ],
-  "next_action": "Request scope approval or remove the out-of-scope file."
-}
-```
-
-This example shows the intended contract only; it is not implemented in version `0.1.0`.
-
-## Evidence principles
-
-When receipts are added, they will be bound to the change they describe. A receipt will record at least:
-
-- repository identity;
-- base and head commit SHAs;
-- changed-file manifest hash;
-- command or review identity, when applicable;
-- result or exit status;
-- timestamp;
-- relevant tool version.
-
-A receipt for an earlier `HEAD` will be reported as stale rather than treated as current evidence.
-
-## OCR, review, and security integrations
-
-These are policy inputs, not mandatory vendor dependencies.
-
-For example, a repository may require an OCR receipt generated by OpenCodeReview Delegation Mode, but another repository may mark OCR as optional or use a different provider. The plugin will validate declared evidence; it will not require, invoke, or configure a specific review or security vendor.
-
-## Development
-
-Requirements:
-
-- Python 3.9 or later;
-- [uv](https://docs.astral.sh/uv/);
-- Hermes Agent available on `PATH` for Plugin Doctor and compatibility checks.
-
-Set up the isolated development environment and run all current checks:
-
-```bash
-uv sync --group dev
-uv run pytest
-hermes plugins doctor . --ci
-hermes plugins compat .
-```
-
-Plugin Doctor exercises Hermes's real plugin discovery, manifest parsing, import, and registration path. Passing unit tests alone is not sufficient release evidence.
-
-## Roadmap
-
-1. `delivery_diff_scope` — read-only changed-file allowlist and denylist validation.
-2. `delivery_preflight` — local repository and policy-readiness inspection.
-3. `delivery_receipt_validate` — schema and freshness validation for delivery evidence.
-4. `delivery_gate_summary` — deterministic aggregation of gate outcomes.
-5. Bundled Hermes workflow skill and example repository fixtures.
-
-## Non-goals
-
-This project is not:
-
-- an autonomous release manager;
-- a CI/CD deployment system;
-- a replacement for code review, QA, or security analysis;
-- a Kanban workflow engine;
-- a credential manager;
-- a remote compliance or telemetry service.
-
-## License
-
-[MIT](LICENSE).

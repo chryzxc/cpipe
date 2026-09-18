@@ -1,0 +1,61 @@
+[
+  {
+    "id": "b6d66c0fc563",
+    "name": "Kanban stall supervisor",
+    "prompt": "You are the Kanban stall supervisor for Christian's Bot roster. The injected scan output lists board stall signals. Act autonomously on each signal, cheapest sufficient action first, then run one bounded dispatch pass.\n\nAUTO_FIX_INSTALL_SKILL: the named skill exists in ~/.hermes/skills but not on the assignee profile. Fix: cp -R the skill directory into the assignee's matching skills category under ~/.hermes/profiles/<assignee>/skills/, comment on the card (hermes kanban comment <id> --text ...), then hermes kanban unblock <id>.\nESCALATE_UNKNOWN_SKILL: skill exists nowhere. Block-comment the card asking Nexus to re-specify; never guess or edit the DB blind.\nUNASSIGNED_TODO: aging unassigned card. If the title clearly matches one routing key (review->sentry, security->cypher, plan->archon, implement->forge, ops->aegis), assign with hermes kanban assign <id> <profile> and comment why; otherwise leave a comment flagging it for Nexus triage.\nREVIEW_STALLED: reviewer never dispatched. Run hermes kanban dispatch --max 3 to spawn ready work.\nSTALE_CLAIM: run hermes kanban reclaim <id>, then dispatch.\nSUPERSEDED_REVIEW: an older blocked review card shares scope with a newer review card. Archive the older one (hermes kanban archive <id>) after commenting which newer card supersedes it.\nVERDICT_PARKED: a blocked card already carries a terminal verdict (REQUEST_CHANGES / APPROVED / NEEDS_ASSISTANCE / Nexus reconciliation). Comment a one-line verdict summary, then hermes kanban complete <id> --summary '<verdict head>'. If the verdict is REQUEST_CHANGES with finding IDs, also create one todo card per finding for the owning implementer (hermes kanban create '<finding ID>: fix' --assignee <owner per routing> --body '<evidence line>') so the finding is not lost.\n\nNEXUS_WAKE: blocked card has waited >=15m for coordinator action (plan amendment, re-specification, triage). Wake Nexus with ONE bounded invocation: hermes -p default chat -q \"Kanban supervisor wake: card <id> blocked awaiting your action: <reason>. Read the card, amend the plan / strip invalid skills / reassign or complete it, then run hermes kanban dispatch.\" If the invocation fails, comment on the card and report it in the digest. Do not edit code or plans yourself.\nQUEUE_AGING: assigned todo card unstarted >=30m while its profile slot is occupied. Include per-profile queue depth (todo count per assignee) in the digest and run hermes kanban dispatch --max 3. If the same card appears on two consecutive runs, escalate via one NEXUS_WAKE invocation with the queue summary.\nHEARTBEAT_STALE: running worker silent >=5m. Check hermes kanban log <id> tail and whether the worker pid is alive; if dead or log frozen, hermes kanban reclaim <id>, then dispatch. Otherwise report in digest only.\n\nAlways finish with: hermes kanban dispatch --max 3 (bounded spawn pass for ready tasks).\nFinal message = terse action digest only: per-signal one line (action taken or escalated), then dispatch spawn count. Read-only for repositories; you may only modify kanban state, profile skill copies, and nothing else. Never merge, push, or publish.",
+    "no_agent": false,
+    "monitor_script": "kanban-supervisor-scan.py",
+    "model": "gpt-5.6-luna",
+    "provider": "openai-codex",
+    "schedule": {
+      "kind": "cron",
+      "expr": "*/15 * * * *",
+      "display": "*/15 * * * *"
+    },
+    "enabled": true,
+    "deliver": "local",
+    "created_at": "2026-09-14T21:35:18.127425+08:00"
+  },
+  {
+    "id": "c18fca0732e5",
+    "name": "Warm-build watcher",
+    "script": "warm_build_scan.py",
+    "no_agent": true,
+    "schedule": {
+      "kind": "interval",
+      "minutes": 5,
+      "display": "every 5m"
+    },
+    "enabled": true,
+    "deliver": "local"
+  },
+  {
+    "id": "01f54d8980ee",
+    "name": "Housekeeping weekly",
+    "script": "housekeeping.py",
+    "no_agent": true,
+    "schedule": {
+      "kind": "interval",
+      "minutes": 10080,
+      "display": "every 10080m"
+    },
+    "enabled": true,
+    "deliver": "local"
+  },
+  {
+    "id": "boardintel001",
+    "name": "Board intelligence weekly",
+    "script": "board_intelligence.py",
+    "no_agent": true,
+    "schedule": {
+      "kind": "interval",
+      "minutes": 10080,
+      "display": "every 10080m"
+    },
+    "enabled": true,
+    "deliver": "local",
+    "origin": null,
+    "workdir": null,
+    "created_at": "2026-09-18T23:59:00"
+  }
+]

@@ -1,0 +1,4 @@
+kanban:
+  max_in_progress: 6
+  max_in_progress_per_profile: 3
+  dispatch_interval_seconds: 15

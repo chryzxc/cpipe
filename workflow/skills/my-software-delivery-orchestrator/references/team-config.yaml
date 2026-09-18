@@ -1,0 +1,161 @@
+version: 7
+
+# Declarative software-delivery policy. Hermes does not apply this as runtime config.
+# Profile IDs and actual provider/model placement must be verified before dispatch.
+# v7: end-to-end software delivery; Wraith is authorization-gated and dormant by default.
+scope:
+  includes:
+    - product_and_ux_clarification
+    - research_and_feasibility
+    - architecture_and_planning
+    - implementation
+    - independent_code_review
+    - qa_and_release_evidence
+    - security_analysis
+    - authorized_active_security_validation
+    - development_platform_readiness
+    - pr_preparation
+  excludes:
+    - general_it_operations
+    - help_desk
+    - device_management
+    - business_operations
+    - autonomous_deployment
+control_plane:
+  coordinator_profile: default
+  coordinator_display_name: Nexus
+  durable_backend: kanban
+  short_specialist_backend: bot_chat_or_profile_invocation
+  ephemeral_backend: delegate_task
+  automatic_kanban_decomposition: disabled_for_governed_development_work
+  board_supervisor: cron_kanban_stall_supervisor_every_15m_monitor_mode
+
+approval_gates:
+  require_christian_for:
+    - external_communication_or_publishing
+    - merge
+    - deployment
+    - production_change_or_migration
+    - purchase_subscription_or_billing
+    - credential_change_or_sharing
+    - irreversible_deletion
+
+bots:
+  nexus: {mission: coordination, routing, reconciliation, and final reporting, model_tier: terra}
+  atlas: {mission: sourced external research and evidence briefs, mode: READ_ONLY, model_tier: luna}
+  probe: {mission: disposable sandboxed spike exploration and runnable comparisons, mode: SANDBOX_ONLY, model_tier: luna_floor}
+  canvas: {mission: product and UI/UX design, mode: READ_ONLY, model_tier: terra}
+  archon: {mission: architecture and implementation planning, mode: READ_ONLY, model_tier: sol_threshold}
+  forge: {mission: backend, frontend, and full-stack implementation, mode: LOCAL_EDIT, model_tier: luna}
+  aegis: {mission: CI/CD, containers, IaC, development-platform and release preparation, mode: LOCAL_EDIT, model_tier: terra}
+  sentry: {mission: frozen-diff code review, mode: READ_ONLY, model_tier: luna}
+  sentinel: {mission: QA and release verification, mode: READ_ONLY, model_tier: luna}
+  cypher: {mission: security review and remediation advice, mode: READ_ONLY, model_tier: terra}
+  wraith: {mission: authorized active validation of a specific security hypothesis, mode: ENGAGEMENT_SCOPED_EXTERNAL_TEST, model_tier: terra}
+  steward: {mission: administrative workflow and briefings, mode: LOCAL_EDIT, model_tier: luna}
+  beacon: {mission: scheduled proactive audit digest from pre-filtered script output, mode: READ_ONLY, model_tier: luna}
+
+routing:
+  external_research: atlas
+  spike_exploration: probe
+  product_or_ui_design: canvas
+  architecture_or_plan: archon
+  repository_discovery: nexus_direct_tools
+  implementation_change: forge
+  devops_or_ci_change: aegis
+  independent_code_or_quality_review: sentry
+  regression_or_release_evidence: sentinel
+  security_audit: cypher
+  security_review: cypher
+  active_security_validation: wraith
+  security_remediation_validation: cypher
+  proactive_audit: beacon
+  performance_audit: archon
+  performance_fix: forge
+  performance_validation: sentinel
+
+active_testing:
+  required_receipt:
+    - authorization_basis_and_approver
+    - exact_target_allowlist
+    - environment_and_production_scope
+    - engagement_start_end_window
+    - permitted_and_prohibited_techniques
+    - per_host_rate_limit
+    - credential_and_data_handling
+    - evidence_path_and_redaction
+    - stop_conditions
+    - destructive_action_approval
+    - production_testing_approval
+  default: blocked_until_authorized
+
+parallelism:
+  independent_gates:
+    rule: sentry, sentinel, and cypher review the SAME frozen SHA concurrently as separate cards
+    independence: no gate sees another gate's output before returning its verdict
+    reconciliation: nexus applies the most severe verdict; the card holds until every gate returns
+  card_batching:
+    rule: group queued small cards touching the same directory/module into ONE forge session
+    limits: max 3 cards per session; one frozen commit per card preserved; zero shared files across cards in the batch
+  fast_lane:
+    triggers: file_count_le_2 AND no schema/api/ui_contract change AND existing test coverage
+    route: forge direct plus same-card sentry review; canvas/archon skipped
+    examples: test-only change, single-file fix, dependency bump with green CI
+  swarm:
+    rule: max 3 concurrent forge workers, only on cards with zero shared files
+  pipelining:
+    rule: dispatch each review the moment its card requests review; reviews of one wave overlap implements of the next
+  runtime_defaults:
+    implement_max_minutes: 20
+    review_max_minutes: 15
+  ephemeral_subchecks:
+    rule: use delegate_task for lookups inside a gate; never spin a full specialist session for a yes/no question
+
+token_policy:
+  model_tiers:
+    luna_floor: probe and beacon never run above the cheapest available model
+    checklist_work: audits, reviews, and validation passes run on luna or terra, never sol
+    sol_threshold: archon uses sol only above the documented planning threshold; route_down otherwise
+  per_card_budget:
+    rule: every kanban card body carries a token_budget; workers return BLOCKED_budget_exceeded instead of grinding
+  session_amortization:
+    rule: prefer one batched specialist session over N sessions re-reading the same context
+  session_hygiene:
+    rule: one material task per coordinator session; end after final report; bulky tool output stays on cards
+    digest_flag: any single session over 100M tokens in the trailing week is a routing failure to correct
+  deterministic_first:
+    rule: any check expressible as script or CLI runs without an LLM; LLM passes only triage pre-filtered output or review diffs
+  weekly_guardrail:
+    alert_threshold: 60 percent of weekly token budget consumed before midweek
+    action: alert triggers a routing review before further non-fast-lane dispatch
+
+kanban:
+  required_for:
+    - dependencies
+    - multiple_durable_owners
+    - formal_review_or_remediation
+    - work_that_may_outlive_chat
+    - audit_evidence
+    - human_intervention
+  task_requirements:
+    - primary_assignee
+    - objective
+    - scope_and_non_goals
+    - authority_and_write_boundaries
+    - current_state_and_dependencies
+    - acceptance_criteria
+    - required_evidence_and_gates
+    - token_budget
+    - handoff_and_escalation_condition
+  constraints:
+    - one_owner_per_overlapping_surface
+    - explicit_dependencies
+    - freeze_before_independent_review
+    - explicit_profile_ids_only
+    - card_skills_must_exist_on_assignee_profile_not_global_catalog
+
+quality:
+  ocr_required_for_meaningful_code_diff: true
+  independent_sentry_review_required_for_meaningful_code_diff: true
+  security_review_trigger: changed_trust_boundary_or_plausible_vulnerability
+  release_evidence_owner: sentinel
