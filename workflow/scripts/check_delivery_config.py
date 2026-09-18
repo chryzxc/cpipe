@@ -20,10 +20,18 @@ swarm = re.search(r'max (\d+) concurrent forge workers', TEAM)
 if swarm and per_profile and int(swarm.group(1)) != per_profile:
     errors.append(f'drift: team-config swarm cap {swarm.group(1)} != engine per-profile cap {per_profile}')
 
-roster = {p.name for p in (H / 'profiles').iterdir() if p.is_dir()}
-for bot in re.findall(r'^\s{2}(\w+):\s*\{mission:', TEAM, re.M):
-    if bot not in roster and bot != 'nexus' or bot == 'nexus' and 'default' not in roster:
-        errors.append(f'roster: team-config bot {bot} missing from ~/.hermes/profiles')
+roster = {}
+roster_path = H / 'roster.yaml'
+if roster_path.is_file():
+    import yaml as _yaml
+    roster = _yaml.safe_load(roster_path.read_text()).get('roles', {})
+team_roles = set(re.findall(r'^\s{2}(\w+):\s*\{mission:', TEAM, re.M))
+for role in team_roles:
+    if roster and role not in roster:
+        errors.append(f'roster: role {role} missing from ~/.hermes/roster.yaml')
+for role, profile in roster.items():
+    if profile and not (H / 'profiles' / str(profile)).is_dir():
+        errors.append(f'roster: role {role} -> profile {profile} not found in ~/.hermes/profiles')
 
 conn = sqlite3.connect(f"file:{H/'kanban.db'}?mode=ro", uri=True)
 rows = conn.execute("SELECT id, skills, body, max_runtime_seconds FROM tasks WHERE status IN ('todo','ready')").fetchall()

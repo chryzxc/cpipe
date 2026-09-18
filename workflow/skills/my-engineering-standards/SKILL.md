@@ -6,7 +6,7 @@ version: 0.1.0
 
 # Engineering Standards Skill
 
-Every production repo carries one canonical `STANDARDS.md` at its root: the short, checkable engineering contract the whole Bot roster plans against (Archon), follows (Forge), and enforces (Sentry). Standards live in the repo, not in Bot memory, so they version with the code they govern.
+Every production repo carries one canonical `STANDARDS.md` at its root: the short, checkable engineering contract the whole Bot roster plans against (Planner), follows (Implementer), and enforces (Reviewer). Standards live in the repo, not in Bot memory, so they version with the code they govern.
 
 ## When to Use
 
@@ -18,7 +18,7 @@ Every production repo carries one canonical `STANDARDS.md` at its root: the shor
 
 ```markdown
 # <repo> — Engineering Standards
-updated: <date> · enforced-by: Sentry review · exceptions: none without an ADR
+updated: <date> · enforced-by: Reviewer review · exceptions: none without an ADR
 
 ## Style & naming        — language conventions, naming rules, import order
 ## Error handling        — error taxonomy, propagation rules, user-facing messages
@@ -33,8 +33,8 @@ updated: <date> · enforced-by: Sentry review · exceptions: none without an ADR
 
 ## Enforcement contract
 
-- Forge: `PLAN_AMENDMENT_REQUIRED` when a plan's slice violates a standard — never implement through a violation.
-- Sentry: findings cite the standard by section (`STANDARDS.md §Testing`), not personal taste; a diff that breaks a standard is `REQUEST_CHANGES` with the section quoted.
+- Implementer: `PLAN_AMENDMENT_REQUIRED` when a plan's slice violates a standard — never implement through a violation.
+- Reviewer: findings cite the standard by section (`STANDARDS.md §Testing`), not personal taste; a diff that breaks a standard is `REQUEST_CHANGES` with the section quoted.
 - A standard with no checkable signal is deleted at the next edit — rules that cannot be cited cannot be enforced.
 - Exceptions expire; an expired exception becomes a finding.
 

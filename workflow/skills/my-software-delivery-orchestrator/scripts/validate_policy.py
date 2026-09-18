@@ -55,9 +55,9 @@ for phrase in (
         errors.append(f"security-contract:missing:{phrase}")
 
 for forbidden in (
-    "Aegis deploy",
+    "Release Engineer deploy",
     "automatic active testing",
-    "Wraith may remediate",
+    "Security Tester may remediate",
 ):
     if forbidden in combined:
         errors.append(f"forbidden:{forbidden}")

@@ -10,9 +10,9 @@ A canonical, bounded repository map (`ARCHITECTURE.md` at the repo root) that ev
 
 ## When to Use
 
-- Archon: read the map before any plan; create or update it when missing or stale (first planning act, not a separate task).
-- Forge: read the map for orientation; update the affected sections in the same card that changes them.
-- Sentry/Sentinel/Cypher: read the map to locate contracts and boundaries for review scoping.
+- Planner: read the map before any plan; create or update it when missing or stale (first planning act, not a separate task).
+- Implementer: read the map for orientation; update the affected sections in the same card that changes them.
+- Reviewer/Verifier/Security Reviewer: read the map to locate contracts and boundaries for review scoping.
 - Never as a substitute for verifying the actual frozen diff — the map orients; the diff decides.
 
 ## Map format (hard cap: 200 lines)

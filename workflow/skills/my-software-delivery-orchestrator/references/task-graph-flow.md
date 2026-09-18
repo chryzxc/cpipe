@@ -53,9 +53,9 @@ Safe: independent read-only investigation; implementation with disjoint writes, 
 
 Serialize: product clarification; shared contracts before consumers; overlapping edits/generated artifacts; migrations before dependent code unless compatibility is proven; each implementation packet before its required review; remediation before re-review; dependent packets before an upstream task's required review passes; final verification before delivery.
 
-cypher-finding → human-authorization → wraith-validation → cypher-interpretation → forge-remediation
+security-reviewer-finding → human-authorization → security-tester-validation → security-reviewer-interpretation → implementer-remediation
 
-Wraith cannot run in the Sentry/Sentinel/Cypher parallel review wave and cannot consume an implementation card as implicit authorization.
+Security Tester cannot run in the Reviewer/Verifier/Security Reviewer parallel review wave and cannot consume an implementation card as implicit authorization.
 
 Different role names do not imply independence. Add a dependency when one consumes another's output or both can mutate the same file, contract, database, service, fixture, generated artifact, or environment.
 ## Waves and cap

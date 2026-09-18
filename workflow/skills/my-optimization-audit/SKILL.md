@@ -10,11 +10,11 @@ Read-only, evidence-first performance audit of a named repository, API, database
 
 ## When to Use
 
-- An optimization-audit task is assigned (Archon runs the read-only audit pass; Forge runs fix-then-verify passes).
+- An optimization-audit task is assigned (Planner runs the read-only audit pass; Implementer runs fix-then-verify passes).
 - The user asks to speed up, slim, or scale a codebase, endpoint, database, or UI.
 - A release will add load (launch, migration, campaign) and needs a performance baseline first.
 
-Don't use for: security verdicts (Cypher), regression/CI/release evidence (Sentinel), live incident response, or cloud cost estimation.
+Don't use for: security verdicts (Security Reviewer), regression/CI/release evidence (Verifier), live incident response, or cloud cost estimation.
 
 ## Prerequisites
 
@@ -71,11 +71,11 @@ Don't use for: security verdicts (Cypher), regression/CI/release evidence (Senti
 - **Index the database** — frequent filters/sorts/joins scanning full tables. Detect: `EXPLAIN ANALYZE` showing sequential scans on hot queries. Fix: targeted indexes; check the write ratio first — never index write-heavy tables blindly.
 - **Cache expensive queries** — repeated heavy aggregations. Detect: identical slow queries in the log. Fix: query cache or materialized views refreshed on schedule.
 - **Connection pooling** — a connection per request or an unbounded pool. Detect: pool config review, connection errors under load. Fix: right-sized persistent pool with timeouts.
-- **Read replicas** — read traffic saturating the primary. Detect: primary CPU/IO dominated by reads. Fix: route reads to replicas (infrastructure — Aegis).
+- **Read replicas** — read traffic saturating the primary. Detect: primary CPU/IO dominated by reads. Fix: route reads to replicas (infrastructure — Release Engineer).
 
 ### Infrastructure
 
-- **Load balancer** — a single origin instance receives all traffic. Detect: deployment topology review. Fix: load balancer across instances with health checks (Aegis; approval required).
+- **Load balancer** — a single origin instance receives all traffic. Detect: deployment topology review. Fix: load balancer across instances with health checks (Release Engineer; approval required).
 - **Performance observability** — no latency metrics to prove impact. Detect: missing APM or percentile dashboards. Fix: add latency/error/percentile metrics before optimizing so every fix is provable.
 
 ## Findings Format
@@ -87,7 +87,7 @@ PERF-001 · High · Cache API responses
 Evidence: src/api/client.swift:88 — every poll calls /v1/stats uncached; 14 duplicate calls in 60s trace
 Impact: ~840 req/h per active client; p95 +310ms
 Smallest fix: memoize /v1/stats for 30s with revalidation
-Effort: S · Owner: Forge · Verify: trace shows cache hits and p95 delta
+Effort: S · Owner: Implementer · Verify: trace shows cache hits and p95 delta
 ```
 
 Severity rubric:
@@ -103,7 +103,7 @@ Every finding carries evidence. A suspicion without reproduction is labeled `HYP
 
 - No cache without an invalidation strategy — state how entries expire, or the fix trades latency for staleness bugs.
 - Indexes speed reads and tax writes; check the write ratio first.
-- CDN, load balancer, replicas, and pool changes are infrastructure: route to Aegis and get approval.
+- CDN, load balancer, replicas, and pool changes are infrastructure: route to Release Engineer and get approval.
 - Micro-benchmarks lie; prefer real traces and percentiles over averages.
 - Pagination and virtualization both fix large lists — pick by navigation pattern; do not stack both blindly.
 - Compressing already-compressed formats (JPEG, PNG, zip) wastes CPU.

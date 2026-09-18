@@ -119,7 +119,7 @@ Do not search for extra related work just to make the PR look comprehensive. Do 
 
 ### D3 — Reviewable composition
 
-Nexus generates the final title, body, and metadata with `creating-pr-content`; PR Delivery validates rather than rewrites it. Follow the repository template while preserving the compact semantic contract: problem or outcome, verified bug cause and introduction evidence when applicable, solution, exact observed verification, linked material commits/PRs/issues, and actual risks or limitations.
+Coordinator generates the final title, body, and metadata with `creating-pr-content`; PR Delivery validates rather than rewrites it. Follow the repository template while preserving the compact semantic contract: problem or outcome, verified bug cause and introduction evidence when applicable, solution, exact observed verification, linked material commits/PRs/issues, and actual risks or limitations.
 
 Default to 150–400 words excluding commands and links. Omit irrelevant sections instead of emitting `None`, raw logs, diff narration, or internal orchestration details. A changed head invalidates the content and its gate ledger.
 

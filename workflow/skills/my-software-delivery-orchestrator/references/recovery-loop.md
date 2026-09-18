@@ -64,7 +64,7 @@ A fresh same-role process may resume; preserve the ledger and rejected hypothese
 
 ## Terminal-event projection
 
-On every terminal notification or wake, Nexus reads the lifecycle event, latest run outcome and structured metadata, summary, comments, and dependencies before reporting a state change. Review metadata takes precedence over a generic task result: `request_changes` means correction required and fresh review; `approved` advances only after the remaining exact-state gates pass; missing evidence or a missing successor is `NEEDS_ASSISTANCE` or `HARD_BLOCKED` according to its cause.
+On every terminal notification or wake, Coordinator reads the lifecycle event, latest run outcome and structured metadata, summary, comments, and dependencies before reporting a state change. Review metadata takes precedence over a generic task result: `request_changes` means correction required and fresh review; `approved` advances only after the remaining exact-state gates pass; missing evidence or a missing successor is `NEEDS_ASSISTANCE` or `HARD_BLOCKED` according to its cause.
 
 ## Convergence
 

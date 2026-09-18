@@ -24,9 +24,11 @@ now = time.time()
 for tid, ws, status, completed in conn.execute(
         "SELECT id, workspace_path, status, completed_at FROM tasks "
         "WHERE workspace_path IS NOT NULL AND status IN ('done','archived')"):
-    if completed and now - completed > 86400 and ws and 'my-repo-issue' in ws:
+    parents = [Path(x).expanduser() for x in
+               os.environ.get('DELIVERY_WORKTREE_PARENTS', str(Path.home() / 'Projects')).split(':')]
+    if completed and now - completed > 86400 and ws and '-issue' in Path(ws).name:
         p = Path(ws)
-        if p.is_dir() and p.parent == Path('/Users/you/Projects'):
+        if p.is_dir() and p.parent in parents:
             subprocess.run(['rm', '-rf', str(p)])
             report.append(f'worktree GC: removed {p.name} for {tid}')
 

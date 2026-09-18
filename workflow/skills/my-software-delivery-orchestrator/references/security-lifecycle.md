@@ -4,19 +4,19 @@ This reference governs security work inside the software-delivery control plane.
 
 ## Lanes
 
-1. **Read-only audit — Cypher.** Analyze source, configuration, dependencies, trust boundaries, credentials, auth, privacy, and reachability without active target testing.
-2. **Active validation — Wraith.** Validate one specific, evidence-backed hypothesis only after the complete engagement receipt is authorized.
-3. **Remediation — Forge.** Implement one bounded fix from a confirmed or actionable Cypher finding.
-4. **Independent review — Sentry.** Review the frozen remediation diff on the same card.
-5. **Regression evidence — Sentinel.** Run triggered runtime, integration, visual, or release evidence on the new frozen state.
-6. **Security closure — Cypher.** Reassess the original finding ID against current evidence and state residual risk.
+1. **Read-only audit — Security Reviewer.** Analyze source, configuration, dependencies, trust boundaries, credentials, auth, privacy, and reachability without active target testing.
+2. **Active validation — Security Tester.** Validate one specific, evidence-backed hypothesis only after the complete engagement receipt is authorized.
+3. **Remediation — Implementer.** Implement one bounded fix from a confirmed or actionable Security Reviewer finding.
+4. **Independent review — Reviewer.** Review the frozen remediation diff on the same card.
+5. **Regression evidence — Verifier.** Run triggered runtime, integration, visual, or release evidence on the new frozen state.
+6. **Security closure — Security Reviewer.** Reassess the original finding ID against current evidence and state residual risk.
 
-## Wraith admission gate
+## Security Tester admission gate
 
 A card is not ready until every field below has a concrete value:
 
 - authorization basis and approver;
-- originating Cypher finding ID;
+- originating Security Reviewer finding ID;
 - exact hostname, IP, or CIDR allowlist;
 - explicit environment and whether production is included;
 - engagement start and end window;
@@ -33,9 +33,9 @@ A card is not ready until every field below has a concrete value:
 
 ## Required execution contract
 
-The originating Cypher finding must state the hypothesis, reachability rationale, smallest witness needed, expected evidence, and why static validation is insufficient. Christian’s approval must name the target, environment, time window, permitted techniques, and safety ceiling. Nexus verifies the Wraith profile, its exact profile-local skills, current model/provider placement, clean integration state, actual `max_runtime`, idempotency key, evidence workspace, and source subscription before dispatch.
+The originating Security Reviewer finding must state the hypothesis, reachability rationale, smallest witness needed, expected evidence, and why static validation is insufficient. the operator’s approval must name the target, environment, time window, permitted techniques, and safety ceiling. Coordinator verifies the Security Tester profile, its exact profile-local skills, current model/provider placement, clean integration state, actual `max_runtime`, idempotency key, evidence workspace, and source subscription before dispatch.
 
-Wraith validates; it does not assign final severity, define remediation, edit application code, or approve closure. The result returns to Cypher for interpretation.
+Security Tester validates; it does not assign final severity, define remediation, edit application code, or approve closure. The result returns to Security Reviewer for interpretation.
 
 ## Safety stops
 
@@ -50,7 +50,7 @@ Stop immediately and return `BLOCKED` when authorization is missing or expired, 
 
 ## Return path
 
-Wraith returns to Nexus with the engagement ID, originating finding ID, authorization/scope receipt, observed profile/model, exact tools and commands, verdict, redacted reproducible evidence, tested and untested paths, limitations, residual risk, and next owner `Cypher`. Cypher interprets significance and defines remediation. Forge owns a bounded fix. Sentry reviews the frozen fix. Sentinel runs triggered regression evidence. Cypher closes or reopens the original finding after the new state is verified.
+Security Tester returns to Coordinator with the engagement ID, originating finding ID, authorization/scope receipt, observed profile/model, exact tools and commands, verdict, redacted reproducible evidence, tested and untested paths, limitations, residual risk, and next owner `Security Reviewer`. Security Reviewer interprets significance and defines remediation. Implementer owns a bounded fix. Reviewer reviews the frozen fix. Verifier runs triggered regression evidence. Security Reviewer closes or reopens the original finding after the new state is verified.
 
 ## Evidence handling
 

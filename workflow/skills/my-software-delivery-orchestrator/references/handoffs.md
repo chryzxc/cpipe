@@ -34,17 +34,17 @@ EXECUTION CONTRACT
 - idempotency key:
 - max_runtime:
 - native lifecycle transition expected at completion:
-- required Sentry/Sentinel/Cypher/Aegis gates:
+- required Reviewer/Verifier/Security Reviewer/Release Engineer gates:
 - BUDGET:
 - stop conditions:
 
 APPROVALS
 - allowed local actions:
 - prohibited actions:
-- Christian approval required before:
+- the operator approval required before:
 
-ACTIVE SECURITY ENGAGEMENT — required only for Wraith
-- originating Cypher finding ID:
+ACTIVE SECURITY ENGAGEMENT — required only for Security Tester
+- originating Security Reviewer finding ID:
 - ownership/authorization basis and approver:
 - exact target allowlist:
 - environment and production-in-scope state:
@@ -82,7 +82,7 @@ PASS | NEEDS_CHANGES | NEEDS_ASSISTANCE | RETRYABLE | HARD_BLOCKED
 - stable finding ID, severity, evidence, smallest recommendation, owning Bot:
 
 ## Handoff
-- next Bot or Nexus action:
+- next Bot or Coordinator action:
 - approvals or missing evidence:
 
 ## Result projection
@@ -94,4 +94,4 @@ PASS | NEEDS_CHANGES | NEEDS_ASSISTANCE | RETRYABLE | HARD_BLOCKED
 
 Do not dispatch a material implementation card with an unresolved preflight field. Split the card before dispatch if it includes independent modules, environment setup, a new harness, unresolved policy, or multiple commits. Require phase heartbeats with elapsed time and current command/result.
 
-Worker summaries are evidence candidates. Nexus verifies canonical state before reporting completion. For multi-stage or restart-sensitive work, put the handoff in Kanban comments, completion metadata, or attachments—not only in Bot messages.
+Worker summaries are evidence candidates. Coordinator verifies canonical state before reporting completion. For multi-stage or restart-sensitive work, put the handoff in Kanban comments, completion metadata, or attachments—not only in Bot messages.

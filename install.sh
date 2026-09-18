@@ -13,6 +13,13 @@ echo "-- 1/6 plugin placement"
 mkdir -p "$H/plugins"
 ln -sfn "$REPO" "$H/plugins/delivery-workflow"
 
+if [ -f "$REPO/workflow/roster.yaml" ]; then
+  cp "$REPO/workflow/roster.yaml" "$H/roster.yaml"
+elif [ ! -f "$H/roster.yaml" ]; then
+  cp "$REPO/workflow/roster.example.yaml" "$H/roster.yaml"
+  echo "   NOTE: created ~/.hermes/roster.yaml from the example — edit it to map roles to YOUR profiles"
+fi
+
 echo "-- 2/6 global skills (symlinks)"
 for dir in "$SKILLS_SRC"/*/; do
   name="$(basename "$dir")"

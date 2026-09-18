@@ -2,7 +2,7 @@ version: 7
 
 # Declarative software-delivery policy. Hermes does not apply this as runtime config.
 # Profile IDs and actual provider/model placement must be verified before dispatch.
-# v7: end-to-end software delivery; Wraith is authorization-gated and dormant by default.
+# v7: end-to-end software delivery; Security Tester is authorization-gated and dormant by default.
 scope:
   includes:
     - product_and_ux_clarification
@@ -23,7 +23,7 @@ scope:
     - autonomous_deployment
 control_plane:
   coordinator_profile: default
-  coordinator_display_name: Nexus
+  coordinator_display_name: Coordinator
   durable_backend: kanban
   short_specialist_backend: bot_chat_or_profile_invocation
   ephemeral_backend: delegate_task
@@ -41,38 +41,38 @@ approval_gates:
     - irreversible_deletion
 
 bots:
-  nexus: {mission: coordination, routing, reconciliation, and final reporting, model_tier: terra}
-  atlas: {mission: sourced external research and evidence briefs, mode: READ_ONLY, model_tier: luna}
-  probe: {mission: disposable sandboxed spike exploration and runnable comparisons, mode: SANDBOX_ONLY, model_tier: luna_floor}
-  canvas: {mission: product and UI/UX design, mode: READ_ONLY, model_tier: terra}
-  archon: {mission: architecture and implementation planning, mode: READ_ONLY, model_tier: sol_threshold}
-  forge: {mission: backend, frontend, and full-stack implementation, mode: LOCAL_EDIT, model_tier: luna}
-  aegis: {mission: CI/CD, containers, IaC, development-platform and release preparation, mode: LOCAL_EDIT, model_tier: terra}
-  sentry: {mission: frozen-diff code review, mode: READ_ONLY, model_tier: luna}
-  sentinel: {mission: QA and release verification, mode: READ_ONLY, model_tier: luna}
-  cypher: {mission: security review and remediation advice, mode: READ_ONLY, model_tier: terra}
-  wraith: {mission: authorized active validation of a specific security hypothesis, mode: ENGAGEMENT_SCOPED_EXTERNAL_TEST, model_tier: terra}
-  steward: {mission: administrative workflow and briefings, mode: LOCAL_EDIT, model_tier: luna}
-  beacon: {mission: scheduled proactive audit digest from pre-filtered script output, mode: READ_ONLY, model_tier: luna}
+  coordinator: {mission: coordination, routing, reconciliation, and final reporting, model_tier: terra}
+  researcher: {mission: sourced external research and evidence briefs, mode: READ_ONLY, model_tier: luna}
+  spike-explorer: {mission: disposable sandboxed spike exploration and runnable comparisons, mode: SANDBOX_ONLY, model_tier: luna_floor}
+  designer: {mission: product and UI/UX design, mode: READ_ONLY, model_tier: terra}
+  planner: {mission: architecture and implementation planning, mode: READ_ONLY, model_tier: sol_threshold}
+  implementer: {mission: backend, frontend, and full-stack implementation, mode: LOCAL_EDIT, model_tier: luna}
+  release-engineer: {mission: CI/CD, containers, IaC, development-platform and release preparation, mode: LOCAL_EDIT, model_tier: terra}
+  reviewer: {mission: frozen-diff code review, mode: READ_ONLY, model_tier: luna}
+  verifier: {mission: QA and release verification, mode: READ_ONLY, model_tier: luna}
+  security-reviewer: {mission: security review and remediation advice, mode: READ_ONLY, model_tier: terra}
+  security-tester: {mission: authorized active validation of a specific security hypothesis, mode: ENGAGEMENT_SCOPED_EXTERNAL_TEST, model_tier: terra}
+  administrator: {mission: administrative workflow and briefings, mode: LOCAL_EDIT, model_tier: luna}
+  auditor: {mission: scheduled proactive audit digest from pre-filtered script output, mode: READ_ONLY, model_tier: luna}
 
 routing:
-  external_research: atlas
-  spike_exploration: probe
-  product_or_ui_design: canvas
-  architecture_or_plan: archon
-  repository_discovery: nexus_direct_tools
-  implementation_change: forge
-  devops_or_ci_change: aegis
-  independent_code_or_quality_review: sentry
-  regression_or_release_evidence: sentinel
-  security_audit: cypher
-  security_review: cypher
-  active_security_validation: wraith
-  security_remediation_validation: cypher
-  proactive_audit: beacon
-  performance_audit: archon
-  performance_fix: forge
-  performance_validation: sentinel
+  external_research: researcher
+  spike_exploration: spike-explorer
+  product_or_ui_design: designer
+  architecture_or_plan: planner
+  repository_discovery: coordinator_direct_tools
+  implementation_change: implementer
+  devops_or_ci_change: release-engineer
+  independent_code_or_quality_review: reviewer
+  regression_or_release_evidence: verifier
+  security_audit: security-reviewer
+  security_review: security-reviewer
+  active_security_validation: security-tester
+  security_remediation_validation: security-reviewer
+  proactive_audit: auditor
+  performance_audit: planner
+  performance_fix: implementer
+  performance_validation: verifier
 
 active_testing:
   required_receipt:
@@ -91,18 +91,18 @@ active_testing:
 
 parallelism:
   independent_gates:
-    rule: sentry, sentinel, and cypher review the SAME frozen SHA concurrently as separate cards
+    rule: reviewer, verifier, and security-reviewer review the SAME frozen SHA concurrently as separate cards
     independence: no gate sees another gate's output before returning its verdict
-    reconciliation: nexus applies the most severe verdict; the card holds until every gate returns
+    reconciliation: coordinator applies the most severe verdict; the card holds until every gate returns
   card_batching:
-    rule: group queued small cards touching the same directory/module into ONE forge session
+    rule: group queued small cards touching the same directory/module into ONE implementer session
     limits: max 3 cards per session; one frozen commit per card preserved; zero shared files across cards in the batch
   fast_lane:
     triggers: file_count_le_2 AND no schema/api/ui_contract change AND existing test coverage
-    route: forge direct plus same-card sentry review; canvas/archon skipped
+    route: implementer direct plus same-card reviewer review; designer/planner skipped
     examples: test-only change, single-file fix, dependency bump with green CI
   swarm:
-    rule: max 3 concurrent forge workers, only on cards with zero shared files
+    rule: max 3 concurrent implementer workers, only on cards with zero shared files
   pipelining:
     rule: dispatch each review the moment its card requests review; reviews of one wave overlap implements of the next
   runtime_defaults:
@@ -113,9 +113,9 @@ parallelism:
 
 token_policy:
   model_tiers:
-    luna_floor: probe and beacon never run above the cheapest available model
+    luna_floor: spike-explorer and auditor never run above the cheapest available model
     checklist_work: audits, reviews, and validation passes run on luna or terra, never sol
-    sol_threshold: archon uses sol only above the documented planning threshold; route_down otherwise
+    sol_threshold: planner uses sol only above the documented planning threshold; route_down otherwise
   per_card_budget:
     rule: every kanban card body carries a token_budget; workers return BLOCKED_budget_exceeded instead of grinding
   session_amortization:
@@ -156,6 +156,6 @@ kanban:
 
 quality:
   ocr_required_for_meaningful_code_diff: true
-  independent_sentry_review_required_for_meaningful_code_diff: true
+  independent_reviewer_review_required_for_meaningful_code_diff: true
   security_review_trigger: changed_trust_boundary_or_plausible_vulnerability
-  release_evidence_owner: sentinel
+  release_evidence_owner: verifier

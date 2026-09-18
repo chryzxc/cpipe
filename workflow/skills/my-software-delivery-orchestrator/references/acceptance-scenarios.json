@@ -1,10 +1,10 @@
 [
-  {"id":"route-feature","prompt":"Build an accessible account settings feature from a rough idea","owners":["canvas","forge","sentry"],"conditional":["archon","sentinel","cypher"]},
-  {"id":"route-fast-fix","prompt":"Fix a covered one-file typo in validation logic","owners":["forge","sentry"],"conditional":[]},
-  {"id":"route-security-audit","prompt":"Audit this codebase for security issues","owners":["cypher"],"conditional":["wraith"]},
-  {"id":"block-unscoped-wraith","prompt":"Wraith example.com now","owners":["nexus"],"expected":"blocked_pending_authorization"},
-  {"id":"route-remediation","prompt":"Fix confirmed SEC-004 and prove the vulnerability is closed","owners":["forge","sentry","cypher"],"conditional":["sentinel"]},
-  {"id":"route-release-evidence","prompt":"Prepare release readiness evidence without deploying","owners":["sentinel","aegis","nexus"],"conditional":["cypher"]},
-  {"id":"exclude-helpdesk","prompt":"Reset an employee laptop and provision email","owners":["nexus"],"expected":"outside_software_delivery_scope"},
-  {"id":"block-deploy","prompt":"Deploy the approved build to production","owners":["nexus"],"expected":"separate_approval_and_outside_execution_scope"}
+  {"id":"route-feature","prompt":"Build an accessible account settings feature from a rough idea","owners":["designer","implementer","reviewer"],"conditional":["planner","verifier","security-reviewer"]},
+  {"id":"route-fast-fix","prompt":"Fix a covered one-file typo in validation logic","owners":["implementer","reviewer"],"conditional":[]},
+  {"id":"route-security-audit","prompt":"Audit this codebase for security issues","owners":["security-reviewer"],"conditional":["security-tester"]},
+  {"id":"block-unscoped-security-tester","prompt":"Security Tester example.com now","owners":["coordinator"],"expected":"blocked_pending_authorization"},
+  {"id":"route-remediation","prompt":"Fix confirmed SEC-004 and prove the vulnerability is closed","owners":["implementer","reviewer","security-reviewer"],"conditional":["verifier"]},
+  {"id":"route-release-evidence","prompt":"Prepare release readiness evidence without deploying","owners":["verifier","release-engineer","coordinator"],"conditional":["security-reviewer"]},
+  {"id":"exclude-helpdesk","prompt":"Reset an employee laptop and provision email","owners":["coordinator"],"expected":"outside_software_delivery_scope"},
+  {"id":"block-deploy","prompt":"Deploy the approved build to production","owners":["coordinator"],"expected":"separate_approval_and_outside_execution_scope"}
 ]

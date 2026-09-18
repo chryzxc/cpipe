@@ -51,10 +51,10 @@ Freeze exact repository/state/diff first.
 
 ### G3A — Conditional active validation
 
-Run only when Cypher has a stable finding and static evidence cannot answer the named hypothesis. Pass only when the full Wraith engagement receipt was authorized before dispatch, the exact target/window is covered, the result is one of `CONFIRMED`, `NOT_REPRODUCIBLE`, `PARTIAL`, or `BLOCKED`, and the redacted evidence is retained for Cypher. A missing receipt, target mismatch, expired window, or unsafe stop is `BLOCKED`, never a partial pass. Wraith never edits code or owns severity.
+Run only when Security Reviewer has a stable finding and static evidence cannot answer the named hypothesis. Pass only when the full Security Tester engagement receipt was authorized before dispatch, the exact target/window is covered, the result is one of `CONFIRMED`, `NOT_REPRODUCIBLE`, `PARTIAL`, or `BLOCKED`, and the redacted evidence is retained for Security Reviewer. A missing receipt, target mismatch, expired window, or unsafe stop is `BLOCKED`, never a partial pass. Security Tester never edits code or owns severity.
 ### G4 — Remediation
 
-Use `maintainability-refactor.md` for `MAINT-N` eligibility and `recovery-loop.md` for routing. Pass only when every accepted finding has current disposition/evidence, collateral scope is clean, and all invalidated checks/reviews rerun on the new frozen state. A new head invalidates affected Sentry, Sentinel, and Cypher evidence.
+Use `maintainability-refactor.md` for `MAINT-N` eligibility and `recovery-loop.md` for routing. Pass only when every accepted finding has current disposition/evidence, collateral scope is clean, and all invalidated checks/reviews rerun on the new frozen state. A new head invalidates affected Reviewer, Verifier, and Security Reviewer evidence.
 
 ### G5 — Integration
 

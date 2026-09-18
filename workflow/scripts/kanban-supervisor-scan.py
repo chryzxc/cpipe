@@ -5,7 +5,7 @@ Detects the board conditions that stall the Bot workflow autonomously:
   1. blocked cards whose skills are not installed on the assignee profile
      (auto-fixable when the skill exists in the global catalog)
   2. cards referencing skills that exist nowhere (escalate)
-  3. unassigned todo cards aging past a threshold (escalate to Nexus digest)
+  3. unassigned todo cards aging past a threshold (escalate to coordinator digest)
   4. review-requested cards with no reviewer activity (dispatch gap)
   5. stale running claims past claim expiry (reclaim candidates)
 
@@ -27,7 +27,7 @@ GLOBAL_SKILLS = HERMES_HOME / "skills"
 PROFILES = HERMES_HOME / "profiles"
 TODO_AGING_HOURS = 24
 QUEUE_AGING_MINUTES = 30
-NEXUS_WAKE_MINUTES = 15
+COORDINATOR_WAKE_MINUTES = 15
 HEARTBEAT_STALE_MINUTES = 5
 NEXUS_ACTION_KEYWORDS = ("plan_amendment", "needs_assistance", "re-specif",
                          "respecify", "nexus triage", "blocked: plan",
@@ -115,12 +115,12 @@ def main() -> None:
                 (t["id"],)).fetchone()
             body = (last["body"] or "") if last else ""
             head = body.lstrip()[:60]
-            if head.startswith(("REQUEST_CHANGES", "APPROVED", "NEEDS_ASSISTANCE", "Nexus reconciliation")):
+            if head.startswith(("REQUEST_CHANGES", "APPROVED", "NEEDS_ASSISTANCE", "Coordinator reconciliation", "Nexus reconciliation")):
                 findings.append(
                     f"VERDICT_PARKED · {t['id']} · terminal verdict already recorded but card still blocked · {head[:50]}")
                 verdict_parked.add(t["id"])
 
-    # Nexus-action blocked reasons have no consumer; they park until a human asks.
+    # Coordinator-action blocked reasons (legacy "Nexus" match kept for old comments) have no consumer; they park until a human asks.
     for t in tasks:
         if t["status"] != "blocked" or t["id"] in verdict_parked:
             continue
@@ -145,9 +145,9 @@ def main() -> None:
             continue
         if any(k in reason for k in NEXUS_ACTION_KEYWORDS):
             age_m = (now - basis) / 60
-            if age_m >= NEXUS_WAKE_MINUTES:
+            if age_m >= COORDINATOR_WAKE_MINUTES:
                 findings.append(
-                    f"NEXUS_WAKE · {t['id']} · blocked {age_m:.0f}m awaiting Nexus action "
+                    f"COORDINATOR_WAKE · {t['id']} · blocked {age_m:.0f}m awaiting coordinator action "
                     f"({reason[:48]}) · {(t['title'] or '')[:60]}")
 
     for t in tasks:

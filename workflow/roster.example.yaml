@@ -1,0 +1,19 @@
+# Role -> Hermes profile mapping for the delivery workflow.
+# Copy to roster.yaml and point each role at YOUR profiles (any names work).
+# Skills, prompts, and scripts reference roles; only roster.yaml knows profile IDs.
+# The installer deploys roster.yaml to ~/.hermes/roster.yaml.
+
+roles:
+  coordinator: your-coordinator     # routes work, owns final reports and PR content
+  researcher: your-researcher       # external facts and sourced briefs
+  spike_explorer: your-spiker       # disposable feasibility spikes
+  designer: your-designer           # product/UX/accessibility design
+  planner: your-planner             # architecture, plans, ADRs
+  implementer: your-implementer     # backend/frontend/full-stack implementation
+  release_engineer: your-devops     # CI/CD, containers, release readiness
+  reviewer: your-reviewer           # independent frozen-diff code review
+  verifier: your-qa                 # QA, regression, release evidence
+  security_reviewer: your-security  # read-only security analysis
+  security_tester: your-pentester   # authorization-gated active validation
+  auditor: your-auditor             # scheduled proactive audits
+  administrator: your-admin         # administrative workflow

@@ -10,7 +10,7 @@ One terse evidence contract for every Bot's reports, reviews, heartbeats, and fi
 
 ## When to Use
 
-Always, when a Bot reports results, findings, phase receipts, or verdicts in the Bot-first workflow. Not for user-facing conversation — only for Bot-to-Nexus and Bot-to-reviewer evidence.
+Always, when a Bot reports results, findings, phase receipts, or verdicts in the Bot-first workflow. Not for user-facing conversation — only for Bot-to-Coordinator and Bot-to-reviewer evidence.
 
 ## Finding entry
 
