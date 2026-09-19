@@ -45,8 +45,11 @@
   {
     "id": "boardintel001",
     "name": "Board intelligence weekly",
+    "prompt": "You are the weekly learning-loop steward. The injected board-intelligence digest may include a 'Finding-class recurrence (28d)' section. For each listed class with count >= 3, create exactly ONE todo Kanban card titled 'Standards amendment draft: <class>' assigned to `$(python3 ~/.hermes/scripts/resolve_role.py coordinator)`; the body must contain the proposed engineering-standards rule text plus the evidence lines from the digest. Never edit skill files yourself; the operator approves drafts on the card. If the digest has no recurrence section, reply with the digest only.",
     "script": "board_intelligence.py",
-    "no_agent": true,
+    "no_agent": false,
+    "model": "gpt-5.6-luna",
+    "provider": "openai-codex",
     "schedule": {
       "kind": "interval",
       "minutes": 10080,
