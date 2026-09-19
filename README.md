@@ -13,17 +13,20 @@
 
 ---
 
-## Why
+## What this workflow solves
 
-Ungoverned agents ship fast and break trust: "done" means "the model said so," parallel tasks collide, and you end up re-reviewing everything anyway. This workflow fixes the failure modes instead of the symptoms:
+AI teams move fast; trusting what they ship is the hard part. This workflow turns every delivery claim into something you can verify:
 
-| Failure mode | What this repo does about it |
+| You get | How it works |
 |---|---|
-| Promised parallelism runs serialized | Coordinator reads live engine caps and reports the actual wave plan |
-| "TDD" that is test-after | RED evidence required *before* implementation; mutation checks prove tests bite |
-| Reviews drift with the branch | Gates review a frozen SHA; base movement invalidates evidence |
-| `done` claims you have to re-verify | Acceptance criteria are re-run independently by the Verifier role on the frozen state; a new head invalidates prior evidence |
-| Skills drift across profiles | Single source of truth via symlinks — structurally impossible |
+| Parallelism you can trust | Wave plans are computed from the engine's live concurrency caps — what's promised is what runs |
+| TDD by construction | RED evidence is required *before* implementation; mutation checks prove the tests bite |
+| Reviews that can't drift | Gates review a frozen SHA; any base or head movement invalidates prior evidence |
+| `done` means proven | Acceptance criteria are re-run independently by the Verifier role on the frozen state |
+| One source of truth | Skills deploy as symlinks from a single git-versioned repo — identical across every profile by construction |
+| A board that runs itself | A deterministic supervisor keeps queues flowing, reclaims dead claims, and routes decisions to the coordinator |
+
+The result: **you review evidence, not code.**
 
 ## The flow
 
@@ -58,7 +61,7 @@ Not every change earns the same process. The intake tier decides:
 | Review | same-card reviewer (one-shot) | dispatched review | reviewer + QA + security in parallel |
 | Independent criteria re-run | implementer's block + diff check | QA re-runs criteria | + mutation check |
 
-LOW cards — the majority of small issues — touch ~3 roles in ~2 sessions. **You review evidence, not code.**
+LOW cards — the majority of small issues — touch ~3 roles in ~2 sessions.
 
 ## The concepts behind it
 
@@ -68,12 +71,12 @@ This isn't a pile of prompts — it's several established engineering paradigms 
 |---|---|
 | **Orchestrator–worker architecture** | A coordinator role is the control plane: it routes, reconciles, and reports — never implements. Workers are disposable instances of role profiles, spawned per card by the engine dispatcher. |
 | **Task-graph (DAG) engineering** | Work is decomposed into dependency-aware task nodes (`references/task-graph-flow.md`). Ready nodes execute in parallel waves; integration happens before gates, so reviews see integrated reality, not divergent branches. |
-| **Loop engineering (closed feedback loops)** | Four nested loops: the RED→GREEN TDD loop inside a card; the implement→review→rework loop bounded by gates across cards; the supervisor's sense→heal loop every 15 minutes; and the weekly learning loop that turns repeated findings into standards. |
-| **Self-healing / autonomic operation** | The stall supervisor detects silent stalls, dead workers, aging queues, and cards awaiting coordinator action — then acts (reclaim, requeue, wake) instead of waiting for a human to poll. |
-| **Evidence-based gating (fail-closed)** | Nothing passes without machine-verifiable evidence: verification matrices re-run independently, frozen-SHA review, hash-locked plans, mutation checks. Missing evidence is a blocker, never a pass. |
+| **Loop engineering (closed feedback loops)** | Four nested loops: the RED→GREEN TDD loop inside a card; the implement→review→rework loop bounded by gates across cards; the supervisor's sense→act loop every 15 minutes; and the weekly learning loop that turns repeated findings into standards. |
+| **Autonomic operation** | A deterministic supervisor keeps the board healthy on its own schedule — reclaims dead claims, refreshes queues, and routes cards that need a decision to the coordinator. |
+| **Evidence-based gating (fail-closed)** | Nothing passes without machine-verifiable evidence: criteria re-run independently, frozen-SHA review, hash-locked plans, mutation checks. Missing evidence is a blocker, never a pass. |
 | **Risk-tiered adaptive ceremony** | Process weight scales with blast radius — LOW/MED/HIGH tiers decided at intake from the brief's own fields, so small changes move fast and dangerous ones earn full scrutiny. |
 | **Pipelined parallelism** | Reviews of one wave overlap implementation of the next; same-module cards batch into one session to amortize boot cost. Parallelism comes from *instantiation* of roles, not from more bots. |
-| **Pull system with WIP limits (Kanban)** | Per-profile concurrency caps, queue-aging signals, and wave plans computed from real engine caps — never from wishful policy numbers. |
+| **Pull system with WIP limits (Kanban)** | Per-profile concurrency caps, queue signals, and wave plans computed from live engine caps — never from wishful policy numbers. |
 | **Deterministic-first / policy as code** | Anything expressible as a script runs without an LLM (validators, metrics, mutation checks, housekeeping); config assertions fail loudly on drift; declarative policy mirrors are validated against engine reality. |
 | **Role-based least authority** | Authority ceilings attach to roles and cards; no skill, card, or model can expand them. Human approval gates (merge, deploy, credentials...) are structural, not conventional. |
 | **Single-source-of-truth deployment** | The whole workflow is git-versioned and deployed idempotently — skills are symlinks, so drift across profiles is structurally impossible and `git pull && ./install.sh` is the only update path. |
@@ -117,8 +120,8 @@ Works with 3 profiles or 13. Different team setups adopt the same workflow witho
 ├── software_delivery/           # plugin: 3 agent tools + doctor CLI + metrics hook
 ├── workflow/
 │   ├── skills/                  # orchestrator policy skill + evidence/ADR/standards skills
-│   ├── scripts/                 # supervisor scan, warm-build, housekeeping, intelligence...
-│   ├── cron.jobs.json           # 6 cron jobs: stall supervisor, watchers, digests
+│   ├── scripts/                 # board supervisor scan, warm-build, housekeeping, intelligence...
+│   ├── cron.jobs.json           # 6 cron jobs: board supervisor, watchers, digests
 │   ├── config.assertions.yaml   # engine caps this workflow expects
 │   └── roster.example.yaml      # role → profile mapping template
 └── install.sh                   # idempotent installer (bootstrap.sh = one-liner)
@@ -138,8 +141,8 @@ The weekly digest reports per-stage wall-clock, queue waits, gate rejection rate
 
 ## Safety model
 
-- Read-only with respect to repositories and Hermes state; the three plugin tools report facts and evidence
-- The supervisor cron is the one exception inside Hermes state: it may modify Kanban cards and copy missing skills to a profile — nothing else; repositories remain untouched
+- The three plugin tools are read-only: they report facts and evidence
+- The board supervisor is the only writer inside Hermes state, and only to Kanban cards and profile skill installs; repositories remain untouched
 - Human approval gates are unchanged and always yours: merge, deploy, production, credentials, purchases, publishing, irreversible deletion
 - `delivery_mutation_check` mutates only a disposable git worktree file and restores it
 - The engine install (`~/.hermes/hermes-agent`) is never modified — everything lives in the user-state layer and survives `hermes update`
