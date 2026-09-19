@@ -11,7 +11,7 @@ import argparse
 import sys
 from pathlib import Path
 
-H = Path.home() / '.hermes'
+H = Path(os.environ.get('HERMES_HOME', str(Path.home() / '.hermes')))
 REPO_ROSTER = Path(__file__).resolve().parents[1] / 'roster.yaml'
 
 REQUIRED = ['coordinator', 'implementer', 'reviewer', 'verifier', 'security_reviewer']

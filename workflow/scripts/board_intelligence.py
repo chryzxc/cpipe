@@ -5,7 +5,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-H = Path.home() / '.hermes'
+H = Path(os.environ.get('HERMES_HOME', str(Path.home() / '.hermes')))
 DB = H / 'kanban.db'
 WEEK = 7 * 86400
 now = time.time()

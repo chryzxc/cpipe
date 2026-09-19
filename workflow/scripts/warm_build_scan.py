@@ -3,7 +3,7 @@
 import os, sqlite3, subprocess, time
 from pathlib import Path
 
-H = Path.home() / '.hermes'
+H = Path(os.environ.get('HERMES_HOME', str(Path.home() / '.hermes')))
 DB = H / 'kanban.db'
 conn = sqlite3.connect(f'file:{DB}?mode=ro', uri=True)
 rows = conn.execute("SELECT id, workspace_path FROM tasks WHERE status='todo' AND workspace_path IS NOT NULL").fetchall()

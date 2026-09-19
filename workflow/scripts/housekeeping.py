@@ -4,7 +4,7 @@ log/cache retention, WAL checkpoint, skill drift report. Deterministic."""
 import hashlib, sqlite3, subprocess, time
 from pathlib import Path
 
-H = Path.home() / '.hermes'
+H = Path(os.environ.get('HERMES_HOME', str(Path.home() / '.hermes')))
 CUTOFF = time.time() - 30 * 86400
 HERMES = H / 'hermes-agent/venv/bin/hermes'
 report = []

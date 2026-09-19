@@ -3,7 +3,7 @@
 import re, sqlite3, subprocess, sys
 from pathlib import Path
 
-H = Path.home() / '.hermes'
+H = Path(os.environ.get('HERMES_HOME', str(Path.home() / '.hermes')))
 CFG = (H / 'config.yaml').read_text()
 SKILL = H / 'skills/my-software-delivery-orchestrator'
 TEAM = (SKILL / 'references/team-config.yaml').read_text()
