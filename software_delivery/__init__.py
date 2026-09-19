@@ -44,7 +44,9 @@ def _mutation_check(worktree: str, file_path: str, test_filter: str, **kwargs) -
     git_dir = wt / ".git"
     if not git_dir.exists():
         return json.dumps({"ok": False, "error": "worktree must be a git worktree"})
-    target = wt / file_path
+    target = (wt / file_path).resolve()
+    if not target.is_relative_to(wt):
+        return json.dumps({"ok": False, "error": "file_path must stay inside the worktree"})
     if not target.is_file():
         return json.dumps({"ok": False, "error": f"file not found: {file_path}"})
     original = target.read_text()

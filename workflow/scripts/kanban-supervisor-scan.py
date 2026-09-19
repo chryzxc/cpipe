@@ -62,6 +62,8 @@ def profile_skill_dirs(profile: str) -> set[str]:
 def global_skill_exists(name: str) -> bool:
     if (GLOBAL_SKILLS / name).is_dir():
         return True
+    if not GLOBAL_SKILLS.is_dir():
+        return False
     for category in GLOBAL_SKILLS.iterdir():
         if category.is_dir() and (category / name).is_dir():
             return True
@@ -79,14 +81,19 @@ def _review_scope_key(title: str) -> str:
 
 
 def _is_git_workspace(path: str) -> bool:
-    workspace = Path(path)
+    workspace = Path(path).resolve()
     if not workspace.is_dir():
         return False
-    return subprocess.run(
-        ["git", "-C", str(workspace), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        timeout=5,
-    ).returncode == 0
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(workspace), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and Path(result.stdout.strip()).resolve() == workspace
 
 
 def main() -> None:
@@ -169,8 +176,8 @@ def main() -> None:
         workspace_error = (t["last_failure_error"] or "").lower()
         workspace = t["workspace_path"]
         if status == "ready" and (
-            "not inside a git repo" in workspace_error
-            or (workspace and not _is_git_workspace(workspace))
+            (workspace and not _is_git_workspace(workspace))
+            or (not workspace and "not inside a git repo" in workspace_error)
         ):
             findings.append(
                 f"WORKSPACE_INVALID · {tid} · ready card workspace is not a Git root · {title}"
@@ -212,7 +219,12 @@ def main() -> None:
         if status == "review":
             last = conn.execute(
                 "SELECT MAX(id) AS m FROM task_runs WHERE task_id=?", (tid,)).fetchone()
-            if last and last["m"]:
+            if not last or not last["m"]:
+                age_h = (now - (t["started_at"] or t["created_at"] or now)) / 3600
+                if age_h >= 2:
+                    findings.append(
+                        f"REVIEW_STALLED · {tid} · review requested {age_h:.0f}h ago, no reviewer dispatched · {title}")
+            else:
                 row = conn.execute(
                     "SELECT ended_at FROM task_runs WHERE id=?", (last["m"],)).fetchone()
                 ended = row["ended_at"] if row and row["ended_at"] else now
@@ -223,9 +235,10 @@ def main() -> None:
 
         if status in ("running", "in_progress"):
             hb = t["last_heartbeat_at"]
-            if hb and (now - hb) / 60 >= HEARTBEAT_STALE_MINUTES:
+            heartbeat_basis = hb or t["started_at"] or t["created_at"]
+            if heartbeat_basis and (now - heartbeat_basis) / 60 >= HEARTBEAT_STALE_MINUTES:
                 findings.append(
-                    f"HEARTBEAT_STALE · {tid} · no heartbeat {((now-hb)/60):.0f}m · {title}")
+                    f"HEARTBEAT_STALE · {tid} · no heartbeat {((now-heartbeat_basis)/60):.0f}m · {title}")
             row = conn.execute(
                 "SELECT claim_expires FROM task_runs WHERE task_id=? "
                 "ORDER BY id DESC LIMIT 1", (tid,)).fetchone()
