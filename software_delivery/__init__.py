@@ -8,7 +8,9 @@ Policy skills, scripts, cron definitions, and config assertions live in
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import shlex
 import subprocess
 import sys
 import time
@@ -19,6 +21,15 @@ __all__ = ["register"]
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPTS = _REPO_ROOT / "workflow" / "scripts"
 _METRICS_LOG = Path.home() / ".hermes" / "logs" / "delivery-metrics.jsonl"
+
+_SUPPORTED_STACKS = "swift, python/pytest, node/npm, make"
+
+
+def _buildcmds():
+    spec = importlib.util.spec_from_file_location("buildcmds", _SCRIPTS / "buildcmds.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _run_script(name: str, *args: str) -> str:
@@ -39,7 +50,7 @@ def _board_intelligence(**kwargs) -> str:
     return _run_script("board_intelligence.py")
 
 
-def _mutation_check(worktree: str, file_path: str, test_filter: str, **kwargs) -> str:
+def _mutation_check(worktree: str, file_path: str, test_filter: str, test_cmd: str | None = None, **kwargs) -> str:
     wt = Path(worktree).resolve()
     git_dir = wt / ".git"
     if not git_dir.exists():
@@ -49,6 +60,20 @@ def _mutation_check(worktree: str, file_path: str, test_filter: str, **kwargs) -
         return json.dumps({"ok": False, "error": "file_path must stay inside the worktree"})
     if not target.is_file():
         return json.dumps({"ok": False, "error": f"file not found: {file_path}"})
+    recipe = _buildcmds().detect_build(wt)
+    if test_cmd:
+        test_argv = shlex.split(test_cmd)
+        stack = "custom"
+    elif recipe and recipe["test"]:
+        test_argv = list(recipe["test"])
+        if recipe["filter_flag"]:
+            test_argv += [recipe["filter_flag"], test_filter]
+        stack = recipe["stack"]
+    else:
+        return json.dumps({
+            "ok": False,
+            "error": f"no supported build recipe found (supported: {_SUPPORTED_STACKS}) — pass test_cmd to override",
+        })
     original = target.read_text()
     mutated = original.replace(" == ", " != ", 1)
     if mutated == original:
@@ -58,12 +83,13 @@ def _mutation_check(worktree: str, file_path: str, test_filter: str, **kwargs) -
     try:
         target.write_text(mutated)
         test = subprocess.run(
-            ["swift", "test", "--disable-automatic-resolution", "--filter", test_filter],
+            test_argv,
             cwd=wt, capture_output=True, text=True, timeout=1200,
         )
         failed = test.returncode != 0
         return json.dumps({
             "ok": True,
+            "stack": stack,
             "mutant_killed": failed,
             "verdict": "PASS: test fails with mutation (test bites)" if failed
                        else "FAIL: test still passes with mutation (decorative test)",
@@ -126,13 +152,14 @@ _MUTATION_SCHEMA = {
     "type": "function",
     "function": {
         "name": "delivery_mutation_check",
-        "description": "Flip one equality condition in a file inside a disposable git worktree, run the focused swift test, and report whether the test fails. Verifies the test bites. File is restored after.",
+        "description": "Flip one equality condition in a file inside a disposable git worktree, run the focused test, and report whether the test fails. Verifies the test bites. Auto-detects swift/python/node/make stacks; pass test_cmd to override. File is restored after.",
         "parameters": {
             "type": "object",
             "properties": {
                 "worktree": {"type": "string", "description": "Absolute path to the disposable git worktree"},
                 "file_path": {"type": "string", "description": "Repository-relative file to mutate"},
-                "test_filter": {"type": "string", "description": "swift test --filter expression"},
+                "test_filter": {"type": "string", "description": "Test filter expression (e.g. 'TargetTests' or '-k' expression)"},
+                "test_cmd": {"type": "string", "description": "Optional test command override, e.g. 'python -m pytest -q'"},
             },
             "required": ["worktree", "file_path", "test_filter"],
         },
@@ -154,7 +181,8 @@ def register(ctx):
         name="delivery_mutation_check", toolset="software_delivery",
         schema=_MUTATION_SCHEMA,
         handler=lambda args, **kw: _mutation_check(
-            worktree=args["worktree"], file_path=args["file_path"], test_filter=args["test_filter"]),
+            worktree=args["worktree"], file_path=args["file_path"],
+            test_filter=args["test_filter"], test_cmd=args.get("test_cmd")),
     )
     ctx.register_cli_command(
         name="software-delivery", help="Software delivery plugin doctor",

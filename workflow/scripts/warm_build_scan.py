@@ -1,25 +1,30 @@
 #!/usr/bin/env python3
 """Background warm-build of todo-card worktrees. Deterministic, no LLM."""
-import os, sqlite3, subprocess, sys, time
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 H = Path(os.environ.get('HERMES_HOME', str(Path.home() / '.hermes')))
 DB = H / 'kanban.db'
 STALE_BUILD_SECONDS = 30 * 60
 BUILD_WRAPPER = '''
-import pathlib
-import subprocess
-import sys
+import json, pathlib, subprocess, sys
 
-workspace, marker, building = map(pathlib.Path, sys.argv[1:])
+workspace, marker, building = map(pathlib.Path, sys.argv[1:4])
+cmd = json.loads(sys.argv[4])
 try:
-    result = subprocess.run(
-        ['swift', 'build', '--disable-automatic-resolution'], cwd=workspace)
-    if result.returncode == 0:
+    if subprocess.run(cmd, cwd=workspace).returncode == 0:
         marker.touch()
 finally:
     building.unlink(missing_ok=True)
 '''
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from buildcmds import detect_build  # noqa: E402
 
 conn = sqlite3.connect(f'file:{DB}?mode=ro', uri=True)
 rows = conn.execute("SELECT id, workspace_path FROM tasks WHERE status='todo' AND workspace_path IS NOT NULL").fetchall()
@@ -28,7 +33,9 @@ for tid, ws in rows:
     ws = Path(ws)
     if not ws.is_dir() or ws.parent.name.startswith('.'):
         continue
-    if not (ws / 'Package.swift').is_file():
+    recipe = detect_build(ws)
+    if not recipe or not recipe['build']:
+        print(f'skip {tid}: no warm-build recipe for {recipe["stack"] if recipe else "workspace"}')
         continue
     marker, building = ws / '.warm-built', ws / '.warm-building'
     if marker.exists():
@@ -41,7 +48,8 @@ for tid, ws in rows:
     try:
         with open(H / 'kanban/logs' / f'{tid}-warmbuild.log', 'w') as log:
             subprocess.Popen(
-                [sys.executable, '-c', BUILD_WRAPPER, str(ws), str(marker), str(building)],
+                [sys.executable, '-c', BUILD_WRAPPER, str(ws), str(marker), str(building),
+                 json.dumps(recipe['build'])],
                 stdout=log, stderr=log, start_new_session=True)
     except OSError:
         building.unlink(missing_ok=True)
