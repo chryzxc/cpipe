@@ -39,9 +39,14 @@ echo "   profile links: $count"
 
 echo "-- 5/8 scripts (copies; cron requires resolution inside $H/scripts)"
 mkdir -p "$H/scripts"
-for f in "$SCRIPTS_SRC"/*.py; do
-  cp "$f" "$H/scripts/$(basename "$f")"
-  chmod +x "$H/scripts/$(basename "$f")"
+for f in "$SCRIPTS_SRC"/*; do
+  [ -f "$f" ] || continue
+  name="$(basename "$f")"
+  case "$name" in
+    setup_roster.py|merge_cron_jobs.py|assert_config.py) continue ;;
+  esac
+  cp "$f" "$H/scripts/$name"
+  chmod +x "$H/scripts/$name"
 done
 
 echo "-- 6/8 cron job definitions"

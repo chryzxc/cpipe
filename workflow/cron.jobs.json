@@ -57,5 +57,37 @@
     "origin": null,
     "workdir": null,
     "created_at": "2026-09-18T23:59:00"
+  },
+  {
+    "id": "41915f3f2593",
+    "name": "Beacon nightly audit",
+    "prompt": "You are Beacon, the proactive audit specialist. Triage the injected deterministic scan output per these rules: classify each signal (known/noise/finding); emit findings as PERF-### with severity, exact evidence line, impact, smallest fix, owner (archon/forge/sentinel/cypher/aegis); file Kanban cards for Medium+ via the Hermes kanban CLI; every CHECK_FAILED line becomes a BLOCKED card; empty scan = no-findings digest; Monday runs add the weekly token-budget guardrail section with a 60-percent-before-midweek alert. Final message = morning digest only: counts by severity, top 3 findings with evidence, script failures, new/resolved trends. Read-only; never scan raw; never fix; never dispatch peers.",
+    "script": "beacon-nightly-scan.sh",
+    "no_agent": false,
+    "model": "gpt-5.6-luna",
+    "provider": "openai-codex",
+    "schedule": {
+      "kind": "interval",
+      "minutes": 1440,
+      "display": "every 1440m"
+    },
+    "enabled": true,
+    "deliver": "local",
+    "created_at": "2026-09-14T14:42:37.349837+08:00"
+  },
+  {
+    "id": "862581f7cd72",
+    "name": "Beacon weekly usage digest",
+    "prompt": "",
+    "script": "beacon-weekly-usage.py",
+    "no_agent": true,
+    "schedule": {
+      "kind": "interval",
+      "minutes": 10080,
+      "display": "every 10080m"
+    },
+    "enabled": true,
+    "deliver": "local",
+    "created_at": "2026-09-14T21:01:54.071158+08:00"
   }
 ]
