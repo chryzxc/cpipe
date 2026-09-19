@@ -20,6 +20,7 @@ import os
 import sqlite3
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
@@ -30,6 +31,8 @@ TODO_AGING_HOURS = 24
 QUEUE_AGING_MINUTES = 30
 COORDINATOR_WAKE_MINUTES = 15
 HEARTBEAT_STALE_MINUTES = 5
+WORKSPACE_CHECK_CAP = 32
+WORKSPACE_CHECK_WORKERS = 8
 NEXUS_ACTION_KEYWORDS = ("plan_amendment", "needs_assistance", "re-specif",
                           "respecify", "nexus triage", "blocked: plan",
                           "blocked: needs", "workspace_invalid")
@@ -169,6 +172,20 @@ def main() -> None:
                     f"COORDINATOR_WAKE · {t['id']} · blocked {age_m:.0f}m awaiting coordinator action "
                     f"({reason[:48]}) · {(t['title'] or '')[:60]}")
 
+    ready_paths = [t["workspace_path"] for t in tasks
+                   if t["status"] == "ready" and t["workspace_path"]]
+    checked_paths = ready_paths[:WORKSPACE_CHECK_CAP]
+    if checked_paths:
+        with ThreadPoolExecutor(max_workers=WORKSPACE_CHECK_WORKERS) as pool:
+            checked = dict(zip(checked_paths, pool.map(_is_git_workspace, checked_paths)))
+    else:
+        checked = {}
+    workspace_unchecked = len(ready_paths) - len(checked_paths)
+    if workspace_unchecked > 0:
+        findings.append(
+            f"WORKSPACE_CAP · {workspace_unchecked} ready workspace(s) beyond the "
+            f"{WORKSPACE_CHECK_CAP}-card cap were not checked this scan")
+
     for t in tasks:
         tid, title = t["id"], (t["title"] or "")[:60]
         assignee, status = t["assignee"], t["status"]
@@ -176,7 +193,7 @@ def main() -> None:
         workspace_error = (t["last_failure_error"] or "").lower()
         workspace = t["workspace_path"]
         if status == "ready" and (
-            (workspace and not _is_git_workspace(workspace))
+            (workspace and workspace in checked and not checked[workspace])
             or (not workspace and "not inside a git repo" in workspace_error)
         ):
             findings.append(
