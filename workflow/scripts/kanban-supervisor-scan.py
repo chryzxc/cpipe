@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import subprocess
 import time
 from pathlib import Path
 
@@ -30,8 +31,8 @@ QUEUE_AGING_MINUTES = 30
 COORDINATOR_WAKE_MINUTES = 15
 HEARTBEAT_STALE_MINUTES = 5
 NEXUS_ACTION_KEYWORDS = ("plan_amendment", "needs_assistance", "re-specif",
-                         "respecify", "nexus triage", "blocked: plan",
-                         "blocked: needs")
+                          "respecify", "nexus triage", "blocked: plan",
+                          "blocked: needs", "workspace_invalid")
 
 RUN_STATES = {"blocked": "BLOCKED", "todo": "TODO", "review": "REVIEW",
               "running": "RUNNING", "in_progress": "RUNNING"}
@@ -77,6 +78,17 @@ def _review_scope_key(title: str) -> str:
     return "-".join(words) or title.lower()[:20]
 
 
+def _is_git_workspace(path: str) -> bool:
+    workspace = Path(path)
+    if not workspace.is_dir():
+        return False
+    return subprocess.run(
+        ["git", "-C", str(workspace), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        timeout=5,
+    ).returncode == 0
+
+
 def main() -> None:
     if not DB.exists():
         print("NO BOARD")
@@ -88,8 +100,8 @@ def main() -> None:
 
     tasks = conn.execute(
         "SELECT id, title, status, assignee, skills, created_at, started_at, "
-        "last_heartbeat_at FROM tasks "
-        "WHERE status IN ('blocked','todo','review','running','in_progress')"
+        "last_heartbeat_at, workspace_path, last_failure_error FROM tasks "
+        "WHERE status IN ('ready','blocked','todo','review','running','in_progress')"
     ).fetchall()
 
     review_cards: dict[str, list] = {}
@@ -153,6 +165,17 @@ def main() -> None:
     for t in tasks:
         tid, title = t["id"], (t["title"] or "")[:60]
         assignee, status = t["assignee"], t["status"]
+
+        workspace_error = (t["last_failure_error"] or "").lower()
+        workspace = t["workspace_path"]
+        if status == "ready" and (
+            "not inside a git repo" in workspace_error
+            or (workspace and not _is_git_workspace(workspace))
+        ):
+            findings.append(
+                f"WORKSPACE_INVALID · {tid} · ready card workspace is not a Git root · {title}"
+            )
+            continue
 
         if status == "todo" and not assignee:
             age_h = (now - (t["created_at"] or now)) / 3600
