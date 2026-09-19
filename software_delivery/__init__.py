@@ -116,6 +116,30 @@ def _noop_setup(parser) -> None:
     return None
 
 
+def _workflow_source_status() -> str:
+    """Compare the local plugin checkout against origin/main. Never raises."""
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if head.returncode != 0:
+            return "workflow source: unknown (not a git checkout)"
+        local = head.stdout.strip()
+        remote = subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "ls-remote", "origin", "main"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if remote.returncode != 0 or not remote.stdout.strip():
+            return f"workflow source: {local[:12]} (update check skipped — offline)"
+        remote_sha = remote.stdout.split()[0]
+        if local == remote_sha:
+            return f"workflow source: {local[:12]} (up to date)"
+        return f"workflow source: {local[:12]} (behind origin/main → git pull && ./install.sh)"
+    except (OSError, subprocess.TimeoutExpired):
+        return "workflow source: unknown (update check skipped — git unavailable)"
+
+
 def _doctor_command(args) -> str:
     status = [
         f"software-delivery plugin: {_REPO_ROOT}",
@@ -127,6 +151,7 @@ def _doctor_command(args) -> str:
         capture_output=True, text=True, timeout=300,
     )
     status.append(policy.stdout.strip())
+    status.append(_workflow_source_status())
     return "\n".join(status)
 
 
