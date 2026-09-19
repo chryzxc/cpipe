@@ -31,3 +31,4 @@ packages = ["software_delivery"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["."]

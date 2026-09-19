@@ -15,15 +15,15 @@
 
 ## Why
 
-Ungoverned agents ship fast and break trust: work stalls silently, "done" means "the model said so," parallel tasks collide, and you end up re-reviewing everything anyway. This workflow fixes the failure modes instead of the symptoms:
+Ungoverned agents ship fast and break trust. Every failure mode below was hit for real — either in unmanaged agent teams or in earlier iterations of this very workflow (pre-0.2 the supervisor could not see invalid `ready` workspaces, and status checks ran foreground `sleep` polling) — and each row names the mechanism that now prevents it:
 
 | Failure mode | What this repo does about it |
 |---|---|
-| Promised parallelism runs serialized | Coordinator reads real engine caps and reports the actual wave plan |
-| Stalled cards wait until you ask | Supervisor cron detects stalls, wakes the coordinator, self-heals |
+| Promised parallelism runs serialized | Coordinator reads live engine caps and reports the actual wave plan |
+| Stalled cards wait until you ask | Supervisor cron detects invalid workspaces, dead workers, aging queues, undispatched reviews, and parked verdicts — blocks, wakes the coordinator, self-heals |
 | "TDD" that is test-after | RED evidence required *before* implementation; mutation checks prove tests bite |
 | Reviews drift with the branch | Gates review a frozen SHA; base movement invalidates evidence |
-| `done` claims you have to re-verify | Every card carries a verification matrix re-run independently by the QA role |
+| `done` claims you have to re-verify | Acceptance criteria are re-run independently by the Verifier role on the frozen state; a new head invalidates prior evidence |
 | Skills drift across profiles | Single source of truth via symlinks — structurally impossible |
 
 ## The flow
@@ -44,7 +44,7 @@ issue ──► clarify ──► explore ──► plan ──► parallel TDD 
 | 3 | **Plan** | Implementation plan with frozen interfaces, SHA256-locked to the card | Plan file + hash (MED/HIGH) | Plan locked; amendments supersede |
 | 4 | **Parallel TDD** | Implementer instances in per-issue worktrees: RED → IMPLEMENTING → GREEN → REGRESSION | RED line before implementation | RED evidence exists |
 | 5 | **Refactor** | Simplification findings become their own card — never mixed with behavior | Separate simplify card | Zero behavior change |
-| 6 | **Gates** | Independent review of the frozen SHA: diff review, matrix reproduction, security when triggered | Complete evidence block | Most severe verdict wins |
+| 6 | **Gates** | Independent review of the frozen SHA: diff review, criteria re-run, security when triggered | Complete evidence block | Most severe verdict wins |
 | 7 | **PR** | Draft PR generated from verified evidence; approvals batched per wave | PR with evidence block | Your one `ship N / hold N` reply |
 | 8 | **Learning** | Weekly digest: flow metrics, gate effectiveness, finding classes → standards amendments | Weekly digest | You approve drafts only |
 
@@ -57,7 +57,7 @@ Not every change earns the same process. The intake tier decides:
 | Trigger | ≤2 files, no contract change, existing coverage | behavior or UI change | schema/API/security boundary |
 | Plan | inline mini-plan | file + SHA lock | + adversarial interrogation |
 | Review | same-card reviewer (one-shot) | dispatched review | reviewer + QA + security in parallel |
-| Matrix reproduction | implementer's block + diff check | QA re-runs criteria | + mutation check |
+| Independent criteria re-run | implementer's block + diff check | QA re-runs criteria | + mutation check |
 
 LOW cards — the majority of small issues — touch ~3 roles in ~2 sessions. **You review evidence, not code.**
 
@@ -139,7 +139,8 @@ The weekly digest reports per-stage wall-clock, queue waits, gate rejection rate
 
 ## Safety model
 
-- Read-only with respect to repositories and Hermes state; tools report facts and evidence
+- Read-only with respect to repositories and Hermes state; the three plugin tools report facts and evidence
+- The supervisor cron is the one exception inside Hermes state: it may modify Kanban cards and copy missing skills to a profile — nothing else; repositories remain untouched
 - Human approval gates are unchanged and always yours: merge, deploy, production, credentials, purchases, publishing, irreversible deletion
 - `delivery_mutation_check` mutates only a disposable git worktree file and restores it
 - The engine install (`~/.hermes/hermes-agent`) is never modified — everything lives in the user-state layer and survives `hermes update`
