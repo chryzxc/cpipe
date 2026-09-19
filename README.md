@@ -13,6 +13,10 @@
 
 ---
 
+## The idea in one paragraph
+
+This workflow is a **composition of established engineering paradigms**, not a pile of prompts. **Task-graph (DAG) engineering** decomposes issues into dependency-aware nodes that execute in parallel waves. **Loop engineering** nests four closed feedback loops — the RED→GREEN TDD loop inside a card, the implement→review→rework loop across cards, the supervisor's sense→act loop every 15 minutes, and the weekly learning loop that writes the rulebook. **Evidence-based gating** makes every claim fail-closed and machine-verifiable, **risk-tiered ceremony** scales process weight to blast radius, and **policy-as-code** keeps deterministic checks out of the LLM path. Together they turn a set of AI profiles into a delivery team whose output you can trust without reading every diff.
+
 ## What this workflow solves
 
 AI teams move fast; trusting what they ship is the hard part. This workflow turns every delivery claim into something you can verify:
