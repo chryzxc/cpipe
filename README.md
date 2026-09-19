@@ -15,12 +15,11 @@
 
 ## Why
 
-Ungoverned agents ship fast and break trust. Every failure mode below was hit for real — either in unmanaged agent teams or in earlier iterations of this very workflow (pre-0.2 the supervisor could not see invalid `ready` workspaces, and status checks ran foreground `sleep` polling) — and each row names the mechanism that now prevents it:
+Ungoverned agents ship fast and break trust: "done" means "the model said so," parallel tasks collide, and you end up re-reviewing everything anyway. This workflow fixes the failure modes instead of the symptoms:
 
 | Failure mode | What this repo does about it |
 |---|---|
 | Promised parallelism runs serialized | Coordinator reads live engine caps and reports the actual wave plan |
-| Stalled cards wait until you ask | Supervisor cron detects invalid workspaces, dead workers, aging queues, undispatched reviews, and parked verdicts — blocks, wakes the coordinator, self-heals |
 | "TDD" that is test-after | RED evidence required *before* implementation; mutation checks prove tests bite |
 | Reviews drift with the branch | Gates review a frozen SHA; base movement invalidates evidence |
 | `done` claims you have to re-verify | Acceptance criteria are re-run independently by the Verifier role on the frozen state; a new head invalidates prior evidence |
