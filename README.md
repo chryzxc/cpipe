@@ -7,6 +7,7 @@
 **A structured software-delivery workflow for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** Point it at your existing AI profiles and get a governed development team: issues are clarified, planned, implemented with TDD in parallel worktrees, independently reviewed on frozen commits, and delivered as evidence-backed pull requests — without you manually testing or reviewing each change.
 
 [![Install: one command](https://img.shields.io/badge/install-one%20command-238636)](#-quickstart)
+[![CI](https://github.com/chryzxc/hermes-software-delivery/actions/workflows/ci.yml/badge.svg)](https://github.com/chryzxc/hermes-software-delivery/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-8957e5)](LICENSE)
 [![Requires: Hermes Agent](https://img.shields.io/badge/requires-Hermes%20Agent-1f6feb)](https://github.com/NousResearch/hermes-agent)
 [![Profiles: bring your own](https://img.shields.io/badge/bots-bring%20your%20own-f0883e)](#-bring-your-own-bots)
@@ -161,7 +162,7 @@ The weekly digest reports per-stage wall-clock, queue waits, gate rejection rate
 
 **Can I use it on multiple machines?** Clone, `./install.sh`, done — same workflow everywhere.
 
-**Is there a CI badge?** The repo runs its plugin tests with pytest (`tests/`); CI integration is welcome as a contribution.
+**Is there a CI badge?** Yes — GitHub Actions runs the full pytest suite on every push and PR to `main`.
 
 ## Contributing
 
