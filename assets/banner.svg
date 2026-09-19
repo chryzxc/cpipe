@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="Hermes Delivery Workflow">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="Hermes Software Delivery">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#0d1117"/>
@@ -6,7 +6,7 @@
     </linearGradient>
   </defs>
   <rect width="1200" height="300" rx="12" fill="url(#bg)"/>
-  <text x="60" y="86" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="40" font-weight="700" fill="#f0f6fc">Hermes Delivery Workflow</text>
+  <text x="60" y="86" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="40" font-weight="700" fill="#f0f6fc">Hermes Software Delivery</text>
   <text x="60" y="130" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="20" fill="#8b949e">One plugin that turns your AI profiles into a governed software team.</text>
   <g font-family="SF Mono,Menlo,Consolas,monospace" font-size="17" font-weight="600">
     <rect x="60" y="178" width="112" height="44" rx="22" fill="#1f6feb" opacity="0.25"/>

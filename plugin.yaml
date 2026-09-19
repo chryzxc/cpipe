@@ -1,10 +1,10 @@
-name: delivery-workflow
+name: software-delivery
 version: 0.2.0
 manifest_version: 2
 api_version: 1
-description: Single-plugin software delivery workflow for Hermes Agent — orchestration policy skills, deterministic gate tools, board intelligence, and housekeeping, installed from one repo.
+description: Single-plugin software delivery system for Hermes Agent — orchestration policy skills, deterministic gate tools, board intelligence, and housekeeping, installed from one repo.
 license: MIT
-homepage: https://github.com/chryzxc/hermes-delivery-workflow
+homepage: https://github.com/chryzxc/hermes-software-delivery
 tags: [delivery, workflow, verification, code-review, qa, kanban, orchestration]
 hooks:
   - on_session_end

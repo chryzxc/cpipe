@@ -1,6 +1,6 @@
 import json
 
-from delivery_workflow import register
+from software_delivery import register
 
 
 class RecordingContext:
@@ -37,19 +37,19 @@ def test_registers_doctor_cli_and_session_hook():
 
     register(context)
 
-    assert context.cli_commands == ['delivery-workflow']
+    assert context.cli_commands == ['software-delivery']
     assert [h[0] for h in context.hooks] == ['on_session_end']
 
 
 def test_mutation_tool_schema_requires_worktree():
-    from delivery_workflow import _MUTATION_SCHEMA
+    from software_delivery import _MUTATION_SCHEMA
 
     required = _MUTATION_SCHEMA['function']['parameters']['required']
     assert required == ['worktree', 'file_path', 'test_filter']
 
 
 def test_session_end_hook_appends_jsonl(tmp_path, monkeypatch):
-    import delivery_workflow as plugin
+    import software_delivery as plugin
 
     monkeypatch.setattr(plugin, '_METRICS_LOG', tmp_path / 'metrics.jsonl')
     plugin._on_session_end(profile='forge', session_id='s1', duration=None)

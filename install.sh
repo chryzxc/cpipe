@@ -8,12 +8,13 @@ SCRIPTS_SRC="$REPO/workflow/scripts"
 HERMES_BIN="$(command -v hermes || true)"
 [ -n "$HERMES_BIN" ] || HERMES_BIN="$H/hermes-agent/venv/bin/hermes"
 
-echo "== delivery-workflow install =="
+echo "== software-delivery install =="
 echo "repo: $REPO"
 
 echo "-- 1/8 plugin placement"
 mkdir -p "$H/plugins"
-ln -sfn "$REPO" "$H/plugins/delivery-workflow"
+rm -f "$H/plugins/delivery-workflow"
+ln -sfn "$REPO" "$H/plugins/software-delivery"
 
 echo "-- 2/8 roster (role -> profile mapping)"
 python3 "$SCRIPTS_SRC/setup_roster.py" "$@" || echo "   roster not configured yet — rerun: ./install.sh --roster coordinator=<profile> implementer=<profile> reviewer=<profile> verifier=<profile> security_reviewer=<profile>"
@@ -57,11 +58,15 @@ python3 "$SCRIPTS_SRC/assert_config.py" "$REPO/workflow/config.assertions.yaml" 
 
 echo "-- 8/8 enable plugin"
 if [ -x "$HERMES_BIN" ]; then
-  "$HERMES_BIN" plugins enable delivery-workflow </dev/null >/dev/null 2>&1 \
+  "$HERMES_BIN" plugins enable software-delivery </dev/null >/dev/null 2>&1 \
     && echo "   plugin enabled (takes effect on next session)" \
-    || echo "   could not auto-enable — run: hermes plugins enable delivery-workflow"
+    || echo "   could not auto-enable — run: hermes plugins enable software-delivery"
 else
-  echo "   hermes binary not found — run: hermes plugins enable delivery-workflow"
+  echo "   hermes binary not found — run: hermes plugins enable software-delivery"
+fi
+
+if [ -x "$HERMES_BIN" ]; then
+  "$HERMES_BIN" plugins disable delivery-workflow </dev/null >/dev/null 2>&1 || true
 fi
 
 python3 "$H/scripts/check_delivery_config.py" || true

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="Hermes Delivery Workflow — clarify → explore → plan → parallel TDD → gates → PR → learning">
+  <img src="assets/banner.svg" alt="Hermes Software Delivery — clarify → explore → plan → parallel TDD → gates → PR → learning">
 </p>
 
-# Hermes Delivery Workflow
+# Hermes Software Delivery
 
 **A structured software-delivery workflow for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** Point it at your existing AI profiles and get a governed development team: issues are clarified, planned, implemented with TDD in parallel worktrees, independently reviewed on frozen commits, and delivered as evidence-backed pull requests — without you manually testing or reviewing each change.
 
@@ -84,14 +84,14 @@ This isn't a pile of prompts — it's several established engineering paradigms 
 Requires a working [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) install with at least one profile (bot).
 
 ```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/chryzxc/hermes-delivery-workflow/main/bootstrap.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/chryzxc/hermes-software-delivery/main/bootstrap.sh)
 ```
 
 Answer **5 questions** mapping roles to your profiles (Enter accepts defaults; the rest auto-alias). Prefer flags?
 
 ```sh
-git clone https://github.com/chryzxc/hermes-delivery-workflow.git
-cd hermes-delivery-workflow
+git clone https://github.com/chryzxc/hermes-software-delivery.git
+cd hermes-software-delivery
 ./install.sh --roster coordinator=default implementer=forge reviewer=sentry verifier=sentinel security_reviewer=cypher
 ```
 
@@ -115,7 +115,7 @@ Works with 3 profiles or 13. Different team setups adopt the same workflow witho
 
 ```
 ├── plugin.yaml                  # native Hermes plugin manifest (v2)
-├── delivery_workflow/           # plugin: 3 agent tools + doctor CLI + metrics hook
+├── software_delivery/           # plugin: 3 agent tools + doctor CLI + metrics hook
 ├── workflow/
 │   ├── skills/                  # orchestrator policy skill + evidence/ADR/standards skills
 │   ├── scripts/                 # supervisor scan, warm-build, housekeeping, intelligence...
@@ -131,7 +131,7 @@ Works with 3 profiles or 13. Different team setups adopt the same workflow witho
 - `delivery_board_intelligence` — per-stage wall-clock, queue waits, gate rejection rates, rework loops
 - `delivery_mutation_check` — flips one condition in a disposable worktree and requires the focused test to fail
 
-Plus `hermes delivery-workflow` doctor CLI and an `on_session_end` metrics hook (append-only JSONL).
+Plus `hermes software-delivery` doctor CLI and an `on_session_end` metrics hook (append-only JSONL).
 
 ## The learning loop
 

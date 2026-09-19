@@ -1,8 +1,8 @@
-"""Hermes native-plugin entrypoint for Delivery Workflow."""
+"""Hermes native-plugin entrypoint for Software Delivery."""
 
 if __package__:
-    from .delivery_workflow import register
+    from .software_delivery import register
 else:  # pytest may import a hyphenated repository root without a package name.
-    from delivery_workflow import register
+    from software_delivery import register
 
 __all__ = ["register"]

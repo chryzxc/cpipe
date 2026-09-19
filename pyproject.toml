@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hermes-delivery-workflow"
+name = "hermes-software-delivery"
 version = "0.2.0"
-description = "Single-plugin software delivery workflow for Hermes Agent."
+description = "Single-plugin software delivery system for Hermes Agent."
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
@@ -26,7 +26,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["delivery_workflow"]
+packages = ["software_delivery"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

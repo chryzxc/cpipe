@@ -1,4 +1,4 @@
-"""Hermes Delivery Workflow native plugin.
+"""Hermes Software Delivery native plugin.
 
 Registers the deterministic delivery tools (policy check, board intelligence,
 mutation check), a doctor CLI command, and a passive session-metrics hook.
@@ -90,7 +90,7 @@ def _noop_setup(parser) -> None:
 
 def _doctor_command(args) -> str:
     status = [
-        f"delivery-workflow plugin: {_REPO_ROOT}",
+        f"software-delivery plugin: {_REPO_ROOT}",
         f"skills bundled: {len(list((_REPO_ROOT / 'workflow' / 'skills').iterdir()))}",
         f"scripts bundled: {len(list(_SCRIPTS.glob('*.py')))}",
     ]
@@ -141,22 +141,22 @@ _MUTATION_SCHEMA = {
 def register(ctx):
     """Register deterministic delivery tools, doctor CLI, and metrics hook."""
     ctx.register_tool(
-        name="delivery_check_policy", toolset="delivery_workflow",
+        name="delivery_check_policy", toolset="software_delivery",
         schema=_POLICY_SCHEMA, handler=lambda args, **kw: _check_policy(),
     )
     ctx.register_tool(
-        name="delivery_board_intelligence", toolset="delivery_workflow",
+        name="delivery_board_intelligence", toolset="software_delivery",
         schema=_INTEL_SCHEMA, handler=lambda args, **kw: _board_intelligence(),
     )
     ctx.register_tool(
-        name="delivery_mutation_check", toolset="delivery_workflow",
+        name="delivery_mutation_check", toolset="software_delivery",
         schema=_MUTATION_SCHEMA,
         handler=lambda args, **kw: _mutation_check(
             worktree=args["worktree"], file_path=args["file_path"], test_filter=args["test_filter"]),
     )
     ctx.register_cli_command(
-        name="delivery-workflow", help="Delivery workflow plugin doctor",
+        name="software-delivery", help="Software delivery plugin doctor",
         setup_fn=_noop_setup, handler_fn=lambda args: _doctor_command(args),
-        description="Check delivery-workflow plugin status and run the policy validator.",
+        description="Check software-delivery plugin status and run the policy validator.",
     )
     ctx.register_hook("on_session_end", _on_session_end)
