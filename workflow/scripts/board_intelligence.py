@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Weekly board intelligence digest. Deterministic, no LLM."""
+import os
 import json
 import sqlite3
 import time

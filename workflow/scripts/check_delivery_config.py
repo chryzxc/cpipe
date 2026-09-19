@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Deterministic delivery-config validator. Exit 1 on any failure."""
+import os
 import re, sqlite3, subprocess, sys
 from pathlib import Path
 

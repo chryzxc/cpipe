@@ -7,6 +7,7 @@ Non-interactive when --roster covers the required roles; otherwise prompts
 with defaults derived from existing profiles. Remaining optional roles are
 filled with sensible aliases so the workflow works immediately.
 """
+import os
 import argparse
 import sys
 from pathlib import Path

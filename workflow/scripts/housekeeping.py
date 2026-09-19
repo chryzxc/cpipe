@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Weekly housekeeping: process cleanup, worktree GC, card archival,
 log/cache retention, WAL checkpoint, skill drift report. Deterministic."""
+import os
 import hashlib, sqlite3, subprocess, time
 from pathlib import Path
 
