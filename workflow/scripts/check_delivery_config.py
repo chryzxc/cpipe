@@ -47,20 +47,21 @@ for role, profile in roster.items():
     if profile and not (H / 'profiles' / str(profile)).is_dir():
         errors.append(f'roster: role {role} -> profile {profile} not found in ~/.hermes/profiles')
 
-conn = sqlite3.connect(f"file:{H/'kanban.db'}?mode=ro", uri=True)
-rows = conn.execute("SELECT id, skills, body, max_runtime_seconds FROM tasks WHERE status IN ('todo','ready')").fetchall()
-for tid, skills, body, maxrt in rows:
-    if body and 'token_budget' not in body:
-        errors.append(f'card {tid}: missing token_budget')
-    if maxrt and maxrt > 1800:
-        errors.append(f'card {tid}: max_runtime {maxrt}s exceeds 30min ceiling')
-    for s in (skills or '[]').replace('[','').replace(']','').replace('"','').split(','):
-        s = s.strip()
-        if not s:
-            continue
-        if not (H / 'skills' / s).is_dir() and not any((c / s).is_dir() for c in (H / 'skills').iterdir() if c.is_dir()):
-            errors.append(f'card {tid}: skill {s} not in global catalog')
-conn.close()
+if (H / 'kanban.db').is_file():
+    conn = sqlite3.connect(f"file:{H/'kanban.db'}?mode=ro", uri=True)
+    rows = conn.execute("SELECT id, skills, body, max_runtime_seconds FROM tasks WHERE status IN ('todo','ready')").fetchall()
+    for tid, skills, body, maxrt in rows:
+        if body and 'token_budget' not in body:
+            errors.append(f'card {tid}: missing token_budget')
+        if maxrt and maxrt > 1800:
+            errors.append(f'card {tid}: max_runtime {maxrt}s exceeds 30min ceiling')
+        for s in (skills or '[]').replace('[','').replace(']','').replace('"','').split(','):
+            s = s.strip()
+            if not s:
+                continue
+            if not (H / 'skills' / s).is_dir() and not any((c / s).is_dir() for c in (H / 'skills').iterdir() if c.is_dir()):
+                errors.append(f'card {tid}: skill {s} not in global catalog')
+    conn.close()
 
 print('CONFIG CHECK OK' if not errors else 'CONFIG CHECK FAILURES:\n' + '\n'.join(errors))
 sys.exit(1 if errors else 0)
