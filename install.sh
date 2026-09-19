@@ -5,22 +5,20 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 H="${HERMES_HOME:-$HOME/.hermes}"
 SKILLS_SRC="$REPO/workflow/skills"
 SCRIPTS_SRC="$REPO/workflow/scripts"
+HERMES_BIN="$(command -v hermes || true)"
+[ -n "$HERMES_BIN" ] || HERMES_BIN="$H/hermes-agent/venv/bin/hermes"
 
 echo "== delivery-workflow install =="
 echo "repo: $REPO"
 
-echo "-- 1/6 plugin placement"
+echo "-- 1/8 plugin placement"
 mkdir -p "$H/plugins"
 ln -sfn "$REPO" "$H/plugins/delivery-workflow"
 
-if [ -f "$REPO/workflow/roster.yaml" ]; then
-  cp "$REPO/workflow/roster.yaml" "$H/roster.yaml"
-elif [ ! -f "$H/roster.yaml" ]; then
-  cp "$REPO/workflow/roster.example.yaml" "$H/roster.yaml"
-  echo "   NOTE: created ~/.hermes/roster.yaml from the example — edit it to map roles to YOUR profiles"
-fi
+echo "-- 2/8 roster (role -> profile mapping)"
+python3 "$SCRIPTS_SRC/setup_roster.py" "$@" || echo "   roster not configured yet — rerun: ./install.sh --roster coordinator=<profile> implementer=<profile> reviewer=<profile> verifier=<profile> security_reviewer=<profile>"
 
-echo "-- 2/6 global skills (symlinks)"
+echo "-- 3/8 global skills (symlinks)"
 for dir in "$SKILLS_SRC"/*/; do
   name="$(basename "$dir")"
   case "$name" in my-*) ;; *) continue ;; esac
@@ -28,7 +26,7 @@ for dir in "$SKILLS_SRC"/*/; do
   ln -sfn "$SKILLS_SRC/$name" "$H/skills/$name"
 done
 
-echo "-- 3/6 profile skill fan-out (symlinks)"
+echo "-- 4/8 profile skill fan-out (symlinks)"
 count=0
 while IFS= read -r d; do
   name="$(basename "$d")"
@@ -39,69 +37,27 @@ while IFS= read -r d; do
 done < <(find "$H/profiles" -maxdepth 3 -name "my-*" \( -type d -o -type l \) 2>/dev/null)
 echo "   profile links: $count"
 
-echo "-- 4/6 scripts (copies; cron requires resolution inside $H/scripts)"
+echo "-- 5/8 scripts (copies; cron requires resolution inside $H/scripts)"
 mkdir -p "$H/scripts"
 for f in "$SCRIPTS_SRC"/*.py; do
   cp "$f" "$H/scripts/$(basename "$f")"
   chmod +x "$H/scripts/$(basename "$f")"
 done
 
-echo "-- 5/6 cron job definitions"
-python3 - "$REPO/workflow/cron.jobs.json" "$H/cron/jobs.json" << 'PYEOF'
-import json, sys
+echo "-- 6/8 cron job definitions"
+python3 "$SCRIPTS_SRC/merge_cron_jobs.py" "$REPO/workflow/cron.jobs.json" "$H/cron/jobs.json"
 
-defs_path, live_path = sys.argv[1], sys.argv[2]
-defs = json.load(open(defs_path))
-live = json.load(open(live_path))
-jobs = live if isinstance(live, list) else live.setdefault('jobs', live.get('jobs', []))
-OWNED = {'prompt', 'script', 'no_agent', 'monitor_script', 'model', 'provider',
-         'schedule', 'enabled', 'deliver'}
-existing = {j.get('name'): j for j in jobs}
-for d in defs:
-    j = existing.get(d['name'])
-    if j is None:
-        jobs.append(dict(d))
-        print(f"   added: {d['name']}")
-    else:
-        changed = [k for k in OWNED if k in d and j.get(k) != d[k]]
-        for k in changed:
-            j[k] = d[k]
-        print(f"   updated: {d['name']}" + (f" ({', '.join(changed)})" if changed else " (in sync)"))
-json.dump(live, open(live_path, 'w'), indent=2, ensure_ascii=False)
-PYEOF
+echo "-- 7/8 config assertions"
+python3 "$SCRIPTS_SRC/assert_config.py" "$REPO/workflow/config.assertions.yaml" "$H/config.yaml"
 
-echo "-- 6/6 config assertions + policy check"
-python3 - "$REPO/workflow/config.assertions.yaml" "$H/config.yaml" << 'PYEOF'
-import re, sys
-
-
-def flat_section(path, section):
-    found, current = {}, None
-    for line in open(path):
-        if not line.strip() or line.lstrip().startswith('#'):
-            continue
-        if not line[:1].isspace() and line.rstrip().endswith(':'):
-            current = line.strip()[:-1]
-            continue
-        m = re.match(r'\s*([\w-]+):\s*(\S+)', line)
-        if m and current == section:
-            found[m.group(1)] = m.group(2)
-    return found
-
-
-expected = flat_section(sys.argv[1], 'kanban')
-text = open(sys.argv[2]).read()
-drift = []
-for key, want in expected.items():
-    m = re.search(rf'^\s*{re.escape(key)}:\s*(\d+)\s*$', text, re.M)
-    got = int(m.group(1)) if m else None
-    if got != int(want):
-        drift.append(f"kanban.{key}: expected {want}, found {got}")
-if drift:
-    print("CONFIG DRIFT:\n" + "\n".join('  - ' + d for d in drift))
-    sys.exit(1)
-print("config assertions OK")
-PYEOF
+echo "-- 8/8 enable plugin"
+if [ -x "$HERMES_BIN" ]; then
+  "$HERMES_BIN" plugins enable delivery-workflow </dev/null >/dev/null 2>&1 \
+    && echo "   plugin enabled (takes effect on next session)" \
+    || echo "   could not auto-enable — run: hermes plugins enable delivery-workflow"
+else
+  echo "   hermes binary not found — run: hermes plugins enable delivery-workflow"
+fi
 
 python3 "$H/scripts/check_delivery_config.py" || true
 echo "== install complete =="

@@ -84,13 +84,19 @@ This repo contains **no bot names**. Every participant is a role — Coordinator
 
 Plus `hermes delivery-workflow` doctor CLI and an `on_session_end` metrics hook (append-only JSONL).
 
-## Install / update
+## Install / update — one command
+
+Any machine with Hermes installed:
 
 ```sh
-git clone https://github.com/chryzxc/hermes-delivery-workflow.git
-cd hermes-delivery-workflow
-./install.sh
-hermes plugins enable delivery-workflow
+bash <(curl -fsSL https://raw.githubusercontent.com/chryzxc/hermes-delivery-workflow/main/bootstrap.sh)
+```
+
+That clones (or updates) the repo, installs everything, and enables the plugin. On first run you answer **5 quick questions** mapping roles to your profiles (coordinator, implementer, reviewer, verifier, security-reviewer) — Enter accepts defaults, everything else is auto-aliased. Prefer flags or have all 13 specialists? Skip the prompts:
+
+```sh
+./install.sh --roster coordinator=default implementer=forge reviewer=sentry verifier=sentinel security_reviewer=cypher
+# or the full 13-role form — rerun with --force anytime to redo
 ```
 
 Update on any machine:
@@ -99,7 +105,7 @@ Update on any machine:
 git pull && ./install.sh
 ```
 
-`install.sh` is idempotent: symlinks skills into `~/.hermes/skills` and every profile tree, copies scripts into `~/.hermes/scripts` (cron requires resolution inside that dir), merges cron job definitions by name (never touches engine-owned runtime fields), and asserts `config.yaml` matches `config.assertions.yaml`.
+`install.sh` is idempotent and self-contained: symlinks skills into `~/.hermes/skills` and every profile tree, copies scripts into `~/.hermes/scripts` (cron requires resolution inside that dir), merges cron job definitions by name (never touches engine-owned runtime fields), asserts `config.yaml` matches `config.assertions.yaml`, sets up `~/.hermes/roster.yaml`, and enables the plugin.
 
 ## Why symlinks for skills
 
