@@ -20,11 +20,24 @@ swarm = re.search(r'max (\d+) concurrent forge workers', TEAM)
 if swarm and per_profile and int(swarm.group(1)) != per_profile:
     errors.append(f'drift: team-config swarm cap {swarm.group(1)} != engine per-profile cap {per_profile}')
 
+def _flat_section(path, section):
+    found, current = {}, None
+    for line in Path(path).read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        if not line[:1].isspace() and line.rstrip().endswith(':'):
+            current = line.strip()[:-1]
+            continue
+        m = re.match(r'\s*([\w-]+):\s*(\S+)', line)
+        if m and current == section:
+            found[m.group(1)] = m.group(2)
+    return found
+
+
 roster = {}
 roster_path = H / 'roster.yaml'
 if roster_path.is_file():
-    import yaml as _yaml
-    roster = _yaml.safe_load(roster_path.read_text()).get('roles', {})
+    roster = _flat_section(roster_path, 'roles')
 team_roles = set(re.findall(r'^\s{2}(\w+):\s*\{mission:', TEAM, re.M))
 for role in team_roles:
     if roster and role not in roster:

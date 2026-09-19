@@ -72,15 +72,30 @@ PYEOF
 
 echo "-- 6/6 config assertions + policy check"
 python3 - "$REPO/workflow/config.assertions.yaml" "$H/config.yaml" << 'PYEOF'
-import re, sys, yaml
+import re, sys
 
-expected = yaml.safe_load(open(sys.argv[1]))
+
+def flat_section(path, section):
+    found, current = {}, None
+    for line in open(path):
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        if not line[:1].isspace() and line.rstrip().endswith(':'):
+            current = line.strip()[:-1]
+            continue
+        m = re.match(r'\s*([\w-]+):\s*(\S+)', line)
+        if m and current == section:
+            found[m.group(1)] = m.group(2)
+    return found
+
+
+expected = flat_section(sys.argv[1], 'kanban')
 text = open(sys.argv[2]).read()
 drift = []
-for key, want in expected.get('kanban', {}).items():
-    m = re.search(rf'^\s*{key}:\s*(\d+)\s*$', text, re.M)
+for key, want in expected.items():
+    m = re.search(rf'^\s*{re.escape(key)}:\s*(\d+)\s*$', text, re.M)
     got = int(m.group(1)) if m else None
-    if got != want:
+    if got != int(want):
         drift.append(f"kanban.{key}: expected {want}, found {got}")
 if drift:
     print("CONFIG DRIFT:\n" + "\n".join('  - ' + d for d in drift))
