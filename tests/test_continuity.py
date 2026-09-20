@@ -190,6 +190,19 @@ def test_orphaned_chain_deduped_by_wake_marker(tmp_path, monkeypatch, capsys):
     conn.close()
 
 
+def test_orphan_wake_before_current_completion_does_not_suppress(tmp_path, monkeypatch, capsys):
+    conn = scanner(tmp_path, monkeypatch)
+    done_at = time.time() - 1800
+    add_card(conn, "reopened", "done", completed_at=done_at)
+    add_comment(conn, "reopened", "orphan_wake: previous completion", created_at=done_at - 60)
+    conn.commit()
+
+    output = run_scan(monkeypatch, capsys)
+
+    assert "ORPHANED_CHAIN · reopened" in output
+    conn.close()
+
+
 def test_pr_pending_deduped_by_marker_comment(tmp_path, monkeypatch, capsys):
     conn = scanner(tmp_path, monkeypatch)
     done_at = time.time() - 1800
@@ -204,6 +217,23 @@ def test_pr_pending_deduped_by_marker_comment(tmp_path, monkeypatch, capsys):
     output = run_scan(monkeypatch, capsys)
 
     assert "PR_PENDING · noted" not in output
+    conn.close()
+
+
+def test_pr_pending_before_current_completion_does_not_suppress(tmp_path, monkeypatch, capsys):
+    conn = scanner(tmp_path, monkeypatch)
+    done_at = time.time() - 1800
+    add_card(conn, "reopened", "done", completed_at=done_at)
+    add_comment(
+        conn, "reopened",
+        "CONTINUATION: final report · evidence: rev-004 approved",
+        created_at=done_at + 60)
+    add_comment(conn, "reopened", "pr_pending: previous completion", created_at=done_at - 60)
+    conn.commit()
+
+    output = run_scan(monkeypatch, capsys)
+
+    assert "PR_PENDING · reopened" in output
     conn.close()
 
 

@@ -292,8 +292,8 @@ def main() -> None:
         "ORDER BY completed_at DESC", (now - ORPHANED_CHAIN_WINDOW_HOURS * 3600,)).fetchall()
     for t in recent_done:
         waked = conn.execute(
-            "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%orphan_wake%' LIMIT 1",
-            (t["id"],)).fetchone()
+            "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%orphan_wake%' "
+            "AND created_at >= ? LIMIT 1", (t["id"], t["completed_at"])).fetchone()
         continuation = conn.execute(
             "SELECT body FROM task_comments WHERE task_id=? AND body LIKE 'CONTINUATION:%' "
             "AND created_at >= ? ORDER BY id DESC LIMIT 1", (t["id"], t["completed_at"])).fetchone()
@@ -304,8 +304,8 @@ def main() -> None:
                     f"{(t['title'] or '')[:60]}")
             continue
         marker = conn.execute(
-            "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%pr_pending%' LIMIT 1",
-            (t["id"],)).fetchone()
+            "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%pr_pending%' "
+            "AND created_at >= ? LIMIT 1", (t["id"], t["completed_at"])).fetchone()
         marker_text = (continuation["body"] or "").lower()
         if ("final report" in marker_text or "promote gate" in marker_text) \
                 and not marker \
