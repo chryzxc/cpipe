@@ -2,6 +2,12 @@
 
 Operational rules for cutting wall-clock time without raising token spend. Declarative mirror: `team-config.yaml` (`parallelism`, `token_policy`). Recipes: `route-recipes.md`.
 
+## Parallel by default
+
+1. Decomposition rule: intake and plan output is scanned for independent slices — distinct modules, zero shared files per card, disjoint write allowlists — and emitted as one wave immediately, with the caps-derived wave plan stated in the creation report. Never wait for the operator to request parallelism.
+2. Serial exceptions (each requires a written reason on the card): dependency chains (a later card consumes an earlier card's output), same-module collisions (batch into one session instead), or risk-tier HIGH serialization (adversarial plan before any wave).
+3. Cross-check guards: engine caps bound the wave; `CAPACITY_HOLD` requeues invented capacity blocks; `REWORK_LOOP` escalates thrashing cards; same-module batching (max 3, one frozen commit per card) amortizes session startup.
+
 ## Parallel independent gates
 
 1. Preconditions: one frozen SHA, all three gates actually triggered by the task brief, each gate has its own Kanban review card with the same frozen handoff metadata.

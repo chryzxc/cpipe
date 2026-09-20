@@ -24,7 +24,7 @@ AI teams move fast; trusting what they ship is the hard part. This workflow turn
 
 | You get | How it works |
 |---|---|
-| Parallelism you can trust | Wave plans are computed from the engine's live concurrency caps — what's promised is what runs |
+| Parallelism you can trust | Independent slices run as parallel waves by default — wave plans computed from the engine's live caps, so what's promised is what runs |
 | TDD by construction | RED evidence is required *before* implementation; mutation checks prove the tests bite |
 | Reviews that can't drift | Gates review a frozen SHA; any base or head movement invalidates prior evidence |
 | `done` means proven | Acceptance criteria are re-run independently by the Verifier role on the frozen state |
@@ -80,7 +80,7 @@ This isn't a pile of prompts — it's several established engineering paradigms 
 | **Autonomic operation** | A deterministic supervisor keeps the board healthy on its own schedule — reclaims dead claims, refreshes queues, and routes cards that need a decision to the coordinator. |
 | **Evidence-based gating (fail-closed)** | Nothing passes without machine-verifiable evidence: criteria re-run independently, frozen-SHA review, hash-locked plans, mutation checks. Missing evidence is a blocker, never a pass. |
 | **Risk-tiered adaptive ceremony** | Process weight scales with blast radius — LOW/MED/HIGH tiers decided at intake from the brief's own fields, so small changes move fast and dangerous ones earn full scrutiny. |
-| **Pipelined parallelism** | Reviews of one wave overlap implementation of the next; same-module cards batch into one session to amortize boot cost. Parallelism comes from *instantiation* of roles, not from more bots. |
+| **Pipelined parallelism** | Independent slices decompose into parallel waves by default — no prompt needed; reviews of one wave overlap implementation of the next; same-module cards batch into one session to amortize boot cost. Parallelism comes from *instantiation* of roles, not from more bots. |
 | **Pull system with WIP limits (Kanban)** | Per-profile concurrency caps, queue signals, and wave plans computed from live engine caps — never from wishful policy numbers. |
 | **Deterministic-first / policy as code** | Anything expressible as a script runs without an LLM (validators, metrics, mutation checks, housekeeping); config assertions fail loudly on drift; declarative policy mirrors are validated against engine reality. |
 | **Role-based least authority** | Authority ceilings attach to roles and cards; no skill, card, or model can expand them. Human approval gates (merge, deploy, credentials...) are structural, not conventional. |
