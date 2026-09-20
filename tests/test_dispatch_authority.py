@@ -28,7 +28,7 @@ def scanner(tmp_path, monkeypatch, config=CONFIG):
         );
         CREATE TABLE task_comments (id INTEGER PRIMARY KEY, task_id TEXT, body TEXT, created_at REAL);
         CREATE TABLE task_events (id INTEGER PRIMARY KEY, task_id TEXT, kind TEXT, payload TEXT, created_at REAL);
-        CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, ended_at REAL, claim_expires REAL);
+        CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, outcome TEXT, ended_at REAL, claim_expires REAL);
     """)
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     return conn, hermes_home

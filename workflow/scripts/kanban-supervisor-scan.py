@@ -34,6 +34,7 @@ COORDINATOR_WAKE_MINUTES = 15
 HEARTBEAT_STALE_MINUTES = 5
 WORKSPACE_CHECK_CAP = 32
 WORKSPACE_CHECK_WORKERS = 8
+REWORK_LOOP_THRESHOLD = 4
 CAPACITY_BLOCK_RE = re.compile(
     r"active[- ]worker cap\b|dispatch[-_]blocked\b|at capacity\b|"
     r"profile is busy|capacity is (?:full|exhausted|at)",
@@ -215,6 +216,22 @@ def main() -> None:
             findings.append(
                 f"CAPACITY_HOLD · {t['id']} · blocked on claimed capacity but {running} running "
                 f"< cap {cap} · {(t['title'] or '')[:60]}")
+
+    for t in tasks:
+        if t["status"] not in ("ready", "review", "running", "in_progress"):
+            continue
+        cycles = conn.execute(
+            "SELECT COUNT(*) AS c FROM task_runs WHERE task_id=? AND outcome='changes_requested'",
+            (t["id"],)).fetchone()["c"]
+        if cycles < REWORK_LOOP_THRESHOLD:
+            continue
+        nudged = conn.execute(
+            "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%rework_loop%' LIMIT 1",
+            (t["id"],)).fetchone()
+        if nudged:
+            continue
+        findings.append(
+            f"REWORK_LOOP · {t['id']} · {cycles} review cycles without completion · {(t['title'] or '')[:60]}")
 
     ready_paths = [t["workspace_path"] for t in tasks
                    if t["status"] == "ready" and t["workspace_path"]]

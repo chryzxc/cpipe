@@ -166,6 +166,12 @@ verification: focused and broad checks
 
 Invalid findings include “not best practice,” file length without maintenance evidence, taste contradicted by local convention, unconditional demands for enums/constants/interfaces/factories, extracting every literal, speculative extensibility, unrelated legacy cleanup, or rewrite preference without a smaller repair direction.
 
+## Review-cycle contract
+
+- **Pass-one exhaustiveness:** the first `REQUEST_CHANGES` on a frozen range enumerates every observed finding in one verdict, numbered `REV-001…N` / `MAINT-001…N`, severity-tagged, with file/line evidence each. A later verdict on the same card may not introduce a finding that was observable in an earlier reviewed range without stating why it was missed in pass one.
+- **Delta-scope rework review:** a rework review covers only (a) the delta `last_reviewed_head..new_head` and (b) verification that every prior finding ID is resolved or explicitly contested with evidence. The base/head-movement gate still reverts to full-range review when the movement exceeds the rework delta.
+- **Cycle escalation:** after 3 `changes_requested` cycles on one card, stop iterating and reconcile scope instead — batch remaining findings, split the card, park an unsatisfiable finding as its own blocked card, or accept the risk explicitly.
+
 ## Pass and recovery
 
 Approve only when no blocking `REV-N`, Important in-scope `MAINT-N`, unresolved required specialist referral, or unjustified new/substantially expanded handwritten file above the configured strong threshold remains; required repository gates pass or gaps are routed; and the verdict covers the current frozen state.
