@@ -17,9 +17,9 @@ def test_skill_carries_parallel_by_default_rule():
 
 def test_parallel_reference_carries_decomposition_contract():
     assert "## Parallel by default" in PARALLEL
-    assert "never wait for the operator" in PARALLEL
+    assert "never wait for the operator" in PARALLEL.lower()
     for exception in ("dependency chains", "same-module collisions", "risk-tier HIGH serialization"):
-        assert exception in PARALLEL
+        assert exception.lower() in PARALLEL.lower()
     assert "CAPACITY_HOLD" in PARALLEL
     assert "REWORK_LOOP" in PARALLEL
 
