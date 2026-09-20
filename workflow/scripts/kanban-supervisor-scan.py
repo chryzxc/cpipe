@@ -200,10 +200,16 @@ def main() -> None:
             continue
         if any(k in reason for k in NEXUS_ACTION_KEYWORDS):
             age_m = (now - basis) / 60
-            if age_m >= COORDINATOR_WAKE_MINUTES:
-                findings.append(
-                    f"COORDINATOR_WAKE · {t['id']} · blocked {age_m:.0f}m awaiting coordinator action "
-                    f"({reason[:48]}) · {(t['title'] or '')[:60]}")
+            if age_m < COORDINATOR_WAKE_MINUTES:
+                continue
+            recent_wake = conn.execute(
+                "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%coordinator_wake%' "
+                "AND created_at > ? LIMIT 1", (t["id"], now - 3600)).fetchone()
+            if recent_wake:
+                continue
+            findings.append(
+                f"COORDINATOR_WAKE · {t['id']} · blocked {age_m:.0f}m awaiting coordinator action "
+                f"({reason[:48]}) · {(t['title'] or '')[:60]}")
 
     # Coordination agents must never block ready work for capacity; the dispatcher owns concurrency.
     cap = per_profile_cap()
@@ -285,20 +291,25 @@ def main() -> None:
         "WHERE status='done' AND completed_at IS NOT NULL AND completed_at > ? "
         "ORDER BY completed_at DESC", (now - ORPHANED_CHAIN_WINDOW_HOURS * 3600,)).fetchall()
     for t in recent_done:
+        waked = conn.execute(
+            "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%orphan_wake%' LIMIT 1",
+            (t["id"],)).fetchone()
         continuation = conn.execute(
             "SELECT body FROM task_comments WHERE task_id=? AND body LIKE 'CONTINUATION:%' "
             "AND created_at >= ? ORDER BY id DESC LIMIT 1", (t["id"], t["completed_at"])).fetchone()
         if not continuation:
-            findings.append(
-                f"ORPHANED_CHAIN · {t['id']} · done without a recorded continuation decision · "
-                f"{(t['title'] or '')[:60]}")
+            if not waked:
+                findings.append(
+                    f"ORPHANED_CHAIN · {t['id']} · done without a recorded continuation decision · "
+                    f"{(t['title'] or '')[:60]}")
             continue
         marker = conn.execute(
             "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%pr_pending%' LIMIT 1",
             (t["id"],)).fetchone()
         marker_text = (continuation["body"] or "").lower()
         if ("final report" in marker_text or "promote gate" in marker_text) \
-                and not marker and not _has_pr_reference(t["id"], continuation["body"], conn):
+                and not marker \
+                and not _has_pr_reference(t["id"], continuation["body"], conn):
             findings.append(
                 f"PR_PENDING · {t['id']} · reviewed implementation without a PR successor · "
                 f"{(t['title'] or '')[:60]}")
@@ -328,8 +339,6 @@ def main() -> None:
             if old.get("status") != state["status"]:
                 findings.append(
                     f"PROGRESS_DELTA · {tid} · {old.get('status')}→{state['status']} · {titles.get(tid, tid)}")
-            elif old.get("hb") != state["hb"]:
-                findings.append(f"PROGRESS_DELTA · {tid} · heartbeat · {titles.get(tid, tid)}")
     try:
         (HERMES_HOME / "logs").mkdir(parents=True, exist_ok=True)
         progress_state_path.write_text(json.dumps(current, indent=2, sort_keys=True))

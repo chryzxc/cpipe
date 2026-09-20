@@ -166,7 +166,7 @@ def test_progress_delta_reports_status_change(tmp_path, monkeypatch, capsys):
     conn.close()
 
 
-def test_progress_delta_reports_new_heartbeat_only(tmp_path, monkeypatch, capsys):
+def test_progress_delta_ignores_heartbeat_only_changes(tmp_path, monkeypatch, capsys):
     conn, _ = scanner(tmp_path, monkeypatch)
     add_card(conn, "three", "running")
     add_comment(conn, "three", "heartbeat RED")
@@ -178,7 +178,7 @@ def test_progress_delta_reports_new_heartbeat_only(tmp_path, monkeypatch, capsys
 
     output = run_scan(monkeypatch, capsys)
 
-    assert "PROGRESS_DELTA · three · heartbeat" in output
+    assert "PROGRESS_DELTA" not in output
     conn.close()
 
 
@@ -222,6 +222,11 @@ def test_supervisor_prompt_carries_push_rules():
     assert "UNSUBSCRIBED_BLOCK:" in supervisor["prompt"]
     assert "SCOPED dispatch pass" in supervisor["prompt"]
     assert "SUPERSEDED_REVIEW" in supervisor["prompt"]
+    assert "at most ONE coordinator invocation per tick" in supervisor["prompt"]
+    assert "coordinator_wake" in supervisor["prompt"]
+    assert "orphan_wake" in supervisor["prompt"]
+    assert "INFORMATIONAL-ONLY TICKS" in supervisor["prompt"]
+    assert "wake NO ONE" in supervisor["prompt"]
 
 
 def test_policy_files_carry_push_contract():

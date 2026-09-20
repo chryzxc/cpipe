@@ -178,6 +178,69 @@ def test_idle_board_classified_as_done_with_orphans(tmp_path, monkeypatch, capsy
     conn.close()
 
 
+def test_orphaned_chain_deduped_by_wake_marker(tmp_path, monkeypatch, capsys):
+    conn = scanner(tmp_path, monkeypatch)
+    add_card(conn, "woken", "done", completed_at=time.time() - 1800)
+    add_comment(conn, "woken", "orphan_wake: coordinator woken to reconcile")
+    conn.commit()
+
+    output = run_scan(monkeypatch, capsys)
+
+    assert "ORPHANED_CHAIN · woken" not in output
+    conn.close()
+
+
+def test_pr_pending_deduped_by_marker_comment(tmp_path, monkeypatch, capsys):
+    conn = scanner(tmp_path, monkeypatch)
+    done_at = time.time() - 1800
+    add_card(conn, "noted", "done", completed_at=done_at)
+    add_comment(
+        conn, "noted",
+        "CONTINUATION: final report · evidence: rev-004 approved",
+        created_at=done_at + 60)
+    add_comment(conn, "noted", "pr_pending: listed in digest")
+    conn.commit()
+
+    output = run_scan(monkeypatch, capsys)
+
+    assert "PR_PENDING · noted" not in output
+    conn.close()
+
+
+def test_coordinator_wake_hourly_dedupe(tmp_path, monkeypatch, capsys):
+    conn = scanner(tmp_path, monkeypatch)
+    add_card(conn, "patient", "blocked")
+    conn.execute(
+        "INSERT INTO task_events (task_id, kind, payload, created_at) VALUES (?, 'blocked', ?, ?)",
+        ("patient", json.dumps({"reason": "needs_assistance: pick approach"}), time.time() - 3600))
+    add_comment(conn, "patient", "coordinator_wake: batched this tick", created_at=time.time() - 300)
+    conn.execute("UPDATE tasks SET created_at=? WHERE id='patient'", (time.time() - 3700,))
+    conn.execute("UPDATE task_events SET created_at=? WHERE task_id='patient'", (time.time() - 3600,))
+    conn.commit()
+
+    output = run_scan(monkeypatch, capsys)
+
+    assert "COORDINATOR_WAKE · patient" not in output
+    conn.close()
+
+
+def test_coordinator_wake_fires_again_after_one_hour(tmp_path, monkeypatch, capsys):
+    conn = scanner(tmp_path, monkeypatch)
+    add_card(conn, "patient", "blocked")
+    conn.execute(
+        "INSERT INTO task_events (task_id, kind, payload, created_at) VALUES (?, 'blocked', ?, ?)",
+        ("patient", json.dumps({"reason": "needs_assistance: pick approach"}), time.time() - 7200))
+    add_comment(conn, "patient", "coordinator_wake: batched this tick", created_at=time.time() - 3700)
+    conn.execute("UPDATE tasks SET created_at=? WHERE id='patient'", (time.time() - 7300,))
+    conn.execute("UPDATE task_events SET created_at=? WHERE task_id='patient'", (time.time() - 7200,))
+    conn.commit()
+
+    output = run_scan(monkeypatch, capsys)
+
+    assert "COORDINATOR_WAKE · patient" in output
+    conn.close()
+
+
 def test_idle_board_classified_as_awaiting_decisions(tmp_path, monkeypatch, capsys):
     conn = scanner(tmp_path, monkeypatch)
     add_card(conn, "parked", "blocked")
