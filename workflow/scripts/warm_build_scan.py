@@ -35,7 +35,6 @@ for tid, ws in rows:
         continue
     recipe = detect_build(ws)
     if not recipe or not recipe['build']:
-        print(f'skip {tid}: no warm-build recipe for {recipe["stack"] if recipe else "workspace"}')
         continue
     marker, building = ws / '.warm-built', ws / '.warm-building'
     if marker.exists():

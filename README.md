@@ -156,6 +156,8 @@ The weekly digest reports per-stage wall-clock, queue waits, gate rejection rate
 
 **Does it work with fewer than 13 profiles?** Yes — 5 required roles, the rest alias automatically. Even 3 profiles work (roles share profiles).
 
+**Does one implementer bot serialize work?** No — a bot is a profile, and workers are disposable instances of it. The engine runs up to `max_in_progress_per_profile` concurrent workers per bot and the dispatcher alone decides spawning; coordination agents never block ready work for capacity (the supervisor detects and requeues such mistakes).
+
 **Will `hermes update` remove it?** No. Everything installs into the Hermes user-state layer; the updater only touches the engine checkout. Run `./install.sh` after an update to re-assert everything.
 
 **Does it cost more tokens?** Less, usually: tiering skips the plan session and QA reproduction for low-risk work, reviews batch multiple commits per session, and every check expressible as a script runs without an LLM.
