@@ -233,6 +233,65 @@ def main() -> None:
         findings.append(
             f"REWORK_LOOP · {t['id']} · {cycles} review cycles without completion · {(t['title'] or '')[:60]}")
 
+    active_cards = [t for t in tasks if t["status"] in
+                    ("todo", "ready", "review", "running", "in_progress")]
+    titles = {t["id"]: (t["title"] or "")[:60] for t in tasks}
+    subscribed: dict[str, bool] | None = None
+    try:
+        subs = {row["task_id"]: row["modes"]
+                for row in conn.execute(
+                    "SELECT task_id, GROUP_CONCAT(delivery_mode) AS modes FROM kanban_notify_subs "
+                    "GROUP BY task_id")}
+        subscribed = {tid: ("wake" in (modes or "")) for tid, modes in subs.items()}
+    except sqlite3.OperationalError:
+        subscribed = None
+    for t in active_cards:
+        if t["status"] == "todo" and not t["assignee"]:
+            continue
+        if subscribed is None or subscribed.get(t["id"]):
+            continue
+        nudged = conn.execute(
+            "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%unsubscribed_card%' LIMIT 1",
+            (t["id"],)).fetchone()
+        if nudged:
+            continue
+        findings.append(
+            f"UNSUBSCRIBED_CARD · {t['id']} · {t['status']} card has no wake-capable notify subscription · "
+            f"{titles[t['id']]}")
+
+    progress_state_path = HERMES_HOME / "logs" / "supervisor-progress-state.json"
+    previous: dict[str, dict] = {}
+    try:
+        previous = json.loads(progress_state_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        previous = {}
+    current: dict[str, dict] = {}
+    for t in active_cards:
+        last_comment = conn.execute(
+            "SELECT MAX(id) AS m FROM task_comments WHERE task_id=?", (t["id"],)).fetchone()
+        current[t["id"]] = {"status": t["status"], "hb": last_comment["m"] or 0}
+    if previous:
+        for tid in sorted(set(previous) | set(current)):
+            old = previous.get(tid)
+            state = current.get(tid)
+            if old is None or state is None:
+                if state is None and old is not None:
+                    row = conn.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()
+                    if row and row["status"] != old.get("status"):
+                        findings.append(
+                            f"PROGRESS_DELTA · {tid} · {old.get('status')}→{row['status']} · {titles.get(tid, tid)}")
+                continue
+            if old.get("status") != state["status"]:
+                findings.append(
+                    f"PROGRESS_DELTA · {tid} · {old.get('status')}→{state['status']} · {titles.get(tid, tid)}")
+            elif old.get("hb") != state["hb"]:
+                findings.append(f"PROGRESS_DELTA · {tid} · heartbeat · {titles.get(tid, tid)}")
+    try:
+        (HERMES_HOME / "logs").mkdir(parents=True, exist_ok=True)
+        progress_state_path.write_text(json.dumps(current, indent=2, sort_keys=True))
+    except OSError:
+        pass
+
     ready_paths = [t["workspace_path"] for t in tasks
                    if t["status"] == "ready" and t["workspace_path"]]
     checked_paths = ready_paths[:WORKSPACE_CHECK_CAP]

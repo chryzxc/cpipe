@@ -100,7 +100,7 @@ def test_scanner_caps_workspace_checks(tmp_path, monkeypatch, capsys):
         "CREATE TABLE tasks (id TEXT, title TEXT, status TEXT, assignee TEXT,"
         " skills TEXT, body TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL,"
         " workspace_path TEXT, last_failure_error TEXT);"
-        "CREATE TABLE task_comments (task_id TEXT, body TEXT, created_at REAL);"
+        "CREATE TABLE task_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, body TEXT, created_at REAL);"
         "CREATE TABLE task_events (task_id TEXT, kind TEXT, payload TEXT, created_at REAL);"
         "CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, outcome TEXT, ended_at REAL, claim_expires REAL);")
     for i in range(40):
