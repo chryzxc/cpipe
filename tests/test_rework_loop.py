@@ -17,7 +17,7 @@ def scanner(tmp_path, monkeypatch):
     conn.executescript("""
         CREATE TABLE tasks (
             id TEXT, title TEXT, status TEXT, assignee TEXT, skills TEXT,
-            body TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL,
+            body TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL, completed_at REAL,
             workspace_path TEXT, last_failure_error TEXT
         );
         CREATE TABLE task_comments (id INTEGER PRIMARY KEY, task_id TEXT, body TEXT, created_at REAL);
@@ -30,8 +30,8 @@ def scanner(tmp_path, monkeypatch):
 
 def add_card(conn, tid, status, title="Thrashing card"):
     conn.execute(
-        "INSERT INTO tasks VALUES (?, ?, ?, 'forge', '[]', 'BUDGET: token_budget 20m',"
-        " ?, NULL, NULL, NULL, NULL)",
+        "INSERT INTO tasks (id, title, status, assignee, skills, body, created_at)"
+        " VALUES (?, ?, ?, 'forge', '[]', 'BUDGET: token_budget 20m', ?)",
         (tid, title, status, time.time()))
 
 

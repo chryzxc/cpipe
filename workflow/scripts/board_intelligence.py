@@ -123,7 +123,44 @@ def main():
 
     conn = sqlite3.connect(f'file:{DB}?mode=ro', uri=True)
     recurrent = finding_recurrence(conn, now)
+    recent_done = conn.execute(
+        "SELECT id FROM tasks WHERE status='done' AND completed_at IS NOT NULL AND completed_at > ?",
+        (now - 48 * 3600,)).fetchall()
+    orphaned = pr_pending = 0
+    unsubscribed_active = 0
+    try:
+        active_now = conn.execute(
+            "SELECT id, status, assignee FROM tasks WHERE status IN"
+            " ('todo','ready','review','running','in_progress')").fetchall()
+        subs = {row[0] for row in conn.execute(
+            "SELECT DISTINCT task_id FROM kanban_notify_subs WHERE delivery_mode LIKE '%wake%'")}
+        for row in active_now:
+            if row['status'] == 'todo' and not row['assignee']:
+                continue
+            if row['id'] not in subs:
+                unsubscribed_active += 1
+    except sqlite3.OperationalError:
+        unsubscribed_active = -1
+    for row in recent_done:
+        decided = conn.execute(
+            "SELECT body FROM task_comments WHERE task_id=? AND body LIKE 'CONTINUATION:%'"
+            " AND created_at >= ? ORDER BY id DESC LIMIT 1", (row['id'], row['completed_at'])).fetchone()
+        if not decided:
+            orphaned += 1
+            continue
+        text = decided['body'] if isinstance(decided, sqlite3.Row) else decided[0]
+        text = (text or '').lower()
+        if ('final report' in text or 'promote gate' in text) \
+                and 'pull/' not in text and 'pr:' not in text:
+            pr_pending += 1
     conn.close()
+    if orphaned or pr_pending or unsubscribed_active > 0:
+        lines.append('## Delivery continuity')
+        lines.append(f'- orphaned chains (48h): {orphaned}')
+        if pr_pending:
+            lines.append(f'- reviewed without PR successor: {pr_pending}')
+        if unsubscribed_active >= 0:
+            lines.append(f'- active cards without wake subscription: {unsubscribed_active}')
     if recurrent:
         lines.append('## Finding-class recurrence (28d)')
         lines.extend(f'- {cls}: {n} (e.g. {tid})' for cls, n, tid in recurrent)

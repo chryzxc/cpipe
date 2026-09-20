@@ -35,11 +35,27 @@ HEARTBEAT_STALE_MINUTES = 5
 WORKSPACE_CHECK_CAP = 32
 WORKSPACE_CHECK_WORKERS = 8
 REWORK_LOOP_THRESHOLD = 4
+UNSUBSCRIBED_BLOCK_GRACE_MINUTES = 30
+ORPHANED_CHAIN_WINDOW_HOURS = 48
+PR_URL_RE = re.compile(r"github\.com/[\w.-]+/[\w.-]+/(pull|pulls)/\d+", re.IGNORECASE)
 CAPACITY_BLOCK_RE = re.compile(
     r"active[- ]worker cap\b|dispatch[-_]blocked\b|at capacity\b|"
     r"profile is busy|capacity is (?:full|exhausted|at)",
     re.IGNORECASE,
 )
+
+
+def _has_pr_reference(task_id: str, continuation_body: str, conn) -> bool:
+    """True when the card carries any pull-request URL or an explicit `pr:` note."""
+    if PR_URL_RE.search(continuation_body or ""):
+        return True
+    row = conn.execute("SELECT title, body FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row and PR_URL_RE.search(f"{row['title'] or ''} {row['body'] or ''}"):
+        return True
+    marked = conn.execute(
+        "SELECT 1 FROM task_comments WHERE task_id=? AND (body LIKE '%pr:%' OR body LIKE '%pull/%') "
+        "LIMIT 1", (task_id,)).fetchone()
+    return bool(marked)
 
 
 def per_profile_cap():
@@ -250,14 +266,42 @@ def main() -> None:
             continue
         if subscribed is None or subscribed.get(t["id"]):
             continue
-        nudged = conn.execute(
-            "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%unsubscribed_card%' LIMIT 1",
-            (t["id"],)).fetchone()
-        if nudged:
+        marker = conn.execute(
+            "SELECT created_at FROM task_comments WHERE task_id=? AND body LIKE '%unsubscribed_card%' "
+            "ORDER BY id DESC LIMIT 1", (t["id"],)).fetchone()
+        if marker is None:
+            findings.append(
+                f"UNSUBSCRIBED_CARD · {t['id']} · {t['status']} card has no wake-capable notify subscription · "
+                f"{titles[t['id']]}")
+        elif (t["status"] == "ready"
+              and marker["created_at"] is not None
+              and (now - marker["created_at"]) / 60 >= UNSUBSCRIBED_BLOCK_GRACE_MINUTES):
+            findings.append(
+                f"UNSUBSCRIBED_BLOCK · {t['id']} · ready and unattended for "
+                f"{(now - marker['created_at']) / 60:.0f}m — blocking fail-closed · {titles[t['id']]}")
+
+    recent_done = conn.execute(
+        "SELECT id, title, completed_at FROM tasks "
+        "WHERE status='done' AND completed_at IS NOT NULL AND completed_at > ? "
+        "ORDER BY completed_at DESC", (now - ORPHANED_CHAIN_WINDOW_HOURS * 3600,)).fetchall()
+    for t in recent_done:
+        continuation = conn.execute(
+            "SELECT body FROM task_comments WHERE task_id=? AND body LIKE 'CONTINUATION:%' "
+            "AND created_at >= ? ORDER BY id DESC LIMIT 1", (t["id"], t["completed_at"])).fetchone()
+        if not continuation:
+            findings.append(
+                f"ORPHANED_CHAIN · {t['id']} · done without a recorded continuation decision · "
+                f"{(t['title'] or '')[:60]}")
             continue
-        findings.append(
-            f"UNSUBSCRIBED_CARD · {t['id']} · {t['status']} card has no wake-capable notify subscription · "
-            f"{titles[t['id']]}")
+        marker = conn.execute(
+            "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%pr_pending%' LIMIT 1",
+            (t["id"],)).fetchone()
+        marker_text = (continuation["body"] or "").lower()
+        if ("final report" in marker_text or "promote gate" in marker_text) \
+                and not marker and not _has_pr_reference(t["id"], continuation["body"], conn):
+            findings.append(
+                f"PR_PENDING · {t['id']} · reviewed implementation without a PR successor · "
+                f"{(t['title'] or '')[:60]}")
 
     progress_state_path = HERMES_HOME / "logs" / "supervisor-progress-state.json"
     previous: dict[str, dict] = {}
@@ -392,6 +436,18 @@ def main() -> None:
                 findings.append(f"STALE_CLAIM · {tid} · claim expired {((now-expires)/60):.0f}m ago · {title}")
 
     conn.close()
+
+    busy = any(t["status"] in ("ready", "running", "in_progress", "review") for t in tasks)
+    if not busy:
+        orphans = sum(1 for f in findings if f.startswith("ORPHANED_CHAIN"))
+        awaiting = sum(1 for f in findings if f.startswith("COORDINATOR_WAKE"))
+        if orphans:
+            classification = "done-with-orphans"
+        elif awaiting:
+            classification = f"awaiting decisions ({awaiting} blocked)"
+        else:
+            classification = "intentional (no open signals)"
+        findings.append(f"IDLE_BOARD · {classification}")
 
     # Identical findings must yield byte-identical stdout: cron monitor mode hashes it to skip the agent on idle ticks.
     print("===== KANBAN STALL SCAN =====")

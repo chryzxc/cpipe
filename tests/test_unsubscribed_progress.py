@@ -16,7 +16,7 @@ def scanner(tmp_path, monkeypatch, with_subs_table=True):
     tables = """
         CREATE TABLE tasks (
             id TEXT, title TEXT, status TEXT, assignee TEXT, skills TEXT,
-            body TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL,
+            body TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL, completed_at REAL,
             workspace_path TEXT, last_failure_error TEXT
         );
         CREATE TABLE task_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, body TEXT, created_at REAL);
@@ -38,8 +38,8 @@ def scanner(tmp_path, monkeypatch, with_subs_table=True):
 
 def add_card(conn, tid, status, assignee="forge", title="Active card"):
     conn.execute(
-        "INSERT INTO tasks VALUES (?, ?, ?, ?, '[]', 'BUDGET: token_budget 20m',"
-        " ?, NULL, NULL, NULL, NULL)",
+        "INSERT INTO tasks (id, title, status, assignee, skills, body, created_at)"
+        " VALUES (?, ?, ?, ?, '[]', 'BUDGET: token_budget 20m', ?)",
         (tid, title, status, assignee, time.time()))
 
 
@@ -218,9 +218,15 @@ def test_supervisor_prompt_carries_push_rules():
     assert "UNSUBSCRIBED_CARD:" in supervisor["prompt"]
     assert "notify+wake" in supervisor["prompt"]
     assert "PROGRESS_DELTA" in supervisor["prompt"]
+    assert "ORPHANED_CHAIN:" in supervisor["prompt"]
+    assert "UNSUBSCRIBED_BLOCK:" in supervisor["prompt"]
+    assert "SCOPED dispatch pass" in supervisor["prompt"]
+    assert "SUPERSEDED_REVIEW" in supervisor["prompt"]
 
 
 def test_policy_files_carry_push_contract():
     skill = (ROOT / "workflow" / "skills" / "my-software-delivery-orchestrator" / "SKILL.md").read_text()
     assert "notify-list" in skill
     assert "never through the operator asking" in skill
+    assert "CONTINUATION:" in skill
+    assert "record supersession as a comment linking the replacement card-id" in skill

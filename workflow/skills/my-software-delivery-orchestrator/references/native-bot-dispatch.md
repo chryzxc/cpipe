@@ -85,6 +85,8 @@ For each material card, Coordinator must subscribe the real originating source w
 4. Failed, timed-out, crashed, or insufficient-evidence result → retain/create a named blocker with an owner and notify the operator; never silently create retry loops.
 5. All acceptance criteria and required gates verified → final-report the result and stop.
 
+The decision is recorded as a comment starting with the literal tag `CONTINUATION:` followed by the chosen decision (`same-card correction`, `promote gate <card-id>`, `successor <card-id>`, `blocker <name> (owner <profile>)`, or `final report`) plus evidence ids/URLs. Replayed terminal notifications are no-ops when the marker already exists after the terminal event. Before any manual promote or dispatch, verify canonical status, workspace validity, and that no newer card supersedes the same scope — record supersession as a comment linking the replacement card-id.
+
 A terminal card without a recorded continuation decision is an orphaned chain. Do not describe the workflow as autonomous until both the task subscription and one terminal-event-to-decision cycle are observed.
 
 ### Observe and recover

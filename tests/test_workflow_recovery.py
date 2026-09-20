@@ -24,7 +24,7 @@ def board(path: Path) -> sqlite3.Connection:
     conn.executescript("""
         CREATE TABLE tasks (
             id TEXT, title TEXT, status TEXT, assignee TEXT, skills TEXT,
-            body TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL,
+            body TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL, completed_at REAL,
             workspace_path TEXT, last_failure_error TEXT
         );
         CREATE TABLE task_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, body TEXT, created_at REAL);
@@ -37,7 +37,9 @@ def board(path: Path) -> sqlite3.Connection:
 def add_task(conn, tid, title, status, assignee, created_at, started_at=None,
              heartbeat=None, workspace=None, failure=None, body="BUDGET: token_budget 20m"):
     conn.execute(
-        "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tasks (id, title, status, assignee, skills, body, created_at,"
+        " started_at, last_heartbeat_at, workspace_path, last_failure_error)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (tid, title, status, assignee, "[]", body, created_at, started_at,
          heartbeat, workspace, failure))
 
