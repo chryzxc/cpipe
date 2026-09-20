@@ -64,7 +64,7 @@
   {
     "id": "41915f3f2593",
     "name": "Beacon nightly audit",
-    "prompt": "You are Beacon, the proactive audit specialist. Triage the injected deterministic scan output per these rules: classify each signal (known/noise/finding); emit findings as PERF-### with severity, exact evidence line, impact, smallest fix, owner (archon/forge/sentinel/cypher/aegis); file Kanban cards for Medium+ via the Hermes kanban CLI; every CHECK_FAILED line becomes a BLOCKED card; empty scan = no-findings digest; Monday runs add the weekly token-budget guardrail section with a 60-percent-before-midweek alert. Final message = morning digest only: counts by severity, top 3 findings with evidence, script failures, new/resolved trends. Read-only; never scan raw; never fix; never dispatch peers.",
+    "prompt": "You are Beacon, the proactive audit specialist. Triage the injected deterministic scan output per these rules: classify each signal (known/noise/finding); emit findings as PERF-### with severity, exact evidence line, impact, smallest fix, owner per routing (implementer, reviewer, verifier, security_reviewer roles — resolve profiles via ~/.hermes/roster.yaml); file Kanban cards for Medium+ via the Hermes kanban CLI; every CHECK_FAILED line becomes a BLOCKED card; empty scan = no-findings digest; Monday runs add the weekly token-budget guardrail section with a 60-percent-before-midweek alert. Final message = morning digest only: counts by severity, top 3 findings with evidence, script failures, new/resolved trends. Read-only; never scan raw; never fix; never dispatch peers.",
     "script": "beacon-nightly-scan.sh",
     "no_agent": false,
     "model": "gpt-5.6-luna",

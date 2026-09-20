@@ -91,6 +91,26 @@ def test_digest_contains_recurrence_section(tmp_path, monkeypatch, capsys):
     assert "timeout-flake: 3" in digest
 
 
+def test_reviewer_gate_line_uses_roster_name(tmp_path, monkeypatch, capsys):
+    now = time.time()
+    module, conn = intel_module(tmp_path, monkeypatch)
+    (tmp_path / "hermes" / "roster.yaml").write_text(
+        "roles:\n  reviewer: my-review-bot\n")
+    conn.execute(
+        "INSERT INTO tasks VALUES ('t_x', 'my-review-bot', ?, ?, ?, 'review')",
+        (now - 3600, now - 120, now - 60))
+    conn.execute(
+        "INSERT INTO task_runs (id, task_id, profile, status, outcome, started_at, ended_at)"
+        " VALUES (1, 't_x', 'my-review-bot', 'blocked', 'blocked', ?, ?)",
+        (now - 60, now - 30))
+    conn.commit()
+    conn.close()
+
+    module["main"]()
+
+    assert "my-review-bot change-request/verdict runs: 1" in capsys.readouterr().out
+
+
 def test_changes_word_does_not_classify_as_hang(tmp_path, monkeypatch):
     now = time.time()
     module, conn = intel_module(tmp_path, monkeypatch)

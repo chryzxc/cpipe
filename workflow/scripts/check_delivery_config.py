@@ -17,7 +17,7 @@ def cap(key):
 board, per_profile = cap('max_in_progress'), cap('max_in_progress_per_profile')
 if not board or not per_profile:
     errors.append(f'config: kanban caps missing (board={board}, per_profile={per_profile})')
-swarm = re.search(r'max (\d+) concurrent forge workers', TEAM)
+swarm = re.search(r'max (\d+) concurrent \w+ workers', TEAM)
 if swarm and per_profile and int(swarm.group(1)) != per_profile:
     errors.append(f'drift: team-config swarm cap {swarm.group(1)} != engine per-profile cap {per_profile}')
 

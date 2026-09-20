@@ -52,6 +52,21 @@ def q(sql, params=()):
     return rows
 
 
+def _flat_roles(path):
+    roles, section = {}, False
+    try:
+        for line in path.read_text().splitlines():
+            if line.strip() == 'roles:':
+                section = True
+                continue
+            if section and line.startswith(' ') and ':' in line:
+                key, value = line.strip().split(':', 1)
+                roles[key.strip()] = value.split('#')[0].strip()
+    except OSError:
+        pass
+    return roles
+
+
 def main():
     now = time.time()
     lines = ['# Board intelligence', '']
@@ -82,8 +97,10 @@ def main():
     lines.append('## Gate activity (7d, by run status)')
     for (assignee, status), n in sorted(verdicts.items(), key=lambda kv: -kv[1])[:8]:
         lines.append(f'- {assignee}/{status}: {n}')
-    rejections = sum(n for (a, s), n in verdicts.items() if s in ('ready', 'blocked') and a == 'sentry')
-    lines.append(f'- sentry change-request/verdict runs: {rejections}')
+    reviewer = _flat_roles(H / 'roster.yaml').get('reviewer')
+    if reviewer:
+        rejections = sum(n for (a, s), n in verdicts.items() if s in ('ready', 'blocked') and a == reviewer)
+        lines.append(f'- {reviewer} change-request/verdict runs: {rejections}')
 
     rework = q("SELECT task_id, COUNT(*) c FROM task_runs WHERE started_at > ? "
                "GROUP BY task_id HAVING c >= 3 ORDER BY c DESC LIMIT 5", (now - WEEK,))
