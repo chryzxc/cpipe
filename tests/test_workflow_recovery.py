@@ -24,7 +24,7 @@ def board(path: Path) -> sqlite3.Connection:
     conn.executescript("""
         CREATE TABLE tasks (
             id TEXT, title TEXT, status TEXT, assignee TEXT, skills TEXT,
-            created_at REAL, started_at REAL, last_heartbeat_at REAL,
+            body TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL,
             workspace_path TEXT, last_failure_error TEXT
         );
         CREATE TABLE task_comments (task_id TEXT, body TEXT, created_at REAL);
@@ -32,6 +32,14 @@ def board(path: Path) -> sqlite3.Connection:
         CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, ended_at REAL, claim_expires REAL);
     """)
     return conn
+
+
+def add_task(conn, tid, title, status, assignee, created_at, started_at=None,
+             heartbeat=None, workspace=None, failure=None, body="BUDGET: token_budget 20m"):
+    conn.execute(
+        "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (tid, title, status, assignee, "[]", body, created_at, started_at,
+         heartbeat, workspace, failure))
 
 
 def test_workspace_must_be_git_root(tmp_path):
@@ -65,15 +73,11 @@ def test_scanner_reports_undispatched_review_and_missing_heartbeat(tmp_path, mon
     hermes_home.mkdir()
     db = hermes_home / "kanban.db"
     conn = board(db)
-    conn.executemany(
-        "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            ("review-1", "Review change", "review", "sentry", "[]", now - 3 * 3600,
-             None, None, None, None),
-            ("running-1", "Implement change", "running", "forge", "[]", now - 600,
-             now - 600, None, None, None),
-        ],
-    )
+    for row in [
+        ("review-1", "Review change", "review", "sentry", now - 3 * 3600),
+        ("running-1", "Implement change", "running", "forge", now - 600),
+    ]:
+        add_task(conn, row[0], row[1], row[2], row[3], row[4], started_at=row[4])
     conn.commit()
     conn.close()
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
@@ -94,11 +98,8 @@ def test_current_workspace_wins_over_stale_error(tmp_path, monkeypatch, capsys):
     hermes_home.mkdir()
     db = hermes_home / "kanban.db"
     conn = board(db)
-    conn.execute(
-        "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("ready-1", "Ready task", "ready", "forge", "[]", time.time(), None, None,
-         str(workspace), "workspace: not inside a git repo"),
-    )
+    add_task(conn, "ready-1", "Ready task", "ready", "forge", time.time(),
+             workspace=str(workspace), failure="workspace: not inside a git repo")
     conn.commit()
     conn.close()
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
@@ -129,11 +130,8 @@ def test_warm_build_launches_without_shell(monkeypatch, tmp_path):
     (workspace / "Package.swift").write_text("// package")
     (hermes_home / "kanban" / "logs").mkdir(parents=True)
     conn = board(hermes_home / "kanban.db")
-    conn.execute(
-        "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("warm-1", "Warm build", "todo", "forge", "[]", time.time(), None, None,
-         str(workspace), None),
-    )
+    add_task(conn, "warm-1", "Warm build", "todo", "forge", time.time(),
+             workspace=str(workspace), body="")
     conn.commit()
     conn.close()
     launched = []

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import time
@@ -33,6 +34,21 @@ COORDINATOR_WAKE_MINUTES = 15
 HEARTBEAT_STALE_MINUTES = 5
 WORKSPACE_CHECK_CAP = 32
 WORKSPACE_CHECK_WORKERS = 8
+CAPACITY_BLOCK_RE = re.compile(
+    r"active[- ]worker cap\b|dispatch[-_]blocked\b|at capacity\b|"
+    r"profile is busy|capacity is (?:full|exhausted|at)",
+    re.IGNORECASE,
+)
+
+
+def per_profile_cap():
+    """Engine per-profile concurrency cap from config.yaml; None when unreadable."""
+    try:
+        text = (HERMES_HOME / "config.yaml").read_text()
+    except OSError:
+        return None
+    match = re.search(r"max_in_progress_per_profile:\s*(\d+)", text)
+    return int(match.group(1)) if match else None
 NEXUS_ACTION_KEYWORDS = ("plan_amendment", "needs_assistance", "re-specif",
                           "respecify", "nexus triage", "blocked: plan",
                           "blocked: needs", "workspace_invalid")
@@ -109,7 +125,7 @@ def main() -> None:
     findings: list[str] = []
 
     tasks = conn.execute(
-        "SELECT id, title, status, assignee, skills, created_at, started_at, "
+        "SELECT id, title, status, assignee, skills, body, created_at, started_at, "
         "last_heartbeat_at, workspace_path, last_failure_error FROM tasks "
         "WHERE status IN ('ready','blocked','todo','review','running','in_progress')"
     ).fetchall()
@@ -172,6 +188,34 @@ def main() -> None:
                     f"COORDINATOR_WAKE · {t['id']} · blocked {age_m:.0f}m awaiting coordinator action "
                     f"({reason[:48]}) · {(t['title'] or '')[:60]}")
 
+    # Coordination agents must never block ready work for capacity; the dispatcher owns concurrency.
+    cap = per_profile_cap()
+    if cap is not None:
+        running_by_assignee: dict[str, int] = {}
+        for t in tasks:
+            if t["status"] in ("running", "in_progress") and t["assignee"]:
+                running_by_assignee[t["assignee"]] = running_by_assignee.get(t["assignee"], 0) + 1
+        for t in tasks:
+            if t["status"] != "blocked" or t["id"] in verdict_parked:
+                continue
+            ev = conn.execute(
+                "SELECT payload FROM task_events WHERE task_id=? AND kind='blocked' "
+                "ORDER BY id DESC LIMIT 1", (t["id"],)).fetchone()
+            if not ev:
+                continue
+            try:
+                reason = (json.loads(ev["payload"] or "{}").get("reason") or "")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not CAPACITY_BLOCK_RE.search(reason):
+                continue
+            running = running_by_assignee.get(t["assignee"] or "", 0)
+            if running >= cap:
+                continue
+            findings.append(
+                f"CAPACITY_HOLD · {t['id']} · blocked on claimed capacity but {running} running "
+                f"< cap {cap} · {(t['title'] or '')[:60]}")
+
     ready_paths = [t["workspace_path"] for t in tasks
                    if t["status"] == "ready" and t["workspace_path"]]
     checked_paths = ready_paths[:WORKSPACE_CHECK_CAP]
@@ -206,6 +250,14 @@ def main() -> None:
             if age_h >= TODO_AGING_HOURS:
                 findings.append(f"UNASSIGNED_TODO · {tid} · aging {age_h:.0f}h · {title}")
             continue
+
+        if status in ("todo", "ready") and "token_budget" not in (t["body"] or ""):
+            nudged = conn.execute(
+                "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%token_budget%' LIMIT 1",
+                (tid,)).fetchone()
+            if not nudged:
+                findings.append(
+                    f"CARD_NO_BUDGET · {tid} · card created without a token_budget · {title}")
 
         if status == "todo" and assignee:
             age_m = (now - (t["created_at"] or now)) / 60

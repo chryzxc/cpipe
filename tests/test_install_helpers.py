@@ -98,14 +98,15 @@ def test_scanner_caps_workspace_checks(tmp_path, monkeypatch, capsys):
     conn = __import__("sqlite3").connect(hermes_home / "kanban.db")
     conn.executescript(
         "CREATE TABLE tasks (id TEXT, title TEXT, status TEXT, assignee TEXT,"
-        " skills TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL,"
+        " skills TEXT, body TEXT, created_at REAL, started_at REAL, last_heartbeat_at REAL,"
         " workspace_path TEXT, last_failure_error TEXT);"
         "CREATE TABLE task_comments (task_id TEXT, body TEXT, created_at REAL);"
         "CREATE TABLE task_events (task_id TEXT, kind TEXT, payload TEXT, created_at REAL);"
         "CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, ended_at REAL, claim_expires REAL);")
     for i in range(40):
         conn.execute(
-            "INSERT INTO tasks VALUES (?, 'ready card', 'ready', 'forge', '[]', ?, NULL, NULL, ?, NULL)",
+            "INSERT INTO tasks VALUES (?, 'ready card', 'ready', 'forge', '[]',"
+            " 'BUDGET: token_budget 20m', ?, NULL, NULL, ?, NULL)",
             (f"r_{i}", time.time() - 60, f"/nonexistent/ws_{i}"))
     conn.commit()
     conn.close()
