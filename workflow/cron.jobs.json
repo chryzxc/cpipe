@@ -92,5 +92,18 @@
     "enabled": true,
     "deliver": "local",
     "created_at": "2026-09-14T21:01:54.071158+08:00"
+  },
+  {
+    "id": "a4249b4ccd0f",
+    "name": "Session hygiene daily",
+    "script": "session_cleanup.py",
+    "no_agent": true,
+    "schedule": {
+      "kind": "interval",
+      "minutes": 1440,
+      "display": "every 1440m"
+    },
+    "enabled": true,
+    "deliver": "local"
   }
 ]

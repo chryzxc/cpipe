@@ -125,8 +125,8 @@ Works with 3 profiles or 13. Different team setups adopt the same workflow witho
 ├── software_delivery/           # plugin: 3 agent tools + doctor CLI + metrics hook
 ├── workflow/
 │   ├── skills/                  # orchestrator policy skill + evidence/ADR/standards skills
-│   ├── scripts/                 # board supervisor scan, warm-build, housekeeping, intelligence...
-│   ├── cron.jobs.json           # 6 cron jobs: board supervisor, watchers, digests
+│   ├── scripts/                 # board supervisor scan, warm-build, housekeeping, session cleanup, intelligence...
+│   ├── cron.jobs.json           # 7 cron jobs: board supervisor, watchers, digests, session hygiene
 │   ├── config.assertions.yaml   # engine caps this workflow expects
 │   └── roster.example.yaml      # role → profile mapping template
 └── install.sh                   # idempotent installer (bootstrap.sh = one-liner)
