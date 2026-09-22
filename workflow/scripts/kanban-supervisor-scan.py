@@ -3,11 +3,14 @@
 
 Detects the board conditions that stall the Bot workflow autonomously:
   1. blocked cards whose skills are not installed on the assignee profile
-     (auto-fixable when the skill exists in the global catalog)
+      (auto-fixable when the skill exists in the global catalog)
   2. cards referencing skills that exist nowhere (escalate)
   3. unassigned todo cards aging past a threshold (escalate to coordinator digest)
   4. review-requested cards with no reviewer activity (dispatch gap)
   5. stale running claims past claim expiry (reclaim candidates)
+  6. worker readiness failures: credentials/startup blockers (READINESS_BLOCKER),
+     respawn loops past the engine failure limit (RESPAWN_LOOP), and terminal
+     runs that produced no usable response (WORKER_EMPTY_RESULT)
 
 Output is consumed by the supervisor cron agent (monitor mode: unchanged
 output suppresses the agent entirely). Exit 0 always.
@@ -37,6 +40,26 @@ WORKSPACE_CHECK_WORKERS = 8
 REWORK_LOOP_THRESHOLD = 4
 UNSUBSCRIBED_BLOCK_GRACE_MINUTES = 30
 ORPHANED_CHAIN_WINDOW_HOURS = 48
+# Mirrors the engine circuit breaker (DEFAULT_FAILURE_LIMIT in
+# kanban_db_dispatch.py): past this many consecutive failures the engine
+# stops respawning, so the board must surface a bounded recovery decision.
+RESPAWN_LOOP_THRESHOLD = 2
+EMPTY_RUN_OUTCOMES = {"completed", "crashed", "timed_out", "gave_up", "spawn_failed"}
+AUTH_FAILURE_RE = re.compile(
+    r"\b40[13]\b"
+    r"|unauthorized"
+    r"|forbidden"
+    r"|invalid[ _-]api[ _-]key"
+    r"|missing[ _-]api[ _-]key"
+    r"|api[ _-]key.{0,24}(?:invalid|missing|required)"
+    r"|not authenticated"
+    r"|unauthenticated"
+    r"|no stored credentials"
+    r"|credentials?.{0,16}(?:missing|invalid|required|not found)"
+    r"|authentication (?:required|failed)"
+    r"|failed to authenticate",
+    re.IGNORECASE,
+)
 PR_URL_RE = re.compile(r"github\.com/[\w.-]+/[\w.-]+/(pull|pulls)/\d+", re.IGNORECASE)
 CAPACITY_BLOCK_RE = re.compile(
     r"active[- ]worker cap\b|dispatch[-_]blocked\b|at capacity\b|"
@@ -132,6 +155,47 @@ def _is_git_workspace(path: str) -> bool:
     return result.returncode == 0 and Path(result.stdout.strip()).resolve() == workspace
 
 
+def _column(row, name, default=None):
+    """Read a column that may be absent on older database schemas."""
+    return row[name] if name in row.keys() else default
+
+
+def _workspace_head(path):
+    """Bounded recovery identity for a workspace: path@short-sha (or bare path)."""
+    if not path:
+        return "no workspace"
+    try:
+        result = subprocess.run(
+            ["git", "-C", path, "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return path
+    if result.returncode == 0 and result.stdout.strip():
+        return f"{path}@{result.stdout.strip()}"
+    return path
+
+
+def _has_marker(conn, task_id: str, marker: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE ? LIMIT 1",
+        (task_id, f"%{marker}%")).fetchone()
+    return bool(row)
+
+
+def _latest_terminal_run(conn, task_id: str):
+    """Latest finished run, or None when runs are absent/unreadable (old schema)."""
+    try:
+        return conn.execute(
+            "SELECT outcome, summary FROM task_runs "
+            "WHERE task_id=? AND outcome IS NOT NULL AND ended_at IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+
+
 def main() -> None:
     if not DB.exists():
         print("NO BOARD")
@@ -142,8 +206,7 @@ def main() -> None:
     findings: list[str] = []
 
     tasks = conn.execute(
-        "SELECT id, title, status, assignee, skills, body, created_at, started_at, "
-        "last_heartbeat_at, workspace_path, last_failure_error FROM tasks "
+        "SELECT * FROM tasks "
         "WHERE status IN ('ready','blocked','todo','review','running','in_progress')"
     ).fetchall()
 
@@ -314,6 +377,47 @@ def main() -> None:
                 f"PR_PENDING · {t['id']} · reviewed implementation without a PR successor · "
                 f"{(t['title'] or '')[:60]}")
 
+    readiness_signals = 0
+    for t in tasks:
+        tid = t["id"]
+        title = (t["title"] or "")[:60]
+        failures = _column(t, "consecutive_failures", 0) or 0
+        failure_text = (t["last_failure_error"] or "").strip()
+        workspace = t["workspace_path"]
+
+        if failures >= 1 and failure_text and AUTH_FAILURE_RE.search(failure_text) \
+                and not _has_marker(conn, tid, "readiness_blocker"):
+            findings.append(
+                f"READINESS_BLOCKER · {tid} · profile '{t['assignee'] or 'unassigned'}' cannot "
+                f"authenticate or start — resolve provider credentials before re-dispatch · "
+                f"workspace {_workspace_head(workspace)} · {failure_text[:60]} · {title}")
+            readiness_signals += 1
+            continue
+
+        if failures >= RESPAWN_LOOP_THRESHOLD and not _has_marker(conn, tid, "respawn_bounded"):
+            findings.append(
+                f"RESPAWN_LOOP · {tid} · {failures} consecutive failures without completion — "
+                f"stop respawning and record one recovery decision preserving workspace "
+                f"{_workspace_head(workspace)} · {failure_text[:60] or 'identical startup failure'} · {title}")
+            readiness_signals += 1
+            continue
+
+        run = _latest_terminal_run(conn, tid)
+        if run is None or run["outcome"] not in EMPTY_RUN_OUTCOMES:
+            continue
+        summary = (run["summary"] or "").strip() if "summary" in run.keys() else None
+        if summary is None:
+            continue
+        if summary or (_column(t, "result", None) or "").strip():
+            continue
+        if _has_marker(conn, tid, "worker_empty_result"):
+            continue
+        findings.append(
+            f"WORKER_EMPTY_RESULT · {tid} · {run['outcome']} run returned no usable response — "
+            f"route to one bounded recovery decision preserving workspace "
+            f"{_workspace_head(workspace)} · {title}")
+        readiness_signals += 1
+
     progress_state_path = HERMES_HOME / "logs" / "supervisor-progress-state.json"
     previous: dict[str, dict] = {}
     try:
@@ -450,10 +554,14 @@ def main() -> None:
     if not busy:
         orphans = sum(1 for f in findings if f.startswith("ORPHANED_CHAIN"))
         awaiting = sum(1 for f in findings if f.startswith("COORDINATOR_WAKE"))
+        readiness = sum(1 for f in findings if f.startswith(
+            ("READINESS_BLOCKER", "RESPAWN_LOOP", "WORKER_EMPTY_RESULT")))
         if orphans:
             classification = "done-with-orphans"
         elif awaiting:
             classification = f"awaiting decisions ({awaiting} blocked)"
+        elif readiness:
+            classification = f"worker readiness ({readiness} cards)"
         else:
             classification = "intentional (no open signals)"
         findings.append(f"IDLE_BOARD · {classification}")

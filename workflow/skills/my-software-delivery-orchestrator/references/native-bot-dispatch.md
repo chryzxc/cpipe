@@ -89,6 +89,8 @@ The decision is recorded as a comment starting with the literal tag `CONTINUATIO
 
 A terminal card without a recorded continuation decision is an orphaned chain. Do not describe the workflow as autonomous until both the task subscription and one terminal-event-to-decision cycle are observed.
 
+Supervisor readiness signals change the recovery inputs, never the loop count. `READINESS_BLOCKER` (profile/provider failed to authenticate or start) requires authenticating the named profile before any re-dispatch — the card stays blocked until then. `WORKER_EMPTY_RESULT` (terminal run with no usable response, e.g. a goal-mode worker that exhausted its turns) is recorded as a distinct outcome and routed to exactly one bounded recovery decision. `RESPAWN_LOOP` (engine failure breaker tripped) forbids further respawn. Each decision preserves the exact workspace the scan reported (path@sha), current commit/status, and the dependency graph, and comments its marker (`readiness_blocker`, `worker_empty_result`, `respawn_bounded`) so later supervisor ticks stay silent.
+
 ### Observe and recover
 
 ```bash
