@@ -3,7 +3,9 @@
 conversation list. Deterministic, no LLM.
 
 Cron scheduler sessions (source `cron` — the Kanban stall supervisor's
-15-minute ticks, watchers, digests) and supervisor coordinator wake chats
+15-minute ticks, watchers, digests) are transient: their output is also
+persisted in ~/.hermes/cron/output (kept 30 days by housekeeping), so the
+transcripts can be hidden after an hour. and supervisor coordinator wake chats
 (source `cli`, title `Kanban supervisor wake:`) are pure automation
 byproducts; kanban cards and comments carry the canonical evidence, not
 these transcripts.
@@ -16,7 +18,7 @@ Two tiers:
                gateway holds state.db, which is reported, never forced
 
 Retention (env-overridable hours):
-  SESSION_CLEANUP_CRON_RETENTION_HOURS   default 6   (archive cutoff, cron)
+  SESSION_CLEANUP_CRON_RETENTION_HOURS   default 1   (archive cutoff, cron)
   SESSION_CLEANUP_WAKE_RETENTION_HOURS   default 168 (archive cutoff, wakes)
   SESSION_CLEANUP_PRUNE_RETENTION_HOURS  default 720 (30d deletion cutoff)
 
@@ -33,7 +35,7 @@ HERMES = H / 'hermes-agent/venv/bin/hermes'
 CRON_RETENTION_ENV = 'SESSION_CLEANUP_CRON_RETENTION_HOURS'
 WAKE_RETENTION_ENV = 'SESSION_CLEANUP_WAKE_RETENTION_HOURS'
 PRUNE_RETENTION_ENV = 'SESSION_CLEANUP_PRUNE_RETENTION_HOURS'
-CRON_RETENTION_DEFAULT_H = 6
+CRON_RETENTION_DEFAULT_H = 1
 WAKE_RETENTION_DEFAULT_H = 168
 PRUNE_RETENTION_DEFAULT_H = 720
 WAKE_TITLE = 'Kanban supervisor wake:'
