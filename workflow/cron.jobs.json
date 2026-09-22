@@ -95,13 +95,13 @@
   },
   {
     "id": "a4249b4ccd0f",
-    "name": "Session hygiene daily",
+    "name": "Session hygiene",
     "script": "session_cleanup.py",
     "no_agent": true,
     "schedule": {
       "kind": "interval",
-      "minutes": 1440,
-      "display": "every 1440m"
+      "minutes": 30,
+      "display": "every 30m"
     },
     "enabled": true,
     "deliver": "local"
