@@ -41,6 +41,19 @@ def test_open_cron_ids_strictly_matches_cron_rows():
         "cron_b6_20260922_131500", "cron_b6_20260922_124500"]
 
 
+def test_supervisor_wake_export_requires_exact_user_prompt_prefix():
+    module = load_module()
+
+    assert module["is_supervisor_wake_export"]([
+        json.dumps({"role": "user", "text": "Kanban supervisor wake: card t_1"}),
+    ])
+    assert not module["is_supervisor_wake_export"]([
+        json.dumps({"role": "assistant", "text": "Kanban supervisor wake: card t_1"}),
+        json.dumps({"role": "user", "text": "Please review this card"}),
+    ])
+    assert not module["is_supervisor_wake_export"](["not json"])
+
+
 def test_delete_pass_skips_fresh_and_ambiguous_rows(tmp_path):
     module = load_module()
 

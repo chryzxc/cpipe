@@ -5,10 +5,9 @@ conversation list. Deterministic, no LLM.
 Cron scheduler sessions (source `cron` — the Kanban stall supervisor's
 15-minute ticks, watchers, digests) are transient: their output is also
 persisted in ~/.hermes/cron/output (kept 30 days by housekeeping), so the
-transcripts can be hidden after an hour. and supervisor coordinator wake chats
-(source `cli`, title `Kanban supervisor wake:`) are pure automation
-byproducts; kanban cards and comments carry the canonical evidence, not
-these transcripts.
+transcripts can be hidden after an hour. Supervisor coordinator wake chats
+are tagged `tool` so Hermes hides future wakes from user session lists;
+their canonical evidence remains on Kanban cards and comments.
 
 Two tiers:
   default      archive (soft-hide) ended automation sessions — safe while
@@ -20,6 +19,10 @@ Two tiers:
                older than PRUNE_RETENTION (default 30d); the engine
                refuses while the gateway holds state.db, which is
                reported, never forced
+  --migrate-supervisor-wakes
+               one-time exact-prompt cleanup for legacy CLI wake chats;
+               only deletes a session when its exported first prompt starts
+               with `Kanban supervisor wake:`
 
 Retention (env-overridable hours):
   SESSION_CLEANUP_CRON_RETENTION_HOURS   default 1   (archive cutoff, cron)
@@ -45,6 +48,7 @@ CRON_RETENTION_DEFAULT_H = 1
 WAKE_RETENTION_DEFAULT_H = 168
 PRUNE_RETENTION_DEFAULT_H = 720
 WAKE_TITLE = 'Kanban supervisor wake:'
+SESSION_ID_RE = re.compile(r'^(?:cron_[0-9a-f]+_)?\d{8}_\d{6}_[0-9a-f]+$')
 DELETE_MIN_AGE_MINUTES = 30
 DELETE_PER_RUN_CAP = 100
 CRON_ID_RE = re.compile(r'^cron_[0-9a-f]+_\d{8}_\d{6}$')
@@ -139,6 +143,30 @@ def open_cron_ids(listing):
     return ids
 
 
+def listed_session_rows(listing):
+    rows = listing.splitlines() if isinstance(listing, str) else listing
+    result = []
+    for row in rows:
+        tokens = row.split()
+        if not tokens or not SESSION_ID_RE.match(tokens[-1]):
+            continue
+        age = parse_age_minutes(row)
+        if age is not None:
+            result.append((tokens[-1], age))
+    return result
+
+
+def is_supervisor_wake_export(lines):
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if entry.get('role') == 'user' and (entry.get('text') or '').startswith(WAKE_TITLE):
+            return True
+    return False
+
+
 def pinned_ids(hermes):
     outcome, lines = run_engine(hermes, ['sessions', 'pinned', '--json'])
     if 'failed' in outcome or 'skipped' in outcome:
@@ -172,10 +200,36 @@ def delete_pass(hermes, listing, pinned, yes, dry_run):
     return f'deleted {deleted} open cron session(s)'
 
 
+def migrate_supervisor_wakes(hermes, listing, pinned, yes, dry_run):
+    matched = []
+    for session_id, age in listed_session_rows(listing):
+        if age < DELETE_MIN_AGE_MINUTES or session_id in pinned:
+            continue
+        outcome, lines = run_engine(
+            hermes,
+            ['sessions', 'export', '--session-id', session_id,
+             '--only', 'user-prompts', '--format', 'jsonl', '-'],
+        )
+        if 'failed' in outcome or 'skipped' in outcome or not is_supervisor_wake_export(lines):
+            continue
+        matched.append(session_id)
+        if len(matched) >= DELETE_PER_RUN_CAP:
+            break
+    if dry_run:
+        return f'{len(matched)} legacy supervisor wake session(s) would be deleted'
+    deleted = 0
+    for session_id in matched:
+        outcome, _ = run_engine(hermes, ['sessions', 'delete', session_id, '--yes'])
+        if 'Deleted' in outcome or outcome == 'no output':
+            deleted += 1
+    return f'deleted {deleted} legacy supervisor wake session(s)'
+
+
 def main():
     argv = set(sys.argv[1:])
     dry_run = '--dry-run' in argv
     do_prune = '--prune' in argv
+    do_migrate_wakes = '--migrate-supervisor-wakes' in argv
     yes = not dry_run
     suffix = ' --dry-run' if dry_run else ''
     report = []
@@ -190,6 +244,8 @@ def main():
              archive_args(cron_h, ['--source', 'cron'], yes)),
             (f'archive wake chats older than {wake_h}h{suffix}',
              archive_args(wake_h, ['--source', 'cli', '--title', WAKE_TITLE], yes)),
+            (f'archive tool sessions older than {cron_h}h{suffix}',
+             archive_args(cron_h, ['--source', 'tool'], yes)),
         ]
         for label, args in passes:
             outcome, lines = run_engine(HERMES, args)
@@ -205,6 +261,18 @@ def main():
                 report.append('open cron sessions: skipped — pinned-session list unavailable')
             else:
                 report.append(f'open cron sessions: {delete_pass(HERMES, listing, pinned, yes, dry_run)}')
+
+        if do_migrate_wakes:
+            outcome, listing = run_engine(HERMES, ['sessions', 'list', '--source', 'cli', '--limit', '500'])
+            if 'failed' in outcome or 'skipped' in outcome:
+                report.append(f'legacy supervisor wakes: {outcome}')
+            else:
+                pinned = pinned_ids(HERMES)
+                if pinned is None:
+                    report.append('legacy supervisor wakes: skipped — pinned-session list unavailable')
+                else:
+                    report.append(f'legacy supervisor wakes: '
+                                  f'{migrate_supervisor_wakes(HERMES, listing, pinned, yes, dry_run)}')
 
         if do_prune:
             prune_h = retention_hours(PRUNE_RETENTION_ENV, PRUNE_RETENTION_DEFAULT_H)
