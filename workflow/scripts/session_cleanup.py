@@ -129,7 +129,7 @@ def open_cron_ids(listing):
     """Session IDs still listed under source cron (open rows archive and
     prune both skip). Only strict cron_<id> rows qualify."""
     ids = []
-    for row in listing.splitlines():
+    for row in listing.splitlines() if isinstance(listing, str) else listing:
         tokens = row.split()
         if not tokens or not CRON_ID_RE.match(tokens[-1]):
             continue
@@ -151,10 +151,11 @@ def pinned_ids(hermes):
 
 def delete_pass(hermes, listing, pinned, yes, dry_run):
     stale = []
+    rows = listing.splitlines() if isinstance(listing, str) else listing
     for session_id in open_cron_ids(listing):
         if session_id in pinned:
             continue
-        row = next((r for r in listing.splitlines() if r.rstrip().endswith(session_id)), '')
+        row = next((r for r in rows if r.rstrip().endswith(session_id)), '')
         age = parse_age_minutes(row)
         if age is None or age < DELETE_MIN_AGE_MINUTES:
             continue

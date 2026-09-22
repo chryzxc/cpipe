@@ -37,6 +37,8 @@ def test_open_cron_ids_strictly_matches_cron_rows():
     ])
     assert module["open_cron_ids"](listing) == [
         "cron_b6_20260922_131500", "cron_b6_20260922_124500"]
+    assert module["open_cron_ids"](listing.splitlines()) == [
+        "cron_b6_20260922_131500", "cron_b6_20260922_124500"]
 
 
 def test_delete_pass_skips_fresh_and_ambiguous_rows(tmp_path):
