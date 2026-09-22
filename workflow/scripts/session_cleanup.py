@@ -20,7 +20,8 @@ Two tiers:
                refuses while the gateway holds state.db, which is
                reported, never forced
   --migrate-supervisor-wakes
-               one-time exact-prompt cleanup for legacy CLI wake chats;
+               one-time exact-prompt cleanup for legacy wake chats across
+               sources;
                only deletes a session when its exported first prompt starts
                with `Kanban supervisor wake:`
 
@@ -243,7 +244,7 @@ def main():
             (f'archive cron sessions older than {cron_h}h{suffix}',
              archive_args(cron_h, ['--source', 'cron'], yes)),
             (f'archive wake chats older than {wake_h}h{suffix}',
-             archive_args(wake_h, ['--source', 'cli', '--title', WAKE_TITLE], yes)),
+             archive_args(wake_h, ['--title', WAKE_TITLE], yes)),
             (f'archive tool sessions older than {cron_h}h{suffix}',
              archive_args(cron_h, ['--source', 'tool'], yes)),
         ]
@@ -263,7 +264,7 @@ def main():
                 report.append(f'open cron sessions: {delete_pass(HERMES, listing, pinned, yes, dry_run)}')
 
         if do_migrate_wakes:
-            outcome, listing = run_engine(HERMES, ['sessions', 'list', '--source', 'cli', '--limit', '500'])
+            outcome, listing = run_engine(HERMES, ['sessions', 'list', '--limit', '500'])
             if 'failed' in outcome or 'skipped' in outcome:
                 report.append(f'legacy supervisor wakes: {outcome}')
             else:
