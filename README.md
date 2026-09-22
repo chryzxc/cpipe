@@ -30,6 +30,7 @@ AI teams move fast; trusting what they ship is the hard part. This workflow turn
 | `done` means proven | Acceptance criteria are re-run independently by the Verifier role on the frozen state |
 | One source of truth | Skills deploy as symlinks from a single git-versioned repo — identical across every profile by construction |
 | A board that runs itself | A deterministic supervisor keeps queues flowing, reclaims dead claims, and routes decisions to the coordinator |
+| A readable conversation list | Session hygiene runs every 30 minutes: completed cron ticks are archived, stale open `cron_*` ticks are removed, and coordinator wakes are tagged as integration sessions hidden from user lists |
 
 The result: **you review evidence, not code.**
 
