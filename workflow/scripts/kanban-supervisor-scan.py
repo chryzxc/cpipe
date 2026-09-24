@@ -6,7 +6,7 @@ Detects the board conditions that stall the Bot workflow autonomously:
       (auto-fixable when the skill exists in the global catalog)
   2. cards referencing skills that exist nowhere (escalate)
   3. unassigned todo cards aging past a threshold (escalate to coordinator digest)
-  4. review-requested cards with no reviewer activity (dispatch gap)
+  4. review-lane cards the dispatcher never claims (REVIEW_STALLED)
   5. stale running claims past claim expiry (reclaim candidates)
   6. worker readiness failures: credentials/startup blockers (READINESS_BLOCKER),
       respawn loops past the engine failure limit (RESPAWN_LOOP), and terminal
@@ -15,7 +15,13 @@ Detects the board conditions that stall the Bot workflow autonomously:
       the gateway's own dispatcher logs this condition (gateway.log: "kanban
       dispatcher stuck: ready queue non-empty ... 0 workers spawned") but that
       warning never reaches the board or a human; this scan detects the same
-      condition independently from the DB so it surfaces here instead
+      condition independently from the DB so it surfaces here instead. When the
+      plugin's dispatch-tick telemetry says a card is only waiting behind the
+      per-profile cap, it is reported as QUEUED_AT_CAP instead of a stall, and a
+      gateway that stopped ticking is DISPATCHER_SILENT
+  8. continuity: ESTOP pauses (PAUSED_BY_ESTOP), verdicts parked in block reasons
+      (VERDICT_PARKED), blocks without a reason (BLOCKED_NO_REASON), done cards
+      with no successor (ORPHANED_CHAIN), and cards parked in triage (TRIAGE_PARKED)
 
 Output is consumed by the supervisor cron agent (monitor mode: unchanged
 output suppresses the agent entirely). Exit 0 always.
@@ -30,6 +36,7 @@ import sqlite3
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
@@ -39,6 +46,9 @@ PROFILES = HERMES_HOME / "profiles"
 TODO_AGING_HOURS = 24
 QUEUE_AGING_MINUTES = 30
 READY_STUCK_MINUTES = 15
+REVIEW_STUCK_MINUTES = 15
+DISPATCHER_SILENT_MINUTES = 5
+ORPHAN_LIST_CAP = 8
 COORDINATOR_WAKE_MINUTES = 15
 HEARTBEAT_STALE_MINUTES = 5
 WORKSPACE_CHECK_CAP = 32
@@ -67,6 +77,15 @@ AUTH_FAILURE_RE = re.compile(
     re.IGNORECASE,
 )
 PR_URL_RE = re.compile(r"github\.com/[\w.-]+/[\w.-]+/(pull|pulls)/\d+", re.IGNORECASE)
+# A reviewer that finished its review but could not record the verdict natively
+# (standalone review card claimed from `ready`, so kanban_request_changes rejects
+# it with "active run was not claimed from review") parks the verdict in the
+# block reason. The verdict is terminal; the card is not waiting on anyone.
+VERDICT_RE = re.compile(r"\b(REQUEST_CHANGES|APPROVED)\b")
+VERDICT_CONTEXT_RE = re.compile(
+    r"not claimed from review|request[-_ ]changes transition|kanban_request_changes|verdict",
+    re.IGNORECASE,
+)
 CAPACITY_BLOCK_RE = re.compile(
     r"active[- ]worker cap\b|dispatch[-_]blocked\b|at capacity\b|"
     r"profile is busy|capacity is (?:full|exhausted|at)",
@@ -225,6 +244,66 @@ def _latest_terminal_run(conn, task_id: str):
         return None
 
 
+def _latest_event_reason(conn, task_id: str, kinds=("blocked",)) -> str:
+    """``reason`` from the latest event of the given kinds ('' when absent)."""
+    marks = ",".join("?" * len(kinds))
+    ev = conn.execute(
+        f"SELECT payload FROM task_events WHERE task_id=? AND kind IN ({marks}) "
+        "ORDER BY id DESC LIMIT 1", (task_id, *kinds)).fetchone()
+    if not ev:
+        return ""
+    try:
+        return str(json.loads(ev["payload"] or "{}").get("reason") or "")
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return ""
+
+
+def _child_count(conn, task_id: str) -> int:
+    """Linked successor cards (engine DAG); 0 on schemas without task_links."""
+    try:
+        return conn.execute(
+            "SELECT COUNT(*) AS c FROM task_links WHERE parent_id=?", (task_id,)).fetchone()["c"]
+    except sqlite3.OperationalError:
+        return 0
+
+
+def _review_entered_at(conn, task, now: float) -> float:
+    """When a card entered the review lane: its review_requested event, else the
+    end of its latest run, else when it started. First-tick estimate only; later
+    ticks carry review_since forward in the progress state."""
+    try:
+        ev = conn.execute(
+            "SELECT MAX(created_at) AS at FROM task_events WHERE task_id=? AND kind='review_requested'",
+            (task["id"],)).fetchone()
+        if ev and ev["at"]:
+            return float(ev["at"])
+        run = conn.execute(
+            "SELECT ended_at FROM task_runs WHERE task_id=? ORDER BY id DESC LIMIT 1",
+            (task["id"],)).fetchone()
+        if run and run["ended_at"]:
+            return float(run["ended_at"])
+    except sqlite3.OperationalError:
+        pass
+    return float(task["started_at"] or task["created_at"] or now)
+
+
+def dispatch_health():
+    """Engine dispatch telemetry written by the plugin's on_kanban_dispatch_tick hook."""
+    try:
+        data = json.loads((HERMES_HOME / "logs" / "dispatch-health.json").read_text())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def review_dispatch_enabled() -> bool:
+    try:
+        text = (HERMES_HOME / "config.yaml").read_text()
+    except OSError:
+        return True
+    return not re.search(r"^\s*review_dispatch:\s*(false|no|off)\b", text, re.MULTILINE | re.IGNORECASE)
+
+
 def main() -> None:
     if not DB.exists():
         print("NO BOARD")
@@ -241,14 +320,18 @@ def main() -> None:
 
     paused = estop_state()
     if paused is not None:
-        held = [t for t in tasks if t["status"] == "ready"
+        held = [t for t in tasks if t["status"] in ("ready", "review")
                 or (t["status"] == "todo" and t["assignee"]
                     and (now - (t["created_at"] or now)) / 60 >= QUEUE_AGING_MINUTES)]
         if held:
             reason = f" (reason: {paused['reason']})" if paused.get("reason") else ""
+            since = f" since {paused['engaged_at']}" if paused.get("engaged_at") else ""
+            # engaged_at (not an age) keeps stdout byte-stable across ticks for the monitor hash.
             findings.append(
                 f"PAUSED_BY_ESTOP · {len(held)} card(s) intentionally held by the global "
-                f"emergency stop{reason} — not a dispatcher failure; run `hermes resume` to resume dispatch")
+                f"emergency stop{since}{reason} — not a dispatcher failure; ESTOP also pauses cron, "
+                f"so only the operator can lift it with `hermes resume`; never bypass it with a "
+                f"manual `hermes kanban dispatch`")
 
     review_cards: dict[str, list] = {}
     for t in tasks:
@@ -277,6 +360,15 @@ def main() -> None:
                 findings.append(
                     f"VERDICT_PARKED · {t['id']} · terminal verdict already recorded but card still blocked · {head[:50]}")
                 verdict_parked.add(t["id"])
+                continue
+            reason = _latest_event_reason(conn, t["id"])
+            verdict = VERDICT_RE.search(reason)
+            if verdict and VERDICT_CONTEXT_RE.search(reason):
+                findings.append(
+                    f"VERDICT_PARKED · {t['id']} · {verdict.group(1)} recorded in the block reason — the "
+                    f"native review transition was unavailable (standalone review card) · "
+                    f"{reason.strip()[:50]}")
+                verdict_parked.add(t["id"])
 
     # Coordinator-action blocked reasons (legacy "Nexus" match kept for old comments) have no consumer; they park until a human asks.
     for t in tasks:
@@ -300,6 +392,11 @@ def main() -> None:
             if not reason:
                 reason = (cm["body"] or "").lower()
         if not reason:
+            # Nobody can act on a card whose blocker was never written down.
+            if not _has_marker(conn, t["id"], "blocked_no_reason"):
+                findings.append(
+                    f"BLOCKED_NO_REASON · {t['id']} · blocked without a recorded reason or comment · "
+                    f"{(t['title'] or '')[:60]}")
             continue
         if any(k in reason for k in NEXUS_ACTION_KEYWORDS):
             age_m = (now - basis) / 60
@@ -393,6 +490,7 @@ def main() -> None:
         "SELECT id, title, completed_at FROM tasks "
         "WHERE status='done' AND completed_at IS NOT NULL AND completed_at > ? "
         "ORDER BY completed_at DESC", (now - ORPHANED_CHAIN_WINDOW_HOURS * 3600,)).fetchall()
+    orphans_unlisted = 0
     for t in recent_done:
         waked = conn.execute(
             "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%orphan_wake%' "
@@ -401,10 +499,16 @@ def main() -> None:
             "SELECT body FROM task_comments WHERE task_id=? AND body LIKE 'CONTINUATION:%' "
             "AND created_at >= ? ORDER BY id DESC LIMIT 1", (t["id"], t["completed_at"])).fetchone()
         if not continuation:
-            if not waked:
-                findings.append(
-                    f"ORPHANED_CHAIN · {t['id']} · done without a recorded continuation decision · "
-                    f"{(t['title'] or '')[:60]}")
+            # A linked successor IS the continuation: the engine promotes it when this
+            # parent is done, with no coordinator turn in the critical path.
+            if not waked and not _child_count(conn, t["id"]):
+                listed = sum(1 for f in findings if f.startswith("ORPHANED_CHAIN · "))
+                if listed < ORPHAN_LIST_CAP:
+                    findings.append(
+                        f"ORPHANED_CHAIN · {t['id']} · done without a recorded continuation decision · "
+                        f"{(t['title'] or '')[:60]}")
+                else:
+                    orphans_unlisted += 1
             continue
         marker = conn.execute(
             "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%pr_pending%' "
@@ -416,6 +520,35 @@ def main() -> None:
             findings.append(
                 f"PR_PENDING · {t['id']} · reviewed implementation without a PR successor · "
                 f"{(t['title'] or '')[:60]}")
+    if orphans_unlisted:
+        # Bounded prompt: later ticks list the rest once these carry orphan_wake.
+        findings.append(
+            f"ORPHANED_CHAIN_MORE · {orphans_unlisted} more orphaned card(s) beyond the "
+            f"{ORPHAN_LIST_CAP}-card cap will be listed on later ticks")
+
+    # triage: the engine's block-loop breaker (same block kind re-raised past the
+    # recurrence limit) or an explicit human-triage park. Nothing dispatches triage,
+    # so without this signal the card is silent forever.
+    try:
+        triage_cards = conn.execute(
+            "SELECT id, title FROM tasks WHERE status='triage' ORDER BY created_at").fetchall()
+    except sqlite3.OperationalError:
+        triage_cards = []
+    triage_unlisted = 0
+    for t in triage_cards:
+        if _has_marker(conn, t["id"], "triage_parked"):
+            continue
+        if sum(1 for f in findings if f.startswith("TRIAGE_PARKED · ")) >= ORPHAN_LIST_CAP:
+            triage_unlisted += 1
+            continue
+        reason = _latest_event_reason(conn, t["id"], ("block_loop_detected", "blocked"))
+        findings.append(
+            f"TRIAGE_PARKED · {t['id']} · parked in triage, nothing dispatches it · "
+            f"{(reason.strip() or 'no reason recorded')[:60]} · {(t['title'] or '')[:60]}")
+    if triage_unlisted:
+        findings.append(
+            f"TRIAGE_PARKED_MORE · {triage_unlisted} more triage card(s) beyond the "
+            f"{ORPHAN_LIST_CAP}-card cap will be listed on later ticks")
 
     readiness_signals = 0
     for t in tasks:
@@ -469,12 +602,16 @@ def main() -> None:
         last_comment = conn.execute(
             "SELECT MAX(id) AS m FROM task_comments WHERE task_id=?", (t["id"],)).fetchone()
         entry = {"status": t["status"], "hb": last_comment["m"] or 0}
-        if t["status"] == "ready":
+        if t["status"] in ("ready", "review"):
+            # ready_since / review_since: how long the card has waited in its dispatch lane.
+            since_key = f"{t['status']}_since"
             prior = previous.get(t["id"])
-            if prior and prior.get("status") == "ready" and prior.get("ready_since"):
-                entry["ready_since"] = prior["ready_since"]
+            if prior and prior.get("status") == t["status"] and prior.get(since_key):
+                entry[since_key] = prior[since_key]
+            elif t["status"] == "review":
+                entry[since_key] = _review_entered_at(conn, t, now)
             else:
-                entry["ready_since"] = now
+                entry[since_key] = now
         current[t["id"]] = entry
     if previous:
         for tid in sorted(set(previous) | set(current)):
@@ -565,23 +702,6 @@ def main() -> None:
                         f"ESCALATE_UNKNOWN_SKILL · {tid} · skill '{s}' exists nowhere; "
                         f"strip from card or install source · {title}")
 
-        if status == "review":
-            last = conn.execute(
-                "SELECT MAX(id) AS m FROM task_runs WHERE task_id=?", (tid,)).fetchone()
-            if not last or not last["m"]:
-                age_h = (now - (t["started_at"] or t["created_at"] or now)) / 3600
-                if age_h >= 2:
-                    findings.append(
-                        f"REVIEW_STALLED · {tid} · review requested {age_h:.0f}h ago, no reviewer dispatched · {title}")
-            else:
-                row = conn.execute(
-                    "SELECT ended_at FROM task_runs WHERE id=?", (last["m"],)).fetchone()
-                ended = row["ended_at"] if row and row["ended_at"] else now
-                age_h = (now - ended) / 3600
-                if age_h >= 2:
-                    findings.append(
-                        f"REVIEW_STALLED · {tid} · review requested {age_h:.0f}h ago, no reviewer dispatched · {title}")
-
         if status in ("running", "in_progress"):
             hb = t["last_heartbeat_at"]
             heartbeat_basis = hb or t["started_at"] or t["created_at"]
@@ -595,26 +715,58 @@ def main() -> None:
             if expires and expires < now:
                 findings.append(f"STALE_CLAIM · {tid} · claim expired {((now-expires)/60):.0f}m ago · {title}")
 
-    # READY_STUCK: the engine dispatcher (gateway, 15s ticks) logs "kanban dispatcher
-    # stuck: ready queue non-empty ... 0 workers spawned" to gateway.log but nothing
-    # turns that into a board-visible signal. Detect the same condition independently
-    # from ready_since (tracked above across ticks, not from row creation time — a
-    # card can sit blocked for days before becoming ready) so a human or the
-    # supervisor agent actually sees it instead of it sitting silent in a log file.
+    # READY_STUCK / REVIEW_STALLED: the engine dispatcher (gateway, 15s ticks) logs
+    # "kanban dispatcher stuck ... 0 workers spawned" to gateway.log but nothing turns
+    # that into a board-visible signal. Detect it independently from ready_since /
+    # review_since (tracked above across ticks, not from row creation time — a card
+    # can sit blocked for days before becoming ready). The plugin's dispatch-tick
+    # telemetry (logs/dispatch-health.json) names why the engine held a card, so a
+    # card that is merely queued behind the per-profile cap is reported as
+    # QUEUED_AT_CAP (informational) instead of a stall.
     if paused is None:
+        health = dispatch_health() or {}
+        holds = health.get("holds") or {}
+        review_lane = review_dispatch_enabled()
+        waiting = 0
         for t in tasks:
-            if t["status"] != "ready":
+            status = t["status"]
+            if status not in ("ready", "review"):
                 continue
+            if status == "review" and not review_lane:
+                continue
+            waiting += 1
             workspace = t["workspace_path"]
             if workspace and workspace in checked and not checked[workspace]:
                 continue  # already explained by WORKSPACE_INVALID
-            ready_since = current.get(t["id"], {}).get("ready_since", now)
-            age_m = (now - ready_since) / 60
-            if age_m >= READY_STUCK_MINUTES:
+            since = current.get(t["id"], {}).get(f"{status}_since", now)
+            age_m = (now - since) / 60
+            threshold = READY_STUCK_MINUTES if status == "ready" else REVIEW_STUCK_MINUTES
+            if age_m < threshold:
+                continue
+            title = (t["title"] or "")[:60]
+            hold = (holds.get(t["id"]) or {}).get("reason") or ""
+            if hold.startswith("per_profile_cap"):
+                findings.append(
+                    f"QUEUED_AT_CAP · {t['id']} · {status} card queued behind {hold} — "
+                    f"dispatches when a slot frees · {title}")
+                continue
+            note = f" · engine hold: {hold}" if hold else ""
+            if status == "ready":
                 findings.append(
                     f"READY_STUCK · {t['id']} · ready {age_m:.0f}m without the dispatcher "
                     f"promoting it to running — run `hermes kanban dispatch` and check profile "
-                    f"health (venv, PATH, credentials) if it recurs · {(t['title'] or '')[:60]}")
+                    f"health (venv, PATH, credentials) if it recurs{note} · {title}")
+            else:
+                findings.append(
+                    f"REVIEW_STALLED · {t['id']} · review requested {age_m / 60:.0f}h ago, "
+                    f"no reviewer dispatched{note} · {title}")
+        last_tick = health.get("last_tick_at")
+        if waiting and last_tick and (now - float(last_tick)) / 60 >= DISPATCHER_SILENT_MINUTES:
+            ticked = datetime.fromtimestamp(float(last_tick), timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            findings.append(
+                f"DISPATCHER_SILENT · gateway dispatcher last ticked at {ticked} while {waiting} "
+                f"ready/review card(s) wait — check `hermes gateway status` and "
+                f"kanban.dispatch_in_gateway")
 
     conn.close()
 

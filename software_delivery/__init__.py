@@ -1,7 +1,9 @@
 """Hermes Software Delivery native plugin.
 
 Registers the deterministic delivery tools (policy check, board intelligence,
-mutation check), a doctor CLI command, and a passive session-metrics hook.
+mutation check), a doctor CLI command, a passive session-metrics hook, and the
+dispatch-liveness hooks (engine tick telemetry + stall notices, see
+``liveness.py``).
 Policy skills, scripts, cron definitions, and config assertions live in
 ``workflow/`` and are deployed by ``install.sh``.
 """
@@ -15,6 +17,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+from . import liveness
 
 __all__ = ["register"]
 
@@ -151,6 +155,7 @@ def _doctor_command(args) -> str:
         capture_output=True, text=True, timeout=300,
     )
     status.append(policy.stdout.strip())
+    status.extend(liveness.liveness_report())
     status.append(_workflow_source_status())
     return "\n".join(status)
 
@@ -193,7 +198,7 @@ _MUTATION_SCHEMA = {
 
 
 def register(ctx):
-    """Register deterministic delivery tools, doctor CLI, and metrics hook."""
+    """Register deterministic delivery tools, doctor CLI, metrics and liveness hooks."""
     ctx.register_tool(
         name="delivery_check_policy", toolset="software_delivery",
         schema=_POLICY_SCHEMA, handler=lambda args, **kw: _check_policy(),
@@ -215,3 +220,5 @@ def register(ctx):
         description="Check software-delivery plugin status and run the policy validator.",
     )
     ctx.register_hook("on_session_end", _on_session_end)
+    ctx.register_hook("on_kanban_dispatch_tick", liveness.record_dispatch_tick)
+    ctx.register_hook("pre_llm_call", liveness.liveness_notice)

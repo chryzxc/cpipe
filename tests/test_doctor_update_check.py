@@ -72,4 +72,4 @@ def test_version_consistency():
     plugin_version = re.search(r"version:\s*(\S+)", plugin_yaml).group(1)
     pyproject_version = re.search(r'version\s*=\s*"([^"]+)"', pyproject).group(1)
     assert plugin_version == pyproject_version
-    assert plugin_version == "0.3.0"
+    assert plugin_version == "0.4.0"

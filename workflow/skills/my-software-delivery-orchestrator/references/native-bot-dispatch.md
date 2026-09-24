@@ -109,7 +109,8 @@ After an implementer freezes a meaningful code change:
 1. Implementer requests same-card independent review from **Reviewer** with the exact frozen diff, changed files, test evidence, and required OCR evidence.
 2. Reviewer approves by completing the review state, returns a confirmed in-scope defect through `request_changes`, or blocks for missing independent evidence. A changed head requires fresh review.
 3. Route regression/release evidence to **Verifier** when triggered and trust-boundary, credential, auth, privacy, or plausible vulnerability work to **Security Reviewer**; these remain distinct linked cards when required.
-4. Create a separate correction card only when a finding is a distinct independently reviewable behavior, needs another workspace or owner, or exceeds the original one-commit boundary.
+4. `request_changes` only works on a card whose active run was claimed from the `review` lane. A standalone review card (claimed from `ready`) cannot use it: the Reviewer completes that card with a summary that starts with `REQUEST_CHANGES` or `APPROVED` plus the finding IDs, and the Coordinator routes the findings. Never block a review card just to record a verdict — the verdict parks and the chain stalls.
+5. Create a separate correction card only when a finding is a distinct independently reviewable behavior, needs another workspace or owner, or exceeds the original one-commit boundary.
 
 The original implementer never self-approves. Gateway state, a profile's existence, a green build, or a worker summary is not final evidence by itself.
 

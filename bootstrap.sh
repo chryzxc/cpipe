@@ -1,7 +1,7 @@
 #!/bin/bash
 # One-command bootstrap: clone (or reuse) the software-delivery repo and install.
 # Usage: bash <(curl -fsSL https://raw.githubusercontent.com/chryzxc/hermes-software-delivery/main/bootstrap.sh)
-# Pin a branch/tag/commit: HERMES_DELIVERY_REF=v0.3.0 bash <(curl -fsSL ...)
+# Pin a branch/tag/commit: HERMES_DELIVERY_REF=v0.4.0 bash <(curl -fsSL ...)
 set -euo pipefail
 
 H="${HERMES_HOME:-$HOME/.hermes}"

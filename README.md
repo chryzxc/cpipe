@@ -139,7 +139,22 @@ Works with 3 profiles or 13. Different team setups adopt the same workflow witho
 - `delivery_board_intelligence` — per-stage wall-clock, queue waits, gate rejection rates, rework loops
 - `delivery_mutation_check` — flips one condition in a disposable worktree and requires the focused test to fail
 
-Plus `hermes software-delivery` doctor CLI and an `on_session_end` metrics hook (append-only JSONL).
+Plus the `hermes software-delivery` doctor CLI, an `on_session_end` metrics hook (append-only JSONL), and the liveness hooks described below.
+
+## Liveness & autonomy
+
+The chain is meant to run from plan to final report without you asking "what's next?". The pieces that keep it moving:
+
+| Piece | What it does |
+|---|---|
+| Gateway dispatcher | Every 15s it claims `ready` cards **and** `review` cards (native same-card review). Linked children are promoted automatically when their parents finish, so pre-created chains need no coordinator turn between steps. |
+| Dispatch telemetry | The plugin's `on_kanban_dispatch_tick` hook writes `~/.hermes/logs/dispatch-health.json`: last tick, last spawn, and why each held card was held (per-profile cap, respawn guard, unassigned…). |
+| Stall supervisor | The cron scan reads that telemetry. A card waiting behind the per-profile cap shows up as `QUEUED_AT_CAP` (informational), not as a stall. A real stall is `READY_STUCK`/`REVIEW_STALLED` with the engine's hold reason attached, and `DISPATCHER_SILENT` means the gateway stopped ticking. It also surfaces cards nothing else would wake: `TRIAGE_PARKED`, `BLOCKED_NO_REASON`, and review verdicts parked in block reasons (`VERDICT_PARKED`). |
+| Session notice | The plugin's `pre_llm_call` hook tells the next chat turn when ESTOP is holding work or the dispatcher has gone silent, once per session. |
+
+**Emergency stop.** `~/.hermes/ESTOP` (for example the Dock's pause control) pauses the dispatcher **and every cron job, including the stall supervisor**. Work stops on purpose and nothing reports it, except the session notice and the doctor. Agents are told never to lift it and never to bypass it with `hermes kanban dispatch`, because that manual pass ignores ESTOP. Run `hermes resume` when you want work to continue.
+
+**Troubleshooting a stalled board:** run `hermes software-delivery` (the doctor). It prints ESTOP state, the dispatcher's last tick and spawn, the current holds grouped by reason, when the supervisor last ran, and board counts. The hooks only load after `./install.sh` and a gateway restart.
 
 ## The learning loop
 
