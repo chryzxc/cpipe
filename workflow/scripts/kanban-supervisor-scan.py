@@ -185,6 +185,29 @@ def _has_marker(conn, task_id: str, marker: str) -> bool:
     return bool(row)
 
 
+def estop_state():
+    """Read the global emergency-stop sentinel (``$HERMES_HOME/ESTOP``) deterministically.
+
+    Mirrors ``agent.estop.get_state`` without importing the engine: one uncached ``os.stat``
+    plus an optional JSON read. Returns None when not engaged, or a dict with ``reason``/
+    ``engaged_at`` (both possibly None for a corrupt/empty sentinel — fail safe, still engaged).
+    """
+    path = HERMES_HOME / "ESTOP"
+    try:
+        if not path.exists():
+            return None
+    except OSError:
+        return {"reason": None, "engaged_at": None}
+    state = {"reason": None, "engaged_at": None}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            state = {"reason": raw.get("reason") or None, "engaged_at": raw.get("engaged_at") or None}
+    except (OSError, ValueError, TypeError):
+        pass
+    return state
+
+
 def _latest_terminal_run(conn, task_id: str):
     """Latest finished run, or None when runs are absent/unreadable (old schema)."""
     try:
@@ -209,6 +232,15 @@ def main() -> None:
         "SELECT * FROM tasks "
         "WHERE status IN ('ready','blocked','todo','review','running','in_progress')"
     ).fetchall()
+
+    paused = estop_state()
+    if paused is not None:
+        held = [t for t in tasks if t["status"] == "ready"]
+        if held:
+            reason = f" (reason: {paused['reason']})" if paused.get("reason") else ""
+            findings.append(
+                f"PAUSED_BY_ESTOP · {len(held)} ready card(s) intentionally held by the global "
+                f"emergency stop{reason} — not a dispatcher failure; run `hermes resume` to resume dispatch")
 
     review_cards: dict[str, list] = {}
     for t in tasks:
