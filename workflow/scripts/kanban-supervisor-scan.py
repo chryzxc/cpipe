@@ -9,8 +9,13 @@ Detects the board conditions that stall the Bot workflow autonomously:
   4. review-requested cards with no reviewer activity (dispatch gap)
   5. stale running claims past claim expiry (reclaim candidates)
   6. worker readiness failures: credentials/startup blockers (READINESS_BLOCKER),
-     respawn loops past the engine failure limit (RESPAWN_LOOP), and terminal
-     runs that produced no usable response (WORKER_EMPTY_RESULT)
+      respawn loops past the engine failure limit (RESPAWN_LOOP), and terminal
+      runs that produced no usable response (WORKER_EMPTY_RESULT)
+  7. ready cards the engine dispatcher never promotes to running (READY_STUCK) —
+      the gateway's own dispatcher logs this condition (gateway.log: "kanban
+      dispatcher stuck: ready queue non-empty ... 0 workers spawned") but that
+      warning never reaches the board or a human; this scan detects the same
+      condition independently from the DB so it surfaces here instead
 
 Output is consumed by the supervisor cron agent (monitor mode: unchanged
 output suppresses the agent entirely). Exit 0 always.
@@ -33,6 +38,7 @@ GLOBAL_SKILLS = HERMES_HOME / "skills"
 PROFILES = HERMES_HOME / "profiles"
 TODO_AGING_HOURS = 24
 QUEUE_AGING_MINUTES = 30
+READY_STUCK_MINUTES = 15
 COORDINATOR_WAKE_MINUTES = 15
 HEARTBEAT_STALE_MINUTES = 5
 WORKSPACE_CHECK_CAP = 32
@@ -462,7 +468,14 @@ def main() -> None:
     for t in active_cards:
         last_comment = conn.execute(
             "SELECT MAX(id) AS m FROM task_comments WHERE task_id=?", (t["id"],)).fetchone()
-        current[t["id"]] = {"status": t["status"], "hb": last_comment["m"] or 0}
+        entry = {"status": t["status"], "hb": last_comment["m"] or 0}
+        if t["status"] == "ready":
+            prior = previous.get(t["id"])
+            if prior and prior.get("status") == "ready" and prior.get("ready_since"):
+                entry["ready_since"] = prior["ready_since"]
+            else:
+                entry["ready_since"] = now
+        current[t["id"]] = entry
     if previous:
         for tid in sorted(set(previous) | set(current)):
             old = previous.get(tid)
@@ -581,6 +594,27 @@ def main() -> None:
             expires = row["claim_expires"] if row and row["claim_expires"] else None
             if expires and expires < now:
                 findings.append(f"STALE_CLAIM · {tid} · claim expired {((now-expires)/60):.0f}m ago · {title}")
+
+    # READY_STUCK: the engine dispatcher (gateway, 15s ticks) logs "kanban dispatcher
+    # stuck: ready queue non-empty ... 0 workers spawned" to gateway.log but nothing
+    # turns that into a board-visible signal. Detect the same condition independently
+    # from ready_since (tracked above across ticks, not from row creation time — a
+    # card can sit blocked for days before becoming ready) so a human or the
+    # supervisor agent actually sees it instead of it sitting silent in a log file.
+    if paused is None:
+        for t in tasks:
+            if t["status"] != "ready":
+                continue
+            workspace = t["workspace_path"]
+            if workspace and workspace in checked and not checked[workspace]:
+                continue  # already explained by WORKSPACE_INVALID
+            ready_since = current.get(t["id"], {}).get("ready_since", now)
+            age_m = (now - ready_since) / 60
+            if age_m >= READY_STUCK_MINUTES:
+                findings.append(
+                    f"READY_STUCK · {t['id']} · ready {age_m:.0f}m without the dispatcher "
+                    f"promoting it to running — run `hermes kanban dispatch` and check profile "
+                    f"health (venv, PATH, credentials) if it recurs · {(t['title'] or '')[:60]}")
 
     conn.close()
 
