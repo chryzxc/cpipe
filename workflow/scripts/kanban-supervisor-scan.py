@@ -235,11 +235,13 @@ def main() -> None:
 
     paused = estop_state()
     if paused is not None:
-        held = [t for t in tasks if t["status"] == "ready"]
+        held = [t for t in tasks if t["status"] == "ready"
+                or (t["status"] == "todo" and t["assignee"]
+                    and (now - (t["created_at"] or now)) / 60 >= QUEUE_AGING_MINUTES)]
         if held:
             reason = f" (reason: {paused['reason']})" if paused.get("reason") else ""
             findings.append(
-                f"PAUSED_BY_ESTOP · {len(held)} ready card(s) intentionally held by the global "
+                f"PAUSED_BY_ESTOP · {len(held)} card(s) intentionally held by the global "
                 f"emergency stop{reason} — not a dispatcher failure; run `hermes resume` to resume dispatch")
 
     review_cards: dict[str, list] = {}
@@ -526,7 +528,7 @@ def main() -> None:
 
         if status == "todo" and assignee:
             age_m = (now - (t["created_at"] or now)) / 60
-            if age_m >= QUEUE_AGING_MINUTES:
+            if age_m >= QUEUE_AGING_MINUTES and paused is None:
                 findings.append(
                     f"QUEUE_AGING · {tid} · assigned to {assignee} but unstarted {age_m:.0f}m · {title}")
             continue
