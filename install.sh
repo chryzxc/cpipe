@@ -83,6 +83,15 @@ if [ -x "$HERMES_BIN" ]; then
   "$HERMES_BIN" plugins enable software-delivery </dev/null >/dev/null 2>&1 \
     && echo "   plugin enabled (takes effect on next session)" \
     || echo "   could not auto-enable — run: hermes plugins enable software-delivery"
+  # Bots run under their own profiles, which only load plugins listed in their own config:
+  # without this the worker hooks (node_modules link, liveness) and delivery_* tools never reach them.
+  for dir in "$H"/profiles/*/; do
+    profile="$(basename "$dir")"
+    mkdir -p "$dir/plugins"
+    ln -sfn "$H/plugins/software-delivery" "$dir/plugins/software-delivery"
+    "$HERMES_BIN" -p "$profile" plugins enable software-delivery </dev/null >/dev/null 2>&1 \
+      || echo "   could not enable in profile $profile — run: hermes -p $profile plugins enable software-delivery"
+  done
 else
   echo "   hermes binary not found — run: hermes plugins enable software-delivery"
 fi
