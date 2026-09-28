@@ -75,6 +75,10 @@ HERMES_BIN="$(command -v hermes || true)"
 [ -n "$HERMES_BIN" ] || HERMES_BIN="$H/hermes-agent/venv/bin/hermes"
 if [ -x "$HERMES_BIN" ]; then
   "$HERMES_BIN" plugins disable software-delivery </dev/null >/dev/null 2>&1 || true
+  for dir in "$H"/profiles/*/; do
+    "$HERMES_BIN" -p "$(basename "$dir")" plugins disable software-delivery </dev/null >/dev/null 2>&1 || true
+    [ -L "$dir/plugins/software-delivery" ] && rm -f "$dir/plugins/software-delivery"
+  done
 fi
 
 echo "-- 5/5 roster"
