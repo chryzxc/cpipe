@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import liveness, submit, workspace_prep
+from . import block_reasons, liveness, submit, workspace_prep
 
 __all__ = ["register"]
 
@@ -229,5 +229,6 @@ def register(ctx):
     )
     ctx.register_hook("on_session_end", _on_session_end)
     ctx.register_hook("on_kanban_dispatch_tick", liveness.record_dispatch_tick)
+    ctx.register_hook("on_kanban_dispatch_tick", block_reasons.explain_blocks)
     ctx.register_hook("pre_llm_call", liveness.liveness_notice)
     ctx.register_hook("pre_llm_call", workspace_prep.prepare_workspace)

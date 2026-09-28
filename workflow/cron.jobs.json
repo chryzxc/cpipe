@@ -118,5 +118,18 @@
     },
     "enabled": true,
     "deliver": "bot-chat"
+  },
+  {
+    "id": "boardtriage1",
+    "name": "Board triage & reminders",
+    "script": "board_triage.py",
+    "no_agent": true,
+    "schedule": {
+      "kind": "interval",
+      "minutes": 120,
+      "display": "every 120m"
+    },
+    "enabled": true,
+    "deliver": "bot-chat"
   }
 ]
