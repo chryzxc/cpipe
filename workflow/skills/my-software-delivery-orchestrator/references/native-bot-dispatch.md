@@ -67,6 +67,7 @@ hermes kanban create "<precise task title>" \
 
 - Repeat `--skill` only for separately verified skills installed on the assignee profile.
 - Use `--project` and a deterministic `--branch` only when the task is explicitly authorized to work in that project/worktree.
+- Review, verification, and correction cards inherit the parent card's exact `--workspace dir:<worktree>` and `--branch`. Never create them with a scratch workspace: the worker cannot see the code and blocks with `NEEDS_ASSISTANCE`.
 - Do not pass `--model` / `--provider` unless live preflight proves the override is valid and the changed placement is authorized.
 - Use `--goal` only when the card is genuinely open-ended and its completion criteria are judgeable from the card body.
 - Native session-aware creation is preferred. If CLI creation is required, immediately add an explicit `notify+wake` subscription for the originating source and prove it with `hermes kanban notify-list <task-id> --json` before leaving the card unattended.
@@ -110,7 +111,7 @@ After an implementer freezes a meaningful code change:
 2. Reviewer approves by completing the review state, returns a confirmed in-scope defect through `request_changes`, or blocks for missing independent evidence. A changed head requires fresh review.
 3. Route regression/release evidence to **Verifier** when triggered and trust-boundary, credential, auth, privacy, or plausible vulnerability work to **Security Reviewer**; these remain distinct linked cards when required.
 4. `request_changes` only works on a card whose active run was claimed from the `review` lane. A standalone review card (claimed from `ready`) cannot use it: the Reviewer completes that card with a summary that starts with `REQUEST_CHANGES` or `APPROVED` plus the finding IDs, and the Coordinator routes the findings. Never block a review card just to record a verdict — the verdict parks and the chain stalls.
-5. Create a separate correction card only when a finding is a distinct independently reviewable behavior, needs another workspace or owner, or exceeds the original one-commit boundary.
+5. Create a separate correction card only when a finding is a distinct independently reviewable behavior, needs another workspace or owner, or exceeds the original behavior boundary.
 
 The original implementer never self-approves. Gateway state, a profile's existence, a green build, or a worker summary is not final evidence by itself.
 

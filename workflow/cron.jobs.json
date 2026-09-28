@@ -105,5 +105,18 @@
     },
     "enabled": true,
     "deliver": "local"
+  },
+  {
+    "id": "stallalert01",
+    "name": "Stall alerts",
+    "script": "stall_alert.py",
+    "no_agent": true,
+    "schedule": {
+      "kind": "interval",
+      "minutes": 10,
+      "display": "every 10m"
+    },
+    "enabled": true,
+    "deliver": "bot-chat"
   }
 ]

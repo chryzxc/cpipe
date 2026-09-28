@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import liveness
+from . import liveness, submit, workspace_prep
 
 __all__ = ["register"]
 
@@ -214,6 +214,14 @@ def register(ctx):
             worktree=args["worktree"], file_path=args["file_path"],
             test_filter=args["test_filter"], test_cmd=args.get("test_cmd")),
     )
+    ctx.register_tool(
+        name="delivery_submit", toolset="software_delivery",
+        schema=submit.SCHEMA, handler=submit.submit,
+    )
+    ctx.register_tool(
+        name="delivery_verify_failed", toolset="software_delivery",
+        schema=submit.VERIFY_FAILED_SCHEMA, handler=submit.verify_failed,
+    )
     ctx.register_cli_command(
         name="software-delivery", help="Software delivery plugin doctor",
         setup_fn=_noop_setup, handler_fn=lambda args: _doctor_command(args),
@@ -222,3 +230,4 @@ def register(ctx):
     ctx.register_hook("on_session_end", _on_session_end)
     ctx.register_hook("on_kanban_dispatch_tick", liveness.record_dispatch_tick)
     ctx.register_hook("pre_llm_call", liveness.liveness_notice)
+    ctx.register_hook("pre_llm_call", workspace_prep.prepare_workspace)
