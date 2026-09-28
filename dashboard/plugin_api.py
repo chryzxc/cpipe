@@ -35,13 +35,9 @@ def _read():
 def queue():
     conn = _read()
     try:
-        cards = triage.classify(conn)
-        walled = triage.provider_walled(conn, time.time())
+        return triage.queue(conn)
     finally:
         conn.close()
-    groups = [{"key": k, "heading": h, "hint": hint, "cards": [c for c in cards if c["group"] == k]}
-              for k, (h, hint) in triage.GROUPS.items()]
-    return {"groups": [g for g in groups if g["cards"]], "total": len(cards), "provider_walled": walled}
 
 
 @router.get("/cards/{task_id}")

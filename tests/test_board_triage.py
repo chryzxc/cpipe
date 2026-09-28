@@ -62,3 +62,15 @@ def test_groups_auto_fixes_and_reminds_once_a_day(tmp_path):
     assert mod["build_digest"](cards, [], [], state, now + 3600)[0] == ""  # quiet until tomorrow
     card(conn, "t_new_ask", "blocked", "needs_input", "Approve the schema change?")
     assert "t_new_ask" in mod["build_digest"](mod["classify"](conn), [], [], state, now + 3600)[0]
+
+
+def test_queue_lists_non_empty_groups_in_order(tmp_path):
+    mod = runpy.run_path(str(SCRIPT))
+    conn = board(tmp_path)
+    card(conn, "t_env", "blocked", "capability", "workspace is not a git repo")
+    card(conn, "t_ask", "blocked", "needs_input", "Pick option A or B")
+
+    q = mod["queue"](conn)
+    assert [g["key"] for g in q["groups"]] == ["decide", "stale"]
+    assert q["total"] == 2 and q["provider_walled"] is False
+    assert q["groups"][0]["cards"][0]["reason"] == "Pick option A or B"
