@@ -146,6 +146,7 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 ```
 ├── plugin.yaml                  # native Hermes plugin manifest (v2)
 ├── software_delivery/           # plugin: agent tools + doctor CLI + hooks
+├── dashboard/                   # Mission Control tab for `hermes dashboard`
 ├── workflow/
 │   ├── bots/                    # example personas + role skills, copied into mapped profiles
 │   ├── skills/                  # orchestrator policy skill + evidence/ADR/standards skills
@@ -175,6 +176,8 @@ The chain is meant to run from plan to final report without you asking "what's n
 | Gateway dispatcher | Every 15s it claims `ready` cards **and** `review` cards (native same-card review). Linked children are promoted automatically when their parents finish, so pre-created chains need no coordinator turn between steps. |
 | Dispatch telemetry | The plugin's `on_kanban_dispatch_tick` hook writes `~/.hermes/logs/dispatch-health.json`: last tick, last spawn, and why each held card was held (per-profile cap, respawn guard, unassigned…). |
 | Stall supervisor | The cron scan reads that telemetry. A card waiting behind the per-profile cap shows up as `QUEUED_AT_CAP` (informational), not as a stall. A real stall is `READY_STUCK`/`REVIEW_STALLED` with the engine's hold reason attached, and `DISPATCHER_SILENT` means the gateway stopped ticking. It also surfaces cards nothing else would wake: `TRIAGE_PARKED`, `BLOCKED_NO_REASON`, and review verdicts parked in block reasons (`VERDICT_PARKED`). |
+| Board triage | Every 2h a deterministic cron retries blocked cards that only hit a rate limit or timeout (twice at most, never while the provider is still rate limiting) and moves reason-less blocked children back to wait on their parent. Once a day, or when a new decision is needed, it sends you a digest grouped as *needs your decision / looks done / blocked by old rules / parked*. Reply `continue <id> <what to do>`, `archive <id>` or `resubmit <id>` and the coordinator acts on it. |
+| Mission Control | A dashboard tab (`hermes dashboard` → Mission Control) with the same groups. Open a card to read its reason, body and latest comments, then Continue with a note, Resubmit it fresh under the current flow, or Archive. Tick several for bulk actions. |
 | Session notice | The plugin's `pre_llm_call` hook tells the next chat turn when ESTOP is holding work or the dispatcher has gone silent, once per session. |
 
 **Emergency stop.** `~/.hermes/ESTOP` (for example the Dock's pause control) pauses the dispatcher **and every cron job, including the stall supervisor**. Work stops on purpose and nothing reports it, except the session notice and the doctor. Agents are told never to lift it and never to bypass it with `hermes kanban dispatch`, because that manual pass ignores ESTOP. Run `hermes resume` when you want work to continue.
