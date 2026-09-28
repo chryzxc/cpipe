@@ -1,0 +1,14 @@
+{
+  "name": "mission-control",
+  "label": "Mission Control",
+  "description": "Stuck delivery cards grouped by what they need from you — continue, archive, or resubmit in one click",
+  "icon": "Zap",
+  "version": "1.0.0",
+  "tab": {
+    "path": "/mission-control",
+    "position": "before:kanban"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}

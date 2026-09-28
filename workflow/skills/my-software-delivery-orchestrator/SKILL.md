@@ -92,6 +92,14 @@ Load `references/routing.md` for the Bot selector, backend, placement, and skill
 
 Run coordination sessions short: one material task per session, final report, then end it. Heavy tool output (diffs, file reads, test logs) belongs on Kanban cards and worker sessions, never in a growing coordinator transcript — a marathon Coordinator session re-pays its whole context every turn. Independent gates (Reviewer, Verifier, Security Reviewer) review the same frozen SHA concurrently as separate cards; Coordinator applies the most severe verdict and holds the card until all return. Batch queued small cards in the same module into one Implementer session (max 3, zero shared files, one frozen commit per card) to amortize session startup. Route mechanical diffs (≤2 files, no contract change, existing coverage) through the fast lane: Implementer direct plus same-card Reviewer review. Any check expressible as a script runs without an LLM; LLM passes only triage pre-filtered script output or review diffs. Every card carries a `token_budget`; workers return `BLOCKED: budget exceeded` instead of grinding. Full policy: `references/parallel-execution.md` and `team-config.yaml` (`parallelism`, `token_policy`).
 
+## Board triage replies
+
+The `Board triage & reminders` cron (every 2h, digest once a day or when a new decision is needed) retries cards that only hit a rate limit and lists the rest; Mission Control in the dashboard shows the same groups with buttons. When the operator replies to that digest:
+- `continue <id> [instruction]`: read the card and its latest comments. If the block was an old rule or a broken workspace (empty scratch, no node_modules, OCR, install stop), resubmit instead. Otherwise record the instruction as the decision: `hermes kanban unblock <id> --reason "<instruction>"` (blocked/scheduled) or comment it and `hermes kanban promote <id>` (todo). A triage card needs the instruction in its body first: comment it, then `hermes kanban specify <id>`.
+- `archive <id>`: operator-directed; comment one line of why, then `hermes kanban archive <id>`.
+- `resubmit <id>`: write a brief from the card (goal, acceptance criteria, named files, under 3000 chars), call `delivery_submit` with the card's project, then comment `Resubmitted as <new ids>` on the old card and archive it.
+Several ids in one reply apply the same action to each. Report one line per card.
+
 ## Completion
 
 Coordinator reports the assigned Bot(s), actual execution backend and observed placement, scope, evidence, findings, residual risk, approval boundaries, and any blocked work. `DONE` requires current evidence for every acceptance criterion and every required final-state gate. `HARD_BLOCKED` is incomplete work, never done.
