@@ -116,8 +116,27 @@ def _on_session_end(**kwargs) -> None:
         pass
 
 
-def _noop_setup(parser) -> None:
-    return None
+def _cli_setup(parser) -> None:
+    parser.add_argument("action", nargs="?", choices=["doctor", "queue"], default="doctor",
+                        help="doctor (default): plugin status; queue: stuck cards as JSON (Herm Mission Control)")
+
+
+def _queue_json() -> str:
+    """Board triage's grouped stuck-card queue, read-only."""
+    import sqlite3
+    spec = importlib.util.spec_from_file_location("board_triage", _SCRIPTS / "board_triage.py")
+    triage = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(triage)
+    conn = sqlite3.connect(f"file:{triage.DB}?mode=ro", uri=True)
+    try:
+        return json.dumps(triage.queue(conn))
+    finally:
+        conn.close()
+
+
+def _cli_command(args) -> None:
+    # Hermes only uses a handler's return value as the exit code, so print.
+    print(_queue_json() if getattr(args, "action", "doctor") == "queue" else _doctor_command(args))
 
 
 def _workflow_source_status() -> str:
@@ -224,7 +243,7 @@ def register(ctx):
     )
     ctx.register_cli_command(
         name="software-delivery", help="Software delivery plugin doctor",
-        setup_fn=_noop_setup, handler_fn=lambda args: _doctor_command(args),
+        setup_fn=_cli_setup, handler_fn=_cli_command,
         description="Check software-delivery plugin status and run the policy validator.",
     )
     ctx.register_hook("on_session_end", _on_session_end)
