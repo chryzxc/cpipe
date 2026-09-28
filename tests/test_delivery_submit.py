@@ -1,5 +1,5 @@
-"""A small request becomes ONE high-priority card on the implementer with a same-card review
-hand-off; a large one goes to the planner. Missing input never reaches the board."""
+"""Every request is planned by the planner first (small: change + pins; large: after a cheap map),
+then built with a same-card review and verified. Missing input never reaches the board."""
 import json
 
 from software_delivery import submit
@@ -12,13 +12,13 @@ def roster(tmp_path, monkeypatch):
     monkeypatch.setattr(submit, "HERMES_HOME", tmp_path)
 
 
-def test_small_request_is_one_fast_path_card_with_same_card_review(tmp_path, monkeypatch):
+def test_small_request_starts_with_a_pin_plan_on_the_planner(tmp_path, monkeypatch):
     roster(tmp_path, monkeypatch)
     argv, assignee = submit.build_card("Fix icon size", "Make the error icon 16px", "climaterx", "small")
-    assert assignee == "forge"
+    assert assignee == "archon" and argv[2] == "Plan: Fix icon size"
     body = argv[argv.index("--body") + 1]
     assert "Make the error icon 16px" in body
-    assert "--reviewer sentry" in body and "SAME card" in body and "token_budget" in body
+    assert "PINS" in body and "UNPINNED" in body and "Read-only" in body and "token_budget" in body
     assert argv[argv.index("--project") + 1] == "climaterx"
     assert argv[argv.index("--workspace") + 1] == "worktree"
     assert int(argv[argv.index("--priority") + 1]) > submit.PRIORITY["large"]
@@ -51,7 +51,7 @@ def test_large_request_maps_cheaply_then_plans_from_the_map(tmp_path, monkeypatc
     assert result["cards"] == {"map": "t_1", "plan": "t_2", "build": "t_3", "verify": "t_4"}
 
 
-def test_small_request_is_built_then_verified(tmp_path, monkeypatch):
+def test_small_request_is_planned_built_then_verified(tmp_path, monkeypatch):
     roster(tmp_path, monkeypatch)
     monkeypatch.setattr(submit, "_roster_gaps", lambda: type("rg", (), {"roster_gaps": staticmethod(lambda **k: {})}))
     calls = []
@@ -59,8 +59,16 @@ def test_small_request_is_built_then_verified(tmp_path, monkeypatch):
         "P", (), {"returncode": 0, "stdout": json.dumps({"id": f"t_{len(calls)}"}), "stderr": ""}))
     monkeypatch.setattr(submit, "_subscribe_calling_chat", lambda tid: True)
     result = json.loads(submit.submit({"title": "Fix", "request": "r", "project": "p", "size": "small"}))
-    assert result["cards"] == {"build": "t_1", "verify": "t_2"}
-    assert calls[1][calls[1].index("--parent") + 1] == "t_1"
+    assert result["cards"] == {"plan": "t_1", "build": "t_2", "verify": "t_3"}
+    build = calls[1]
+    assert build[build.index("--assignee") + 1] == "forge" and build[build.index("--parent") + 1] == "t_1"
+    body = build[build.index("--body") + 1]
+    assert "PIN, before editing" in body and "--reviewer sentry" in body and "{" not in body
+
+
+def test_long_request_is_refused_as_not_a_brief(tmp_path, monkeypatch):
+    result = json.loads(submit.submit({"title": "T", "request": "x" * 3001, "project": "p", "size": "small"}))
+    assert not result["ok"] and "brief" in result["error"]
 
 
 def _verify_card(monkeypatch, title):

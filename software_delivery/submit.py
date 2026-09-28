@@ -27,90 +27,118 @@ HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 PRIORITY = {"small": 20, "large": 10}
 MAX_RUNTIME = {"small": "30m", "large": "30m"}  # check_delivery_config.py ceiling
 MAX_FIX_ROUNDS = 2
+MAX_REQUEST_CHARS = 3000
 
-FAST_PATH_BRIEF = """FAST PATH: small task. One card, one worktree, one implementer session.
+SCOPE = """CONTEXT: this card is your whole assignment. Read only the files it names, their callers,
+and the parent card's result (kanban_show -> parents). No broad searches, no web, no skills
+beyond your role's, no other cards or conversations. Block only for a decision only the user can
+make, and state the exact question.
+"""
+
+PIN_BRIEF = """PLAN a small change: what to change and which current behaviors to pin. Read-only.
 token_budget: low.
 
-REQUEST (from the user, verbatim):
+REQUEST (from the user):
 {request}
 
-IMPLEMENTER
-1. Read the code this change touches and its direct callers. No separate exploration, planning,
-   or dependency cards.
-2. Write the test first and run it: it must FAIL for the reason the request describes (RED).
-   Then implement until it passes (GREEN). Put both command results in your summary.
-3. Run the tests related to every changed file, not only the new one (`npx jest --findRelatedTests
-   <files>`, `npx vitest related --run <files>`, or the tests importing the module), in every
-   package the change reaches (server and client), plus lint/typecheck for touched files.
-   Commit on this card's branch.
-4. If a check cannot run because the environment lacks a tool, dependency, config, or secret,
-   record the exact gap in your summary and continue (READY_WITH_RISK). Do not block for it.
-   The OCR gate belongs to the reviewer: do not run it and never block on it.
-5. Hand this SAME card to review: `hermes kanban request-review <this card id> --reviewer {reviewer}
-   --summary "<changed files; commands run and results; commit sha; any READY_WITH_RISK gaps>"`.
-6. If review requests changes, fix them on this card and request review again.
-7. Block only for a decision only the user can make, and state the exact question.
-
-REVIEWER (fast review, same worktree)
-- Review `git diff <base>...HEAD` in this card's worktree against the REQUEST. One pass: list every
-  finding at once with file:line.
-- Callers: for every changed function, route, API field, event, or component prop, find its users
-  (grep the name and, for routes, the URL path across server AND client). Your verdict lists
-  `CALLERS CHECKED: <symbol> -> <file:line> safe|broken`. A caller the change breaks is
-  REQUEST_CHANGES. An approval without this list is not an approval.
-- REQUEST_CHANGES only for correctness, security, data-loss, or a missed requirement.
-  Style and naming go in the approval as notes. Missing tools are noted, not blockers.
-- On re-review, check only the delta since the last reviewed commit plus the prior findings.
+""" + SCOPE + """
+Read the code the request touches and its direct callers (for a route, grep its URL path in
+server AND client). Complete this card with, in about 2 KB, every path:line from a file you opened:
+- CHANGE: the files and functions to edit, and how.
+- PINS: each caller behavior the change can reach that must keep working:
+  `<caller file:line> — <behavior> — covered by <test>` or `— UNPINNED: <test file> asserts <what>`.
+- RED: the test for the requested behavior and why it fails on today's code.
+- RISKS: anything the implementer must not break or decide.
+The implementer card waiting on this one builds from your result and has no other copy.
 """
 
 MAP_BRIEF = """REPOSITORY MAP for a planner. Read-only: no edits, no commits, no plan.
 token_budget: low.
 
-REQUEST (from the user, verbatim):
+REQUEST (from the user):
 {request}
 
+""" + SCOPE + """
 Read only the code this request touches, then complete this card with the map (FILES, SYMBOLS,
-CALLERS, TESTS, COMMANDS, CONVENTIONS, GAPS; about 4 KB, every path:line from a file you opened).
+CALLERS, TESTS, UNPINNED (caller behaviors this change reaches that no test covers), COMMANDS,
+CONVENTIONS, GAPS; about 4 KB, every path:line from a file you opened).
 The planner card waiting on this one plans from your map instead of exploring the repo itself.
 """
 
 PLAN_BRIEF = """LARGE TASK: plan from the repository map. Do not load skills.
 token_budget: medium.
 
-REQUEST (from the user, verbatim):
+REQUEST (from the user):
 {request}
 
-The parent card's result is a repository map made by a cheaper model (kanban_show -> parents).
-Treat its FILES/SYMBOLS/TESTS/COMMANDS as your evidence. Open a file only to confirm a line you
-cite or to close an item under GAPS, and name that item. No broad searches, no web.
+""" + SCOPE + """
+The parent card's result is a repository map made by a cheaper model. Treat its
+FILES/SYMBOLS/TESTS/COMMANDS as your evidence. Open a file only to confirm a line you cite or to
+close an item under GAPS, and name that item.
 
-Produce the implementation plan: acceptance criteria, non-goals, risk tier, and ordered slices
-with exact files and tests. Complete this card with the FULL plan as the result: the implementer
-card waiting on this one reads it from there and has no other copy.
-Block only for a decision only the user can make, and state the exact question.
+Produce the implementation plan: acceptance criteria, non-goals, risk tier, PINS (as in a small
+plan: each reachable caller behavior with its covering test or UNPINNED and the test to add), and
+ordered slices with exact files and tests. The first slice adds every UNPINNED test, passing on
+today's code. Complete this card with the FULL plan as the result: the implementer card waiting
+on this one reads it from there and has no other copy.
 """
 
-BUILD_BRIEF = """IMPLEMENT THE APPROVED PLAN. One card, one worktree, one implementer session.
+IMPLEMENTER = """IMPLEMENTER
+1. The parent card's result is the planner's CHANGE/PINS/RED (small) or plan (large). Follow it;
+   do not re-plan. Read the files it names; if you find a reachable caller it missed, add it to
+   PINS and say so in your summary.
+2. PIN, before editing any source file: write each UNPINNED test so it asserts what the code does
+   TODAY, and run it: it must PASS on the unchanged code. Commit these first
+   (`test: pin current behavior of <area>`).
+3. RED/GREEN: write the requested-behavior test and run it: it must FAIL for the reason the
+   request describes (RED). Implement until it passes (GREEN) with every pinned test still
+   passing. A pinned test may change only where the REQUEST changes that behavior; say so.
+4. Run the tests related to every changed file, not only the new ones (`npx jest --findRelatedTests
+   <files>`, `npx vitest related --run <files>`, or the tests importing the module), in every
+   package the change reaches (server and client), plus lint/typecheck for touched files.
+   Commit on this card's branch.
+5. If a check cannot run because the environment lacks a tool, dependency, config, or secret,
+   record the exact gap in your summary and continue (READY_WITH_RISK). Do not block for it.
+   The OCR gate belongs to the reviewer: do not run it and never block on it.
+6. Hand this SAME card to review: `hermes kanban request-review <this card id> --reviewer {reviewer}
+   --summary "<changed files; PINNED: <test ids>; commands run and results; commit sha;
+   any READY_WITH_RISK gaps>"`.
+7. If review requests changes, fix them on this card and request review again.
+
+REVIEWER (same worktree)
+- Review `git diff <base>...HEAD` in this card's worktree against the REQUEST and the parent
+  card's plan. One pass: list every finding at once with file:line.
+- Callers: for every changed function, route, API field, event, or component prop, find its users
+  (grep the name and, for routes, the URL path across server AND client). Your verdict lists
+  `CALLERS CHECKED: <symbol> -> <file:line> safe (<test that proves it>)|broken`. A broken caller
+  is REQUEST_CHANGES, and so is a reachable caller with no test proving it still works: ask for a
+  pinned test. An approval without this list is not an approval.
+- REQUEST_CHANGES only for correctness, security, data-loss, a missed requirement, or a missing
+  pin. Style and naming go in the approval as notes. Missing tools are noted, not blockers.
+- On re-review, check only the delta since the last reviewed commit plus the prior findings.
+"""
+
+BUILD_BRIEF = """IMPLEMENT the planned change. One card, one worktree, one implementer session.
 token_budget: low.
 
-REQUEST (from the user, verbatim):
+REQUEST (from the user):
 {request}
 
-The plan is the parent card's result (kanban_show -> parents). Follow its slices in order; do not
-re-plan or re-explore beyond the files it names. Then follow the fast path:
-""" + FAST_PATH_BRIEF.split("IMPLEMENTER\n", 1)[1]
+""" + SCOPE + "\n" + IMPLEMENTER
 
 VERIFY_BRIEF = """VERIFY the reviewed change by running it. No edits or commits; step 1 checks files out and restores them.
 token_budget: low.
 
-REQUEST (from the user, verbatim):
+REQUEST (from the user):
 {request}
 
 Work in the parent card's worktree (kanban_show -> parents -> workspace; the workspace note tells
 you when you start elsewhere). BASE = `git merge-base HEAD <base branch from the parent's review
 handoff, else origin's default branch>`.
 1. PROOF: `git diff --name-only BASE..HEAD`. Restore the changed NON-test files to BASE
-   (`git checkout BASE -- <files>`), run the changed/new tests: at least one must FAIL. Then
+   (`git checkout BASE -- <files>`), run the changed/new tests: at least one requested-behavior
+   test must FAIL, and every test the review handoff lists as PINNED must PASS (a pin failing at
+   BASE was written for the new code: FAIL "pin does not assert current behavior"). Then
    `git checkout HEAD -- <files>` and confirm `git status --porcelain` is empty.
    No changed tests for a behavior change is a FAIL ("no test proves the change").
 2. RELATED: run the tests related to every changed file in each package the change reaches
@@ -127,15 +155,15 @@ reached, block this card with the failures instead.
 FIX_BRIEF = """FIX ROUND {round}: the verifier ran the reviewed change and it failed.
 token_budget: low.
 
-REQUEST (from the user, verbatim):
+REQUEST (from the user):
 {request}
 
 FAILURES (from the verifier):
 {failures}
 
 You are in the same worktree and branch as the original change. Fix these failures only, then
-follow the fast path:
-""" + FAST_PATH_BRIEF.split("IMPLEMENTER\n", 1)[1]
+follow steps 3-7 (PINNED tests must still pass):
+""" + SCOPE + "\n" + IMPLEMENTER
 
 
 def _roster_gaps():
@@ -184,10 +212,9 @@ def _subscribe_calling_chat(task_id: str) -> bool:
 
 def build_card(title: str, request: str, project: str, size: str) -> tuple[list[str], str]:
     """(`hermes kanban create` argv, assignee) for a submission. Pure, for testing."""
-    reviewer, implementer = _role("reviewer"), _role("implementer")
-    if size == "small":
-        assignee = implementer
-        body = FAST_PATH_BRIEF.format(request=request.strip(), reviewer=reviewer)
+    if size == "small":  # the frontier planner picks the change and the pins; submit() chains build
+        assignee, title = _role("planner"), f"Plan: {title}"
+        body = PIN_BRIEF.format(request=request.strip())
     else:  # map first on the cheap investigator; submit() chains plan + build on it
         assignee = _role("investigator")
         title = f"Map: {title}"
@@ -225,6 +252,9 @@ def submit(args: dict, **_kw) -> str:
     size = args.get("size") or "small"
     if not (title and request and project) or size not in PRIORITY:
         return json.dumps({"ok": False, "error": "title, request, project are required; size is small|large"})
+    if len(request) > MAX_REQUEST_CHARS:  # workers get the card, not the chat: keep it a brief
+        return json.dumps({"ok": False, "error": f"request is {len(request)} chars; rewrite it as a brief "
+                           f"under {MAX_REQUEST_CHARS}: goal, acceptance criteria, files the user named"})
     rg = _roster_gaps()
     gaps = rg.roster_gaps(home=HERMES_HOME)  # every required role, so the team is never half-staffed
     if gaps:
@@ -240,8 +270,8 @@ def submit(args: dict, **_kw) -> str:
         return error
     result = {"ok": True, "task_id": task_id, "assignee": assignee, "size": size}
     # each stage waits on the previous card; every path ends in verify
-    chain = {"map" if size == "large" else "build": task_id}
-    for stage in (("plan", "build") if size == "large" else ()) + ("verify",):
+    chain = {"map" if size == "large" else "plan": task_id}
+    for stage in (("plan",) if size == "large" else ()) + ("build", "verify"):
         argv, _ = chained_card(stage, title, request, project, task_id)
         task_id, error = _create(argv)
         if error:
@@ -250,10 +280,9 @@ def submit(args: dict, **_kw) -> str:
     result.update(task_id=chain["build"], cards=chain)
     result.update(
         chat_subscribed=all([_subscribe_calling_chat(tid) for tid in chain.values()]),
-        next=("implementer codes + tests, the reviewer checks the same card, then the verifier "
-              "runs the tests" if size == "small" else
-              "cheap map -> frontier plan -> implementer builds, reviewer checks, verifier runs "
-              "the tests") + "; you get a message on review, block, or completion")
+        next=("frontier plan (change + pins) -> " if size == "small" else
+              "cheap map -> frontier plan -> ") + ("implementer pins current behavior and builds, "
+              "frontier reviewer checks the same card, verifier runs the tests") + "; you get a message on review, block, or completion")
     return json.dumps(result)
 
 
@@ -274,7 +303,7 @@ def verify_failed(args: dict, **_kw) -> str:
     worktree = _parent_worktree(verify_id)
     if not worktree:
         return json.dumps({"ok": False, "error": "no parent worktree found; block your card with the failures"})
-    request = (task["body"] or "").split("REQUEST (from the user, verbatim):\n", 1)[-1].split("\n\nWork in", 1)[0]
+    request = (task["body"] or "").split("REQUEST (from the user):\n", 1)[-1].split("\n\nWork in", 1)[0]
     project = task["project_id"] or ""
     fix_title = f"Fix {rounds + 1}: {base_title}"
     fix_argv = ["kanban", "create", fix_title, "--assignee", _role("implementer"),
@@ -379,7 +408,7 @@ SCHEMA = {
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "Short imperative card title"},
-                "request": {"type": "string", "description": "The user's request verbatim, plus any acceptance criteria they gave"},
+                "request": {"type": "string", "description": "A brief, not the conversation: the goal, acceptance criteria, and any file, route, or area the user named. Workers see only this. Max 3000 chars."},
                 "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. climaterx"},
                 "size": {"type": "string", "enum": ["small", "large"]},
             },

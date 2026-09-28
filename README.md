@@ -39,10 +39,11 @@ The result: **you review evidence, not code.**
 ## The flow
 
 ```
-issue ──► clarify ──► explore ──► plan ──► parallel TDD ──► review ──► verify ──► PR ──► learning
-        intake brief   surfaces    frozen     instances in     frozen-SHA  PROOF +     evidence   weekly digest
-        + risk tier    artifact    interfaces worktrees,       diff +      RELATED +   block +    + standards
-                                  hash-locked RED→GREEN        callers     SUITE       approvals  loop
+issue ──► clarify ──► explore ──► plan ──► PIN ──► TDD ──► review ──► verify ──► PR ──► learning
+        intake brief   surfaces    frontier   tests    RED→    frontier   PROOF +     evidence   weekly digest
+        + risk tier    artifact    model:     for      GREEN   model:     RELATED +   block +    + standards
+                                  change +   today's          callers +  SUITE       approvals  loop
+                                  pins       behavior         pins
                                                                   ▲           │ fail
                                                                   └── fix ◄───┘  (max 2 rounds, then you decide)
 ```
@@ -54,7 +55,8 @@ issue ──► clarify ──► explore ──► plan ──► parallel TDD 
 | 1 | **Clarify** | Issue becomes a brief: problem, acceptance criteria, non-goals, risk tier (LOW/MED/HIGH) | Intake brief | Brief complete — no routing on assumptions |
 | 2 | **Explore** | Blast-radius investigation: affected files, modules, contract surfaces | SURFACES section | Declared surfaces match reality |
 | 3 | **Plan** | Implementation plan with frozen interfaces, SHA256-locked to the card | Plan file + hash (MED/HIGH) | Plan locked; amendments supersede |
-| 4 | **Parallel TDD** | Implementer instances in per-issue worktrees: RED → IMPLEMENTING → GREEN → REGRESSION | RED line before implementation | RED evidence exists |
+| 3b | **Pin** | Before touching source, the implementer writes a test for every caller behavior the plan marked UNPINNED, asserting what the code does *today*. They must pass on the unchanged code | `PINNED:` test list | Verify re-runs them at the merge-base |
+| 4 | **Parallel TDD** | Implementer instances in per-issue worktrees: RED → IMPLEMENTING → GREEN → REGRESSION, with every pin still green | RED line before implementation | RED evidence exists |
 | 5 | **Refactor** | Simplification findings become their own card — never mixed with behavior | Separate simplify card | Zero behavior change |
 | 6 | **Review** | Independent review of the frozen SHA: diff, every caller of every changed symbol or route, security when triggered | `CALLERS CHECKED` list | No approval without the list |
 | 6b | **Verify** | The Verifier runs the change in the same worktree: PROOF (changed tests fail at the merge-base), RELATED (tests of every changed file, every package), SUITE (repo CI commands) | Command + result per step | Any failure → `delivery_verify_failed` opens a fix card and a new verify card |
@@ -68,11 +70,11 @@ Not every change earns the same process. The intake tier decides:
 | | LOW | MED | HIGH |
 |---|---|---|---|
 | Trigger | ≤2 files, no contract change, existing coverage | behavior or UI change | schema/API/security boundary |
-| Plan | inline mini-plan | file + SHA lock | + adversarial interrogation |
+| Plan | frontier planner: CHANGE + PINS + RED | cheap map → frontier plan | + adversarial interrogation |
 | Review | same-card reviewer (one-shot) | dispatched review | reviewer + QA + security in parallel |
 | Verify card (PROOF/RELATED/SUITE) | yes | yes | + mutation check |
 
-LOW cards — the majority of small issues — touch 3 roles in 3 sessions: build, review, verify.
+LOW cards — the majority of small issues — run 4 short sessions: plan, build, review, verify. Every worker sees only its card (the request brief plus the parent card's result), never the chat, so each session stays small.
 
 ## The concepts behind it
 
@@ -130,7 +132,7 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 
 | Per profile | Why it matters |
 |---|---|
-| **Model** (`config.yaml`) | Reviewer and planner benefit from a strong model; implementer and verifier can run cheaper |
+| **Model** (`config.yaml`) | Planner and reviewer make the judgment calls (what to pin, whether callers are safe): give them a frontier model. Investigator, implementer and verifier follow instructions and run commands: a cheap model is enough |
 | **Persona** (`SOUL.md`) | The bot's standing rules. It must not contradict the card brief (for example, an implementer SOUL that says "run only focused tests" undoes the brief's "run related tests") |
 | **Role skills** | The procedure the bot follows for its role (review checklist, TDD loop, verification steps) |
 | **Toolsets and disabled skills** | Fewer tools and skills means a smaller prompt and a faster, more focused worker |
@@ -159,7 +161,7 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 - `delivery_check_policy` — validates engine caps vs policy, roster integrity, open-card requirements
 - `delivery_board_intelligence` — per-stage wall-clock, queue waits, gate rejection rates, rework loops
 - `delivery_mutation_check` — flips one condition in a disposable worktree and requires the focused test to fail
-- `delivery_submit` — turns a request into the card chain (build → review → verify, or map → plan → build → review → verify for large work) and subscribes the chat to every card
+- `delivery_submit` — turns a request brief (max 3000 chars) into the card chain (plan → build → review → verify, or map → plan → build → review → verify for large work) and subscribes the chat to every card
 - `delivery_verify_failed` — called by the Verifier on a failed verify card; opens a fix card in the same worktree plus a fresh verify card, and stops after 2 rounds
 
 Plus the `hermes software-delivery` doctor CLI, an `on_session_end` metrics hook (append-only JSONL), and the liveness hooks described below.
