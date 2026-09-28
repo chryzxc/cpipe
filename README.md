@@ -4,7 +4,9 @@
 
 # Hermes Software Delivery
 
-**A structured software-delivery workflow for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** Point it at your existing AI profiles and get a governed development team: issues are clarified, planned, implemented with TDD in parallel worktrees, independently reviewed on frozen commits, and delivered as evidence-backed pull requests — without you manually testing or reviewing each change.
+**A structured software-delivery workflow for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** Point it at your existing AI profiles and it routes work through them: issues are clarified, planned, implemented with TDD in worktrees, reviewed on frozen commits, verified by running the tests, and delivered as evidence-backed pull requests.
+
+> **This is a workflow, not a team.** The plugin decides *which role* gets each card, *what the card asks for*, and *what evidence a stage must produce*. It does not provide the bots. The quality of the result depends on the Hermes profiles you map to each role: their model, their persona (`SOUL.md`), their role skills, and their toolsets. You configure those; see [Bring your own bots](#-bring-your-own-bots).
 
 [![Install: one command](https://img.shields.io/badge/install-one%20command-238636)](#-quickstart)
 [![CI](https://github.com/chryzxc/hermes-software-delivery/actions/workflows/ci.yml/badge.svg)](https://github.com/chryzxc/hermes-software-delivery/actions/workflows/ci.yml)
@@ -27,7 +29,7 @@ AI teams move fast; trusting what they ship is the hard part. This workflow turn
 | Parallelism you can trust | Independent slices run as parallel waves by default — wave plans computed from the engine's live caps, so what's promised is what runs |
 | TDD by construction | RED evidence is required *before* implementation; mutation checks prove the tests bite |
 | Reviews that can't drift | Gates review a frozen SHA; any base or head movement invalidates prior evidence |
-| `done` means proven | Acceptance criteria are re-run independently by the Verifier role on the frozen state |
+| `done` means proven | After review, a Verifier card runs the change: the new tests must fail without the fix, the related tests and the CI suite must pass. A failure opens a fix card automatically |
 | One source of truth | Skills deploy as symlinks from a single git-versioned repo — identical across every profile by construction |
 | A board that runs itself | A deterministic supervisor keeps queues flowing, reclaims dead claims, and routes decisions to the coordinator |
 | A readable conversation list | Session hygiene runs every 30 minutes: completed cron ticks are archived, stale open `cron_*` ticks are removed, and coordinator wakes are tagged as integration sessions hidden from user lists |
@@ -37,10 +39,12 @@ The result: **you review evidence, not code.**
 ## The flow
 
 ```
-issue ──► clarify ──► explore ──► plan ──► parallel TDD ──► refactor ──► gates ──► PR ──► learning
-        intake brief   surfaces    frozen     instances in     SIMP        frozen-SHA   evidence   weekly digest
-        + risk tier    artifact    interfaces worktrees,       findings    review,      block +    + standards
-                                  hash-locked RED→GREEN        → own card  QA, security  approvals  loop
+issue ──► clarify ──► explore ──► plan ──► parallel TDD ──► review ──► verify ──► PR ──► learning
+        intake brief   surfaces    frozen     instances in     frozen-SHA  PROOF +     evidence   weekly digest
+        + risk tier    artifact    interfaces worktrees,       diff +      RELATED +   block +    + standards
+                                  hash-locked RED→GREEN        callers     SUITE       approvals  loop
+                                                                  ▲           │ fail
+                                                                  └── fix ◄───┘  (max 2 rounds, then you decide)
 ```
 
 ### Stages
@@ -52,7 +56,8 @@ issue ──► clarify ──► explore ──► plan ──► parallel TDD 
 | 3 | **Plan** | Implementation plan with frozen interfaces, SHA256-locked to the card | Plan file + hash (MED/HIGH) | Plan locked; amendments supersede |
 | 4 | **Parallel TDD** | Implementer instances in per-issue worktrees: RED → IMPLEMENTING → GREEN → REGRESSION | RED line before implementation | RED evidence exists |
 | 5 | **Refactor** | Simplification findings become their own card — never mixed with behavior | Separate simplify card | Zero behavior change |
-| 6 | **Gates** | Independent review of the frozen SHA: diff review, criteria re-run, security when triggered | Complete evidence block | Most severe verdict wins |
+| 6 | **Review** | Independent review of the frozen SHA: diff, every caller of every changed symbol or route, security when triggered | `CALLERS CHECKED` list | No approval without the list |
+| 6b | **Verify** | The Verifier runs the change in the same worktree: PROOF (changed tests fail at the merge-base), RELATED (tests of every changed file, every package), SUITE (repo CI commands) | Command + result per step | Any failure → `delivery_verify_failed` opens a fix card and a new verify card |
 | 7 | **PR** | Draft PR generated from verified evidence; approvals batched per wave | PR with evidence block | Your one `ship N / hold N` reply |
 | 8 | **Learning** | Weekly digest: flow metrics, gate effectiveness, finding classes → standards amendments | Weekly digest | You approve drafts only |
 
@@ -65,9 +70,9 @@ Not every change earns the same process. The intake tier decides:
 | Trigger | ≤2 files, no contract change, existing coverage | behavior or UI change | schema/API/security boundary |
 | Plan | inline mini-plan | file + SHA lock | + adversarial interrogation |
 | Review | same-card reviewer (one-shot) | dispatched review | reviewer + QA + security in parallel |
-| Independent criteria re-run | implementer's block + diff check | QA re-runs criteria | + mutation check |
+| Verify card (PROOF/RELATED/SUITE) | yes | yes | + mutation check |
 
-LOW cards — the majority of small issues — touch ~3 roles in ~2 sessions.
+LOW cards — the majority of small issues — touch 3 roles in 3 sessions: build, review, verify.
 
 ## The concepts behind it
 
@@ -119,12 +124,28 @@ roles:
 
 Works with 3 profiles or 13. Different team setups adopt the same workflow without touching it.
 
+### What you configure (the workflow does not)
+
+The plugin writes each card's brief, but a worker is still *your* profile. For every mapped role, set up:
+
+| Per profile | Why it matters |
+|---|---|
+| **Model** (`config.yaml`) | Reviewer and planner benefit from a strong model; implementer and verifier can run cheaper |
+| **Persona** (`SOUL.md`) | The bot's standing rules. It must not contradict the card brief (for example, an implementer SOUL that says "run only focused tests" undoes the brief's "run related tests") |
+| **Role skills** | The procedure the bot follows for its role (review checklist, TDD loop, verification steps) |
+| **Toolsets and disabled skills** | Fewer tools and skills means a smaller prompt and a faster, more focused worker |
+
+### Example bots
+
+`workflow/bots/<role>/` holds the author's own personas and role skills (implementer, reviewer, verifier, investigator, planner), written to match the briefs. `./install.sh` copies them into the profile each role maps to, backing up any file it replaces as `*.bak-install-<timestamp>`. Roles without a mapped profile are skipped. To keep your own personas, run `SKIP_BOTS=1 ./install.sh`, and use these files as a reference for what your bots need to do.
+
 ## What's inside
 
 ```
 ├── plugin.yaml                  # native Hermes plugin manifest (v2)
-├── software_delivery/           # plugin: 3 agent tools + doctor CLI + metrics hook
+├── software_delivery/           # plugin: agent tools + doctor CLI + hooks
 ├── workflow/
+│   ├── bots/                    # example personas + role skills, copied into mapped profiles
 │   ├── skills/                  # orchestrator policy skill + evidence/ADR/standards skills
 │   ├── scripts/                 # board supervisor scan, warm-build, housekeeping, session cleanup, intelligence...
 │   ├── cron.jobs.json           # 7 cron jobs: board supervisor, watchers, digests, session hygiene
@@ -138,6 +159,8 @@ Works with 3 profiles or 13. Different team setups adopt the same workflow witho
 - `delivery_check_policy` — validates engine caps vs policy, roster integrity, open-card requirements
 - `delivery_board_intelligence` — per-stage wall-clock, queue waits, gate rejection rates, rework loops
 - `delivery_mutation_check` — flips one condition in a disposable worktree and requires the focused test to fail
+- `delivery_submit` — turns a request into the card chain (build → review → verify, or map → plan → build → review → verify for large work) and subscribes the chat to every card
+- `delivery_verify_failed` — called by the Verifier on a failed verify card; opens a fix card in the same worktree plus a fresh verify card, and stops after 2 rounds
 
 Plus the `hermes software-delivery` doctor CLI, an `on_session_end` metrics hook (append-only JSONL), and the liveness hooks described below.
 
@@ -162,8 +185,9 @@ The weekly digest reports per-stage wall-clock, queue waits, gate rejection rate
 
 ## Safety model
 
-- The three plugin tools are read-only: they report facts and evidence
-- The board supervisor is the only writer inside Hermes state, and only to Kanban cards and profile skill installs; repositories remain untouched
+- `delivery_check_policy`, `delivery_board_intelligence`, and `delivery_mutation_check` are read-only; `delivery_submit` and `delivery_verify_failed` only create Kanban cards and subscriptions
+- The board supervisor writes only Kanban cards and profile skill installs; repositories remain untouched
+- `./install.sh` writes the example bots into your mapped profiles unless `SKIP_BOTS=1`, and backs up every file it replaces
 - Human approval gates are unchanged and always yours: merge, deploy, production, credentials, purchases, publishing, irreversible deletion
 - `delivery_mutation_check` mutates only a disposable git worktree file and restores it
 - The engine install (`~/.hermes/hermes-agent`) is never modified — everything lives in the user-state layer and survives `hermes update`
@@ -176,7 +200,7 @@ The weekly digest reports per-stage wall-clock, queue waits, gate rejection rate
 
 **Will `hermes update` remove it?** No. Everything installs into the Hermes user-state layer; the updater only touches the engine checkout. Run `./install.sh` after an update to re-assert everything.
 
-**Does it cost more tokens?** Less, usually: tiering skips the plan session and QA reproduction for low-risk work, reviews batch multiple commits per session, and every check expressible as a script runs without an LLM.
+**Does it cost more tokens?** Less, usually: tiering skips the plan session for low-risk work, the verify card runs commands instead of re-reading code, reviews batch multiple commits per session, and every check expressible as a script runs without an LLM.
 
 **Can I use it on multiple machines?** Clone, `./install.sh`, done — same workflow everywhere.
 

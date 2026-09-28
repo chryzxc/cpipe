@@ -30,6 +30,7 @@ def test_registers_delivery_tools():
         'delivery_check_policy',
         'delivery_mutation_check',
         'delivery_submit',
+        'delivery_verify_failed',
     ]
 
 

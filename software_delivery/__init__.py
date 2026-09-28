@@ -218,6 +218,10 @@ def register(ctx):
         name="delivery_submit", toolset="software_delivery",
         schema=submit.SCHEMA, handler=submit.submit,
     )
+    ctx.register_tool(
+        name="delivery_verify_failed", toolset="software_delivery",
+        schema=submit.VERIFY_FAILED_SCHEMA, handler=submit.verify_failed,
+    )
     ctx.register_cli_command(
         name="software-delivery", help="Software delivery plugin doctor",
         setup_fn=_noop_setup, handler_fn=lambda args: _doctor_command(args),

@@ -6,6 +6,10 @@ Name environment and exact frozen state; report expected versus actual evidence,
 
 All variants are read-only and name the exact frozen target.
 
+### `post-review-proof`
+
+The default `Verify:` card that `delivery_submit` chains after every review. Runs in the implementer's worktree without editing: PROOF (restore changed non-test files to the merge-base, the changed tests must fail; restore HEAD, `git status` clean), RELATED (tests of every changed file, in every package the change reaches), SUITE (the repo's CI test/lint commands; a failure counts only when it passes at the merge-base). `PASS` completes the card; `FAIL` calls `delivery_verify_failed`, which opens a fix card in the same worktree and a fresh verify card (at most 2 rounds, then block for the user).
+
 ### `general-qa`
 
 Execute acceptance, regression, negative/edge/failure cases using repository test procedures. Verdict: `PASS`, `FAIL`, or `BLOCKED`; normalize through `recovery-loop.md`.
