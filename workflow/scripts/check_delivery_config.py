@@ -21,31 +21,10 @@ swarm = re.search(r'max (\d+) concurrent \w+ workers', TEAM)
 if swarm and per_profile and int(swarm.group(1)) != per_profile:
     errors.append(f'drift: team-config swarm cap {swarm.group(1)} != engine per-profile cap {per_profile}')
 
-def _flat_section(path, section):
-    found, current = {}, None
-    for line in Path(path).read_text().splitlines():
-        if not line.strip() or line.lstrip().startswith('#'):
-            continue
-        if not line[:1].isspace() and line.rstrip().endswith(':'):
-            current = line.strip()[:-1]
-            continue
-        m = re.match(r'\s*([\w-]+):\s*(\S+)', line)
-        if m and current == section:
-            found[m.group(1)] = m.group(2)
-    return found
-
-
-roster = {}
-roster_path = H / 'roster.yaml'
-if roster_path.is_file():
-    roster = _flat_section(roster_path, 'roles')
-team_roles = set(re.findall(r'^\s{2}(\w+):\s*\{mission:', TEAM, re.M))
-for role in team_roles:
-    if roster and role not in roster:
-        errors.append(f'roster: role {role} missing from ~/.hermes/roster.yaml')
-for role, profile in roster.items():
-    if profile and not (H / 'profiles' / str(profile)).is_dir():
-        errors.append(f'roster: role {role} -> profile {profile} not found in ~/.hermes/profiles')
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from roster_gaps import fix_hint, roster_gaps
+for role, problem in roster_gaps(home=H).items():
+    errors.append(f'roster: role {role}: {problem} — {fix_hint(role)}')
 
 if (H / 'kanban.db').is_file():
     conn = sqlite3.connect(f"file:{H/'kanban.db'}?mode=ro", uri=True)

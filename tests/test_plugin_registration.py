@@ -20,7 +20,7 @@ class RecordingContext:
         self.hooks.append((hook_name, callback))
 
 
-def test_registers_three_delivery_tools():
+def test_registers_delivery_tools():
     context = RecordingContext()
 
     register(context)
@@ -29,6 +29,7 @@ def test_registers_three_delivery_tools():
         'delivery_board_intelligence',
         'delivery_check_policy',
         'delivery_mutation_check',
+        'delivery_submit',
     ]
 
 
@@ -38,7 +39,7 @@ def test_registers_doctor_cli_and_session_hook():
     register(context)
 
     assert context.cli_commands == ['software-delivery']
-    assert [h[0] for h in context.hooks] == ['on_session_end', 'on_kanban_dispatch_tick', 'pre_llm_call']
+    assert [h[0] for h in context.hooks] == ['on_session_end', 'on_kanban_dispatch_tick', 'pre_llm_call', 'pre_llm_call']
 
 
 def test_mutation_tool_schema_requires_worktree():

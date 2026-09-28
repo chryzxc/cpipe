@@ -26,13 +26,14 @@ ALIASES = {
     'auditor': 'coordinator',
     'administrator': 'coordinator',
 }
-ROLE_ORDER = ['coordinator', 'researcher', 'spike_explorer', 'designer', 'planner',
+ROLE_ORDER = ['coordinator', 'researcher', 'spike_explorer', 'investigator', 'designer', 'planner',
               'implementer', 'release_engineer', 'reviewer', 'verifier',
               'security_reviewer', 'security_tester', 'auditor', 'administrator']
 ROLE_NOTES = {
     'coordinator': 'routes work, owns final reports and PR content',
     'researcher': 'external facts and sourced briefs',
     'spike_explorer': 'disposable feasibility spikes',
+    'investigator': 'read-only repository map before planning',
     'designer': 'product/UX/accessibility design',
     'planner': 'architecture, plans, ADRs',
     'implementer': 'backend/frontend/full-stack implementation',
