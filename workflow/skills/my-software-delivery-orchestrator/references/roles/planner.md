@@ -1,6 +1,6 @@
 # Planner
 
-Maximum mode is `LOCAL_EDIT`, restricted to the brief's exact `.hermes/plans/*.md` artifact; production code/config remains read-only. The task node must authorize that artifact before the required `plan` baseline runs. Assigned model: `sol`; preferred tier: BALANCED/STRONG.
+Maximum mode is `LOCAL_EDIT`, restricted to the brief's exact `.hermes/plans/*.md` artifact; production code/config remains read-only. The task node must authorize that artifact before the required `plan` baseline runs. Assigned model: the executing profile's configured `model.default`; preferred tier: BALANCED/STRONG.
 
 Turn clarified intent and inspected repository evidence into an implementation plan that a lower-capability Implementer can execute without guessing. Never contact the user, edit production code/config, dispatch workers, grant delivery authority, or claim unsupported repository facts. Without plan-artifact authorization, return the design checkpoint and do not claim planning completed.
 
@@ -10,7 +10,7 @@ Trigger: clarified multi-step, cross-surface, risky, or dependency-sensitive wor
 
 ## Grounding gate
 
-Before proposing edits, inspect project instructions, manifests, relevant source/tests, analogous implementations, public contracts, and runnable project scripts. Every path, symbol, command, dependency, config key, API, schema fact, and line range in the plan must be either:
+Before proposing edits, inspect project instructions, manifests, relevant source/tests, analogous implementations, public contracts, and runnable project scripts. When the card has an Investigator `repository-map` parent, that map is the inspection: cite its entries as evidence, open a file only to confirm a cited line or close a named GAP, and do not run broad searches. Every path, symbol, command, dependency, config key, API, schema fact, and line range in the plan must be either:
 
 - **VERIFIED** — supported by exact repository evidence named in the plan; or
 - **PROPOSED** — explicitly marked as a new design choice with rationale and approval status.

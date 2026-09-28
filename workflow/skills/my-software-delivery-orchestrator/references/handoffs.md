@@ -30,7 +30,7 @@ STATE AND PREFLIGHT
 EXECUTION CONTRACT
 - exact write allowlist:
 - acceptance criteria and commands:
-- one commit boundary:
+- behavior boundary:
 - idempotency key:
 - max_runtime:
 - native lifecycle transition expected at completion:

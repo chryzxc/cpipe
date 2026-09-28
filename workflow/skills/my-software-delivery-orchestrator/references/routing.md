@@ -68,7 +68,7 @@ Every routed task records: primary Bot profile ID; task; execution backend (dire
 | All bots, evidence output | `my-evidence-format` |
 | PR Delivery | `github-pr-workflow` after activation |
 
-Load only the 1–3 exact baselines the objective needs; verify readiness before dispatch. Substitute a missing/unready skill with an installed equivalent, a repository/live-help/official-documentation procedure — or return `NEEDS_ASSISTANCE` for a real gap — and record the substitution. The optimization-audit chain is checklist work: Luna/Terra only, never Sol.
+Load only the 1–3 exact baselines the objective needs; verify readiness before dispatch. Substitute a missing/unready skill with an installed equivalent, a repository/live-help/official-documentation procedure — or return `NEEDS_ASSISTANCE` for a real gap — and record the substitution. The optimization-audit chain is checklist work: low/standard tier profiles only, never the high-tier planner.
 
 Active testing is always a Kanban engagement; it is never run through direct Coordinator tools, Bot Chat, a profile one-shot, or `delegate_task`.
 

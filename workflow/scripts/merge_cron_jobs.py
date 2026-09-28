@@ -4,13 +4,14 @@
 Jobs this script writes are stamped with owner=OWNER. On every merge, owned jobs
 whose name no longer appears in the definitions are pruned. Jobs without the
 owner marker (foreign jobs) are never added, updated, or pruned.
+`deliver` is set only when a job is first added: where alerts go is the operator's choice.
 """
 import json
 import sys
 
 OWNER = 'software-delivery'
 OWNED = {'prompt', 'script', 'no_agent', 'monitor_script', 'model', 'provider',
-         'schedule', 'enabled', 'deliver', 'origin', 'workdir', 'created_at'}
+         'schedule', 'enabled', 'origin', 'workdir', 'created_at'}
 
 
 def main(defs_path, live_path):
