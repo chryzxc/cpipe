@@ -109,6 +109,16 @@ def classify(conn, now=None):
     return cards
 
 
+def queue(conn, now=None):
+    """The stuck-card queue as Mission Control shows it: non-empty groups in GROUPS order."""
+    now = now or time.time()
+    cards = classify(conn, now)
+    groups = [{"key": k, "heading": h, "hint": hint, "cards": [c for c in cards if c["group"] == k]}
+              for k, (h, hint) in GROUPS.items()]
+    return {"groups": [g for g in groups if g["cards"]], "total": len(cards),
+            "provider_walled": provider_walled(conn, now)}
+
+
 def provider_walled(conn, now):
     since = now - QUOTA_WINDOW_MINUTES * 60
     (n,) = conn.execute("SELECT count(*) FROM task_events WHERE kind='rate_limited' AND created_at>=?",
