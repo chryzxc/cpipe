@@ -9,6 +9,9 @@ version: 1.0.0
 ## Scope
 Create or amend one canonical implementation specification for an authorized, materially complex task. Do not implement, debug, review, or approve the resulting code.
 
+## Delivery plan cards
+For a `Plan:` card from `delivery_submit`, the card brief replaces this procedure: no `ROUTE_DOWN`, no plan file, result on the card, PINS included, within the brief's size.
+
 ## Procedure
 1. Validate the task envelope: objective, scope, non-goals, inputs, budget, approvals, return type, canonical repository, branch policy, and acceptance criteria.
 2. Inspect the smallest relevant repository surface and record exact paths and verified facts.
