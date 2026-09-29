@@ -1,13 +1,13 @@
 ---
 name: sentry-frozen-review
 description: "Use when Sentry reviews an exact frozen implementation diff."
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Sentry Frozen Review Procedure
 
 ## Intake
-Require: repository/worktree, exact base and HEAD, named files, task contract, acceptance criteria, and required review scope. Return `NEEDS_ASSISTANCE` if any required item is absent or the worktree is moving.
+Require: repository/worktree, exact base and HEAD, named files, task contract, acceptance criteria, and required review scope. Take what the card and live Git give you: base from the project's PR base, HEAD from the worktree, scope from the REQUEST. Return `NEEDS_ASSISTANCE` only when the worktree itself is missing or moving.
 
 ## Review loop
 1. Verify branch, base, HEAD, clean state, and exact changed-file list from live Git.
@@ -33,10 +33,10 @@ Scoped to the diff — never a whole-repo audit.
 While inspecting, note changed code that is needlessly complex, duplicative, or diverges from neighboring patterns. Emit `SIMP-###` findings (severity Low/Medium) citing the exact location and the concrete simplification; the fix direction is Forge applying the `simplify-code` skill to that scoped slice. Sentry never runs simplify-code itself — it is an editing skill and review is read-only.
 
 ## Verdict
-- `APPROVED` only when no unresolved Critical/High/Medium defect remains in the frozen scope, the OCR delegate manifest plus changed-file reconciliation are recorded, and the impact sweep reports every affected flow as unchanged-safe or contract-intended. The approval must contain `CALLERS CHECKED: <symbol or route> -> <file:line> safe (<test that proves it>)|intended`; a reachable caller with no test proving it is REQUEST_CHANGES for a pinned test for every changed symbol; an approval without that list is invalid, and a change with no callers says `CALLERS CHECKED: none (new code)`. Write frozen-range evidence, OCR delegate command/result, excluded-file handling, impact-sweep summary (flows checked / findings), and structured `review_outcome="approved"` to the canonical card, then call `hermes kanban complete <TASK_ID>`.
+- `APPROVED` only when no unresolved Critical/High/Medium defect remains in the frozen scope, the OCR delegate manifest plus changed-file reconciliation are recorded, and the impact sweep reports every affected flow as unchanged-safe or contract-intended. The approval must contain `CALLERS CHECKED: <symbol or route> -> <file:line> safe (<test that proves it>)|intended`; a reachable caller with no test proving it is REQUEST_CHANGES for a pinned test for every changed symbol; an approval without that list is invalid, and a change with no callers says `CALLERS CHECKED: none (new code)`. Write frozen-range evidence, OCR delegate command/result, excluded-file handling, impact-sweep summary (flows checked / findings), and structured `review_outcome="approved"` to the canonical card, mark the card's draft PR ready (`gh pr ready <url>`; a failure is a note), then call `hermes kanban complete <TASK_ID>`. On the third review round, approve with what remains under RESIDUAL RISK instead of requesting changes again.
 - `REQUEST_CHANGES` when a confirmed correction is required. Write a canonical card comment with stable finding IDs (REG/BRK/SIMP/REV), severity, evidence, impact, and smallest correction, then call `hermes kanban request-changes <TASK_ID> <bounded-reason>`. Do not complete or create a correction card.
-- `NEEDS_ASSISTANCE` for missing evidence, a missing/failed OCR delegate manifest on HIGH tier (on LOW/MED record it as `READY_WITH_RISK` and finish the review), scope ambiguity, a missing dependency, or a decision outside review authority. Call `hermes kanban block <TASK_ID> <named-blocker>`; do not approve or request changes for an unverified defect.
+- `NEEDS_ASSISTANCE` for missing evidence, a missing/failed OCR delegate manifest on HIGH tier (on LOW/MED record it as `READY_WITH_RISK` and finish the review), or a product/security decision outside review authority. A missing dependency is not NEEDS_ASSISTANCE: install it in the card's worktree and continue. Call `hermes kanban block <TASK_ID> <named-blocker>`; do not approve or request changes for an unverified defect.
 - When a terminal kanban call (`complete`, `request-review`, `request-changes`, `block`) is rejected, stop and comment `WIP_PRESERVED: <worktree>@<sha> +<n> files; verified: <commands>` on the card; never discard or reset the work. If a goal-mode judge errors, stop spending turns and block with `JUDGE_ERROR: <error excerpt>`.
 
 ## Prohibited
-Never edit, install dependencies, commit, push, merge, deploy, contact external systems, use credentials, inspect unrelated worktrees, or use an LLM-backed OCR command. `ocr delegate preview` is the sole permitted OCR command. `simplify-code` and every editing skill are Forge's to execute, not Sentry's.
+Never edit, commit, push, merge, create kanban cards, deploy, contact external systems, use credentials, inspect unrelated worktrees, or use an LLM-backed OCR command. `ocr delegate preview` is the sole permitted OCR command. `simplify-code` and every editing skill are Forge's to execute, not Sentry's.

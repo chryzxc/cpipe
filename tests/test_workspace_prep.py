@@ -59,7 +59,7 @@ def test_outside_kanban_workers_it_does_nothing(monkeypatch):
     assert workspace_prep.prepare_workspace(is_first_turn=True) is None
 
 
-def test_project_profile_flags_a_worktree_off_the_pr_base(tmp_path, monkeypatch):
+def profile_on_develop(tmp_path, monkeypatch):
     main, wt = repo_with_worktree(tmp_path)
     git(main, "branch", "develop")
     git(main, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "on develop only")
@@ -75,7 +75,23 @@ def test_project_profile_flags_a_worktree_off_the_pr_base(tmp_path, monkeypatch)
     for k, v in (("HERMES_HOME", tmp_path), ("HERMES_KANBAN_DB", db), ("HERMES_KANBAN_WORKSPACE", wt),
                  ("HERMES_KANBAN_TASK", "t_1")):
         monkeypatch.setenv(k, str(v))
+    return main, wt
+
+
+def test_fresh_worktree_is_reset_onto_the_pr_base(tmp_path, monkeypatch):
+    main, wt = profile_on_develop(tmp_path, monkeypatch)
     note = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
-    assert "not based on origin/develop" in note and "should start with `feat/`" in note
-    assert "cp .env.example .env" in note
+    assert "reset onto origin/develop" in note and "not based on" not in note
+    assert "should start with `feat/`" in note and "cp .env.example .env" in note
+    head = lambda d: subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+    assert head(wt) == head(main)
     assert workspace_prep.project_profile("other-app", tmp_path) == {}
+
+
+def test_worktree_with_work_in_it_is_never_reset(tmp_path, monkeypatch):
+    main, wt = profile_on_develop(tmp_path, monkeypatch)
+    (wt / "draft.txt").write_text("uncommitted")
+    git(wt, "add", "draft.txt")
+    note = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
+    assert "not based on origin/develop" in note and "reset" not in note
+    assert (wt / "draft.txt").read_text() == "uncommitted"

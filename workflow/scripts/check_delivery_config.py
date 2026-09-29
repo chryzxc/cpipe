@@ -32,8 +32,8 @@ if (H / 'kanban.db').is_file():
     for tid, skills, body, maxrt in rows:
         if body and 'token_budget' not in body:
             errors.append(f'card {tid}: missing token_budget')
-        if maxrt and maxrt > 1800:
-            errors.append(f'card {tid}: max_runtime {maxrt}s exceeds 30min ceiling')
+        if maxrt and maxrt > 3600:
+            errors.append(f'card {tid}: max_runtime {maxrt}s exceeds 60min ceiling')
         for s in (skills or '[]').replace('[','').replace(']','').replace('"','').split(','):
             s = s.strip()
             if not s:

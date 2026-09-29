@@ -82,11 +82,11 @@ Not every change earns the same process. The intake tier decides:
 | | LOW | MED | HIGH |
 |---|---|---|---|
 | Trigger | ≤2 files, no contract change, existing coverage | behavior or UI change | schema/API/security boundary |
-| Plan | frontier planner: CHANGE + PINS + RED | cheap map → frontier plan | + adversarial interrogation |
+| Plan | the implementer, on its own card: CHANGE + PINS + RED | cheap map → frontier plan | + adversarial interrogation |
 | Review | same-card reviewer (one-shot) | dispatched review | reviewer + QA + security in parallel |
-| Verify card (PROOF/RELATED/SUITE) | yes | yes | + mutation check |
+| Verify card (PROOF/RELATED/SUITE) | on request (`verify: true`) | on request | + mutation check |
 
-LOW cards — the majority of small issues — run 4 short sessions: plan, build, review, verify. Every worker sees only its card (the request brief plus the parent card's result), never the chat, so each session stays small.
+A feature is one card: the implementer plans, builds, tests, pushes, and opens a draft PR with a `## How to test` checklist; the reviewer checks the same card (at most 3 rounds) and marks the PR ready. You test the PR and merge, or send `fix <PR> <issue>`, which reopens the same branch. Every worker sees only its card (the request brief plus the parent card's result), never the chat, so each session stays small.
 
 ## The concepts behind it
 
@@ -174,7 +174,7 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 - `delivery_check_policy` — validates engine caps vs policy, roster integrity, open-card requirements
 - `delivery_board_intelligence` — per-stage wall-clock, queue waits, gate rejection rates, rework loops
 - `delivery_mutation_check` — flips one condition in a disposable worktree and requires the focused test to fail
-- `delivery_submit` — turns a request brief (max 3000 chars) into the card chain (plan → build → review → verify, or map → plan → build → review → verify for large work) and subscribes the chat to every card
+- `delivery_submit` — turns a request brief (max 3000 chars) into one build card with a same-card review (map → plan → build for large work; a verify card only with `verify: true`), or with `fix_of` a fix card on an existing card's branch, and subscribes the chat to every card
 - `delivery_verify_failed` — called by the Verifier on a failed verify card; opens a fix card in the same worktree plus a fresh verify card, and stops after 2 rounds
 - `delivery_status` — the board's truth: each open card's verdict computed from the task database now (`PROGRESSING`, `WAITING(<named thing>)`, or `STUCK(<cause>)` with the next step). The coordinator answers every status question from it
 - `delivery_watch` — registers a PR or CI run the monitor polls for a card; a pass unblocks the card, a failure or expiry tells the chat. Required before anyone says a card "will resume"

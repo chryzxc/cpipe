@@ -3,13 +3,16 @@
 The main chat can run on a cheap model: it only classifies the request and calls
 this tool. Card creation, routing, and the chat subscription are deterministic.
 
-content: one build card, no plan and no verify: text/copy/markup/style/docs edits need no tests.
-small: build card: the implementer codes and tests, then hands the SAME card (same worktree)
-       to the reviewer through the native review lane; changes requested go straight back.
+content: one build card, no plan: text/copy/markup/style/docs edits need no tests.
+small: ONE card: the implementer plans, codes, tests, pushes a draft PR, then hands the SAME card
+       (same worktree) to the reviewer through the native review lane; changes requested go
+       straight back. The operator tests the PR by hand, then merges.
 large: map (cheap investigator) -> plan (frontier planner, plans from the map) -> build.
-Both end in a verify card: the verifier runs the tests in the build worktree. On failure it calls
-``delivery_verify_failed``, which opens a fix card in the same worktree plus a fresh verify card,
-at most MAX_FIX_ROUNDS times. Nothing waits on a Coordinator.
+verify=true adds a verify card: the verifier runs the tests in the build worktree. On failure it
+calls ``delivery_verify_failed``, which opens a fix card in the same worktree plus a fresh verify
+card, at most MAX_FIX_ROUNDS times.
+fix_of=<card or PR>: the operator found a problem while testing; one fix card in that card's
+worktree and branch, reviewed on the same card, so the open PR updates. Nothing waits on a Coordinator.
 """
 
 from __future__ import annotations
@@ -27,7 +30,8 @@ from pathlib import Path
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 # User-submitted work outranks retries of older cards (dispatcher: ORDER BY priority DESC).
 PRIORITY = {"content": 30, "small": 20, "large": 10}
-MAX_RUNTIME = {"content": "15m", "small": "30m", "large": "30m"}  # check_delivery_config.py ceiling
+# a whole feature is one session: a timeout kills it mid-build and the retry starts cold
+MAX_RUNTIME = {"content": "15m", "small": "60m", "large": "60m", "map": "20m", "plan": "20m"}
 MAX_FIX_ROUNDS = 2
 MAX_REQUEST_CHARS = 3000
 DUPLICATE_TITLE_RATIO = 0.85
@@ -35,29 +39,18 @@ STAGE_PREFIX = re.compile(r"^(map|plan|verify|fix \d+|review)\s*:\s*", re.I)
 REVIEW_TITLE = re.compile(r"^\s*(code[\s-]*)?review\b|^\s*re-?review\b", re.I)
 URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/(?:pull|issues)/\d+")
 
-SCOPE = """CONTEXT: this card is your whole assignment. Read only the files it names, their callers,
-and the parent card's result (kanban_show -> parents). No broad searches, no web, no skills
-beyond your role's, no other cards or conversations. Block only for a decision only the user can
-make, and state the exact question.
-"""
+SCOPE = """CONTEXT: this card is your whole assignment: the REQUEST, the code it touches and its
+callers, and the parent card's result (kanban_show -> parents). No broad searches, no web, no
+skills beyond your role's, no other cards or conversations.
 
-PIN_BRIEF = """PLAN a small change: what to change and which current behaviors to pin. Read-only.
-token_budget: low.
-
-REQUEST (from the user):
-{request}
-
-""" + SCOPE + """
-Read the code the request touches and its direct callers (for a route, grep its URL path in
-server AND client). Complete this card with, in about 2 KB, every path:line from a file you opened:
-- CHANGE: the files and functions to edit, and how.
-- PINS: each caller behavior the change can reach that must keep working:
-  `<caller file:line> — <behavior> — covered by <test>` or `— UNPINNED: <test file> asserts <what>`.
-- RED: the test for the requested behavior and why it fails on today's code.
-- RISKS: anything the implementer must not break or decide.
-PINS cover behavior only: static text, markup, and styles need none. Plan nothing the request
-did not ask for (no extra tests, refactors, or hardening).
-The implementer card waiting on this one builds from your result and has no other copy.
+FINISH, DON'T STOP. Without asking you may: install dependencies (`npm ci`/`npm install`, and
+commit a lockfile change the build needs), run any test, lint, build, or local dev command, commit
+on this card's branch, push this card's branch, and open or update its draft PR. Change any file
+the REQUEST needs, including files a plan did not name: list those under OUT_OF_PLAN in your
+summary. Never force-push or rewrite pushed history, merge, deploy, touch production, or change
+credentials. Never create kanban cards: findings, follow-ups, and questions go in your summary or
+the PR. Block only for a decision only the user can make (product behavior, security policy, a
+destructive or external action): state the exact question with 2-4 options, recommended first.
 """
 
 MAP_BRIEF = """REPOSITORY MAP for a planner. Read-only: no edits, no commits, no plan.
@@ -94,9 +87,11 @@ on this one reads it from there and has no other copy.
 """
 
 IMPLEMENTER = """IMPLEMENTER
-1. The parent card's result is the planner's CHANGE/PINS/RED (small) or plan (large). Follow it;
-   do not re-plan. Read the files it names; if you find a reachable caller it missed, add it to
-   PINS and say so in your summary.
+1. PLAN. If a parent card's result is a plan, follow it; do not re-plan. Otherwise plan in one
+   pass yourself: read the code the REQUEST touches and its direct callers (for a route, grep its
+   URL path in server AND client), then comment CHANGE (files, how), PINS (each reachable caller
+   behavior: covered by <test>, or UNPINNED), and RED (the test that fails today). Add any
+   reachable caller a plan missed to PINS. Plan nothing the REQUEST did not ask for.
 2. PIN, before editing any source file: write each UNPINNED test so it asserts what the code does
    TODAY, and run it: it must PASS on the unchanged code. Commit these first
    (`test: pin current behavior of <area>`).
@@ -106,14 +101,17 @@ IMPLEMENTER = """IMPLEMENTER
 4. Run the tests related to every changed file, not only the new ones (`npx jest --findRelatedTests
    <files>`, `npx vitest related --run <files>`, or the tests importing the module), in every
    package the change reaches (server and client), plus lint/typecheck for touched files.
-   Commit on this card's branch.
+   Commit on this card's branch and push it (`git push -u origin HEAD`). On the first push open a
+   draft PR against the project's base branch (`gh pr create --draft`); later pushes update it. The
+   PR body ends with `## How to test`: 3-6 manual steps a person follows to see the change work,
+   and what could regress. If push or the PR fails, record the exact error as READY_WITH_RISK.
 5. If a check cannot run because the environment lacks a tool, dependency, config, or secret,
    record the exact gap in your summary and continue (READY_WITH_RISK). Do not block for it.
    The OCR gate belongs to the reviewer: do not run it and never block on it.
 6. Hand this SAME card to review: `hermes kanban request-review <this card id> --reviewer {reviewer}
-   --summary "<changed files; PINNED: <test ids>; commands run and results; commit sha;
-   any READY_WITH_RISK gaps>"`.
-7. If review requests changes, fix them on this card and request review again.
+   --summary "<PR url; changed files; OUT_OF_PLAN files; PINNED: <test ids>; commands run and
+   results; commit sha; any READY_WITH_RISK gaps>"`.
+7. If review requests changes, fix them on this card, push, and request review again.
 
 REVIEWER (same worktree)
 - Review `git diff <base>...HEAD` in this card's worktree against the REQUEST and the parent
@@ -126,10 +124,14 @@ REVIEWER (same worktree)
   and styles are not behavior: they need no test.
 - REQUEST_CHANGES only for correctness, security, data-loss, a missed requirement, or a missing
   pin. Style and naming go in the approval as notes. Missing tools are noted, not blockers.
-  Never ask for a test, harness, or file the REQUEST or plan excludes: note it as a follow-up.
+  Anything the REQUEST needs is in scope even when a plan did not name the file; never ask for a
+  test, harness, or file the REQUEST excludes: note it as a follow-up.
 - On re-review, check only the delta since the last reviewed commit plus the prior findings.
   A prior finding the implementer could not or would not fix is not a second REQUEST_CHANGES:
   approve with it under RESIDUAL RISK so the user decides. Never request changes twice on one finding.
+  At most 3 review rounds: on the third, approve and list what remains under RESIDUAL RISK.
+- On APPROVED, mark the card's draft PR ready (`gh pr ready <url>`); if that fails, note it.
+  Never merge. The user tests the PR by hand and merges.
 """
 
 CONTENT_BRIEF = """CONTENT CHANGE: text, copy, markup, styles, docs, or a config value. No logic.
@@ -161,7 +163,7 @@ REVIEWER (same worktree)
   approval as a note for the user; never request changes twice on it.
 """
 
-BUILD_BRIEF = """IMPLEMENT the planned change. One card, one worktree, one implementer session.
+BUILD_BRIEF = """IMPLEMENT the REQUEST. One card, one worktree, one implementer session.
 token_budget: low.
 
 REQUEST (from the user):
@@ -195,17 +197,17 @@ error), then complete this card with the same evidence. If that tool says the ro
 reached, block this card with the failures instead.
 """
 
-FIX_BRIEF = """FIX ROUND {round}: the verifier ran the reviewed change and it failed.
+FIX_BRIEF = """FIX ROUND {round}: {source}.
 token_budget: low.
 
 REQUEST (from the user):
 {request}
 
-FAILURES (from the verifier):
+FAILURES ({reporter}):
 {failures}
 
-You are in the same worktree and branch as the original change. Fix these failures only, then
-follow steps 3-7 (PINNED tests must still pass):
+You are in the same worktree and branch as the original change; its PR updates when you push.
+Fix these failures only, then follow steps 3-7 (PINNED tests must still pass):
 """ + SCOPE + "\n" + IMPLEMENTER
 
 
@@ -258,9 +260,9 @@ def build_card(title: str, request: str, project: str, size: str) -> tuple[list[
     if size == "content":  # straight to the implementer; same-card review, no plan or verify
         assignee = _role("implementer")
         body = CONTENT_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
-    elif size == "small":  # the frontier planner picks the change and the pins; submit() chains build
-        assignee, title = _role("planner"), f"Plan: {title}"
-        body = PIN_BRIEF.format(request=request.strip())
+    elif size == "small":  # one session plans and builds: a separate plan card is a second cold start
+        assignee = _role("implementer")
+        body = BUILD_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
     else:  # map first on the cheap investigator; submit() chains plan + build on it
         assignee = _role("investigator")
         title = f"Map: {title}"
@@ -287,7 +289,7 @@ def chained_card(stage: str, title: str, request: str, project: str, parent: str
         body = BUILD_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
     return ["kanban", "create", title, "--assignee", assignee, "--body", body,
             "--project", project, "--workspace", workspace, "--parent", parent,
-            "--priority", str(PRIORITY["large"]), "--max-runtime", MAX_RUNTIME["large"],
+            "--priority", str(PRIORITY["large"]), "--max-runtime", MAX_RUNTIME.get(stage, MAX_RUNTIME["large"]),
             "--created-by", "delivery_submit", "--json"], assignee
 
 
@@ -330,6 +332,8 @@ def submit(args: dict, **_kw) -> str:
     request = (args.get("request") or "").strip()
     project = (args.get("project") or "").strip()
     size = args.get("size") or "small"
+    if args.get("fix_of"):
+        return fix(args)
     if not (title and request and project) or size not in PRIORITY:
         return json.dumps({"ok": False, "error": "title, request, project are required; size is content|small|large"})
     if len(request) > MAX_REQUEST_CHARS:  # workers get the card, not the chat: keep it a brief
@@ -360,9 +364,11 @@ def submit(args: dict, **_kw) -> str:
     if error:
         return error
     result = {"ok": True, "task_id": task_id, "assignee": assignee, "size": size}
-    # each stage waits on the previous card; every code path ends in verify, content is one card
-    chain = {"large": {"map": task_id}, "small": {"plan": task_id}, "content": {"build": task_id}}[size]
-    stages = {"large": ("plan", "build", "verify"), "small": ("build", "verify"), "content": ()}[size]
+    # each stage waits on the previous card; small and content are one card, verify only on request
+    chain = {"large": {"map": task_id}, "small": {"build": task_id}, "content": {"build": task_id}}[size]
+    stages = {"large": ("plan", "build"), "small": (), "content": ()}[size]
+    if args.get("verify") and size != "content":
+        stages += ("verify",)
     for stage in stages:
         argv, _ = chained_card(stage, title, request, project, task_id)
         task_id, error = _create(_stamp(argv, conventions))
@@ -373,9 +379,10 @@ def submit(args: dict, **_kw) -> str:
     result.update(
         chat_subscribed=all([_subscribe_calling_chat(tid) for tid in chain.values()]),
         next=("implementer edits, reviewer checks the wording on the same card" if size == "content" else
-              ("frontier plan (change + pins) -> " if size == "small" else "cheap map -> frontier plan -> ")
-              + "implementer pins current behavior and builds, frontier reviewer checks the same card, "
-              "verifier runs the tests") + "; you get a message on review, block, or completion")
+              ("" if size == "small" else "cheap map -> frontier plan -> ")
+              + "implementer plans, builds, tests, and opens a draft PR; reviewer checks the same card and "
+              "marks the PR ready" + (" -> verifier runs the tests" if "verify" in chain else ""))
+             + "; you get a message on review, block, or completion; the user tests the PR, then merges")
     return json.dumps(result)
 
 
@@ -409,11 +416,12 @@ def verify_failed(args: dict, **_kw) -> str:
     worktree = _parent_worktree(verify_id)
     if not worktree:
         return json.dumps({"ok": False, "error": "no parent worktree found; block your card with the failures"})
-    request = (task["body"] or "").split("REQUEST (from the user):\n", 1)[-1].split("\n\nWork in", 1)[0]
+    request = _request_of(task["body"])
     project = task["project_id"] or ""
     fix_title = f"Fix {rounds + 1}: {base_title}"
     fix_argv = ["kanban", "create", fix_title, "--assignee", _role("implementer"),
-                "--body", FIX_BRIEF.format(round=rounds + 1, request=request, failures=failures,
+                "--body", FIX_BRIEF.format(round=rounds + 1, source="the verifier ran the reviewed change and it failed",
+                                           reporter="from the verifier", request=request, failures=failures,
                                            reviewer=_role("reviewer")),
                 *(["--project", project] if project else []), "--workspace", f"dir:{worktree}",
                 "--parent", verify_id, "--priority", str(PRIORITY["small"]),
@@ -429,6 +437,72 @@ def verify_failed(args: dict, **_kw) -> str:
         _copy_subscriptions(verify_id, tid)
     return json.dumps({"ok": True, "fix": fix_id, "verify": reverify_id, "round": rounds + 1,
                        "next": "complete your verify card with the failure evidence"})
+
+
+def fix(args: dict) -> str:
+    """The user tested a card's PR and found a problem: one fix card in that card's worktree, same
+    branch, same-card review, so the open PR updates. No plan, no verify."""
+    ref, failures = str(args.get("fix_of") or "").strip(), (args.get("request") or "").strip()
+    if not failures:
+        return json.dumps({"ok": False, "error": "request is required: what the user found while testing"})
+    source_id = ref if re.fullmatch(r"t_[0-9a-f]+", ref) else _card_for_pr(ref)
+    task = _task_row(source_id) if source_id else None
+    worktree = _card_worktree(source_id) if task else None
+    if not worktree:
+        return json.dumps({"ok": False, "error": f"no card with a live worktree found for {ref}; "
+                           "submit it as new work (size=small) naming the PR branch"})
+    request = _request_of(task["body"])
+    rounds = len(re.findall(r"^Fix \d+:", task["title"] or ""))
+    base_title = re.sub(r"^(Fix \d+: )+", "", task["title"] or "")
+    argv = ["kanban", "create", f"Fix {rounds + 1}: {base_title}", "--assignee", _role("implementer"),
+            "--body", FIX_BRIEF.format(round=rounds + 1, source="the user tested the PR and found a problem",
+                                       reporter="from the user's testing", request=request,
+                                       failures=failures, reviewer=_role("reviewer")),
+            *(["--project", task["project_id"]] if task["project_id"] else []),
+            "--workspace", f"dir:{worktree}", "--priority", str(PRIORITY["small"]),
+            "--max-runtime", MAX_RUNTIME["small"], "--created-by", "delivery_submit", "--json"]
+    fix_id, error = _create(_stamp(argv, _conventions(task["project_id"] or "")))
+    if error:
+        return error
+    _copy_subscriptions(source_id, fix_id)
+    return json.dumps({"ok": True, "task_id": fix_id, "fix_of": source_id, "worktree": worktree,
+                       "chat_subscribed": _subscribe_calling_chat(fix_id),
+                       "next": "implementer fixes on the same branch and pushes (the PR updates); reviewer "
+                               "re-checks the change; you get a message when it is ready to test again"})
+
+
+def _request_of(body) -> str:
+    """The user's REQUEST out of a card body this module wrote."""
+    return re.split(r"\n\n(?:CONTEXT:|FAILURES \(|Work in)", (body or "").split("REQUEST (from the user):\n", 1)[-1], 1)[0]
+
+
+def _card_worktree(task_id: str):
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        row = conn.execute("SELECT workspace_path FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        conn.close()
+    except sqlite3.Error:
+        return None
+    path = row[0] if row else None
+    return path if path and (Path(path) / ".git").exists() else None
+
+
+def _card_for_pr(url: str):
+    """Newest card whose body or comments mention the PR URL (the implementer's summary carries it)."""
+    if not URL_RE.fullmatch(url):
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        row = conn.execute(
+            "SELECT t.id FROM tasks t WHERE t.workspace_path IS NOT NULL AND (instr(t.body, ?) "
+            "OR instr(coalesce(t.result, ''), ?) "
+            "OR EXISTS (SELECT 1 FROM task_runs r WHERE r.task_id = t.id AND instr(coalesce(r.summary, ''), ?)) "
+            "OR EXISTS (SELECT 1 FROM task_comments c WHERE c.task_id = t.id AND instr(c.body, ?))) "
+            "ORDER BY t.created_at DESC LIMIT 1", (url,) * 4).fetchone()
+        conn.close()
+    except sqlite3.Error:
+        return None
+    return row[0] if row else None
 
 
 def _db() -> Path:
@@ -506,11 +580,14 @@ SCHEMA = {
             "Hand a coding task in one of the user's repositories to the software-delivery team, "
             "instead of doing it in this chat. size=content when only text, copy, markup, styles, docs, "
             "or a config value change (add/edit a page section, legal wording, labels): one implementer "
-            "session plus a wording review, no plan, no tests. size=small for a clear change touching a few files "
-            "(bug fix, small feature, refactor of one module): one implementer session plus an "
-            "independent review of the same card, usually minutes. size=large for multi-module, "
-            "unclear, schema/API/auth/security, or multi-step work: a cheap mapper reads the repo, then "
-            "a frontier planner plans from that map. "
+            "session plus a wording review, no plan, no tests. size=small for any feature or fix one "
+            "developer would do in one sitting, even across several files (the default): ONE card, where "
+            "the implementer plans, builds, tests, and opens a draft PR, then an independent review of the "
+            "same card marks it ready. size=large only for work spanning several repos or modules with "
+            "separate owners, or needing a design decision first: a cheap mapper reads the repo, then a "
+            "frontier planner plans from that map. Never split one feature into phase cards. "
+            "fix_of=<card id or PR URL> when the user tested a PR and found a problem: the request says "
+            "what is wrong; one fix card on the same branch updates the PR. "
             "Returns the card id; progress and the result come back to this chat."),
         "parameters": {
             "type": "object",
@@ -520,8 +597,10 @@ SCHEMA = {
                 "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. my-app"},
                 "size": {"type": "string", "enum": ["content", "small", "large"]},
                 "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
+                "verify": {"type": "boolean", "description": "Add an automatic verify card after review; only when the user asks for it"},
+                "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},
             },
-            "required": ["title", "request", "project", "size"],
+            "required": ["request"],
         },
     },
 }
