@@ -27,9 +27,9 @@ def test_gaps_cover_unmapped_blank_and_missing_profiles(tmp_path):
         "spike_explorer": "no bot assigned", "reviewer": "assigned bot 'sentry' does not exist"}
 
 
-def test_stall_alert_reports_a_role_gap_once_then_its_fix(tmp_path, monkeypatch):
+def test_monitor_reports_a_role_gap_once_then_its_fix(tmp_path, monkeypatch):
     h = home(tmp_path, ["planner: archon", "spike_explorer: probe"])
-    mod = runpy.run_path(str(SCRIPTS / "stall_alert.py"))
+    mod = runpy.run_path(str(SCRIPTS / "delivery_monitor.py"))
     mod["roster_stalls"].__globals__["HERMES_HOME"] = h
     message, state = mod["build_digest"](mod["roster_stalls"](0), {}, 0)
     assert "Role `reviewer` has no working bot" in message and "roster.yaml" in message

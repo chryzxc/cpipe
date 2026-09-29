@@ -134,7 +134,7 @@ def test_unsubscribed_block_escalation_after_grace(tmp_path, monkeypatch, capsys
 
     output = run_scan(monkeypatch, capsys)
 
-    assert "UNSUBSCRIBED_BLOCK · waiting · ready and unattended for 45m" in output
+    assert "UNSUBSCRIBED_BLOCK · waiting · ready and unattended past the" in output
     conn.close()
 
 

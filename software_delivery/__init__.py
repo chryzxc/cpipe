@@ -1,9 +1,9 @@
 """Hermes Software Delivery native plugin.
 
 Registers the deterministic delivery tools (policy check, board intelligence,
-mutation check), a doctor CLI command, a passive session-metrics hook, and the
-dispatch-liveness hooks (engine tick telemetry + stall notices, see
-``liveness.py``).
+mutation check, submit, status/watch), a doctor/status/log CLI command, a passive
+session-metrics hook, the dispatch-liveness hooks (engine tick telemetry + stall
+notices, see ``liveness.py``), and the chat-side monitor hooks (``status.py``).
 Policy skills, scripts, cron definitions, and config assertions live in
 ``workflow/`` and are deployed by ``install.sh``.
 """
@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import block_reasons, liveness, submit, workspace_prep
+from . import block_reasons, liveness, status, submit, workspace_prep
 
 __all__ = ["register"]
 
@@ -112,13 +112,19 @@ def _on_session_end(**kwargs) -> None:
                 record[key] = kwargs[key]
         with _METRICS_LOG.open("a") as fh:
             fh.write(json.dumps(record) + "\n")
+        status._journal("session.end", None, **{k: v for k, v in record.items() if k not in ("ts", "hook")})
     except Exception:
         pass
 
 
 def _cli_setup(parser) -> None:
-    parser.add_argument("action", nargs="?", choices=["doctor", "queue"], default="doctor",
-                        help="doctor (default): plugin status; queue: stuck cards as JSON (Herm Mission Control)")
+    parser.add_argument("action", nargs="?", choices=["doctor", "queue", "status", "log"], default="doctor",
+                        help="doctor (default): plugin status; queue: stuck cards as JSON (Herm Mission Control); "
+                             "status: every open card's monitor verdict; log: the delivery journal")
+    parser.add_argument("--card", help="status/log: one card or chain root")
+    parser.add_argument("--since", help="log: only entries newer than <n>m|h|d, e.g. 2h")
+    parser.add_argument("--kind", help="log: only kinds with this prefix, e.g. monitor. or waste.")
+    parser.add_argument("--json", action="store_true", help="status/log: raw JSON")
 
 
 def _queue_json() -> str:
@@ -134,9 +140,33 @@ def _queue_json() -> str:
         conn.close()
 
 
+def _status_text(args) -> str:
+    result = status.status(getattr(args, "card", None))
+    if getattr(args, "json", False) or not result.get("ok"):
+        return json.dumps(result, indent=1, default=str)
+    lines = [" · ".join(f"{k} {v}" for k, v in result["counts"].items()) or "no open cards"]
+    for r in result["cards"]:
+        waiting = f" [{len(r['waiting_on_it'])} waiting]" if r["waiting_on_it"] else ""
+        lines.append(f"{r['card']:<12} {r['status']:<9} {r['verdict']:<34} {r['title'][:50]}{waiting}")
+        if r["next"]:
+            lines.append(f"{'':<12} next: {r['next']}")
+    return "\n".join(lines)
+
+
+def _log_text(args) -> str:
+    journal = status._load("delivery_journal")
+    entries = journal.read(journal.parse_since(getattr(args, "since", None)), getattr(args, "card", None),
+                           getattr(args, "kind", None), home=status._home())
+    if getattr(args, "json", False):
+        return "\n".join(json.dumps(e) for e in entries)
+    return "\n".join(journal.format_line(e) for e in entries) or "journal empty for this filter"
+
+
 def _cli_command(args) -> None:
     # Hermes only uses a handler's return value as the exit code, so print.
-    print(_queue_json() if getattr(args, "action", "doctor") == "queue" else _doctor_command(args))
+    action = getattr(args, "action", "doctor")
+    print({"queue": _queue_json, "status": lambda: _status_text(args), "log": lambda: _log_text(args)}.get(
+        action, lambda: _doctor_command(args))())
 
 
 def _workflow_source_status() -> str:
@@ -241,6 +271,14 @@ def register(ctx):
         name="delivery_verify_failed", toolset="software_delivery",
         schema=submit.VERIFY_FAILED_SCHEMA, handler=submit.verify_failed,
     )
+    ctx.register_tool(
+        name="delivery_status", toolset="software_delivery",
+        schema=status.STATUS_SCHEMA, handler=status.delivery_status,
+    )
+    ctx.register_tool(
+        name="delivery_watch", toolset="software_delivery",
+        schema=status.WATCH_SCHEMA, handler=status.delivery_watch,
+    )
     ctx.register_cli_command(
         name="software-delivery", help="Software delivery plugin doctor",
         setup_fn=_cli_setup, handler_fn=_cli_command,
@@ -251,3 +289,6 @@ def register(ctx):
     ctx.register_hook("on_kanban_dispatch_tick", block_reasons.explain_blocks)
     ctx.register_hook("pre_llm_call", liveness.liveness_notice)
     ctx.register_hook("pre_llm_call", workspace_prep.prepare_workspace)
+    ctx.register_hook("pre_llm_call", status.chat_context)
+    ctx.register_hook("post_llm_call", status.claim_check)
+    ctx.register_hook("pre_approval_request", status.approval_requested)

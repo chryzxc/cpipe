@@ -3,6 +3,7 @@
 The main chat can run on a cheap model: it only classifies the request and calls
 this tool. Card creation, routing, and the chat subscription are deterministic.
 
+content: one build card, no plan and no verify: text/copy/markup/style/docs edits need no tests.
 small: build card: the implementer codes and tests, then hands the SAME card (same worktree)
        to the reviewer through the native review lane; changes requested go straight back.
 large: map (cheap investigator) -> plan (frontier planner, plans from the map) -> build.
@@ -13,6 +14,7 @@ at most MAX_FIX_ROUNDS times. Nothing waits on a Coordinator.
 
 from __future__ import annotations
 
+import difflib
 import importlib.util
 import json
 import os
@@ -24,10 +26,14 @@ from pathlib import Path
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 # User-submitted work outranks retries of older cards (dispatcher: ORDER BY priority DESC).
-PRIORITY = {"small": 20, "large": 10}
-MAX_RUNTIME = {"small": "30m", "large": "30m"}  # check_delivery_config.py ceiling
+PRIORITY = {"content": 30, "small": 20, "large": 10}
+MAX_RUNTIME = {"content": "15m", "small": "30m", "large": "30m"}  # check_delivery_config.py ceiling
 MAX_FIX_ROUNDS = 2
 MAX_REQUEST_CHARS = 3000
+DUPLICATE_TITLE_RATIO = 0.85
+STAGE_PREFIX = re.compile(r"^(map|plan|verify|fix \d+|review)\s*:\s*", re.I)
+REVIEW_TITLE = re.compile(r"^\s*(code[\s-]*)?review\b|^\s*re-?review\b", re.I)
+URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/(?:pull|issues)/\d+")
 
 SCOPE = """CONTEXT: this card is your whole assignment. Read only the files it names, their callers,
 and the parent card's result (kanban_show -> parents). No broad searches, no web, no skills
@@ -49,6 +55,8 @@ server AND client). Complete this card with, in about 2 KB, every path:line from
   `<caller file:line> — <behavior> — covered by <test>` or `— UNPINNED: <test file> asserts <what>`.
 - RED: the test for the requested behavior and why it fails on today's code.
 - RISKS: anything the implementer must not break or decide.
+PINS cover behavior only: static text, markup, and styles need none. Plan nothing the request
+did not ask for (no extra tests, refactors, or hardening).
 The implementer card waiting on this one builds from your result and has no other copy.
 """
 
@@ -79,7 +87,9 @@ close an item under GAPS, and name that item.
 Produce the implementation plan: acceptance criteria, non-goals, risk tier, PINS (as in a small
 plan: each reachable caller behavior with its covering test or UNPINNED and the test to add), and
 ordered slices with exact files and tests. The first slice adds every UNPINNED test, passing on
-today's code. Complete this card with the FULL plan as the result: the implementer card waiting
+today's code. PINS cover behavior only: static text, markup, and styles need none. Plan the
+smallest change that meets the request: nothing it did not ask for (no extra tests, refactors,
+or hardening). Complete this card with the FULL plan as the result: the implementer card waiting
 on this one reads it from there and has no other copy.
 """
 
@@ -112,10 +122,43 @@ REVIEWER (same worktree)
   (grep the name and, for routes, the URL path across server AND client). Your verdict lists
   `CALLERS CHECKED: <symbol> -> <file:line> safe (<test that proves it>)|broken`. A broken caller
   is REQUEST_CHANGES, and so is a reachable caller with no test proving it still works: ask for a
-  pinned test. An approval without this list is not an approval.
+  pinned test. An approval without this list is not an approval. Static text, markup, links,
+  and styles are not behavior: they need no test.
 - REQUEST_CHANGES only for correctness, security, data-loss, a missed requirement, or a missing
   pin. Style and naming go in the approval as notes. Missing tools are noted, not blockers.
+  Never ask for a test, harness, or file the REQUEST or plan excludes: note it as a follow-up.
 - On re-review, check only the delta since the last reviewed commit plus the prior findings.
+  A prior finding the implementer could not or would not fix is not a second REQUEST_CHANGES:
+  approve with it under RESIDUAL RISK so the user decides. Never request changes twice on one finding.
+"""
+
+CONTENT_BRIEF = """CONTENT CHANGE: text, copy, markup, styles, docs, or a config value. No logic.
+token_budget: low.
+
+REQUEST (from the user):
+{request}
+
+""" + SCOPE + """
+IMPLEMENTER
+1. Edit only what the request needs. Grep for every place the same content renders (a server
+   template AND a client view can both show one page) and update each one the same way.
+2. No new tests, pins, or harnesses: static content is not behavior. Run the touched package's
+   existing lint/build if it is quick; if it cannot run, note it and continue.
+3. Commit on this card's branch (Conventional Commit), then hand this SAME card to review:
+   `hermes kanban request-review <this card id> --reviewer {reviewer} --summary "<files; what
+   text changed; checks run; commit sha>"`.
+4. If the change needs logic (a route, handler, state, API field), block with
+   "NEEDS size=small: <why>" instead of building it.
+
+REVIEWER (same worktree)
+- Review `git diff <base>...HEAD` against the REQUEST only: required wording (exact where the
+  request quotes it), spelling and branding, broken markup or links, every place the content
+  renders, and files outside the request. No tests, pins, harnesses, OCR, or caller traces:
+  a content change has none.
+- One pass, every finding at once. Approve (`hermes kanban complete`) or REQUEST_CHANGES only
+  for wrong or missing required text, broken markup/links, or out-of-scope files.
+- On re-review check only your prior findings. A finding already raised once goes in the
+  approval as a note for the user; never request changes twice on it.
 """
 
 BUILD_BRIEF = """IMPLEMENT the planned change. One card, one worktree, one implementer session.
@@ -212,7 +255,10 @@ def _subscribe_calling_chat(task_id: str) -> bool:
 
 def build_card(title: str, request: str, project: str, size: str) -> tuple[list[str], str]:
     """(`hermes kanban create` argv, assignee) for a submission. Pure, for testing."""
-    if size == "small":  # the frontier planner picks the change and the pins; submit() chains build
+    if size == "content":  # straight to the implementer; same-card review, no plan or verify
+        assignee = _role("implementer")
+        body = CONTENT_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
+    elif size == "small":  # the frontier planner picks the change and the pins; submit() chains build
         assignee, title = _role("planner"), f"Plan: {title}"
         body = PIN_BRIEF.format(request=request.strip())
     else:  # map first on the cheap investigator; submit() chains plan + build on it
@@ -245,16 +291,60 @@ def chained_card(stage: str, title: str, request: str, project: str, parent: str
             "--created-by", "delivery_submit", "--json"], assignee
 
 
+def _bare(title: str) -> str:
+    while STAGE_PREFIX.match(title):
+        title = STAGE_PREFIX.sub("", title, count=1)
+    return " ".join(title.lower().split())
+
+
+def find_duplicate(title: str, request: str, project: str) -> str | None:
+    """An open card for the same work: same GitHub issue/PR URL, or same project and a near-identical title."""
+    urls = set(URL_RE.findall(request))
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        rows = conn.execute("SELECT id, title, body, project_id FROM tasks WHERE status NOT IN "
+                            "('done','archived') ORDER BY created_at").fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return None
+    bare = _bare(title)
+    for tid, other_title, body, other_project in rows:
+        if urls & set(URL_RE.findall(body or "")):
+            return tid
+        if other_project == project and difflib.SequenceMatcher(
+                None, bare, _bare(other_title or "")).ratio() >= DUPLICATE_TITLE_RATIO:
+            return tid
+    return None
+
+
+def _journal(kind: str, card: str | None = None, **detail) -> None:
+    try:
+        from . import status
+        status._journal(kind, card, **detail)
+    except Exception:
+        pass
+
+
 def submit(args: dict, **_kw) -> str:
     title = (args.get("title") or "").strip()
     request = (args.get("request") or "").strip()
     project = (args.get("project") or "").strip()
     size = args.get("size") or "small"
     if not (title and request and project) or size not in PRIORITY:
-        return json.dumps({"ok": False, "error": "title, request, project are required; size is small|large"})
+        return json.dumps({"ok": False, "error": "title, request, project are required; size is content|small|large"})
     if len(request) > MAX_REQUEST_CHARS:  # workers get the card, not the chat: keep it a brief
         return json.dumps({"ok": False, "error": f"request is {len(request)} chars; rewrite it as a brief "
                            f"under {MAX_REQUEST_CHARS}: goal, acceptance criteria, files the user named"})
+    if REVIEW_TITLE.search(title):  # review happens on the build card's own review lane, never a new card
+        return json.dumps({"ok": False, "error": "Don't submit review cards: every build card is reviewed on the "
+                           "same card through the review lane. To change an existing card, comment on it or use "
+                           "`hermes kanban request-changes <id>`; no card was created."})
+    duplicate = None if args.get("force") else find_duplicate(title, request, project)
+    if duplicate:
+        _journal("waste.duplicate_card", duplicate, title=title[:80], project=project)
+        return json.dumps({"ok": False, "duplicate_of": duplicate,
+                           "error": f"{duplicate} is already open for this work. Tell the user and follow that "
+                           "card (delivery_status); resubmit with force=true only if the user says it is new work."})
     rg = _roster_gaps()
     gaps = rg.roster_gaps(home=HERMES_HOME)  # every required role, so the team is never half-staffed
     if gaps:
@@ -265,25 +355,41 @@ def submit(args: dict, **_kw) -> str:
         argv, assignee = build_card(title, request, project, size)
     except (OSError, KeyError) as exc:
         return json.dumps({"ok": False, "error": str(exc)})
-    task_id, error = _create(argv)
+    conventions = _conventions(project)
+    task_id, error = _create(_stamp(argv, conventions))
     if error:
         return error
     result = {"ok": True, "task_id": task_id, "assignee": assignee, "size": size}
-    # each stage waits on the previous card; every path ends in verify
-    chain = {"map" if size == "large" else "plan": task_id}
-    for stage in (("plan",) if size == "large" else ()) + ("build", "verify"):
+    # each stage waits on the previous card; every code path ends in verify, content is one card
+    chain = {"large": {"map": task_id}, "small": {"plan": task_id}, "content": {"build": task_id}}[size]
+    stages = {"large": ("plan", "build", "verify"), "small": ("build", "verify"), "content": ()}[size]
+    for stage in stages:
         argv, _ = chained_card(stage, title, request, project, task_id)
-        task_id, error = _create(argv)
+        task_id, error = _create(_stamp(argv, conventions))
         if error:
             return json.dumps({**json.loads(error), "created_so_far": chain})
         chain[stage] = task_id
     result.update(task_id=chain["build"], cards=chain)
     result.update(
         chat_subscribed=all([_subscribe_calling_chat(tid) for tid in chain.values()]),
-        next=("frontier plan (change + pins) -> " if size == "small" else
-              "cheap map -> frontier plan -> ") + ("implementer pins current behavior and builds, "
-              "frontier reviewer checks the same card, verifier runs the tests") + "; you get a message on review, block, or completion")
+        next=("implementer edits, reviewer checks the wording on the same card" if size == "content" else
+              ("frontier plan (change + pins) -> " if size == "small" else "cheap map -> frontier plan -> ")
+              + "implementer pins current behavior and builds, frontier reviewer checks the same card, "
+              "verifier runs the tests") + "; you get a message on review, block, or completion")
     return json.dumps(result)
+
+
+def _conventions(project: str) -> str:
+    from . import workspace_prep
+    return workspace_prep.profile_brief(workspace_prep.project_profile(project, HERMES_HOME))
+
+
+def _stamp(argv: list[str], conventions: str) -> list[str]:
+    """Append the project's saved conventions to a create argv's --body."""
+    if not conventions:
+        return argv
+    i = argv.index("--body") + 1
+    return [*argv[:i], f"{argv[i]}\n\n{conventions}", *argv[i + 1:]]
 
 
 def verify_failed(args: dict, **_kw) -> str:
@@ -398,7 +504,9 @@ SCHEMA = {
         "name": "delivery_submit",
         "description": (
             "Hand a coding task in one of the user's repositories to the software-delivery team, "
-            "instead of doing it in this chat. size=small for a clear change touching a few files "
+            "instead of doing it in this chat. size=content when only text, copy, markup, styles, docs, "
+            "or a config value change (add/edit a page section, legal wording, labels): one implementer "
+            "session plus a wording review, no plan, no tests. size=small for a clear change touching a few files "
             "(bug fix, small feature, refactor of one module): one implementer session plus an "
             "independent review of the same card, usually minutes. size=large for multi-module, "
             "unclear, schema/API/auth/security, or multi-step work: a cheap mapper reads the repo, then "
@@ -409,8 +517,9 @@ SCHEMA = {
             "properties": {
                 "title": {"type": "string", "description": "Short imperative card title"},
                 "request": {"type": "string", "description": "A brief, not the conversation: the goal, acceptance criteria, and any file, route, or area the user named. Workers see only this. Max 3000 chars."},
-                "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. climaterx"},
-                "size": {"type": "string", "enum": ["small", "large"]},
+                "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. my-app"},
+                "size": {"type": "string", "enum": ["content", "small", "large"]},
+                "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
             },
             "required": ["title", "request", "project", "size"],
         },

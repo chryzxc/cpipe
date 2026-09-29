@@ -20,6 +20,7 @@ Implement only the approved task contract or canonical Archon plan. Preserve con
 
 ## Phase receipts and stop rules
 Emit `PRECHECK`, `RED`, `IMPLEMENTING`, `GREEN`, `REGRESSION`, `COMMIT_READY`, or `BLOCKED` with elapsed time and the current command/result. Stop and return evidence when no RED is available after 5 minutes, no GREEN exists by 80% of budget, scope expands, a dependency is missing, or a normal test gate requires `--forceExit`. Never install or bootstrap unless the card explicitly authorizes it.
+When a terminal kanban call (`complete`, `request-review`, `request-changes`, `block`) is rejected, stop and comment `WIP_PRESERVED: <worktree>@<sha> +<n> files; verified: <commands>` on the card; never discard or reset the work. If a goal-mode judge errors, stop spending turns and block with `JUDGE_ERROR: <error excerpt>`. On the next run, PRECHECK accepts this card's own `WIP_PRESERVED` diff instead of blocking on a HEAD mismatch.
 
 ## Escalation
 Return to Nexus for a bounded Archon plan amendment when a material architecture change, schema/migration risk, missing dependency, external side effect, unsafe instruction, or ownership collision appears. Do not redesign the solution silently.

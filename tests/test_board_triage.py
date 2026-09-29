@@ -49,15 +49,28 @@ def test_groups_auto_fixes_and_reminds_once_a_day(tmp_path):
     run = lambda *a: (calls.append(a[2]) or (True, ""))
     cards = mod["classify"](conn)
     assert mod["auto_fix"](cards, state, walled=True, run=run) == ([], ["t_child"])  # provider still walled
-    for _ in range(3):
-        mod["auto_fix"](cards, state, walled=False, run=run)
-    assert calls.count("t_quota") == mod["MAX_RETRIES"]                    # bounded, never a loop
+    mod["auto_fix"](cards, state, walled=False, run=run)
     assert "t_quota_triage" not in calls and "t_merged" not in calls     # the operator decides those
 
     now = time.time()
-    message, state = mod["build_digest"](cards, [], [], state, now)
+    message, _ = mod["build_digest"](cards, [], [], {}, now)
     assert "t_ask" in message and "Pick option A or B" in message and "t_quota_triage" in message
     assert "`t_quota`" not in message                                       # retries itself, no nag
+
+    quota = next(c for c in cards if c["id"] == "t_quota")
+    assert calls.count("t_quota") == 1
+    mod["auto_fix"](cards, state, walled=False, run=run)                   # the retry failed the same way
+    assert calls.count("t_quota") == 1 and quota["group"] == "decide"    # → the operator, not a loop
+    quota.update(reason="request timed out", group="retry")               # a new error is worth a retry
+    mod["auto_fix"](cards, state, walled=False, run=run)
+    assert calls.count("t_quota") == mod["MAX_RETRIES"]
+    for c in cards:
+        if c["id"] == "t_quota":
+            c.update(reason="request timed out", group="retry")
+    mod["auto_fix"](cards, state, walled=False, run=run)
+    assert calls.count("t_quota") == mod["MAX_RETRIES"]                    # bounded, never a loop
+
+    message, state = mod["build_digest"](cards, [], [], state, now)
     assert len(message) <= mod["MESSAGE_BUDGET"]
     assert mod["build_digest"](cards, [], [], state, now + 3600)[0] == ""  # quiet until tomorrow
     card(conn, "t_new_ask", "blocked", "needs_input", "Approve the schema change?")
