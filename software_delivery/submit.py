@@ -89,15 +89,18 @@ on this one reads it from there and has no other copy.
 IMPLEMENTER = """IMPLEMENTER
 1. PLAN. If a parent card's result is a plan, follow it; do not re-plan. Otherwise plan in one
    pass yourself: read the code the REQUEST touches and its direct callers (for a route, grep its
-   URL path in server AND client), then comment CHANGE (files, how), PINS (each reachable caller
-   behavior: covered by <test>, or UNPINNED), and RED (the test that fails today). Add any
-   reachable caller a plan missed to PINS. Plan nothing the REQUEST did not ask for.
-2. PIN, before editing any source file: write each UNPINNED test so it asserts what the code does
-   TODAY, and run it: it must PASS on the unchanged code. Commit these first
-   (`test: pin current behavior of <area>`).
-3. RED/GREEN: write the requested-behavior test and run it: it must FAIL for the reason the
-   request describes (RED). Implement until it passes (GREEN) with every pinned test still
-   passing. A pinned test may change only where the REQUEST changes that behavior; say so.
+   URL path in server AND client), then comment CHANGE (files, how, each marked NEW or MODIFIED),
+   PINS (for MODIFIED code only: each reachable caller behavior: covered by <test>, or UNPINNED),
+   and RED (the test that fails today, MODIFIED code only). NEW = a new file, function, route, or
+   component nothing existing calls yet; MODIFIED = existing code whose behavior callers rely on.
+   Add any reachable caller a plan missed to PINS. Plan nothing the REQUEST did not ask for.
+2. PIN, MODIFIED code only, before editing it: write each UNPINNED test so it asserts what the
+   code does TODAY, and run it: it must PASS on the unchanged code. Commit these first
+   (`test: pin current behavior of <area>`). Pure NEW code skips this step: nothing to break.
+3. MODIFIED: write the requested-behavior test and run it: it must FAIL for the reason the request
+   describes (RED); implement until it passes (GREEN) with every pinned test still passing. A
+   pinned test may change only where the REQUEST changes that behavior; say so.
+   NEW: write the code first, then tests for its behavior (test-after is fine; no RED needed).
 4. Run the tests related to every changed file, not only the new ones (`npx jest --findRelatedTests
    <files>`, `npx vitest related --run <files>`, or the tests importing the module), in every
    package the change reaches (server and client), plus lint/typecheck for touched files.
@@ -119,9 +122,10 @@ REVIEWER (same worktree)
 - Callers: for every changed function, route, API field, event, or component prop, find its users
   (grep the name and, for routes, the URL path across server AND client). Your verdict lists
   `CALLERS CHECKED: <symbol> -> <file:line> safe (<test that proves it>)|broken`. A broken caller
-  is REQUEST_CHANGES, and so is a reachable caller with no test proving it still works: ask for a
-  pinned test. An approval without this list is not an approval. Static text, markup, links,
-  and styles are not behavior: they need no test.
+  is REQUEST_CHANGES, and so is a reachable existing caller with no test proving it still works:
+  ask for a pinned test. NEW code has no existing callers (`CALLERS CHECKED: none (new code)`):
+  it needs tests of its own behavior, never pins. An approval without this list is not an
+  approval. Static text, markup, links, and styles are not behavior: they need no test.
 - REQUEST_CHANGES only for correctness, security, data-loss, a missed requirement, or a missing
   pin. Style and naming go in the approval as notes. Missing tools are noted, not blockers.
   Anything the REQUEST needs is in scope even when a plan did not name the file; never ask for a
