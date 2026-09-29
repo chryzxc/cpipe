@@ -4,15 +4,16 @@ The main chat can run on a cheap model: it only classifies the request and calls
 this tool. Card creation, routing, and the chat subscription are deterministic.
 
 content: one build card, no plan: text/copy/markup/style/docs edits need no tests.
-small: ONE card: the implementer plans, codes, tests, pushes a draft PR, then hands the SAME card
-       (same worktree) to the reviewer through the native review lane; changes requested go
-       straight back. The operator tests the PR by hand, then merges.
+small: plan (frontier planner reads the code itself, short plan) -> build: the implementer codes,
+       tests, pushes a draft PR, then hands the SAME card (same worktree) to the reviewer through the
+       native review lane; changes requested go straight back. The operator tests the PR, then merges.
 large: map (cheap investigator) -> plan (frontier planner, plans from the map) -> build.
-verify=true adds a verify card: the verifier runs the tests in the build worktree. On failure it
+small/large (and fix_of) get a verify card unless verify=false: the verifier runs the tests in the
+build worktree (review_gate hands it to the release engineer when platform files changed). On failure it
 calls ``delivery_verify_failed``, which opens a fix card in the same worktree plus a fresh verify
 card, at most MAX_FIX_ROUNDS times.
 fix_of=<card or PR>: the operator found a problem while testing; one fix card in that card's
-worktree and branch, reviewed on the same card, so the open PR updates. Nothing waits on a Coordinator.
+worktree and branch, reviewed on the same card and then verified, so the open PR updates.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 # User-submitted work outranks retries of older cards (dispatcher: ORDER BY priority DESC).
 PRIORITY = {"content": 30, "small": 20, "large": 10}
 # a whole feature is one session: a timeout kills it mid-build and the retry starts cold
-MAX_RUNTIME = {"content": "15m", "small": "60m", "large": "60m", "map": "20m", "plan": "20m"}
+MAX_RUNTIME = {"content": "15m", "small": "20m", "large": "60m", "map": "20m", "plan": "20m", "build": "60m"}
 MAX_FIX_ROUNDS = 2
 MAX_REQUEST_CHARS = 3000
 DUPLICATE_TITLE_RATIO = 0.85
@@ -53,6 +54,40 @@ the PR. Block only for a decision only the user can make (product behavior, secu
 destructive or external action): state the exact question with 2-4 options, recommended first.
 """
 
+# One plan shape for the planner card and the implementer's own plan; review_gate checks the headings.
+PLAN_FORMAT = """PLAN FORMAT: every heading below, in this order, at the start of a line. Write `none` under a
+heading that does not apply; never drop it. Every file reference is path:line from a file you opened.
+GOAL: one sentence.
+ACCEPTANCE: AC1..n, each something a person or a test can observe.
+NON-GOALS: only what the REQUEST excludes, quoted.
+ENTRY POINTS: each way users or systems reach the change (direct URL, in-app navigation/router,
+  API client, job, another package) -> path:line -> IN SCOPE, or NON-GOAL with the REQUEST's words.
+  Never drop one by assumption: check how users actually get there.
+CONTRACTS: each value crossing a boundary: sender path:line field -> receiver path:line field ->
+  agree | MISMATCH (fixed in slice N). Client payload, route, model/DB, response.
+ADD: each new file, function, route, component: purpose, slice N. (NEW: tests after the code.)
+CHANGE: each existing symbol path:line: what changes, slice N. (MODIFIED: pinned first.)
+DON'T TOUCH: files that look related but must not change, and why.
+PINS: each caller behavior a CHANGE reaches -> covered by <test> | UNPINNED -> <test to add>.
+TESTS: each test file -> copies harness <existing test that already mounts this component or calls
+  this route> -> asserts <observable effect> -> command. Behavior only: mount/render or call real
+  code, never read source text. No harness in the repo: say so and add the smallest real one as a slice.
+CHECK: each command to run after the build (related tests in every package, lint, typecheck,
+  build) and the result that counts as pass.
+RISKS: what could regress, where, and which test or CHECK catches it.
+OPEN DECISIONS: product questions the code cannot answer, with 2-4 options, recommended first; or none.
+SLICES: ordered; each: files, tests, done-when.
+"""
+PLAN_TASK = """Produce the implementation plan in the PLAN FORMAT below. The first slice adds every UNPINNED
+test, passing on today's code. If an OPEN DECISION changes what gets built, block this card with it
+instead of guessing. PINS cover behavior only: static text, markup, and styles need none. Plan the
+smallest change that meets the request: nothing it did not ask for (no extra tests, refactors,
+or hardening). Complete this card with the FULL plan in `result` (not only the summary): the
+implementer card waiting on this one reads it from there and has no other copy.
+
+""" + PLAN_FORMAT
+PLAN_HEADINGS = re.findall(r"^([A-Z][A-Z' -]+):", PLAN_FORMAT.split("\n", 2)[2], re.M)
+
 MAP_BRIEF = """REPOSITORY MAP for a planner. Read-only: no edits, no commits, no plan.
 token_budget: low.
 
@@ -61,8 +96,12 @@ REQUEST (from the user):
 
 """ + SCOPE + """
 Read only the code this request touches, then complete this card with the map (FILES, SYMBOLS,
-CALLERS, TESTS, UNPINNED (caller behaviors this change reaches that no test covers), COMMANDS,
-CONVENTIONS, GAPS; about 4 KB, every path:line from a file you opened).
+CALLERS, ENTRY POINTS (every way a user or system reaches this behavior or content: direct URL,
+in-app router/navigation, API clients, jobs, other packages that render or call it), CONTRACTS
+(field names and shapes at each handoff: client payload -> route -> model/DB -> response),
+TESTS (plus HARNESS: an existing test that already mounts this kind of component or calls this kind
+of route, and its command), UNPINNED (caller behaviors this change reaches that no test covers),
+COMMANDS, CONVENTIONS, GAPS; about 4 KB, every path:line from a file you opened).
 The planner card waiting on this one plans from your map instead of exploring the repo itself.
 """
 
@@ -77,23 +116,30 @@ The parent card's result is a repository map made by a cheaper model. Treat its
 FILES/SYMBOLS/TESTS/COMMANDS as your evidence. Open a file only to confirm a line you cite or to
 close an item under GAPS, and name that item.
 
-Produce the implementation plan: acceptance criteria, non-goals, risk tier, PINS (as in a small
-plan: each reachable caller behavior with its covering test or UNPINNED and the test to add), and
-ordered slices with exact files and tests. The first slice adds every UNPINNED test, passing on
-today's code. PINS cover behavior only: static text, markup, and styles need none. Plan the
-smallest change that meets the request: nothing it did not ask for (no extra tests, refactors,
-or hardening). Complete this card with the FULL plan as the result: the implementer card waiting
-on this one reads it from there and has no other copy.
-"""
+""" + PLAN_TASK
+
+SMALL_PLAN_BRIEF = """SMALL TASK: plan it for the implementer card waiting on this one. Do not load skills.
+token_budget: low.
+
+REQUEST (from the user):
+{request}
+
+""" + SCOPE + """
+Read the code the REQUEST touches and its direct callers yourself (for a route, grep its URL path
+in server AND client; for a page or content, every place it renders and every way users navigate
+to it). Stop reading once every heading below has an answer. A short plan: about 2 KB.
+
+""" + PLAN_TASK
 
 IMPLEMENTER = """IMPLEMENTER
 1. PLAN. If a parent card's result is a plan, follow it; do not re-plan. Otherwise plan in one
    pass yourself: read the code the REQUEST touches and its direct callers (for a route, grep its
-   URL path in server AND client), then comment CHANGE (files, how, each marked NEW or MODIFIED),
-   PINS (for MODIFIED code only: each reachable caller behavior: covered by <test>, or UNPINNED),
-   and RED (the test that fails today, MODIFIED code only). NEW = a new file, function, route, or
-   component nothing existing calls yet; MODIFIED = existing code whose behavior callers rely on.
-   Add any reachable caller a plan missed to PINS. Plan nothing the REQUEST did not ask for.
+   URL path in server AND client; for content or a page, every place it renders and every way users
+   navigate to it), then post the plan as a card comment in the PLAN FORMAT at the end of this
+   card, one line per item (a two-file change fits in about 1.5 KB). NEW = a new file, function,
+   route, or component nothing existing calls yet; MODIFIED = existing code whose behavior callers
+   rely on. Add any reachable caller a parent plan missed to PINS. Plan nothing the REQUEST did not
+   ask for.
 2. PIN, MODIFIED code only, before editing it: write each UNPINNED test so it asserts what the
    code does TODAY, and run it: it must PASS on the unchanged code. Commit these first
    (`test: pin current behavior of <area>`). Pure NEW code skips this step: nothing to break.
@@ -117,8 +163,11 @@ IMPLEMENTER = """IMPLEMENTER
 7. If review requests changes, fix them on this card, push, and request review again.
 
 REVIEWER (same worktree)
-- Review `git diff <base>...HEAD` in this card's worktree against the REQUEST and the parent
-  card's plan. One pass: list every finding at once with file:line.
+- Review `git diff <base>...HEAD` in this card's worktree against the REQUEST and the plan (the
+  parent card's result, or the implementer's plan comment). One pass: list every finding at once
+  with file:line. Walk the plan: every ACCEPTANCE item met, every IN SCOPE ENTRY POINT works, every
+  CONTRACTS mismatch fixed, every TESTS line exists and exercises real code, and no changed file
+  outside ADD/CHANGE without an OUT_OF_PLAN note. A plan item skipped silently is a missed requirement.
 - Callers: for every changed function, route, API field, event, or component prop, find its users
   (grep the name and, for routes, the URL path across server AND client). Your verdict lists
   `CALLERS CHECKED: <symbol> -> <file:line> safe (<test that proves it>)|broken`. A broken caller
@@ -126,15 +175,25 @@ REVIEWER (same worktree)
   ask for a pinned test. NEW code has no existing callers (`CALLERS CHECKED: none (new code)`):
   it needs tests of its own behavior, never pins. An approval without this list is not an
   approval. Static text, markup, links, and styles are not behavior: they need no test.
-- REQUEST_CHANGES only for correctness, security, data-loss, a missed requirement, or a missing
-  pin. Style and naming go in the approval as notes. Missing tools are noted, not blockers.
+- Run the related tests yourself at HEAD (never trust the handoff's results) in every package the
+  change reaches. A failure that passes at BASE is a regression: REQUEST_CHANGES.
+- Tests must exercise behavior: a test that reads source text (readFileSync or a regex over the
+  file) or calls a copied/extracted piece of the logic proves nothing. Require a rendered/mounted
+  component or a real route/function call asserting the effect: REQUEST_CHANGES.
+- Behavior the REQUEST did not ask for (new handlers, refactors, changed defaults, "while I was
+  here" hardening) is a finding: revert it, or list it so the user approves it.
+- REQUEST_CHANGES only for correctness, security, data-loss, regression, a missed requirement, a
+  missing pin or behavior test, or unrequested behavior. Style and naming go in the approval as notes. Missing tools are noted, not blockers.
   Anything the REQUEST needs is in scope even when a plan did not name the file; never ask for a
   test, harness, or file the REQUEST excludes: note it as a follow-up.
 - On re-review, check only the delta since the last reviewed commit plus the prior findings.
-  A prior finding the implementer could not or would not fix is not a second REQUEST_CHANGES:
-  approve with it under RESIDUAL RISK so the user decides. Never request changes twice on one finding.
-  At most 3 review rounds: on the third, approve and list what remains under RESIDUAL RISK.
-- On APPROVED, mark the card's draft PR ready (`gh pr ready <url>`); if that fails, note it.
+  A prior Medium/Low finding the implementer could not or would not fix is not a second
+  REQUEST_CHANGES: approve with it under RESIDUAL RISK. At most 3 review rounds: on the third,
+  approve with Medium/Low items under RESIDUAL RISK. RESIDUAL RISK never holds a High (wrong
+  behavior, security, data loss, regression): if one is still open, block this card with the
+  finding and 2-3 options so the user decides; never approve over it.
+- On APPROVED: if kanban_show lists a `Verify:` child card, leave the PR draft (the verifier marks
+  it ready once the tests pass); otherwise mark it ready (`gh pr ready <url>`); a failure is a note.
   Never merge. The user tests the PR by hand and merges.
 """
 
@@ -173,7 +232,7 @@ token_budget: low.
 REQUEST (from the user):
 {request}
 
-""" + SCOPE + "\n" + IMPLEMENTER
+""" + SCOPE + "\n" + IMPLEMENTER + "\n" + PLAN_FORMAT
 
 VERIFY_BRIEF = """VERIFY the reviewed change by running it. No edits or commits; step 1 checks files out and restores them.
 token_budget: low.
@@ -195,7 +254,12 @@ handoff, else origin's default branch>`.
 3. SUITE: run the repo's CI test and lint commands (.github/workflows, package.json scripts) for
    the touched packages. A failure counts only if it also passes on BASE (re-run that test at BASE
    the same way as step 1). Skip a command that needs a secret or service; name it.
-PASS: complete this card with each command and its result.
+4. PLATFORM, only if the diff touches CI, containers, deploy config, dependency manifests or
+   lockfiles, or migrations: clean install from the lockfile (`npm ci`, `uv sync --frozen`, ...),
+   the production build, config syntax checks (`docker compose config`, workflow YAML), and
+   migrations up then down on a local/test database. Never deploy or touch a shared environment.
+PASS: mark the parent's draft PR ready (`gh pr ready <url>`; a failure is a note), then complete
+this card with each command and its result.
 FAIL: call `delivery_verify_failed` with this card id and the exact failures (command, test,
 error), then complete this card with the same evidence. If that tool says the round limit is
 reached, block this card with the failures instead.
@@ -264,9 +328,10 @@ def build_card(title: str, request: str, project: str, size: str) -> tuple[list[
     if size == "content":  # straight to the implementer; same-card review, no plan or verify
         assignee = _role("implementer")
         body = CONTENT_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
-    elif size == "small":  # one session plans and builds: a separate plan card is a second cold start
-        assignee = _role("implementer")
-        body = BUILD_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
+    elif size == "small":  # the frontier planner reads the code and plans; submit() chains the build
+        assignee = _role("planner")
+        title = f"Plan: {title}"
+        body = SMALL_PLAN_BRIEF.format(request=request.strip())
     else:  # map first on the cheap investigator; submit() chains plan + build on it
         assignee = _role("investigator")
         title = f"Map: {title}"
@@ -278,7 +343,8 @@ def build_card(title: str, request: str, project: str, size: str) -> tuple[list[
     return argv, assignee
 
 
-def chained_card(stage: str, title: str, request: str, project: str, parent: str) -> tuple[list[str], str]:
+def chained_card(stage: str, title: str, request: str, project: str, parent: str,
+                 size: str = "large") -> tuple[list[str], str]:
     """Card that starts only after `parent` is done: 'plan' (planner), 'build' (implementer), or
     'verify' (verifier, scratch workspace; the workspace_prep hook sends it to the parent worktree)."""
     workspace = "worktree"
@@ -293,7 +359,7 @@ def chained_card(stage: str, title: str, request: str, project: str, parent: str
         body = BUILD_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
     return ["kanban", "create", title, "--assignee", assignee, "--body", body,
             "--project", project, "--workspace", workspace, "--parent", parent,
-            "--priority", str(PRIORITY["large"]), "--max-runtime", MAX_RUNTIME.get(stage, MAX_RUNTIME["large"]),
+            "--priority", str(PRIORITY[size]), "--max-runtime", MAX_RUNTIME.get(stage, MAX_RUNTIME["large"]),
             "--created-by", "delivery_submit", "--json"], assignee
 
 
@@ -368,13 +434,13 @@ def submit(args: dict, **_kw) -> str:
     if error:
         return error
     result = {"ok": True, "task_id": task_id, "assignee": assignee, "size": size}
-    # each stage waits on the previous card; small and content are one card, verify only on request
-    chain = {"large": {"map": task_id}, "small": {"build": task_id}, "content": {"build": task_id}}[size]
-    stages = {"large": ("plan", "build"), "small": (), "content": ()}[size]
-    if args.get("verify") and size != "content":
+    # each stage waits on the previous card; content is one card; verify unless verify=false
+    chain = {"large": {"map": task_id}, "small": {"plan": task_id}, "content": {"build": task_id}}[size]
+    stages = {"large": ("plan", "build"), "small": ("build",), "content": ()}[size]
+    if args.get("verify", True) and size != "content":
         stages += ("verify",)
     for stage in stages:
-        argv, _ = chained_card(stage, title, request, project, task_id)
+        argv, _ = chained_card(stage, title, request, project, task_id, size)
         task_id, error = _create(_stamp(argv, conventions))
         if error:
             return json.dumps({**json.loads(error), "created_so_far": chain})
@@ -383,8 +449,8 @@ def submit(args: dict, **_kw) -> str:
     result.update(
         chat_subscribed=all([_subscribe_calling_chat(tid) for tid in chain.values()]),
         next=("implementer edits, reviewer checks the wording on the same card" if size == "content" else
-              ("" if size == "small" else "cheap map -> frontier plan -> ")
-              + "implementer plans, builds, tests, and opens a draft PR; reviewer checks the same card and "
+              ("frontier plan -> " if size == "small" else "cheap map -> frontier plan -> ")
+              + "implementer builds, tests, and opens a draft PR; reviewer checks the same card and "
               "marks the PR ready" + (" -> verifier runs the tests" if "verify" in chain else ""))
              + "; you get a message on review, block, or completion; the user tests the PR, then merges")
     return json.dumps(result)
@@ -429,7 +495,7 @@ def verify_failed(args: dict, **_kw) -> str:
                                            reviewer=_role("reviewer")),
                 *(["--project", project] if project else []), "--workspace", f"dir:{worktree}",
                 "--parent", verify_id, "--priority", str(PRIORITY["small"]),
-                "--max-runtime", MAX_RUNTIME["small"], "--created-by", "delivery_submit", "--json"]
+                "--max-runtime", MAX_RUNTIME["build"], "--created-by", "delivery_submit", "--json"]
     fix_id, error = _create(fix_argv)
     if error:
         return error
@@ -445,7 +511,7 @@ def verify_failed(args: dict, **_kw) -> str:
 
 def fix(args: dict) -> str:
     """The user tested a card's PR and found a problem: one fix card in that card's worktree, same
-    branch, same-card review, so the open PR updates. No plan, no verify."""
+    branch, same-card review, then a verify card, so the open PR updates. No plan."""
     ref, failures = str(args.get("fix_of") or "").strip(), (args.get("request") or "").strip()
     if not failures:
         return json.dumps({"ok": False, "error": "request is required: what the user found while testing"})
@@ -464,15 +530,20 @@ def fix(args: dict) -> str:
                                        failures=failures, reviewer=_role("reviewer")),
             *(["--project", task["project_id"]] if task["project_id"] else []),
             "--workspace", f"dir:{worktree}", "--priority", str(PRIORITY["small"]),
-            "--max-runtime", MAX_RUNTIME["small"], "--created-by", "delivery_submit", "--json"]
+            "--max-runtime", MAX_RUNTIME["build"], "--created-by", "delivery_submit", "--json"]
     fix_id, error = _create(_stamp(argv, _conventions(task["project_id"] or "")))
     if error:
         return error
     _copy_subscriptions(source_id, fix_id)
-    return json.dumps({"ok": True, "task_id": fix_id, "fix_of": source_id, "worktree": worktree,
-                       "chat_subscribed": _subscribe_calling_chat(fix_id),
+    verify_argv, _ = chained_card("verify", f"Fix {rounds + 1}: {base_title}", request,
+                                  task["project_id"] or "", fix_id)
+    verify_id, _error = _create(verify_argv)
+    subscribed = all([_subscribe_calling_chat(t) for t in (fix_id, verify_id) if t])
+    return json.dumps({"ok": True, "task_id": fix_id, "verify": verify_id, "fix_of": source_id,
+                       "worktree": worktree, "chat_subscribed": subscribed,
                        "next": "implementer fixes on the same branch and pushes (the PR updates); reviewer "
-                               "re-checks the change; you get a message when it is ready to test again"})
+                               "re-checks the change, the verifier runs the tests; you get a message when "
+                               "it is ready to test again"})
 
 
 def _request_of(body) -> str:
@@ -585,9 +656,9 @@ SCHEMA = {
             "instead of doing it in this chat. size=content when only text, copy, markup, styles, docs, "
             "or a config value change (add/edit a page section, legal wording, labels): one implementer "
             "session plus a wording review, no plan, no tests. size=small for any feature or fix one "
-            "developer would do in one sitting, even across several files (the default): ONE card, where "
-            "the implementer plans, builds, tests, and opens a draft PR, then an independent review of the "
-            "same card marks it ready. size=large only for work spanning several repos or modules with "
+            "developer would do in one sitting, even across several files (the default): a frontier planner "
+            "writes a short plan, the implementer builds, tests, and opens a draft PR, an independent review of the "
+            "same card follows, then a verifier runs the tests and marks the PR ready. size=large only for work spanning several repos or modules with "
             "separate owners, or needing a design decision first: a cheap mapper reads the repo, then a "
             "frontier planner plans from that map. Never split one feature into phase cards. "
             "fix_of=<card id or PR URL> when the user tested a PR and found a problem: the request says "
@@ -597,11 +668,11 @@ SCHEMA = {
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "Short imperative card title"},
-                "request": {"type": "string", "description": "A brief, not the conversation: the goal, acceptance criteria, and any file, route, or area the user named. Workers see only this. Max 3000 chars."},
+                "request": {"type": "string", "description": "A brief, not the conversation: the goal, acceptance criteria, and any file, route, or area the user named. Workers see only this. Max 3000 chars. If an acceptance criterion needs a guess about product behavior (which screen, which users, error/empty cases, what stays unchanged), ask the user with clarify first."},
                 "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. my-app"},
                 "size": {"type": "string", "enum": ["content", "small", "large"]},
                 "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
-                "verify": {"type": "boolean", "description": "Add an automatic verify card after review; only when the user asks for it"},
+                "verify": {"type": "boolean", "description": "Default true (small/large): a verify card runs the tests after review. false only when the user asks to skip it"},
                 "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},
             },
             "required": ["request"],

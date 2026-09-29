@@ -1,0 +1,62 @@
+"""The implementer cannot complete its own reviewed card; approvals route platform diffs to the release engineer."""
+from software_delivery import review_gate, submit
+
+
+def setup(tmp_path, monkeypatch, assignee, body=review_gate.MARKER):
+    (tmp_path / "roster.yaml").write_text("roles:\n  implementer: forge\n  reviewer: sentry\n  release_engineer: aegis\n")
+    monkeypatch.setattr(submit, "HERMES_HOME", tmp_path)
+    row = {"assignee": assignee, "body": body, "workspace_path": "/wt", "project_id": "p"}
+    monkeypatch.setattr(review_gate, "_task", lambda tid: row)
+    routed = []
+    monkeypatch.setattr(review_gate, "route_verify", lambda *a: routed.append(a))
+    return routed
+
+
+def test_implementer_self_complete_is_blocked(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch, "forge")
+    for name, args in (("kanban_complete", {"task_id": "t_1"}),
+                       ("terminal", {"command": "hermes kanban complete t_1a2b --summary done"})):
+        verdict = review_gate.gate(tool_name=name, args=args)
+        assert verdict["action"] == "block" and "request-review" in verdict["message"]
+
+
+def test_reviewer_approval_passes_and_routes_verify(tmp_path, monkeypatch):
+    routed = setup(tmp_path, monkeypatch, "sentry")
+    assert review_gate.gate(tool_name="kanban_complete", args={"task_id": "t_1"}) is None
+    assert routed == [("t_1", "/wt", "p")]
+
+
+def test_other_cards_and_tools_untouched(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch, "forge", body="VERIFY the reviewed change")
+    assert review_gate.gate(tool_name="kanban_complete", args={"task_id": "t_1"}) is None
+    assert review_gate.gate(tool_name="terminal", args={"command": "ls"}) is None
+
+
+def test_platform_paths():
+    hit = ["client/package.json", ".github/workflows/ci.yml", "server/migrations/001.js", "Dockerfile",
+           "pnpm-lock.yaml", "deploy/nginx.conf"]
+    miss = ["client/src/views/Userprofile.vue", "server/routes/users.js", "docs/deploy-notes.md.txt"]
+    assert all(review_gate.PLATFORM_PATH.search(p) for p in hit)
+    assert not any(review_gate.PLATFORM_PATH.search(p) for p in miss)
+
+
+def _plan_card(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch, "archon", body=review_gate.PLAN_MARKER + "...")
+
+
+FULL_PLAN = "\n".join(f"{h}: none" for h in submit.PLAN_HEADINGS) + "\n" + "detail " * 100
+
+
+def test_plan_needs_every_format_heading(tmp_path, monkeypatch):
+    _plan_card(tmp_path, monkeypatch)
+    short = review_gate.gate(tool_name="kanban_complete", args={"summary": "Plan is in the summary above."})
+    assert short["action"] == "block" and "ENTRY POINTS" in short["message"]
+    no_contracts = FULL_PLAN.replace("CONTRACTS: none\n", "")
+    assert "CONTRACTS" in review_gate.gate(tool_name="kanban_complete", args={"result": no_contracts})["message"]
+    assert review_gate.gate(tool_name="kanban_complete", args={"result": FULL_PLAN}) is None
+
+
+def test_plan_left_in_summary_is_copied_to_result(tmp_path, monkeypatch):
+    _plan_card(tmp_path, monkeypatch)
+    verdict = review_gate.gate(tool_name="kanban_complete", args={"summary": FULL_PLAN, "result": "see summary"})
+    assert verdict == {"action": "modify", "args": {"result": FULL_PLAN}}
