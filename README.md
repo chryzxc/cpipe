@@ -215,22 +215,90 @@ reads those itself:
 | Your rules stick | Base branch, branch naming, environment setup and conventions (draft-PR timing, forbidden tools) are saved per project and stamped into every card. |
 | Clean backlog | An undecided card gets one reminder at 7 days, then is archived at 10 with a final comment (only after that reminder). |
 
-**Configuration** (`~/.hermes/delivery/`):
+### Setup
 
-```yaml
-# config.yaml: the monitor ships in observe mode (it names and journals what it would do, and changes nothing)
-monitor_mode: act             # or set HERMES_DELIVERY_MONITOR_MODE=act; ESTOP always forces observe
+1. **Install or update**, then restart the gateway so the new tools and hooks load:
+
+   ```bash
+   git pull && ./install.sh
+   hermes gateway restart
+   ```
+
+   `./install.sh` copies the monitor into `~/.hermes/scripts/` and registers it as the `Delivery monitor` cron job
+   (every 5 minutes). Check it is there with `hermes cron list`. PR/CI watches need an authenticated `gh` CLI.
+
+2. **Let it observe first.** Out of the box the monitor runs in `observe` mode: it classifies every card, sends the
+   stall digest and journals what it *would* repair (`monitor.would_repair`), but changes nothing on the board.
+   After a few days, read what it would have done:
+
+   ```bash
+   hermes software-delivery log --kind monitor.would_repair --since 3d
+   ```
+
+3. **Turn on repairs** once that list looks right. Create `~/.hermes/delivery/config.yaml`:
+
+   ```yaml
+   monitor_mode: act             # observe (default) | act
+   ```
+
+   The next tick picks it up; no restart needed. While ESTOP is engaged the monitor only observes, whatever this says.
+
+4. **Save your project rules** (optional, but it is how "PRs target develop" stops being forgotten). Create
+   `~/.hermes/delivery/projects.yaml`, keyed by the project name you pass to `delivery_submit`:
+
+   ```yaml
+   projects:
+     my-app:
+       base_branch: develop        # every card's worktree must contain origin/<base_branch>
+       branch_prefix: feat/        # branch naming
+       env: "cp .env.example .env" # setup notes told to workers
+       conventions: "draft PR at the first pushable commit; never use some-tool"   # copied into every brief
+   ```
+
+   You rarely edit this by hand: when you state a rule in chat ("this repo's PRs go to develop"), the coordinator saves
+   it here before replying. Every new card carries these rules, and workspace prep flags `CONVENTION_MISMATCH` when a
+   worktree is on the wrong base or branch.
+
+5. **Measure** (optional): `python3 ~/.hermes/scripts/delivery_baseline.py 7` prints the autonomy numbers for the
+   last 7 days (spawns per completed run, cards over the run budget, undecided cards, nudges per delivered card). Run
+   it before switching to `act` and again a week later to compare.
+
+### Using it
+
+**In chat** you don't call anything yourself. Ask "any update?" or "what's the status of the login fix?" and the
+coordinator answers from `delivery_status`, one line per card:
+
+```
+t_1a2b3c4d  Fix login redirect   STUCK(DEAD_WORKER)   next: reclaimed; the dispatcher respawns it
+t_5e6f7a8b  Review login fix     WAITING(ci https://github.com/org/my-app/pull/42)
+t_9c0d1e2f  Plan settings page   PROGRESSING
 ```
 
-```yaml
-# projects.yaml: per-project rules, keyed by the project name cards use; the coordinator saves rules you state in chat
-projects:
-  my-app:
-    base_branch: develop        # every card's worktree must contain origin/<base_branch>
-    branch_prefix: feat/        # branch naming
-    env: "cp .env.example .env" # setup notes told to workers
-    conventions: "draft PR at the first pushable commit; never use some-tool"   # copied into every brief
+When a card stops, you hear about it without asking: the card is blocked with a one-line reason and next step, which
+notifies the chat that started the work, or the reason is added to that chat's next turn. Reply with what to do
+(`continue <id> <instruction>`, `archive <id>`, `resubmit <id>`) as with the triage digest. If the coordinator says a
+card "will resume" after a PR merges or CI passes, it has registered a `delivery_watch`; when the PR merges the card is
+unblocked, and when CI fails or the watch expires you are told.
+
+**From the terminal:**
+
+```bash
+hermes software-delivery status                      # every open card's verdict, stuck first
+hermes software-delivery status --card t_1a2b3c4d    # one card, or a whole chain by its root id
+hermes software-delivery log --card t_1a2b3c4d       # that card's full story: repairs, escalations, retries
+hermes software-delivery log --since 2h --kind waste.  # wasted runs in the last 2 hours
+hermes software-delivery log --kind monitor.escalate --json   # raw JSON, for scripts
 ```
+
+The journal itself is `~/.hermes/logs/delivery-journal.jsonl`, one JSON line per decision.
+
+**Reading a verdict:**
+
+| Verdict | Meaning | What happens |
+|---|---|---|
+| `PROGRESSING` | A live worker holds the card | Nothing |
+| `WAITING(<thing>)` | Waiting on something named: your decision (including a worker's `APPROVAL_NEEDED`), a PR/CI watch, a quota reset, a parent card, a scheduled time | Nothing until that thing changes; undecided cards get one reminder at 7 days and are archived at 10 |
+| `STUCK(<cause>)` | Stopped, with a cause | Repaired when the cause is known and safe (`DEAD_WORKER`, `STALE_GUARD`, `QUOTA_WALL`, `UNSUBSCRIBED`), otherwise escalated once with the next step (`AUTH_BLOCKED`, `IDENTICAL_FAILURE`, `RUN_BUDGET`, `FAST_FAIL`, `ORPHAN_REVIEW`, …) |
 
 Design and rationale: [`docs/plans/2026-09-29-autonomy-plan.md`](docs/plans/2026-09-29-autonomy-plan.md).
 

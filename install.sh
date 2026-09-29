@@ -50,6 +50,7 @@ for f in "$SCRIPTS_SRC"/*; do
   chmod +x "$H/scripts/$name"
 done
 rm -f "$H/scripts/stall_alert.py"  # renamed to delivery_monitor.py
+[ -f "$H/scripts/beacon-repos.conf" ] || cp "$H/scripts/beacon-repos.example.conf" "$H/scripts/beacon-repos.conf"  # never overwrite your list
 
 echo "-- 6/9 example bots (copies into roster-mapped profiles; SKIP_BOTS=1 to keep your own)"
 if [ "${SKIP_BOTS:-0}" = "1" ]; then

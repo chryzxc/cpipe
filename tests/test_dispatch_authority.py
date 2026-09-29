@@ -9,7 +9,7 @@ SCANNER_PATH = ROOT / "workflow" / "scripts" / "kanban-supervisor-scan.py"
 
 INCIDENT_REASON = (
     "DISPATCH_BLOCKED: forge profile is at its active-worker cap; "
-    "currently running t_89cab86d and t_a2b27d7c; workspace is valid and dispatch spawned no run."
+    "currently running t_0000aaa1 and t_0000aaa2; workspace is valid and dispatch spawned no run."
 )
 CONFIG = "kanban:\n  max_in_progress: 6\n  max_in_progress_per_profile: 3\n"
 
