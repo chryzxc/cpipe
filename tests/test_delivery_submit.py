@@ -1,5 +1,5 @@
 """A feature is one card: the implementer plans, builds, and opens a PR; the reviewer checks the same
-card. Large work is mapped and planned first; verify only on request. Missing input never reaches the board."""
+card, then a verifier runs the tests. Large work is mapped and planned first. Missing input never reaches the board."""
 import json
 
 from software_delivery import submit
@@ -25,34 +25,43 @@ def fake_board(tmp_path, monkeypatch):
 arg = lambda argv, flag: argv[argv.index(flag) + 1]  # noqa: E731
 
 
-def test_small_request_is_one_card_the_implementer_plans_builds_and_ships(tmp_path, monkeypatch):
+def test_small_request_is_planned_then_built(tmp_path, monkeypatch):
     calls = fake_board(tmp_path, monkeypatch)
     result = json.loads(submit.submit({"title": "Fix icon size", "request": "Make the error icon 16px",
-                                       "project": "my-app", "size": "small"}))
-    assert result["cards"] == {"build": "t_1"} and len(calls) == 1
-    build = calls[0]
-    assert arg(build, "--assignee") == "forge" and build[2] == "Fix icon size" and "--parent" not in build
+                                       "project": "my-app", "size": "small", "verify": False}))
+    assert result["cards"] == {"plan": "t_1", "build": "t_2"} and result["task_id"] == "t_2"
+    plan, build = calls
+    assert arg(plan, "--assignee") == "archon" and plan[2] == "Plan: Fix icon size"
+    assert arg(plan, "--max-runtime") == "20m" and "--parent" not in plan
+    plan_body = arg(plan, "--body")
+    assert "SMALL TASK" in plan_body and "Make the error icon 16px" in plan_body and "{" not in plan_body
+    assert "\nENTRY POINTS:" in plan_body and "in `result`" in plan_body
+    assert arg(build, "--assignee") == "forge" and build[2] == "Fix icon size" and arg(build, "--parent") == "t_1"
     assert arg(build, "--workspace") == "worktree" and arg(build, "--max-runtime") == "60m"
-    assert int(arg(build, "--priority")) > submit.PRIORITY["large"]
+    assert int(arg(build, "--priority")) == submit.PRIORITY["small"] > submit.PRIORITY["large"]
     body = arg(build, "--body")
     assert "Make the error icon 16px" in body and "{" not in body
-    assert "CHANGE" in body and "PIN, MODIFIED code only" in body and "test-after is fine" in body and "--reviewer sentry" in body
+    assert "follow it; do not re-plan" in body and "PIN, MODIFIED code only" in body and "--reviewer sentry" in body
     assert "FINISH, DON'T STOP" in body and "gh pr create --draft" in body and "## How to test" in body
     assert "gh pr ready" in body and "3 review rounds" in body
+    assert "readFileSync" in body and "never approve over it" in body and "did not ask for" in body
+    assert "PLAN FORMAT" in body and "Walk the plan" in body
 
 
-def test_verify_card_only_when_asked(tmp_path, monkeypatch):
+def test_verify_card_by_default(tmp_path, monkeypatch):
     calls = fake_board(tmp_path, monkeypatch)
-    result = json.loads(submit.submit({"title": "Fix", "request": "r", "project": "p", "size": "small",
-                                       "verify": True}))
-    assert result["cards"] == {"build": "t_1", "verify": "t_2"}
-    assert arg(calls[1], "--assignee") == "sentinel" and arg(calls[1], "--parent") == "t_1"
+    result = json.loads(submit.submit({"title": "Fix", "request": "r", "project": "p", "size": "small"}))
+    assert result["cards"] == {"plan": "t_1", "build": "t_2", "verify": "t_3"}
+    assert arg(calls[2], "--assignee") == "sentinel" and arg(calls[2], "--parent") == "t_2"
+    assert "PLATFORM" in arg(calls[2], "--body") and "gh pr ready" in arg(calls[2], "--body")
+    content = json.loads(submit.submit({"title": "Copy", "request": "r", "project": "p", "size": "content"}))
+    assert "verify" not in content["cards"]
 
 
 def test_large_request_maps_cheaply_then_plans_from_the_map(tmp_path, monkeypatch):
     calls = fake_board(tmp_path, monkeypatch)
     result = json.loads(submit.submit({"title": "Add SSO", "request": "Add SSO login",
-                                       "project": "my-app", "size": "large"}))
+                                       "project": "my-app", "size": "large", "verify": False}))
     map_argv, plan_argv, build_argv = calls
     assert arg(map_argv, "--assignee") == "scout" and "Read-only" in arg(map_argv, "--body")
     assert arg(plan_argv, "--assignee") == "archon" and arg(plan_argv, "--parent") == "t_1"
@@ -78,8 +87,9 @@ def test_fix_of_a_pr_reopens_the_same_worktree(tmp_path, monkeypatch):
     _built_card(monkeypatch)
     result = json.loads(submit.submit({"fix_of": "https://github.com/o/r/pull/7",
                                        "request": "toggle does not save"}))
-    assert result["ok"] and result["fix_of"] == "t_b" and len(calls) == 1
-    fix = calls[0]
+    assert result["ok"] and result["fix_of"] == "t_b" and result["verify"] == "t_2"
+    fix, verify = calls
+    assert verify[2] == "Verify: Fix 1: Gate SMS" and arg(verify, "--parent") == "t_1"
     assert fix[2] == "Fix 1: Gate SMS" and arg(fix, "--assignee") == "forge"
     assert arg(fix, "--workspace") == "dir:/repo/.worktrees/t1"
     body = arg(fix, "--body")

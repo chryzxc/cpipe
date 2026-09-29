@@ -30,5 +30,6 @@ packages = ["software_delivery"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -p no:cacheprovider"  # hermes hashes this whole dir; a .pytest_cache write makes it rebuild
 pythonpath = ["."]
+markers = ["e2e: drives the real hermes CLI on a temp board (pytest -m e2e)"]

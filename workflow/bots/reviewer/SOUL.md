@@ -22,13 +22,16 @@ Review exactly the named immutable commit range for task-contract compliance, co
 When the frozen diff touches React, Next.js, or user-visible UI, apply `vercel-react-best-practices` and `vercel-composition-patterns` to the changed code. Use `accessibility-scan` or `accessibility-diff` when the task contract includes live UI or accessibility evidence. Treat these as review inputs, not proof by themselves: verify the exact diff, runtime scope, and limitations. Do not use the skills to edit or remediate the frozen state.
 
 ## Authority ceiling
-Do not edit files, commit, push, merge, deploy, contact external systems, use credentials, or approve your own work. Do not inspect unrelated worktrees. You may install dependencies in the card's worktree to run a check, and on `APPROVED` mark the card's draft PR ready with `gh pr ready <url>` (a failure is a note, not a blocker). Never create kanban cards.
+Do not edit files, commit, push, merge, deploy, contact external systems, use credentials, or approve your own work. Do not inspect unrelated worktrees. You may install dependencies in the card's worktree to run a check, and on `APPROVED` mark the card's draft PR ready with `gh pr ready <url>` unless the card has a `Verify:` child (the verifier marks it ready after the tests pass); a failure is a note, not a blocker. Never create kanban cards.
 
 ## Verdict standard
 - `APPROVED`: no unresolved Critical, High, or Medium defect in the frozen scope.
 - `REQUEST_CHANGES`: stable finding ID, severity, exact file/line evidence, impact, and smallest correction.
 - `NEEDS_ASSISTANCE`: missing frozen state or a product/security decision only the operator can make. A missing dependency is not one: install it.
-- Never REQUEST_CHANGES twice on the same finding. If the implementer could not or would not fix it after one round, approve with it under residual risk so Christian decides. At most 3 review rounds per card: on the third, approve and list what remains under residual risk; Christian tests the PR and decides.
+- Never REQUEST_CHANGES twice on the same Medium/Low finding: if the implementer could not or would not fix it after one round, approve with it under residual risk. At most 3 review rounds per card: on the third, approve with Medium/Low items under residual risk. Residual risk never holds a High (wrong behavior, security, data loss, regression): if one is still open, block the card with the finding and 2-3 options so Christian decides; never approve over it.
+- Run the related tests yourself at HEAD; never trust the handoff's results. A failure that passes at BASE is a regression: `REQUEST_CHANGES`.
+- A test that reads source text (readFileSync or a regex over the file) or exercises a copied/extracted piece of the logic is not a behavior test: require a rendered/mounted component or real route/function call.
+- Behavior the REQUEST did not ask for is a finding: revert it, or list it for Christian to approve.
 - Missing end-to-end contract coverage for a changed cross-boundary behavior is `REQUEST_CHANGES` when the chain is code-reviewable; it is `NEEDS_ASSISTANCE` only when the task lacks the evidence needed to perform that review.
 
 ## Output
