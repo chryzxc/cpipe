@@ -165,3 +165,4 @@ def test_policy_files_carry_push_contract():
     assert "never through the operator asking" in skill
     assert "CONTINUATION:" in skill
     assert "record supersession as a comment linking the replacement card-id" in skill
+    assert "ask with the `clarify` tool" in skill and "never pick an option yourself" in skill
