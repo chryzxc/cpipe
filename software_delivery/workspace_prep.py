@@ -5,9 +5,9 @@ cannot run, and briefs forbid installs), and follow-up cards created without a w
 in an empty scratch dir. On the first turn of a kanban worker session this hook
   * symlinks each missing ``node_modules`` from the repo's main checkout,
   * when the workspace is not a git repo, points the worker at its parent card's worktree, and
-  * applies the card's project profile (``$HERMES_HOME/delivery/projects.yaml``): env setup notes,
-    conventions, and CONVENTION_MISMATCH when the worktree is not on the project's base branch or
-    branch prefix (a PR against the wrong base was the costliest rework).
+  * applies the card's project profile (``$HERMES_HOME/delivery/projects.yaml``): a fresh worktree
+    (clean, nothing committed or pushed) is reset onto ``origin/<base_branch>``, so a PR never starts
+    on the wrong base; otherwise CONVENTION_MISMATCH notes, plus env setup and conventions.
 
 projects.yaml::
 
@@ -31,9 +31,9 @@ PACKAGE_DEPTH = 2  # package.json at the root and one or two levels down (client
 SKIP_DIRS = {"node_modules", ".git", ".worktrees", "dist", "build"}
 
 
-def _git(ws: Path, *args: str) -> Optional[str]:
+def _git(ws: Path, *args: str, timeout: int = 10) -> Optional[str]:
     try:
-        out = subprocess.run(["git", "-C", str(ws), *args], capture_output=True, text=True, timeout=10)
+        out = subprocess.run(["git", "-C", str(ws), *args], capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return out.stdout.strip() if out.returncode == 0 else None
@@ -125,6 +125,24 @@ def profile_brief(profile: dict) -> str:
     return ("PROJECT CONVENTIONS (saved by the operator): " + "; ".join(parts) + ".") if parts else ""
 
 
+def rebase_fresh_worktree(ws: Path, base: Optional[str]) -> Optional[str]:
+    """Reset a worktree nobody has worked in yet onto origin/<base>. Anything committed, pushed, or
+    edited is left alone: that is someone's work (a fix card reopens a pushed branch)."""
+    if not base:
+        return None
+    _git(ws, "fetch", "-q", "origin", base, timeout=60)  # offline: fall back to the last fetched ref
+    target = _git(ws, "rev-parse", "--verify", "-q", f"origin/{base}")
+    branch = _git(ws, "rev-parse", "--abbrev-ref", "HEAD")
+    if (not target or not branch or target == _git(ws, "rev-parse", "HEAD")
+            or _git(ws, "status", "--porcelain") != ""
+            or _git(ws, "rev-parse", "--verify", "-q", f"origin/{branch}") is not None
+            or _git(ws, "rev-list", "HEAD", "--not", "--remotes") != ""):
+        return None
+    if _git(ws, "reset", "-q", "--hard", f"origin/{base}") is None:
+        return None
+    return f"This worktree was reset onto origin/{base} (the project's PR base) before you started."
+
+
 def convention_notes(ws: Path, profile: dict) -> list[str]:
     notes = []
     base = profile.get("base_branch")
@@ -163,11 +181,17 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
         db = Path(os.environ.get("HERMES_KANBAN_DB") or _home() / "kanban.db")
         profile = project_profile(_card_project(task_id, db))
         if _git(ws, "rev-parse", "--is-inside-work-tree") == "true":
+            reset = rebase_fresh_worktree(ws, profile.get("base_branch"))
+            notes += [reset] if reset else []
             linked = link_node_modules(ws)
             if linked:
                 notes.append("node_modules was missing in this worktree and is now symlinked from the main "
-                             f"checkout for: {', '.join(linked)}. Run tests/lint normally; do not reinstall. "
-                             "If a dependency this branch changed is missing, record it as READY_WITH_RISK.")
+                             f"checkout for: {', '.join(linked)}. Run tests/lint normally. If this branch "
+                             "changes dependencies, replace the symlink with a real install.")
+            missing = [str(r) for r in _package_dirs(ws) if not (ws / r / "node_modules").exists()]
+            if missing:
+                notes.append(f"No node_modules for: {', '.join(missing)}. Install them with the project's "
+                             "package manager (lockfile install) before testing; do not block for it.")
             notes += convention_notes(ws, profile)
         else:
             parent = parent_worktree(task_id, db)

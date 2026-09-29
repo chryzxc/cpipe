@@ -1,5 +1,5 @@
-"""Every request is planned by the planner first (small: change + pins; large: after a cheap map),
-then built with a same-card review and verified. Missing input never reaches the board."""
+"""A feature is one card: the implementer plans, builds, and opens a PR; the reviewer checks the same
+card. Large work is mapped and planned first; verify only on request. Missing input never reaches the board."""
 import json
 
 from software_delivery import submit
@@ -12,58 +12,86 @@ def roster(tmp_path, monkeypatch):
     monkeypatch.setattr(submit, "HERMES_HOME", tmp_path)
 
 
-def test_small_request_starts_with_a_pin_plan_on_the_planner(tmp_path, monkeypatch):
-    roster(tmp_path, monkeypatch)
-    argv, assignee = submit.build_card("Fix icon size", "Make the error icon 16px", "my-app", "small")
-    assert assignee == "archon" and argv[2] == "Plan: Fix icon size"
-    body = argv[argv.index("--body") + 1]
-    assert "Make the error icon 16px" in body
-    assert "PINS" in body and "UNPINNED" in body and "Read-only" in body and "token_budget" in body
-    assert argv[argv.index("--project") + 1] == "my-app"
-    assert argv[argv.index("--workspace") + 1] == "worktree"
-    assert int(argv[argv.index("--priority") + 1]) > submit.PRIORITY["large"]
-
-
-def test_large_request_maps_cheaply_then_plans_from_the_map(tmp_path, monkeypatch):
-    roster(tmp_path, monkeypatch)
-    monkeypatch.setattr(submit, "_roster_gaps", lambda: type("rg", (), {"roster_gaps": staticmethod(lambda **k: {})}))
-    calls = []
-
-    def fake_hermes(*argv):
-        calls.append(argv)
-        return type("P", (), {"returncode": 0, "stdout": json.dumps({"id": f"t_{len(calls)}"}), "stderr": ""})
-
-    monkeypatch.setattr(submit, "_hermes", fake_hermes)
-    monkeypatch.setattr(submit, "_subscribe_calling_chat", lambda tid: True)
-    result = json.loads(submit.submit({"title": "Add SSO", "request": "Add SSO login",
-                                       "project": "my-app", "size": "large"}))
-    map_argv, plan_argv, build_argv, verify_argv = calls
-    arg = lambda argv, flag: argv[argv.index(flag) + 1]
-    assert arg(map_argv, "--assignee") == "scout" and "Read-only" in arg(map_argv, "--body")
-    assert arg(plan_argv, "--assignee") == "archon" and arg(plan_argv, "--parent") == "t_1"
-    assert "Do not load skills" in arg(plan_argv, "--body")
-    assert "my-software-delivery-orchestrator" not in arg(plan_argv, "--body")
-    assert arg(build_argv, "--assignee") == "forge" and arg(build_argv, "--parent") == "t_2"
-    assert "--reviewer sentry" in arg(build_argv, "--body") and "{" not in arg(build_argv, "--body")
-    assert arg(verify_argv, "--assignee") == "sentinel" and arg(verify_argv, "--parent") == "t_3"
-    assert arg(verify_argv, "--workspace") == "scratch" and "{" not in arg(verify_argv, "--body")
-    assert result["ok"] and result["task_id"] == "t_3"
-    assert result["cards"] == {"map": "t_1", "plan": "t_2", "build": "t_3", "verify": "t_4"}
-
-
-def test_small_request_is_planned_built_then_verified(tmp_path, monkeypatch):
+def fake_board(tmp_path, monkeypatch):
     roster(tmp_path, monkeypatch)
     monkeypatch.setattr(submit, "_roster_gaps", lambda: type("rg", (), {"roster_gaps": staticmethod(lambda **k: {})}))
     calls = []
     monkeypatch.setattr(submit, "_hermes", lambda *argv: calls.append(argv) or type(
         "P", (), {"returncode": 0, "stdout": json.dumps({"id": f"t_{len(calls)}"}), "stderr": ""}))
     monkeypatch.setattr(submit, "_subscribe_calling_chat", lambda tid: True)
-    result = json.loads(submit.submit({"title": "Fix", "request": "r", "project": "p", "size": "small"}))
-    assert result["cards"] == {"plan": "t_1", "build": "t_2", "verify": "t_3"}
-    build = calls[1]
-    assert build[build.index("--assignee") + 1] == "forge" and build[build.index("--parent") + 1] == "t_1"
-    body = build[build.index("--body") + 1]
-    assert "PIN, before editing" in body and "--reviewer sentry" in body and "{" not in body
+    return calls
+
+
+arg = lambda argv, flag: argv[argv.index(flag) + 1]  # noqa: E731
+
+
+def test_small_request_is_one_card_the_implementer_plans_builds_and_ships(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    result = json.loads(submit.submit({"title": "Fix icon size", "request": "Make the error icon 16px",
+                                       "project": "my-app", "size": "small"}))
+    assert result["cards"] == {"build": "t_1"} and len(calls) == 1
+    build = calls[0]
+    assert arg(build, "--assignee") == "forge" and build[2] == "Fix icon size" and "--parent" not in build
+    assert arg(build, "--workspace") == "worktree" and arg(build, "--max-runtime") == "60m"
+    assert int(arg(build, "--priority")) > submit.PRIORITY["large"]
+    body = arg(build, "--body")
+    assert "Make the error icon 16px" in body and "{" not in body
+    assert "CHANGE" in body and "PIN, before editing" in body and "--reviewer sentry" in body
+    assert "FINISH, DON'T STOP" in body and "gh pr create --draft" in body and "## How to test" in body
+    assert "gh pr ready" in body and "3 review rounds" in body
+
+
+def test_verify_card_only_when_asked(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    result = json.loads(submit.submit({"title": "Fix", "request": "r", "project": "p", "size": "small",
+                                       "verify": True}))
+    assert result["cards"] == {"build": "t_1", "verify": "t_2"}
+    assert arg(calls[1], "--assignee") == "sentinel" and arg(calls[1], "--parent") == "t_1"
+
+
+def test_large_request_maps_cheaply_then_plans_from_the_map(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    result = json.loads(submit.submit({"title": "Add SSO", "request": "Add SSO login",
+                                       "project": "my-app", "size": "large"}))
+    map_argv, plan_argv, build_argv = calls
+    assert arg(map_argv, "--assignee") == "scout" and "Read-only" in arg(map_argv, "--body")
+    assert arg(plan_argv, "--assignee") == "archon" and arg(plan_argv, "--parent") == "t_1"
+    assert "Do not load skills" in arg(plan_argv, "--body")
+    assert "my-software-delivery-orchestrator" not in arg(plan_argv, "--body")
+    assert arg(build_argv, "--assignee") == "forge" and arg(build_argv, "--parent") == "t_2"
+    assert arg(build_argv, "--max-runtime") == "60m" and arg(plan_argv, "--max-runtime") == "20m"
+    assert "--reviewer sentry" in arg(build_argv, "--body") and "{" not in arg(build_argv, "--body")
+    assert result["ok"] and result["task_id"] == "t_3"
+    assert result["cards"] == {"map": "t_1", "plan": "t_2", "build": "t_3"}
+
+
+def _built_card(monkeypatch, worktree="/repo/.worktrees/t1"):
+    body = submit.BUILD_BRIEF.format(request="Gate SMS on consent", reviewer="sentry")
+    monkeypatch.setattr(submit, "_task_row", lambda tid: {"title": "Gate SMS", "project_id": "my-app", "body": body})
+    monkeypatch.setattr(submit, "_card_worktree", lambda tid: worktree)
+    monkeypatch.setattr(submit, "_card_for_pr", lambda url: "t_b" if url.endswith("/pull/7") else None)
+    monkeypatch.setattr(submit, "_copy_subscriptions", lambda a, b: None)
+
+
+def test_fix_of_a_pr_reopens_the_same_worktree(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    _built_card(monkeypatch)
+    result = json.loads(submit.submit({"fix_of": "https://github.com/o/r/pull/7",
+                                       "request": "toggle does not save"}))
+    assert result["ok"] and result["fix_of"] == "t_b" and len(calls) == 1
+    fix = calls[0]
+    assert fix[2] == "Fix 1: Gate SMS" and arg(fix, "--assignee") == "forge"
+    assert arg(fix, "--workspace") == "dir:/repo/.worktrees/t1"
+    body = arg(fix, "--body")
+    assert "toggle does not save" in body and "Gate SMS on consent\n\nFAILURES" in body
+    assert "--reviewer sentry" in body and "{" not in body
+
+
+def test_fix_of_unknown_pr_creates_nothing(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    _built_card(monkeypatch)
+    result = json.loads(submit.submit({"fix_of": "https://github.com/o/r/pull/8", "request": "broken"}))
+    assert result["ok"] is False and calls == []
 
 
 def test_long_request_is_refused_as_not_a_brief(tmp_path, monkeypatch):
