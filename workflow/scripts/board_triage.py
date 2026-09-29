@@ -4,7 +4,8 @@ Deterministic, no LLM.
 
 Runs as a no_agent cron job (stdout is delivered verbatim, empty stdout sends nothing):
   * blocked cards that only hit a rate limit/quota/timeout/worker crash are unblocked (max 2 retries a card,
-    and never while the provider is still rate limiting);
+    never while the provider is still rate limiting, and never twice on the same error signature: a retry
+    that failed the same way goes to the operator instead);
   * blocked cards with no reason whose parent is still open are unblocked so they wait in todo;
   * once a day it sends a digest of what needs the operator, grouped, with reply hints.
 Mission Control (the dashboard tab) imports ``classify`` from here, so both show the same groups.
@@ -18,8 +19,13 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import delivery_journal as journal  # noqa: E402
+from delivery_monitor import signature  # noqa: E402
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 DB = HERMES_HOME / "kanban.db"
@@ -138,14 +144,22 @@ def hermes(*args):
 def auto_fix(cards, state, walled, run=hermes):
     """Unblock what is safe to unblock. Returns (retried ids, requeued-to-wait ids)."""
     retries = state.setdefault("retries", {})
+    sigs = state.setdefault("sigs", {})
     retried, waiting = [], []
     for c in cards:
         if c["status"] != "blocked":
             continue  # unblock only moves blocked/scheduled; triage and schedules are the operator's
         if c["group"] == "retry" and not walled and retries.get(c["id"], 0) < MAX_RETRIES:
+            sig = signature(c["reason"])
+            if retries.get(c["id"]) and sigs.get(c["id"]) == sig:
+                c["group"] = "decide"  # the retry failed the same way: retrying again changes nothing
+                journal.record("waste.identical_failure", c["id"], signature=sig, source="board_triage")
+                continue
             if run("kanban", "unblock", c["id"], "--reason", "auto-retry: only hit a rate limit/timeout")[0]:
                 retries[c["id"]] = retries.get(c["id"], 0) + 1
+                sigs[c["id"]] = sig
                 retried.append(c["id"])
+                journal.record("triage.retry", c["id"], attempt=retries[c["id"]], signature=sig)
         elif c["group"] == "waiting":
             if run("kanban", "unblock", c["id"], "--reason", "no blocker recorded; waiting on parent in todo")[0]:
                 waiting.append(c["id"])

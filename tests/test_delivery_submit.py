@@ -14,12 +14,12 @@ def roster(tmp_path, monkeypatch):
 
 def test_small_request_starts_with_a_pin_plan_on_the_planner(tmp_path, monkeypatch):
     roster(tmp_path, monkeypatch)
-    argv, assignee = submit.build_card("Fix icon size", "Make the error icon 16px", "climaterx", "small")
+    argv, assignee = submit.build_card("Fix icon size", "Make the error icon 16px", "my-app", "small")
     assert assignee == "archon" and argv[2] == "Plan: Fix icon size"
     body = argv[argv.index("--body") + 1]
     assert "Make the error icon 16px" in body
     assert "PINS" in body and "UNPINNED" in body and "Read-only" in body and "token_budget" in body
-    assert argv[argv.index("--project") + 1] == "climaterx"
+    assert argv[argv.index("--project") + 1] == "my-app"
     assert argv[argv.index("--workspace") + 1] == "worktree"
     assert int(argv[argv.index("--priority") + 1]) > submit.PRIORITY["large"]
 
@@ -36,7 +36,7 @@ def test_large_request_maps_cheaply_then_plans_from_the_map(tmp_path, monkeypatc
     monkeypatch.setattr(submit, "_hermes", fake_hermes)
     monkeypatch.setattr(submit, "_subscribe_calling_chat", lambda tid: True)
     result = json.loads(submit.submit({"title": "Add SSO", "request": "Add SSO login",
-                                       "project": "climaterx", "size": "large"}))
+                                       "project": "my-app", "size": "large"}))
     map_argv, plan_argv, build_argv, verify_argv = calls
     arg = lambda argv, flag: argv[argv.index(flag) + 1]
     assert arg(map_argv, "--assignee") == "scout" and "Read-only" in arg(map_argv, "--body")
@@ -73,7 +73,7 @@ def test_long_request_is_refused_as_not_a_brief(tmp_path, monkeypatch):
 
 def _verify_card(monkeypatch, title):
     monkeypatch.setattr(submit, "_task_row", lambda tid: {
-        "title": title, "project_id": "climaterx",
+        "title": title, "project_id": "my-app",
         "body": submit.VERIFY_BRIEF.format(request="Gate SMS on consent")})
     monkeypatch.setattr(submit, "_parent_worktree", lambda tid: "/repo/.worktrees/t1")
     monkeypatch.setattr(submit, "_copy_subscriptions", lambda a, b: None)
@@ -139,3 +139,54 @@ def test_content_request_is_one_build_card_with_a_wording_review(tmp_path, monke
     assert build[build.index("--assignee") + 1] == "forge" and "--parent" not in build
     body = build[build.index("--body") + 1]
     assert "No new tests" in body and "--reviewer sentry" in body and "PIN, before editing" not in body
+
+
+def _fake_board(tmp_path, monkeypatch):
+    import sqlite3
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from kanban_board import board, card
+    conn = board(tmp_path / "kanban.db")
+    card(conn, "t_open", "running", title="Plan: Fix the login redirect", project_id="my-app",
+         body="REQUEST: see https://github.com/o/r/issues/12")
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "kanban.db"))
+    calls = []
+    monkeypatch.setattr(submit, "_hermes", lambda *argv: calls.append(argv) or type(
+        "P", (), {"returncode": 0, "stdout": json.dumps({"id": f"t_{len(calls)}"}), "stderr": ""}))
+    monkeypatch.setattr(submit, "_subscribe_calling_chat", lambda tid: True)
+    monkeypatch.setattr(submit, "_roster_gaps", lambda: type("rg", (), {"roster_gaps": staticmethod(lambda **k: {})}))
+    return calls
+
+
+def test_duplicate_work_returns_the_open_card_instead_of_a_new_chain(tmp_path, monkeypatch):
+    roster(tmp_path, monkeypatch)
+    calls = _fake_board(tmp_path, monkeypatch)
+    same_title = json.loads(submit.submit({"title": "fix the login redirect", "request": "x",
+                                           "project": "my-app", "size": "small"}))
+    same_issue = json.loads(submit.submit({"title": "Other words", "request": "https://github.com/o/r/issues/12",
+                                           "project": "other", "size": "small"}))
+    assert same_title["duplicate_of"] == same_issue["duplicate_of"] == "t_open" and calls == []
+    other_project = json.loads(submit.submit({"title": "Fix the login redirect", "request": "x",
+                                              "project": "else", "size": "content"}))
+    forced = json.loads(submit.submit({"title": "Fix the login redirect", "request": "x",
+                                       "project": "my-app", "size": "content", "force": True}))
+    assert other_project["ok"] and forced["ok"]
+
+
+def test_review_cards_are_refused(tmp_path, monkeypatch):
+    roster(tmp_path, monkeypatch)
+    calls = _fake_board(tmp_path, monkeypatch)
+    result = json.loads(submit.submit({"title": "Review PR #4", "request": "review it",
+                                       "project": "my-app", "size": "small"}))
+    assert not result["ok"] and "review lane" in result["error"] and calls == []
+
+
+def test_saved_project_conventions_reach_every_card(tmp_path, monkeypatch):
+    roster(tmp_path, monkeypatch)
+    calls = _fake_board(tmp_path, monkeypatch)
+    (tmp_path / "delivery").mkdir()
+    (tmp_path / "delivery" / "projects.yaml").write_text("projects:\n  my-app:\n    base_branch: develop\n")
+    assert json.loads(submit.submit({"title": "Add dark mode", "request": "x", "project": "my-app",
+                                     "size": "small"}))["ok"]
+    assert calls and all("PRs target `develop`" in c[c.index("--body") + 1] for c in calls)

@@ -20,6 +20,18 @@
 
 This workflow is a **composition of established engineering paradigms**, not a pile of prompts. **Task-graph (DAG) engineering** decomposes issues into dependency-aware nodes that execute in parallel waves. **Loop engineering** nests four closed feedback loops — the RED→GREEN TDD loop inside a card, the implement→review→rework loop across cards, the supervisor's sense→act loop every 15 minutes, and the weekly learning loop that writes the rulebook. **Evidence-based gating** makes every claim fail-closed and machine-verifiable, **risk-tiered ceremony** scales process weight to blast radius, and **policy-as-code** keeps deterministic checks out of the LLM path. Together they turn a set of AI profiles into a delivery team whose output you can trust without reading every diff.
 
+## The problem it solves
+
+Handing work to a team of AI agents fails in two quiet ways.
+
+- **You can't trust what they ship.** An agent says "done" and "tests pass"; nothing proves it.
+- **You can't trust that they're still working.** A chain of agent tasks stops on a quota limit, a dead worker, a
+  retry loop or a missing dependency, and nothing tells you. The chat says "queued, will resume automatically" while no
+  one is running. You end up asking "any update?" all day, which is exactly the babysitting you wanted to get rid of.
+
+This plugin addresses both. Every stage has to produce evidence a script can check. And the board is watched by
+deterministic code that believes the task database, not the agents' own status messages.
+
 ## What this workflow solves
 
 AI teams move fast; trusting what they ship is the hard part. This workflow turns every delivery claim into something you can verify:
@@ -151,7 +163,7 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 │   ├── bots/                    # example personas + role skills, copied into mapped profiles
 │   ├── skills/                  # orchestrator policy skill + evidence/ADR/standards skills
 │   ├── scripts/                 # board supervisor scan, warm-build, housekeeping, session cleanup, intelligence...
-│   ├── cron.jobs.json           # 7 cron jobs: board supervisor, watchers, digests, session hygiene
+│   ├── cron.jobs.json           # 9 cron jobs: delivery monitor, board supervisor, triage, watchers, digests, session hygiene
 │   ├── config.assertions.yaml   # engine caps this workflow expects
 │   └── roster.example.yaml      # role → profile mapping template
 └── install.sh                   # idempotent installer (bootstrap.sh = one-liner)
@@ -164,8 +176,10 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 - `delivery_mutation_check` — flips one condition in a disposable worktree and requires the focused test to fail
 - `delivery_submit` — turns a request brief (max 3000 chars) into the card chain (plan → build → review → verify, or map → plan → build → review → verify for large work) and subscribes the chat to every card
 - `delivery_verify_failed` — called by the Verifier on a failed verify card; opens a fix card in the same worktree plus a fresh verify card, and stops after 2 rounds
+- `delivery_status` — the board's truth: each open card's verdict computed from the task database now (`PROGRESSING`, `WAITING(<named thing>)`, or `STUCK(<cause>)` with the next step). The coordinator answers every status question from it
+- `delivery_watch` — registers a PR or CI run the monitor polls for a card; a pass unblocks the card, a failure or expiry tells the chat. Required before anyone says a card "will resume"
 
-Plus the `hermes software-delivery` doctor CLI, an `on_session_end` metrics hook (append-only JSONL), and the liveness hooks described below.
+Plus the `hermes software-delivery` CLI (`doctor`, `queue`, `status [--card ID]`, `log [--card ID] [--since 2h] [--kind K]`, each with `--json`), an `on_session_end` metrics hook (append-only JSONL), and the liveness hooks described below.
 
 ## Liveness & autonomy
 
@@ -175,14 +189,50 @@ The chain is meant to run from plan to final report without you asking "what's n
 |---|---|
 | Gateway dispatcher | Every 15s it claims `ready` cards **and** `review` cards (native same-card review). Linked children are promoted automatically when their parents finish, so pre-created chains need no coordinator turn between steps. |
 | Dispatch telemetry | The plugin's `on_kanban_dispatch_tick` hook writes `~/.hermes/logs/dispatch-health.json`: last tick, last spawn, and why each held card was held (per-profile cap, respawn guard, unassigned…). |
-| Stall supervisor | The cron scan reads that telemetry. A card waiting behind the per-profile cap shows up as `QUEUED_AT_CAP` (informational), not as a stall. A real stall is `READY_STUCK`/`REVIEW_STALLED` with the engine's hold reason attached, and `DISPATCHER_SILENT` means the gateway stopped ticking. It also surfaces cards nothing else would wake: `TRIAGE_PARKED`, `BLOCKED_NO_REASON`, and review verdicts parked in block reasons (`VERDICT_PARKED`). |
-| Board triage | Every 2h a deterministic cron retries blocked cards that only hit a rate limit or timeout (twice at most, never while the provider is still rate limiting) and moves reason-less blocked children back to wait on their parent. Once a day, or when a new decision is needed, it sends you a digest grouped as *needs your decision / looks done / blocked by old rules / parked*. Reply `continue <id> <what to do>`, `archive <id>` or `resubmit <id>` and the coordinator acts on it. |
+| Delivery monitor | Every 5 minutes a deterministic script reads the task database, worker processes and GitHub directly and gives every open card exactly one verdict: *progressing* (a live worker), *waiting on something named* (a PR check, a quota reset, your decision, a parent card), or *stuck* with a cause (`DEAD_WORKER`, `STALE_GUARD`, `QUOTA_WALL`, `AUTH_BLOCKED`, `IDENTICAL_FAILURE`, `RUN_BUDGET`, `ORPHAN_REVIEW`, …). Known stuck states are repaired (reclaim a dead claim, clear a stale respawn guard, pause cards behind a quota wall and resume them, re-subscribe a child to its chain's chat). The rest are escalated once: the card is blocked with `<CAUSE>: <why>; next: <what unsticks it>`, which notifies the chat that started the work, or, for cards that cannot be blocked, a notice is handed to that chat's next turn. A stuck parent owns its children's stall, so you hear about the root, not every card behind it. It also posts a digest when something newly stalls or starts moving again. |
+| Board supervisor | A cheap scan every 15 minutes for decisions that need judgment: verdicts parked in block reasons, rework loops, orphaned chains, unsubscribed cards. Its output is byte-stable, so the LLM only runs when something changed. It never dispatches: the gateway is the only dispatcher. |
+| Board triage | Every 20 minutes a deterministic cron retries blocked cards that only hit a rate limit, timeout, or worker crash (twice at most, never while the provider is still rate limiting) and moves reason-less blocked children back to wait on their parent. Once a day, or when a new decision is needed, it sends you a digest grouped as *needs your decision / looks done / blocked by old rules / parked*. Reply `continue <id> <what to do>`, `archive <id>` or `resubmit <id>` and the coordinator acts on it. |
 | Mission Control | A dashboard tab (`hermes dashboard` → Mission Control) with the same groups. Open a card to read its reason, body and latest comments, then Continue with a note, Resubmit it fresh under the current flow, or Archive. Tick several for bulk actions. `hermes software-delivery queue` prints the same queue as JSON for other clients (Herm uses it). |
-| Session notice | The plugin's `pre_llm_call` hook tells the next chat turn when ESTOP is holding work or the dispatcher has gone silent, once per session. |
+| Chat hooks | `pre_llm_call` delivers the monitor's notices for this chat, tells the next turn when ESTOP is holding work, and, when you ask "any update?", makes the coordinator answer from `delivery_status`. `post_llm_call` checks a reply that says a card is moving against the board and makes the coordinator correct itself when it is not. `pre_approval_request` blocks a worker's card with `APPROVAL_NEEDED` instead of letting it wait on a prompt nobody sees. |
 
 **Emergency stop.** `~/.hermes/ESTOP` (for example the Dock's pause control) pauses the dispatcher **and every cron job, including the stall supervisor**. Work stops on purpose and nothing reports it, except the session notice and the doctor. Agents are told never to lift it and never to bypass it with `hermes kanban dispatch`, because that manual pass ignores ESTOP. Run `hermes resume` when you want work to continue.
 
-**Troubleshooting a stalled board:** run `hermes software-delivery` (the doctor). It prints ESTOP state, the dispatcher's last tick and spawn, the current holds grouped by reason, when the supervisor last ran, and board counts. The hooks only load after `./install.sh` and a gateway restart.
+**Troubleshooting a stalled board:** run `hermes software-delivery status` for every card's verdict, `hermes software-delivery log --card <id>` for one card's full story from the delivery journal (`~/.hermes/logs/delivery-journal.jsonl`), and `hermes software-delivery` (the doctor) for ESTOP state, the dispatcher's last tick and spawn, and current holds. The hooks only load after `./install.sh` and a gateway restart.
+
+## Trust the board, not the messages
+
+The goal is a chain that runs from request to final report with **zero "any update?" messages**. Agent status replies
+and engine health signals can be wrong. The task database, the worker processes and GitHub are not, so the plugin
+reads those itself:
+
+| Piece | What changes for you |
+|---|---|
+| Delivery journal | One JSON line for every decision the workflow makes (repairs, escalations, retries, nudges, wasted runs). `hermes software-delivery log` reads a card's full story. `workflow/scripts/delivery_baseline.py` measures the autonomy numbers from it. |
+| Truth monitor | Every open chain is progressing, waiting on something named, or it has told you. |
+| Honest status | Status answers come from `delivery_status`, never from memory. "Will resume" requires a `delivery_watch`. |
+| Retries with memory | The same failure signature twice means stop and ask, not a tenth retry. More than 10 runs, or 3 fast failures in a row, stops retries. |
+| No doomed work | A duplicate submission returns the existing card, a hand-made "Review …" card is refused, and workspace prep flags a branch or base that breaks the project's rules. |
+| Your rules stick | Base branch, branch naming, environment setup and conventions (draft-PR timing, forbidden tools) are saved per project and stamped into every card. |
+| Clean backlog | An undecided card gets one reminder at 7 days, then is archived at 10 with a final comment (only after that reminder). |
+
+**Configuration** (`~/.hermes/delivery/`):
+
+```yaml
+# config.yaml: the monitor ships in observe mode (it names and journals what it would do, and changes nothing)
+monitor_mode: act             # or set HERMES_DELIVERY_MONITOR_MODE=act; ESTOP always forces observe
+```
+
+```yaml
+# projects.yaml: per-project rules, keyed by the project name cards use; the coordinator saves rules you state in chat
+projects:
+  my-app:
+    base_branch: develop        # every card's worktree must contain origin/<base_branch>
+    branch_prefix: feat/        # branch naming
+    env: "cp .env.example .env" # setup notes told to workers
+    conventions: "draft PR at the first pushable commit; never use some-tool"   # copied into every brief
+```
+
+Design and rationale: [`docs/plans/2026-09-29-autonomy-plan.md`](docs/plans/2026-09-29-autonomy-plan.md).
 
 ## The learning loop
 
@@ -216,8 +266,7 @@ The weekly digest reports per-stage wall-clock, queue waits, gate rejection rate
 Issues and PRs welcome. Run the tests before submitting:
 
 ```sh
-uv venv && uv pip install --python .venv "pytest>=8,<9"
-.venv/bin/python -m pytest -q
+uv run --no-project --with "pytest>=8,<9" --with pyyaml python -m pytest -q
 ```
 
 ## License

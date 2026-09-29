@@ -14,6 +14,7 @@ at most MAX_FIX_ROUNDS times. Nothing waits on a Coordinator.
 
 from __future__ import annotations
 
+import difflib
 import importlib.util
 import json
 import os
@@ -29,6 +30,10 @@ PRIORITY = {"content": 30, "small": 20, "large": 10}
 MAX_RUNTIME = {"content": "15m", "small": "30m", "large": "30m"}  # check_delivery_config.py ceiling
 MAX_FIX_ROUNDS = 2
 MAX_REQUEST_CHARS = 3000
+DUPLICATE_TITLE_RATIO = 0.85
+STAGE_PREFIX = re.compile(r"^(map|plan|verify|fix \d+|review)\s*:\s*", re.I)
+REVIEW_TITLE = re.compile(r"^\s*(code[\s-]*)?review\b|^\s*re-?review\b", re.I)
+URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/(?:pull|issues)/\d+")
 
 SCOPE = """CONTEXT: this card is your whole assignment. Read only the files it names, their callers,
 and the parent card's result (kanban_show -> parents). No broad searches, no web, no skills
@@ -286,6 +291,40 @@ def chained_card(stage: str, title: str, request: str, project: str, parent: str
             "--created-by", "delivery_submit", "--json"], assignee
 
 
+def _bare(title: str) -> str:
+    while STAGE_PREFIX.match(title):
+        title = STAGE_PREFIX.sub("", title, count=1)
+    return " ".join(title.lower().split())
+
+
+def find_duplicate(title: str, request: str, project: str) -> str | None:
+    """An open card for the same work: same GitHub issue/PR URL, or same project and a near-identical title."""
+    urls = set(URL_RE.findall(request))
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        rows = conn.execute("SELECT id, title, body, project_id FROM tasks WHERE status NOT IN "
+                            "('done','archived') ORDER BY created_at").fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return None
+    bare = _bare(title)
+    for tid, other_title, body, other_project in rows:
+        if urls & set(URL_RE.findall(body or "")):
+            return tid
+        if other_project == project and difflib.SequenceMatcher(
+                None, bare, _bare(other_title or "")).ratio() >= DUPLICATE_TITLE_RATIO:
+            return tid
+    return None
+
+
+def _journal(kind: str, card: str | None = None, **detail) -> None:
+    try:
+        from . import status
+        status._journal(kind, card, **detail)
+    except Exception:
+        pass
+
+
 def submit(args: dict, **_kw) -> str:
     title = (args.get("title") or "").strip()
     request = (args.get("request") or "").strip()
@@ -296,6 +335,16 @@ def submit(args: dict, **_kw) -> str:
     if len(request) > MAX_REQUEST_CHARS:  # workers get the card, not the chat: keep it a brief
         return json.dumps({"ok": False, "error": f"request is {len(request)} chars; rewrite it as a brief "
                            f"under {MAX_REQUEST_CHARS}: goal, acceptance criteria, files the user named"})
+    if REVIEW_TITLE.search(title):  # review happens on the build card's own review lane, never a new card
+        return json.dumps({"ok": False, "error": "Don't submit review cards: every build card is reviewed on the "
+                           "same card through the review lane. To change an existing card, comment on it or use "
+                           "`hermes kanban request-changes <id>`; no card was created."})
+    duplicate = None if args.get("force") else find_duplicate(title, request, project)
+    if duplicate:
+        _journal("waste.duplicate_card", duplicate, title=title[:80], project=project)
+        return json.dumps({"ok": False, "duplicate_of": duplicate,
+                           "error": f"{duplicate} is already open for this work. Tell the user and follow that "
+                           "card (delivery_status); resubmit with force=true only if the user says it is new work."})
     rg = _roster_gaps()
     gaps = rg.roster_gaps(home=HERMES_HOME)  # every required role, so the team is never half-staffed
     if gaps:
@@ -306,7 +355,8 @@ def submit(args: dict, **_kw) -> str:
         argv, assignee = build_card(title, request, project, size)
     except (OSError, KeyError) as exc:
         return json.dumps({"ok": False, "error": str(exc)})
-    task_id, error = _create(argv)
+    conventions = _conventions(project)
+    task_id, error = _create(_stamp(argv, conventions))
     if error:
         return error
     result = {"ok": True, "task_id": task_id, "assignee": assignee, "size": size}
@@ -315,7 +365,7 @@ def submit(args: dict, **_kw) -> str:
     stages = {"large": ("plan", "build", "verify"), "small": ("build", "verify"), "content": ()}[size]
     for stage in stages:
         argv, _ = chained_card(stage, title, request, project, task_id)
-        task_id, error = _create(argv)
+        task_id, error = _create(_stamp(argv, conventions))
         if error:
             return json.dumps({**json.loads(error), "created_so_far": chain})
         chain[stage] = task_id
@@ -327,6 +377,19 @@ def submit(args: dict, **_kw) -> str:
               + "implementer pins current behavior and builds, frontier reviewer checks the same card, "
               "verifier runs the tests") + "; you get a message on review, block, or completion")
     return json.dumps(result)
+
+
+def _conventions(project: str) -> str:
+    from . import workspace_prep
+    return workspace_prep.profile_brief(workspace_prep.project_profile(project, HERMES_HOME))
+
+
+def _stamp(argv: list[str], conventions: str) -> list[str]:
+    """Append the project's saved conventions to a create argv's --body."""
+    if not conventions:
+        return argv
+    i = argv.index("--body") + 1
+    return [*argv[:i], f"{argv[i]}\n\n{conventions}", *argv[i + 1:]]
 
 
 def verify_failed(args: dict, **_kw) -> str:
@@ -454,8 +517,9 @@ SCHEMA = {
             "properties": {
                 "title": {"type": "string", "description": "Short imperative card title"},
                 "request": {"type": "string", "description": "A brief, not the conversation: the goal, acceptance criteria, and any file, route, or area the user named. Workers see only this. Max 3000 chars."},
-                "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. climaterx"},
+                "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. my-app"},
                 "size": {"type": "string", "enum": ["content", "small", "large"]},
+                "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
             },
             "required": ["title", "request", "project", "size"],
         },
