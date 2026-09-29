@@ -36,7 +36,7 @@ def test_small_request_is_one_card_the_implementer_plans_builds_and_ships(tmp_pa
     assert int(arg(build, "--priority")) > submit.PRIORITY["large"]
     body = arg(build, "--body")
     assert "Make the error icon 16px" in body and "{" not in body
-    assert "CHANGE" in body and "PIN, before editing" in body and "--reviewer sentry" in body
+    assert "CHANGE" in body and "PIN, MODIFIED code only" in body and "test-after is fine" in body and "--reviewer sentry" in body
     assert "FINISH, DON'T STOP" in body and "gh pr create --draft" in body and "## How to test" in body
     assert "gh pr ready" in body and "3 review rounds" in body
 
