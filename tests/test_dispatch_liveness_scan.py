@@ -206,3 +206,30 @@ def test_scan_output_is_stable_across_ticks(tmp_path, monkeypatch, capsys):
 
     assert run_scan(monkeypatch, capsys) == run_scan(monkeypatch, capsys)
     conn.close()
+
+
+def test_any_undecided_block_wakes_until_continuation(tmp_path, monkeypatch, capsys):
+    conn = scanner(tmp_path, monkeypatch)
+    add_card(conn, "plain", "blocked", title="Fix chat recipients")
+    _event(conn, "plain", "blocked", "jest force-exit diagnostic; stop rule hit", time.time() - 1800)
+    conn.commit()
+    assert "COORDINATOR_WAKE · plain" in run_scan(monkeypatch, capsys)
+
+    add_comment(conn, "plain", "CONTINUATION: blocker ci-env (owner Christian)", created_at=time.time() - 1200)
+    conn.commit()
+    assert "COORDINATOR_WAKE · plain" not in run_scan(monkeypatch, capsys)
+    conn.close()
+
+
+def test_triage_card_rewakes_hourly_until_decided(tmp_path, monkeypatch, capsys):
+    conn = scanner(tmp_path, monkeypatch)
+    add_card(conn, "tr2", "triage", title="Looping card")
+    _event(conn, "tr2", "block_loop_detected", "same block twice", time.time() - 7200)
+    add_comment(conn, "tr2", "triage_parked", created_at=time.time() - 3700)
+    conn.commit()
+    assert "TRIAGE_PARKED · tr2" in run_scan(monkeypatch, capsys)
+
+    add_comment(conn, "tr2", "CONTINUATION: same-card correction", created_at=time.time() - 60)
+    conn.commit()
+    assert "TRIAGE_PARKED · tr2" not in run_scan(monkeypatch, capsys)
+    conn.close()

@@ -3,7 +3,7 @@
 Deterministic, no LLM.
 
 Runs as a no_agent cron job (stdout is delivered verbatim, empty stdout sends nothing):
-  * blocked cards that only hit a rate limit/quota/timeout are unblocked (max 2 retries a card,
+  * blocked cards that only hit a rate limit/quota/timeout/worker crash are unblocked (max 2 retries a card,
     and never while the provider is still rate limiting);
   * blocked cards with no reason whose parent is still open are unblocked so they wait in todo;
   * once a day it sends a digest of what needs the operator, grouped, with reply hints.
@@ -38,7 +38,7 @@ RULES = [
     ("done", re.compile(r"already (merged|present|contains|implemented|done|fixed|landed)|superseded|duplicate|"
                         r"taking over|replacement|verdict is APPROVED|are green|nothing (left )?to (do|change)", re.I)),
     ("retry", re.compile(r"\b429\b|rate.?limit|quota|RateLimitError|timed? ?out|timeout|overloaded|"
-                         r"elapsed \d+s > limit|protocol violation", re.I)),
+                         r"elapsed \d+s > limit|protocol violation|crash(ed|es)?\b|spawn failures|pid \d+ not alive", re.I)),
     ("stale", re.compile(r"not a git repo|scratch|workspace|node_modules|\bOCR\b|npm ci|lockfile|"
                          r"UNSUBSCRIBED|MongoDB is unavailable|cannot run", re.I)),
 ]

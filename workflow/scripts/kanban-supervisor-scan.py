@@ -244,6 +244,19 @@ def _latest_terminal_run(conn, task_id: str):
         return None
 
 
+def _decided_since(conn, task_id: str, since: float) -> bool:
+    """True when the coordinator recorded a CONTINUATION decision after ``since``."""
+    return bool(conn.execute(
+        "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE 'CONTINUATION:%' AND created_at > ? LIMIT 1",
+        (task_id, since)).fetchone())
+
+
+def _woken_within_hour(conn, task_id: str, now: float) -> bool:
+    return bool(conn.execute(
+        "SELECT 1 FROM task_comments WHERE task_id=? AND (body LIKE '%coordinator_wake%' "
+        "OR body LIKE '%triage_parked%') AND created_at > ? LIMIT 1", (task_id, now - 3600)).fetchone())
+
+
 def _latest_event_reason(conn, task_id: str, kinds=("blocked",)) -> str:
     """``reason`` from the latest event of the given kinds ('' when absent)."""
     marks = ",".join("?" * len(kinds))
@@ -370,7 +383,9 @@ def main() -> None:
                     f"{reason.strip()[:50]}")
                 verdict_parked.add(t["id"])
 
-    # Coordinator-action blocked reasons (legacy "Nexus" match kept for old comments) have no consumer; they park until a human asks.
+    # Every block needs a coordinator decision. Wake for coordinator-action reasons (legacy "Nexus" match kept
+    # for old comments) and for any recent block with no CONTINUATION recorded after it; hourly until decided.
+    wakes = 0
     for t in tasks:
         if t["status"] != "blocked" or t["id"] in verdict_parked:
             continue
@@ -398,15 +413,16 @@ def main() -> None:
                     f"BLOCKED_NO_REASON · {t['id']} · blocked without a recorded reason or comment · "
                     f"{(t['title'] or '')[:60]}")
             continue
-        if any(k in reason for k in NEXUS_ACTION_KEYWORDS):
+        blocked_at = ev["created_at"] if ev else (t["created_at"] or 0)
+        undecided = (now - blocked_at < ORPHANED_CHAIN_WINDOW_HOURS * 3600
+                     and not _decided_since(conn, t["id"], blocked_at))
+        if undecided or any(k in reason for k in NEXUS_ACTION_KEYWORDS):
             age_m = (now - basis) / 60
-            if age_m < COORDINATOR_WAKE_MINUTES:
+            if age_m < COORDINATOR_WAKE_MINUTES or _woken_within_hour(conn, t["id"], now):
                 continue
-            recent_wake = conn.execute(
-                "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%coordinator_wake%' "
-                "AND created_at > ? LIMIT 1", (t["id"], now - 3600)).fetchone()
-            if recent_wake:
+            if wakes >= ORPHAN_LIST_CAP:
                 continue
+            wakes += 1
             findings.append(
                 f"COORDINATOR_WAKE · {t['id']} · blocked {age_m:.0f}m awaiting coordinator action "
                 f"({reason[:48]}) · {(t['title'] or '')[:60]}")
@@ -536,7 +552,11 @@ def main() -> None:
         triage_cards = []
     triage_unlisted = 0
     for t in triage_cards:
-        if _has_marker(conn, t["id"], "triage_parked"):
+        # Repeat hourly until the coordinator records a decision; a one-shot marker left cards silent forever.
+        loop = conn.execute(
+            "SELECT created_at FROM task_events WHERE task_id=? AND kind IN ('block_loop_detected','blocked') "
+            "ORDER BY id DESC LIMIT 1", (t["id"],)).fetchone()
+        if _decided_since(conn, t["id"], loop["created_at"] if loop else 0) or _woken_within_hour(conn, t["id"], now):
             continue
         if sum(1 for f in findings if f.startswith("TRIAGE_PARKED · ")) >= ORPHAN_LIST_CAP:
             triage_unlisted += 1

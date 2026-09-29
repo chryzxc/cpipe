@@ -3,6 +3,7 @@
 The main chat can run on a cheap model: it only classifies the request and calls
 this tool. Card creation, routing, and the chat subscription are deterministic.
 
+content: one build card, no plan and no verify: text/copy/markup/style/docs edits need no tests.
 small: build card: the implementer codes and tests, then hands the SAME card (same worktree)
        to the reviewer through the native review lane; changes requested go straight back.
 large: map (cheap investigator) -> plan (frontier planner, plans from the map) -> build.
@@ -24,8 +25,8 @@ from pathlib import Path
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 # User-submitted work outranks retries of older cards (dispatcher: ORDER BY priority DESC).
-PRIORITY = {"small": 20, "large": 10}
-MAX_RUNTIME = {"small": "30m", "large": "30m"}  # check_delivery_config.py ceiling
+PRIORITY = {"content": 30, "small": 20, "large": 10}
+MAX_RUNTIME = {"content": "15m", "small": "30m", "large": "30m"}  # check_delivery_config.py ceiling
 MAX_FIX_ROUNDS = 2
 MAX_REQUEST_CHARS = 3000
 
@@ -49,6 +50,8 @@ server AND client). Complete this card with, in about 2 KB, every path:line from
   `<caller file:line> — <behavior> — covered by <test>` or `— UNPINNED: <test file> asserts <what>`.
 - RED: the test for the requested behavior and why it fails on today's code.
 - RISKS: anything the implementer must not break or decide.
+PINS cover behavior only: static text, markup, and styles need none. Plan nothing the request
+did not ask for (no extra tests, refactors, or hardening).
 The implementer card waiting on this one builds from your result and has no other copy.
 """
 
@@ -79,7 +82,9 @@ close an item under GAPS, and name that item.
 Produce the implementation plan: acceptance criteria, non-goals, risk tier, PINS (as in a small
 plan: each reachable caller behavior with its covering test or UNPINNED and the test to add), and
 ordered slices with exact files and tests. The first slice adds every UNPINNED test, passing on
-today's code. Complete this card with the FULL plan as the result: the implementer card waiting
+today's code. PINS cover behavior only: static text, markup, and styles need none. Plan the
+smallest change that meets the request: nothing it did not ask for (no extra tests, refactors,
+or hardening). Complete this card with the FULL plan as the result: the implementer card waiting
 on this one reads it from there and has no other copy.
 """
 
@@ -112,10 +117,43 @@ REVIEWER (same worktree)
   (grep the name and, for routes, the URL path across server AND client). Your verdict lists
   `CALLERS CHECKED: <symbol> -> <file:line> safe (<test that proves it>)|broken`. A broken caller
   is REQUEST_CHANGES, and so is a reachable caller with no test proving it still works: ask for a
-  pinned test. An approval without this list is not an approval.
+  pinned test. An approval without this list is not an approval. Static text, markup, links,
+  and styles are not behavior: they need no test.
 - REQUEST_CHANGES only for correctness, security, data-loss, a missed requirement, or a missing
   pin. Style and naming go in the approval as notes. Missing tools are noted, not blockers.
+  Never ask for a test, harness, or file the REQUEST or plan excludes: note it as a follow-up.
 - On re-review, check only the delta since the last reviewed commit plus the prior findings.
+  A prior finding the implementer could not or would not fix is not a second REQUEST_CHANGES:
+  approve with it under RESIDUAL RISK so the user decides. Never request changes twice on one finding.
+"""
+
+CONTENT_BRIEF = """CONTENT CHANGE: text, copy, markup, styles, docs, or a config value. No logic.
+token_budget: low.
+
+REQUEST (from the user):
+{request}
+
+""" + SCOPE + """
+IMPLEMENTER
+1. Edit only what the request needs. Grep for every place the same content renders (a server
+   template AND a client view can both show one page) and update each one the same way.
+2. No new tests, pins, or harnesses: static content is not behavior. Run the touched package's
+   existing lint/build if it is quick; if it cannot run, note it and continue.
+3. Commit on this card's branch (Conventional Commit), then hand this SAME card to review:
+   `hermes kanban request-review <this card id> --reviewer {reviewer} --summary "<files; what
+   text changed; checks run; commit sha>"`.
+4. If the change needs logic (a route, handler, state, API field), block with
+   "NEEDS size=small: <why>" instead of building it.
+
+REVIEWER (same worktree)
+- Review `git diff <base>...HEAD` against the REQUEST only: required wording (exact where the
+  request quotes it), spelling and branding, broken markup or links, every place the content
+  renders, and files outside the request. No tests, pins, harnesses, OCR, or caller traces:
+  a content change has none.
+- One pass, every finding at once. Approve (`hermes kanban complete`) or REQUEST_CHANGES only
+  for wrong or missing required text, broken markup/links, or out-of-scope files.
+- On re-review check only your prior findings. A finding already raised once goes in the
+  approval as a note for the user; never request changes twice on it.
 """
 
 BUILD_BRIEF = """IMPLEMENT the planned change. One card, one worktree, one implementer session.
@@ -212,7 +250,10 @@ def _subscribe_calling_chat(task_id: str) -> bool:
 
 def build_card(title: str, request: str, project: str, size: str) -> tuple[list[str], str]:
     """(`hermes kanban create` argv, assignee) for a submission. Pure, for testing."""
-    if size == "small":  # the frontier planner picks the change and the pins; submit() chains build
+    if size == "content":  # straight to the implementer; same-card review, no plan or verify
+        assignee = _role("implementer")
+        body = CONTENT_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
+    elif size == "small":  # the frontier planner picks the change and the pins; submit() chains build
         assignee, title = _role("planner"), f"Plan: {title}"
         body = PIN_BRIEF.format(request=request.strip())
     else:  # map first on the cheap investigator; submit() chains plan + build on it
@@ -251,7 +292,7 @@ def submit(args: dict, **_kw) -> str:
     project = (args.get("project") or "").strip()
     size = args.get("size") or "small"
     if not (title and request and project) or size not in PRIORITY:
-        return json.dumps({"ok": False, "error": "title, request, project are required; size is small|large"})
+        return json.dumps({"ok": False, "error": "title, request, project are required; size is content|small|large"})
     if len(request) > MAX_REQUEST_CHARS:  # workers get the card, not the chat: keep it a brief
         return json.dumps({"ok": False, "error": f"request is {len(request)} chars; rewrite it as a brief "
                            f"under {MAX_REQUEST_CHARS}: goal, acceptance criteria, files the user named"})
@@ -269,9 +310,10 @@ def submit(args: dict, **_kw) -> str:
     if error:
         return error
     result = {"ok": True, "task_id": task_id, "assignee": assignee, "size": size}
-    # each stage waits on the previous card; every path ends in verify
-    chain = {"map" if size == "large" else "plan": task_id}
-    for stage in (("plan",) if size == "large" else ()) + ("build", "verify"):
+    # each stage waits on the previous card; every code path ends in verify, content is one card
+    chain = {"large": {"map": task_id}, "small": {"plan": task_id}, "content": {"build": task_id}}[size]
+    stages = {"large": ("plan", "build", "verify"), "small": ("build", "verify"), "content": ()}[size]
+    for stage in stages:
         argv, _ = chained_card(stage, title, request, project, task_id)
         task_id, error = _create(argv)
         if error:
@@ -280,9 +322,10 @@ def submit(args: dict, **_kw) -> str:
     result.update(task_id=chain["build"], cards=chain)
     result.update(
         chat_subscribed=all([_subscribe_calling_chat(tid) for tid in chain.values()]),
-        next=("frontier plan (change + pins) -> " if size == "small" else
-              "cheap map -> frontier plan -> ") + ("implementer pins current behavior and builds, "
-              "frontier reviewer checks the same card, verifier runs the tests") + "; you get a message on review, block, or completion")
+        next=("implementer edits, reviewer checks the wording on the same card" if size == "content" else
+              ("frontier plan (change + pins) -> " if size == "small" else "cheap map -> frontier plan -> ")
+              + "implementer pins current behavior and builds, frontier reviewer checks the same card, "
+              "verifier runs the tests") + "; you get a message on review, block, or completion")
     return json.dumps(result)
 
 
@@ -398,7 +441,9 @@ SCHEMA = {
         "name": "delivery_submit",
         "description": (
             "Hand a coding task in one of the user's repositories to the software-delivery team, "
-            "instead of doing it in this chat. size=small for a clear change touching a few files "
+            "instead of doing it in this chat. size=content when only text, copy, markup, styles, docs, "
+            "or a config value change (add/edit a page section, legal wording, labels): one implementer "
+            "session plus a wording review, no plan, no tests. size=small for a clear change touching a few files "
             "(bug fix, small feature, refactor of one module): one implementer session plus an "
             "independent review of the same card, usually minutes. size=large for multi-module, "
             "unclear, schema/API/auth/security, or multi-step work: a cheap mapper reads the repo, then "
@@ -410,7 +455,7 @@ SCHEMA = {
                 "title": {"type": "string", "description": "Short imperative card title"},
                 "request": {"type": "string", "description": "A brief, not the conversation: the goal, acceptance criteria, and any file, route, or area the user named. Workers see only this. Max 3000 chars."},
                 "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. climaterx"},
-                "size": {"type": "string", "enum": ["small", "large"]},
+                "size": {"type": "string", "enum": ["content", "small", "large"]},
             },
             "required": ["title", "request", "project", "size"],
         },

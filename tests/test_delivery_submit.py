@@ -124,3 +124,18 @@ def test_role_without_a_bot_blocks_handoff_and_names_the_fix(tmp_path, monkeypat
     assert "reviewer" in result["missing_roles"] and "'sentry' does not exist" in result["missing_roles"]["reviewer"]
     assert "'scout' does not exist" in result["missing_roles"]["investigator"]
     assert "implementer" not in result["missing_roles"]
+
+
+def test_content_request_is_one_build_card_with_a_wording_review(tmp_path, monkeypatch):
+    roster(tmp_path, monkeypatch)
+    monkeypatch.setattr(submit, "_roster_gaps", lambda: type("rg", (), {"roster_gaps": staticmethod(lambda **k: {})}))
+    calls = []
+    monkeypatch.setattr(submit, "_hermes", lambda *argv: calls.append(argv) or type(
+        "P", (), {"returncode": 0, "stdout": json.dumps({"id": f"t_{len(calls)}"}), "stderr": ""}))
+    monkeypatch.setattr(submit, "_subscribe_calling_chat", lambda tid: True)
+    result = json.loads(submit.submit({"title": "Add SMS section", "request": "r", "project": "p", "size": "content"}))
+    assert result["cards"] == {"build": "t_1"} and len(calls) == 1
+    build = calls[0]
+    assert build[build.index("--assignee") + 1] == "forge" and "--parent" not in build
+    body = build[build.index("--body") + 1]
+    assert "No new tests" in body and "--reviewer sentry" in body and "PIN, before editing" not in body
