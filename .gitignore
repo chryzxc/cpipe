@@ -7,3 +7,6 @@ __pycache__/
 
 # per-install role->profile mapping (not part of the reusable workflow)
 workflow/roster.yaml
+
+# Local-only notes with private board data (card ids, chat excerpts)
+*.local.md

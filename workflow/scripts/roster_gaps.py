@@ -2,7 +2,7 @@
 """Roles in team-config `bots:` that have no working bot in ~/.hermes/roster.yaml.
 
 team-config.yaml is the single list of required roles; roster.yaml maps each to a profile.
-Shared by delivery_submit (refuse to hand off), stall_alert (tell the operator), and
+Shared by delivery_submit (refuse to hand off), delivery_monitor (tell the operator), and
 check_delivery_config (install-time check). Prints the gaps when run directly.
 """
 

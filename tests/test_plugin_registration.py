@@ -29,8 +29,10 @@ def test_registers_delivery_tools():
         'delivery_board_intelligence',
         'delivery_check_policy',
         'delivery_mutation_check',
+        'delivery_status',
         'delivery_submit',
         'delivery_verify_failed',
+        'delivery_watch',
     ]
 
 
@@ -40,7 +42,7 @@ def test_registers_doctor_cli_and_session_hook():
     register(context)
 
     assert context.cli_commands == ['software-delivery']
-    assert [h[0] for h in context.hooks] == ['on_session_end', 'on_kanban_dispatch_tick', 'on_kanban_dispatch_tick', 'pre_llm_call', 'pre_llm_call']
+    assert [h[0] for h in context.hooks] == ['on_session_end', 'on_kanban_dispatch_tick', 'on_kanban_dispatch_tick', 'pre_llm_call', 'pre_llm_call', 'pre_llm_call', 'post_llm_call', 'pre_approval_request']
 
 
 def test_mutation_tool_schema_requires_worktree():
@@ -54,6 +56,7 @@ def test_session_end_hook_appends_jsonl(tmp_path, monkeypatch):
     import software_delivery as plugin
 
     monkeypatch.setattr(plugin, '_METRICS_LOG', tmp_path / 'metrics.jsonl')
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
     plugin._on_session_end(profile='forge', session_id='s1', duration=None)
 
     lines = (tmp_path / 'metrics.jsonl').read_text().strip().splitlines()

@@ -57,3 +57,25 @@ def test_empty_scratch_workspace_points_at_parent_worktree(tmp_path, monkeypatch
 def test_outside_kanban_workers_it_does_nothing(monkeypatch):
     monkeypatch.delenv("HERMES_KANBAN_WORKSPACE", raising=False)
     assert workspace_prep.prepare_workspace(is_first_turn=True) is None
+
+
+def test_project_profile_flags_a_worktree_off_the_pr_base(tmp_path, monkeypatch):
+    main, wt = repo_with_worktree(tmp_path)
+    git(main, "branch", "develop")
+    git(main, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "on develop only")
+    git(main, "update-ref", "refs/remotes/origin/develop", "HEAD")  # origin/develop is ahead of wt's base
+    (tmp_path / "delivery").mkdir()
+    (tmp_path / "delivery" / "projects.yaml").write_text(
+        "projects:\n  my-app:\n    base_branch: develop\n    branch_prefix: feat/\n    env: cp .env.example .env\n")
+    db = tmp_path / "kanban.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE tasks (id TEXT, project_id TEXT)")
+    conn.execute("INSERT INTO tasks VALUES ('t_1', 'my-app')")
+    conn.commit(); conn.close()
+    for k, v in (("HERMES_HOME", tmp_path), ("HERMES_KANBAN_DB", db), ("HERMES_KANBAN_WORKSPACE", wt),
+                 ("HERMES_KANBAN_TASK", "t_1")):
+        monkeypatch.setenv(k, str(v))
+    note = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
+    assert "not based on origin/develop" in note and "should start with `feat/`" in note
+    assert "cp .env.example .env" in note
+    assert workspace_prep.project_profile("other-app", tmp_path) == {}

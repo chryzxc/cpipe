@@ -50,10 +50,10 @@ def add_run(conn, tid, outcome, summary=None, ended_at=None):
         (tid, "sentry", outcome, summary, ended_at or (time.time() - 600)))
 
 
-def add_comment(conn, tid, body):
+def add_comment(conn, tid, body, created_at=None):
     conn.execute(
         "INSERT INTO task_comments (task_id, body, created_at) VALUES (?, ?, ?)",
-        (tid, body, time.time()))
+        (tid, body, created_at or time.time()))
 
 
 def run_scan(monkeypatch, capsys):

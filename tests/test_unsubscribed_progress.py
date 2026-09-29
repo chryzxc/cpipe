@@ -137,96 +137,26 @@ def test_missing_subs_table_suppresses_signal(tmp_path, monkeypatch, capsys):
     conn.close()
 
 
-def test_progress_delta_first_run_silent_but_records(tmp_path, monkeypatch, capsys):
-    conn, _ = scanner(tmp_path, monkeypatch)
-    add_card(conn, "one", "running")
-    add_comment(conn, "one", "heartbeat PRECHECK")
-    conn.commit()
-
-    output = run_scan(monkeypatch, capsys)
-
-    assert "PROGRESS_DELTA" not in output
-    recorded = state(tmp_path)
-    assert recorded["one"]["status"] == "running"
-    conn.close()
-
-
-def test_progress_delta_reports_status_change(tmp_path, monkeypatch, capsys):
-    conn, _ = scanner(tmp_path, monkeypatch)
-    add_card(conn, "two", "ready")
-    conn.commit()
-    run_scan(monkeypatch, capsys)
-
-    conn.execute("UPDATE tasks SET status='running' WHERE id='two'")
-    conn.commit()
-
-    output = run_scan(monkeypatch, capsys)
-
-    assert "PROGRESS_DELTA · two · ready→running" in output
-    conn.close()
-
-
-def test_progress_delta_ignores_heartbeat_only_changes(tmp_path, monkeypatch, capsys):
-    conn, _ = scanner(tmp_path, monkeypatch)
-    add_card(conn, "three", "running")
-    add_comment(conn, "three", "heartbeat RED")
-    conn.commit()
-    run_scan(monkeypatch, capsys)
-
-    add_comment(conn, "three", "heartbeat GREEN")
-    conn.commit()
-
-    output = run_scan(monkeypatch, capsys)
-
-    assert "PROGRESS_DELTA" not in output
-    conn.close()
-
-
-def test_progress_delta_reports_completion(tmp_path, monkeypatch, capsys):
-    conn, _ = scanner(tmp_path, monkeypatch)
-    add_card(conn, "four", "review")
-    conn.commit()
-    run_scan(monkeypatch, capsys)
-
-    conn.execute("UPDATE tasks SET status='done' WHERE id='four'")
-    conn.commit()
-
-    output = run_scan(monkeypatch, capsys)
-
-    assert "PROGRESS_DELTA · four · review→done" in output
-    conn.close()
-
-
-def test_progress_delta_silent_when_unchanged(tmp_path, monkeypatch, capsys):
-    conn, _ = scanner(tmp_path, monkeypatch)
-    add_card(conn, "five", "running")
-    add_comment(conn, "five", "heartbeat PRECHECK")
-    conn.commit()
-    run_scan(monkeypatch, capsys)
-    first_state = state(tmp_path)
-
-    output = run_scan(monkeypatch, capsys)
-
-    assert "PROGRESS_DELTA" not in output
-    assert state(tmp_path) == first_state
-    conn.close()
-
-
 def test_supervisor_prompt_carries_push_rules():
     defs = json.loads((ROOT / "workflow" / "cron.jobs.json").read_text())
-    supervisor = next(j for j in defs if j["name"] == "Kanban stall supervisor")
-    assert "UNSUBSCRIBED_CARD:" in supervisor["prompt"]
-    assert "notify+wake" in supervisor["prompt"]
-    assert "PROGRESS_DELTA" in supervisor["prompt"]
-    assert "ORPHANED_CHAIN:" in supervisor["prompt"]
-    assert "UNSUBSCRIBED_BLOCK:" in supervisor["prompt"]
-    assert "SCOPED dispatch pass" in supervisor["prompt"]
-    assert "SUPERSEDED_REVIEW" in supervisor["prompt"]
-    assert "at most ONE coordinator invocation per tick" in supervisor["prompt"]
-    assert "coordinator_wake" in supervisor["prompt"]
-    assert "orphan_wake" in supervisor["prompt"]
-    assert "INFORMATIONAL-ONLY TICKS" in supervisor["prompt"]
-    assert "wake NO ONE" in supervisor["prompt"]
+    prompt = next(j for j in defs if j["name"] == "Kanban stall supervisor")["prompt"]
+    for rule in ("UNSUBSCRIBED_CARD:", "notify+wake", "ORPHANED_CHAIN:", "UNSUBSCRIBED_BLOCK:", "SUPERSEDED_REVIEW",
+                 "at most ONE coordinator invocation per tick", "coordinator_wake", "orphan_wake",
+                 "INFORMATIONAL-ONLY TICKS", "wake NO ONE"):
+        assert rule in prompt
+    assert "never run `hermes kanban dispatch`" in prompt and "--source tool" not in prompt
+
+
+def test_supervisor_prompt_is_small_and_each_rule_appears_once():
+    import re
+    defs = json.loads((ROOT / "workflow" / "cron.jobs.json").read_text())
+    prompt = next(j for j in defs if j["name"] == "Kanban stall supervisor")["prompt"]
+    assert len(prompt) < 3000
+    rules = re.findall(r"^([A-Z][A-Z_]+):", prompt, re.M)
+    assert rules and len(rules) == len(set(rules))
+    scan = (ROOT / "workflow" / "scripts" / "kanban-supervisor-scan.py").read_text()
+    for signal in set(re.findall(r'f?"([A-Z][A-Z_]{4,}) ·', scan)):
+        assert signal in prompt, f"scan emits {signal} but the prompt has no rule for it"
 
 
 def test_policy_files_carry_push_contract():

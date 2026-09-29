@@ -1,5 +1,4 @@
 import json
-import os
 import runpy
 import sqlite3
 import subprocess
@@ -67,29 +66,6 @@ def test_workspace_check_handles_git_timeout(monkeypatch, tmp_path):
     monkeypatch.setattr(module["subprocess"], "run", timeout)
 
     assert not module["_is_git_workspace"](str(workspace))
-
-
-def test_scanner_reports_undispatched_review_and_missing_heartbeat(tmp_path, monkeypatch, capsys):
-    now = time.time()
-    hermes_home = tmp_path / "hermes"
-    hermes_home.mkdir()
-    db = hermes_home / "kanban.db"
-    conn = board(db)
-    for row in [
-        ("review-1", "Review change", "review", "sentry", now - 3 * 3600),
-        ("running-1", "Implement change", "running", "forge", now - 600),
-    ]:
-        add_task(conn, row[0], row[1], row[2], row[3], row[4], started_at=row[4])
-    conn.commit()
-    conn.close()
-    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    module = scanner_module()
-
-    module["main"]()
-
-    output = capsys.readouterr().out
-    assert "REVIEW_STALLED · review-1" in output
-    assert "HEARTBEAT_STALE · running-1" in output
 
 
 def test_current_workspace_wins_over_stale_error(tmp_path, monkeypatch, capsys):

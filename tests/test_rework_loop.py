@@ -104,7 +104,7 @@ def test_rework_loop_wake_once_via_comment_dedupe(tmp_path, monkeypatch, capsys)
 def test_supervisor_prompt_carries_rework_rule():
     defs = json.loads((ROOT / "workflow" / "cron.jobs.json").read_text())
     supervisor = next(j for j in defs if j["name"] == "Kanban stall supervisor")
-    assert "REWORK_LOOP:" in supervisor["prompt"]
+    assert "REWORK_LOOP" in supervisor["prompt"]
     assert "reconcile" in supervisor["prompt"]
 
 

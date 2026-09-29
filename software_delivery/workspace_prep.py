@@ -3,8 +3,20 @@
 Two causes blocked most cards: a fresh git worktree has no ``node_modules`` (tests and lint
 cannot run, and briefs forbid installs), and follow-up cards created without a workspace land
 in an empty scratch dir. On the first turn of a kanban worker session this hook
-  * symlinks each missing ``node_modules`` from the repo's main checkout, and
-  * when the workspace is not a git repo, points the worker at its parent card's worktree.
+  * symlinks each missing ``node_modules`` from the repo's main checkout,
+  * when the workspace is not a git repo, points the worker at its parent card's worktree, and
+  * applies the card's project profile (``$HERMES_HOME/delivery/projects.yaml``): env setup notes,
+    conventions, and CONVENTION_MISMATCH when the worktree is not on the project's base branch or
+    branch prefix (a PR against the wrong base was the costliest rework).
+
+projects.yaml::
+
+    projects:
+      my-app:
+        base_branch: develop        # PRs target this; worktrees must be based on origin/<it>
+        branch_prefix: feat/        # optional
+        env: "cp .env.example .env; tests need a local Postgres"   # optional, told to workers
+        conventions: "squash-merge; conventional commits"            # optional, told to workers
 """
 
 from __future__ import annotations
@@ -86,6 +98,60 @@ def parent_worktree(task_id: str, db: Path) -> Optional[str]:
     return None
 
 
+def _home() -> Path:
+    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+
+
+def project_profile(project: Optional[str], home: Optional[Path] = None) -> dict:
+    """The operator's saved conventions for a project, {} when none. Never raises."""
+    if not project:
+        return {}
+    try:
+        import yaml
+        data = yaml.safe_load(((home or _home()) / "delivery" / "projects.yaml").read_text()) or {}
+        profile = (data.get("projects") or {}).get(project) or {}
+        return profile if isinstance(profile, dict) else {}
+    except Exception:
+        return {}
+
+
+def profile_brief(profile: dict) -> str:
+    """One paragraph for a card body or a worker's first turn."""
+    parts = [f"PRs target `{profile['base_branch']}`" if profile.get("base_branch") else "",
+             f"branch names start with `{profile['branch_prefix']}`" if profile.get("branch_prefix") else "",
+             f"environment: {profile['env']}" if profile.get("env") else "",
+             f"conventions: {profile['conventions']}" if profile.get("conventions") else ""]
+    parts = [p for p in parts if p]
+    return ("PROJECT CONVENTIONS (saved by the operator): " + "; ".join(parts) + ".") if parts else ""
+
+
+def convention_notes(ws: Path, profile: dict) -> list[str]:
+    notes = []
+    base = profile.get("base_branch")
+    if base and _git(ws, "rev-parse", "--verify", "-q", f"origin/{base}") is not None:
+        if _git(ws, "merge-base", "--is-ancestor", f"origin/{base}", "HEAD") is None:
+            notes.append(f"CONVENTION_MISMATCH: this worktree is not based on origin/{base}, the project's PR "
+                         f"base. Before coding: `git fetch origin {base} && git rebase origin/{base}` (or "
+                         "recreate the branch from it). Open the PR against it.")
+    prefix = profile.get("branch_prefix")
+    branch = _git(ws, "rev-parse", "--abbrev-ref", "HEAD")
+    if prefix and branch and branch != "HEAD" and not branch.startswith(prefix):
+        notes.append(f"CONVENTION_MISMATCH: branch `{branch}` should start with `{prefix}`; "
+                     f"`git branch -m {prefix}{branch.rsplit('/', 1)[-1]}` before pushing.")
+    brief = profile_brief(profile)
+    return notes + ([brief] if brief else [])
+
+
+def _card_project(task_id: str, db: Path) -> Optional[str]:
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        row = conn.execute("SELECT project_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        conn.close()
+        return row[0] if row else None
+    except sqlite3.Error:
+        return None
+
+
 def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict]:
     """``pre_llm_call`` hook for kanban workers; silent everywhere else."""
     ws_env, task_id = os.environ.get("HERMES_KANBAN_WORKSPACE"), os.environ.get("HERMES_KANBAN_TASK")
@@ -94,14 +160,16 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
     try:
         ws = Path(ws_env)
         notes = []
+        db = Path(os.environ.get("HERMES_KANBAN_DB") or _home() / "kanban.db")
+        profile = project_profile(_card_project(task_id, db))
         if _git(ws, "rev-parse", "--is-inside-work-tree") == "true":
             linked = link_node_modules(ws)
             if linked:
                 notes.append("node_modules was missing in this worktree and is now symlinked from the main "
                              f"checkout for: {', '.join(linked)}. Run tests/lint normally; do not reinstall. "
                              "If a dependency this branch changed is missing, record it as READY_WITH_RISK.")
+            notes += convention_notes(ws, profile)
         else:
-            db = Path(os.environ.get("HERMES_KANBAN_DB") or Path.home() / ".hermes" / "kanban.db")
             parent = parent_worktree(task_id, db)
             if parent:
                 notes.append(f"Your assigned workspace {ws} is empty scratch, not the repo. The parent card "

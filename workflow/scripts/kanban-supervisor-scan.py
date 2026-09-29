@@ -1,30 +1,19 @@
 #!/usr/bin/env python3
-"""Kanban stall supervisor scan — deterministic, no LLM.
+"""Kanban supervisor scan — deterministic, no LLM. The judgment queue for the supervisor agent.
 
-Detects the board conditions that stall the Bot workflow autonomously:
-  1. blocked cards whose skills are not installed on the assignee profile
-      (auto-fixable when the skill exists in the global catalog)
-  2. cards referencing skills that exist nowhere (escalate)
-  3. unassigned todo cards aging past a threshold (escalate to coordinator digest)
-  4. review-lane cards the dispatcher never claims (REVIEW_STALLED)
-  5. stale running claims past claim expiry (reclaim candidates)
-  6. worker readiness failures: credentials/startup blockers (READINESS_BLOCKER),
-      respawn loops past the engine failure limit (RESPAWN_LOOP), and terminal
-      runs that produced no usable response (WORKER_EMPTY_RESULT)
-  7. ready cards the engine dispatcher never promotes to running (READY_STUCK) —
-      the gateway's own dispatcher logs this condition (gateway.log: "kanban
-      dispatcher stuck: ready queue non-empty ... 0 workers spawned") but that
-      warning never reaches the board or a human; this scan detects the same
-      condition independently from the DB so it surfaces here instead. When the
-      plugin's dispatch-tick telemetry says a card is only waiting behind the
-      per-profile cap, it is reported as QUEUED_AT_CAP instead of a stall, and a
-      gateway that stopped ticking is DISPATCHER_SILENT
-  8. continuity: ESTOP pauses (PAUSED_BY_ESTOP), verdicts parked in block reasons
-      (VERDICT_PARKED), blocks without a reason (BLOCKED_NO_REASON), done cards
-      with no successor (ORPHANED_CHAIN), and cards parked in triage (TRIAGE_PARKED)
+Lists only board conditions that need a coordinator's judgment:
+  1. skills missing on the assignee profile (AUTO_FIX_INSTALL_SKILL) or anywhere (ESCALATE_UNKNOWN_SKILL)
+  2. unassigned or unstarted todo cards (UNASSIGNED_TODO, QUEUE_AGING)
+  3. worker readiness: credentials/startup blockers (READINESS_BLOCKER), respawn loops (RESPAWN_LOOP),
+     runs that produced nothing usable (WORKER_EMPTY_RESULT), workspaces that are not git roots
+  4. continuity: ESTOP pauses, verdicts parked in block reasons, blocks without a reason, done cards with
+     no successor (ORPHANED_CHAIN), superseded reviews, rework loops, capacity holds, PR_PENDING, and blocked
+     cards no chat will hear about (COORDINATOR_WAKE: only cards without a wake-capable subscription)
 
-Output is consumed by the supervisor cron agent (monitor mode: unchanged
-output suppresses the agent entirely). Exit 0 always.
+Liveness (dead workers, stuck ready/review lanes, quota walls, stale guards, triage, a silent dispatcher)
+belongs to delivery_monitor.py, which repairs or escalates without a model. Nothing here carries an age or
+a clock: identical findings print byte-identical stdout, so cron monitor mode skips the agent on quiet ticks.
+Exit 0 always.
 """
 
 from __future__ import annotations
@@ -36,7 +25,6 @@ import sqlite3
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
 from pathlib import Path
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
@@ -45,12 +33,8 @@ GLOBAL_SKILLS = HERMES_HOME / "skills"
 PROFILES = HERMES_HOME / "profiles"
 TODO_AGING_HOURS = 24
 QUEUE_AGING_MINUTES = 30
-READY_STUCK_MINUTES = 15
-REVIEW_STUCK_MINUTES = 15
-DISPATCHER_SILENT_MINUTES = 5
 ORPHAN_LIST_CAP = 8
 COORDINATOR_WAKE_MINUTES = 15
-HEARTBEAT_STALE_MINUTES = 5
 WORKSPACE_CHECK_CAP = 32
 WORKSPACE_CHECK_WORKERS = 8
 REWORK_LOOP_THRESHOLD = 4
@@ -244,6 +228,19 @@ def _latest_terminal_run(conn, task_id: str):
         return None
 
 
+def _decided_since(conn, task_id: str, since: float) -> bool:
+    """True when the coordinator recorded a CONTINUATION decision after ``since``."""
+    return bool(conn.execute(
+        "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE 'CONTINUATION:%' AND created_at > ? LIMIT 1",
+        (task_id, since)).fetchone())
+
+
+def _woken_within_hour(conn, task_id: str, now: float) -> bool:
+    return bool(conn.execute(
+        "SELECT 1 FROM task_comments WHERE task_id=? AND (body LIKE '%coordinator_wake%' "
+        "OR body LIKE '%triage_parked%') AND created_at > ? LIMIT 1", (task_id, now - 3600)).fetchone())
+
+
 def _latest_event_reason(conn, task_id: str, kinds=("blocked",)) -> str:
     """``reason`` from the latest event of the given kinds ('' when absent)."""
     marks = ",".join("?" * len(kinds))
@@ -258,6 +255,14 @@ def _latest_event_reason(conn, task_id: str, kinds=("blocked",)) -> str:
         return ""
 
 
+def _has_wake_subscription(conn, task_id: str) -> bool:
+    try:
+        return conn.execute("SELECT 1 FROM kanban_notify_subs WHERE task_id=? AND delivery_mode LIKE '%wake%' "
+                            "LIMIT 1", (task_id,)).fetchone() is not None
+    except sqlite3.OperationalError:
+        return False
+
+
 def _child_count(conn, task_id: str) -> int:
     """Linked successor cards (engine DAG); 0 on schemas without task_links."""
     try:
@@ -265,43 +270,6 @@ def _child_count(conn, task_id: str) -> int:
             "SELECT COUNT(*) AS c FROM task_links WHERE parent_id=?", (task_id,)).fetchone()["c"]
     except sqlite3.OperationalError:
         return 0
-
-
-def _review_entered_at(conn, task, now: float) -> float:
-    """When a card entered the review lane: its review_requested event, else the
-    end of its latest run, else when it started. First-tick estimate only; later
-    ticks carry review_since forward in the progress state."""
-    try:
-        ev = conn.execute(
-            "SELECT MAX(created_at) AS at FROM task_events WHERE task_id=? AND kind='review_requested'",
-            (task["id"],)).fetchone()
-        if ev and ev["at"]:
-            return float(ev["at"])
-        run = conn.execute(
-            "SELECT ended_at FROM task_runs WHERE task_id=? ORDER BY id DESC LIMIT 1",
-            (task["id"],)).fetchone()
-        if run and run["ended_at"]:
-            return float(run["ended_at"])
-    except sqlite3.OperationalError:
-        pass
-    return float(task["started_at"] or task["created_at"] or now)
-
-
-def dispatch_health():
-    """Engine dispatch telemetry written by the plugin's on_kanban_dispatch_tick hook."""
-    try:
-        data = json.loads((HERMES_HOME / "logs" / "dispatch-health.json").read_text())
-    except (OSError, ValueError):
-        return None
-    return data if isinstance(data, dict) else None
-
-
-def review_dispatch_enabled() -> bool:
-    try:
-        text = (HERMES_HOME / "config.yaml").read_text()
-    except OSError:
-        return True
-    return not re.search(r"^\s*review_dispatch:\s*(false|no|off)\b", text, re.MULTILINE | re.IGNORECASE)
 
 
 def main() -> None:
@@ -370,7 +338,9 @@ def main() -> None:
                     f"{reason.strip()[:50]}")
                 verdict_parked.add(t["id"])
 
-    # Coordinator-action blocked reasons (legacy "Nexus" match kept for old comments) have no consumer; they park until a human asks.
+    # Every block needs a coordinator decision. Wake for coordinator-action reasons (legacy "Nexus" match kept
+    # for old comments) and for any recent block with no CONTINUATION recorded after it; hourly until decided.
+    wakes = 0
     for t in tasks:
         if t["status"] != "blocked" or t["id"] in verdict_parked:
             continue
@@ -398,17 +368,20 @@ def main() -> None:
                     f"BLOCKED_NO_REASON · {t['id']} · blocked without a recorded reason or comment · "
                     f"{(t['title'] or '')[:60]}")
             continue
-        if any(k in reason for k in NEXUS_ACTION_KEYWORDS):
+        blocked_at = ev["created_at"] if ev else (t["created_at"] or 0)
+        if _has_wake_subscription(conn, t["id"]):
+            continue  # the notifier already woke that chat with the block reason
+        undecided = (now - blocked_at < ORPHANED_CHAIN_WINDOW_HOURS * 3600
+                     and not _decided_since(conn, t["id"], blocked_at))
+        if undecided or any(k in reason for k in NEXUS_ACTION_KEYWORDS):
             age_m = (now - basis) / 60
-            if age_m < COORDINATOR_WAKE_MINUTES:
+            if age_m < COORDINATOR_WAKE_MINUTES or _woken_within_hour(conn, t["id"], now):
                 continue
-            recent_wake = conn.execute(
-                "SELECT 1 FROM task_comments WHERE task_id=? AND body LIKE '%coordinator_wake%' "
-                "AND created_at > ? LIMIT 1", (t["id"], now - 3600)).fetchone()
-            if recent_wake:
+            if wakes >= ORPHAN_LIST_CAP:
                 continue
+            wakes += 1
             findings.append(
-                f"COORDINATOR_WAKE · {t['id']} · blocked {age_m:.0f}m awaiting coordinator action "
+                f"COORDINATOR_WAKE · {t['id']} · blocked, awaiting coordinator action "
                 f"({reason[:48]}) · {(t['title'] or '')[:60]}")
 
     # Coordination agents must never block ready work for capacity; the dispatcher owns concurrency.
@@ -483,8 +456,8 @@ def main() -> None:
               and marker["created_at"] is not None
               and (now - marker["created_at"]) / 60 >= UNSUBSCRIBED_BLOCK_GRACE_MINUTES):
             findings.append(
-                f"UNSUBSCRIBED_BLOCK · {t['id']} · ready and unattended for "
-                f"{(now - marker['created_at']) / 60:.0f}m — blocking fail-closed · {titles[t['id']]}")
+                f"UNSUBSCRIBED_BLOCK · {t['id']} · ready and unattended past the "
+                f"{UNSUBSCRIBED_BLOCK_GRACE_MINUTES}m grace — blocking fail-closed · {titles[t['id']]}")
 
     recent_done = conn.execute(
         "SELECT id, title, completed_at FROM tasks "
@@ -524,30 +497,6 @@ def main() -> None:
         # Bounded prompt: later ticks list the rest once these carry orphan_wake.
         findings.append(
             f"ORPHANED_CHAIN_MORE · {orphans_unlisted} more orphaned card(s) beyond the "
-            f"{ORPHAN_LIST_CAP}-card cap will be listed on later ticks")
-
-    # triage: the engine's block-loop breaker (same block kind re-raised past the
-    # recurrence limit) or an explicit human-triage park. Nothing dispatches triage,
-    # so without this signal the card is silent forever.
-    try:
-        triage_cards = conn.execute(
-            "SELECT id, title FROM tasks WHERE status='triage' ORDER BY created_at").fetchall()
-    except sqlite3.OperationalError:
-        triage_cards = []
-    triage_unlisted = 0
-    for t in triage_cards:
-        if _has_marker(conn, t["id"], "triage_parked"):
-            continue
-        if sum(1 for f in findings if f.startswith("TRIAGE_PARKED · ")) >= ORPHAN_LIST_CAP:
-            triage_unlisted += 1
-            continue
-        reason = _latest_event_reason(conn, t["id"], ("block_loop_detected", "blocked"))
-        findings.append(
-            f"TRIAGE_PARKED · {t['id']} · parked in triage, nothing dispatches it · "
-            f"{(reason.strip() or 'no reason recorded')[:60]} · {(t['title'] or '')[:60]}")
-    if triage_unlisted:
-        findings.append(
-            f"TRIAGE_PARKED_MORE · {triage_unlisted} more triage card(s) beyond the "
             f"{ORPHAN_LIST_CAP}-card cap will be listed on later ticks")
 
     readiness_signals = 0
@@ -591,48 +540,6 @@ def main() -> None:
             f"{_workspace_head(workspace)} · {title}")
         readiness_signals += 1
 
-    progress_state_path = HERMES_HOME / "logs" / "supervisor-progress-state.json"
-    previous: dict[str, dict] = {}
-    try:
-        previous = json.loads(progress_state_path.read_text())
-    except (OSError, json.JSONDecodeError):
-        previous = {}
-    current: dict[str, dict] = {}
-    for t in active_cards:
-        last_comment = conn.execute(
-            "SELECT MAX(id) AS m FROM task_comments WHERE task_id=?", (t["id"],)).fetchone()
-        entry = {"status": t["status"], "hb": last_comment["m"] or 0}
-        if t["status"] in ("ready", "review"):
-            # ready_since / review_since: how long the card has waited in its dispatch lane.
-            since_key = f"{t['status']}_since"
-            prior = previous.get(t["id"])
-            if prior and prior.get("status") == t["status"] and prior.get(since_key):
-                entry[since_key] = prior[since_key]
-            elif t["status"] == "review":
-                entry[since_key] = _review_entered_at(conn, t, now)
-            else:
-                entry[since_key] = now
-        current[t["id"]] = entry
-    if previous:
-        for tid in sorted(set(previous) | set(current)):
-            old = previous.get(tid)
-            state = current.get(tid)
-            if old is None or state is None:
-                if state is None and old is not None:
-                    row = conn.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()
-                    if row and row["status"] != old.get("status"):
-                        findings.append(
-                            f"PROGRESS_DELTA · {tid} · {old.get('status')}→{row['status']} · {titles.get(tid, tid)}")
-                continue
-            if old.get("status") != state["status"]:
-                findings.append(
-                    f"PROGRESS_DELTA · {tid} · {old.get('status')}→{state['status']} · {titles.get(tid, tid)}")
-    try:
-        (HERMES_HOME / "logs").mkdir(parents=True, exist_ok=True)
-        progress_state_path.write_text(json.dumps(current, indent=2, sort_keys=True))
-    except OSError:
-        pass
-
     ready_paths = [t["workspace_path"] for t in tasks
                    if t["status"] == "ready" and t["workspace_path"]]
     checked_paths = ready_paths[:WORKSPACE_CHECK_CAP]
@@ -665,7 +572,7 @@ def main() -> None:
         if status == "todo" and not assignee:
             age_h = (now - (t["created_at"] or now)) / 3600
             if age_h >= TODO_AGING_HOURS:
-                findings.append(f"UNASSIGNED_TODO · {tid} · aging {age_h:.0f}h · {title}")
+                findings.append(f"UNASSIGNED_TODO · {tid} · unassigned over {TODO_AGING_HOURS}h · {title}")
             continue
 
         if status in ("todo", "ready") and "token_budget" not in (t["body"] or ""):
@@ -680,7 +587,7 @@ def main() -> None:
             age_m = (now - (t["created_at"] or now)) / 60
             if age_m >= QUEUE_AGING_MINUTES and paused is None:
                 findings.append(
-                    f"QUEUE_AGING · {tid} · assigned to {assignee} but unstarted {age_m:.0f}m · {title}")
+                    f"QUEUE_AGING · {tid} · assigned to {assignee} but unstarted over {QUEUE_AGING_MINUTES}m · {title}")
             continue
 
         # skill availability on the assignee profile
@@ -701,72 +608,6 @@ def main() -> None:
                     findings.append(
                         f"ESCALATE_UNKNOWN_SKILL · {tid} · skill '{s}' exists nowhere; "
                         f"strip from card or install source · {title}")
-
-        if status in ("running", "in_progress"):
-            hb = t["last_heartbeat_at"]
-            heartbeat_basis = hb or t["started_at"] or t["created_at"]
-            if heartbeat_basis and (now - heartbeat_basis) / 60 >= HEARTBEAT_STALE_MINUTES:
-                findings.append(
-                    f"HEARTBEAT_STALE · {tid} · no heartbeat {((now-heartbeat_basis)/60):.0f}m · {title}")
-            row = conn.execute(
-                "SELECT claim_expires FROM task_runs WHERE task_id=? "
-                "ORDER BY id DESC LIMIT 1", (tid,)).fetchone()
-            expires = row["claim_expires"] if row and row["claim_expires"] else None
-            if expires and expires < now:
-                findings.append(f"STALE_CLAIM · {tid} · claim expired {((now-expires)/60):.0f}m ago · {title}")
-
-    # READY_STUCK / REVIEW_STALLED: the engine dispatcher (gateway, 15s ticks) logs
-    # "kanban dispatcher stuck ... 0 workers spawned" to gateway.log but nothing turns
-    # that into a board-visible signal. Detect it independently from ready_since /
-    # review_since (tracked above across ticks, not from row creation time — a card
-    # can sit blocked for days before becoming ready). The plugin's dispatch-tick
-    # telemetry (logs/dispatch-health.json) names why the engine held a card, so a
-    # card that is merely queued behind the per-profile cap is reported as
-    # QUEUED_AT_CAP (informational) instead of a stall.
-    if paused is None:
-        health = dispatch_health() or {}
-        holds = health.get("holds") or {}
-        review_lane = review_dispatch_enabled()
-        waiting = 0
-        for t in tasks:
-            status = t["status"]
-            if status not in ("ready", "review"):
-                continue
-            if status == "review" and not review_lane:
-                continue
-            waiting += 1
-            workspace = t["workspace_path"]
-            if workspace and workspace in checked and not checked[workspace]:
-                continue  # already explained by WORKSPACE_INVALID
-            since = current.get(t["id"], {}).get(f"{status}_since", now)
-            age_m = (now - since) / 60
-            threshold = READY_STUCK_MINUTES if status == "ready" else REVIEW_STUCK_MINUTES
-            if age_m < threshold:
-                continue
-            title = (t["title"] or "")[:60]
-            hold = (holds.get(t["id"]) or {}).get("reason") or ""
-            if hold.startswith("per_profile_cap"):
-                findings.append(
-                    f"QUEUED_AT_CAP · {t['id']} · {status} card queued behind {hold} — "
-                    f"dispatches when a slot frees · {title}")
-                continue
-            note = f" · engine hold: {hold}" if hold else ""
-            if status == "ready":
-                findings.append(
-                    f"READY_STUCK · {t['id']} · ready {age_m:.0f}m without the dispatcher "
-                    f"promoting it to running — run `hermes kanban dispatch` and check profile "
-                    f"health (venv, PATH, credentials) if it recurs{note} · {title}")
-            else:
-                findings.append(
-                    f"REVIEW_STALLED · {t['id']} · review requested {age_m / 60:.0f}h ago, "
-                    f"no reviewer dispatched{note} · {title}")
-        last_tick = health.get("last_tick_at")
-        if waiting and last_tick and (now - float(last_tick)) / 60 >= DISPATCHER_SILENT_MINUTES:
-            ticked = datetime.fromtimestamp(float(last_tick), timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            findings.append(
-                f"DISPATCHER_SILENT · gateway dispatcher last ticked at {ticked} while {waiting} "
-                f"ready/review card(s) wait — check `hermes gateway status` and "
-                f"kanban.dispatch_in_gateway")
 
     conn.close()
 
