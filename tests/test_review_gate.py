@@ -26,6 +26,20 @@ def test_reviewer_approval_passes_and_routes_verify(tmp_path, monkeypatch):
     assert routed == [("t_1", "/wt", "p")]
 
 
+def test_implementer_cannot_block_to_ask_for_commit_approval(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch, "forge", body="hand-written card")
+    for name, args in (
+            ("kanban_block", {"task_id": "t_1", "reason": "Staged and green; please authorize the proposed commit"}),
+            ("kanban_block", {"task_id": "t_1", "reason": "COMMIT_READY: one-file staged candidate"}),
+            ("terminal", {"command": "hermes kanban block t_1a2b 'waiting for coordinator validation before commit'"})):
+        verdict = review_gate.gate(tool_name=name, args=args)
+        assert verdict["action"] == "block" and "request-review" in verdict["message"]
+    real = {"task_id": "t_1", "reason": "Should staff exports cap at 200 or 1,000 rows?"}
+    assert review_gate.gate(tool_name="kanban_block", args=real) is None
+    setup(tmp_path, monkeypatch, "sentry")
+    assert review_gate.gate(tool_name="kanban_block", args={"task_id": "t_1", "reason": "COMMIT_READY"}) is None
+
+
 def test_other_cards_and_tools_untouched(tmp_path, monkeypatch):
     setup(tmp_path, monkeypatch, "forge", body="VERIFY the reviewed change")
     assert review_gate.gate(tool_name="kanban_complete", args={"task_id": "t_1"}) is None
