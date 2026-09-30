@@ -33,9 +33,9 @@ Before a Bot task is created:
    ```
 4. Record the profile's observed model/provider as observed placement; do not infer a provider or use a `delegate_task` override.
 5. Establish the exact repository/worktree/branch/base, clean state, dependency readiness, focused-test baseline, exact write allowlist, one behavior and commit boundary, acceptance commands, actual `max_runtime`, stop conditions, and required gates from `handoffs.md`.
-6. Block readiness work separately. Do not hide dependency installation, a new harness, reviewer provisioning, OCR setup, or test-health repair inside implementation.
+6. Readiness work the card needs (installing dependencies, fixing a broken test run) happens inside that card. Do not create separate readiness cards.
 7. For Security Tester, require the complete security engagement receipt before a card can be unblocked: originating Security Reviewer finding, authorization basis/approver, target allowlist, environment, window, techniques, rate limit, credentials/data handling, evidence path/redaction, stop conditions, destructive approval, and production approval. Verify the `security-tester` profile, `web-pentest` and `my-evidence-format` readiness, exact workspace, no inherited credentials, actual `max_runtime`, idempotency key, and source subscription. Any missing field keeps the card blocked.
-8. Establish originating session/platform provenance or an explicit subscription identity, an idempotency key, and the next expected local lifecycle transition. Pre-create only distinct known QA/security/operations gates as blocked dependencies; dispatch only the current executable slice.
+8. Establish originating session/platform provenance or an explicit subscription identity, an idempotency key, and the next expected local lifecycle transition. Do not pre-create QA/security/operations cards: Sentry's review on the implementation card is the gate.
 
 ## Dispatch choice
 
@@ -51,6 +51,8 @@ Before a Bot task is created:
 The Coordinator configuration uses `kanban.auto_decompose: false`; route deliberately rather than relying on the auxiliary decomposer.
 
 ### Create
+
+Coding work in a registered project goes through the `delivery_submit` tool; rework goes through `delivery_submit` with `fix_of` or `delivery_verify_failed`. The card gate refuses a hand-made card assigned to any delivery role (implementer, reviewer, verifier, planner, investigator, release engineer, security reviewer/tester). Hand-create cards only for other profiles:
 
 ```bash
 hermes kanban create "<precise task title>" \
