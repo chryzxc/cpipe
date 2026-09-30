@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import block_reasons, headless_clarify, liveness, review_gate, status, submit, workspace_prep
+from . import block_reasons, card_gate, headless_clarify, liveness, review_gate, status, submit, workspace_prep
 
 __all__ = ["register"]
 
@@ -294,3 +294,4 @@ def register(ctx):
     ctx.register_hook("pre_approval_request", status.approval_requested)
     ctx.register_hook("pre_tool_call", review_gate.gate)
     ctx.register_hook("pre_tool_call", headless_clarify.gate)
+    ctx.register_hook("pre_tool_call", card_gate.gate)
