@@ -6,6 +6,8 @@
    the verifier if the diff touches CI, containers, deploy config, dependencies, or migrations.
 3. A ``Plan:`` card completes only with a plan: the build card reads its result, so a plan left in
    the summary is copied into the result, and a completion with no plan at all is refused.
+4. The implementer cannot block a card to ask for commit approval: committing and pushing its own
+   branch needs none, and each such block cost a whole extra run.
 """
 
 from __future__ import annotations
@@ -20,6 +22,9 @@ from . import submit, workspace_prep
 MARKER = "REVIEWER (same worktree)"  # every build, fix, and content brief carries it
 PLAN_MARKER = "Produce the implementation plan in the PLAN FORMAT"  # both plan briefs, never the build brief
 COMPLETE_CMD = re.compile(r"\bkanban\s+complete\s+(t_[0-9a-f]+)")
+BLOCK_CMD = re.compile(r"\bkanban\s+block\b(.*?)\b(t_[0-9a-f]+)\b(.*)", re.S)
+COMMIT_ASK = re.compile(r"COMMIT_READY|\b(authori[sz]|approv|validat|permission|sign.?off)\w*\b[^.\n]{0,80}\bcommit"
+                        r"|\bcommit\w*\b[^.\n]{0,80}\b(authori[sz]|approv|validat|permission|sign.?off)", re.I)
 PLATFORM_PATH = re.compile(
     r"(^|/)(\.github/|\.gitlab-ci|\.circleci/|Dockerfile|docker-compose|compose\.ya?ml$|Procfile$|"
     r"nginx|helm/|k8s/|terraform/|infra/|deploy/|migrations?/|\.env\.example$|\.nvmrc$|"
@@ -29,6 +34,10 @@ PLATFORM_PATH = re.compile(
 
 def gate(tool_name: str = "", args: dict | None = None, **_kw):
     args = args or {}
+    if tool_name == "kanban_block":
+        return commit_ask_gate(args.get("task_id") or os.environ.get("HERMES_KANBAN_TASK"), str(args.get("reason") or ""))
+    if tool_name == "terminal" and (m := BLOCK_CMD.search(str(args.get("command") or ""))):
+        return commit_ask_gate(m[2], m[1] + m[3])
     if tool_name == "kanban_complete":
         tid = args.get("task_id") or os.environ.get("HERMES_KANBAN_TASK")
     elif tool_name == "terminal" and (m := COMPLETE_CMD.search(str(args.get("command") or ""))):
@@ -51,6 +60,23 @@ def gate(tool_name: str = "", args: dict | None = None, **_kw):
     except Exception:
         return None  # never wedge a completion on a gate bug
     return None
+
+
+def commit_ask_gate(tid: str | None, reason: str):
+    if not COMMIT_ASK.search(reason):
+        return None
+    try:
+        row = _task(tid)
+    except Exception:
+        return None
+    if not row or row["assignee"] != submit._role("implementer"):
+        return None
+    return {"action": "block", "message": (
+        f"{tid}: committing and pushing this card's branch needs nobody's approval (only merge, deploy, "
+        f"force-push, and credential changes do), whatever an earlier note said. Commit, push, open or update the "
+        f"draft PR, then run `hermes kanban request-review {tid} --reviewer {submit._role('reviewer')} --summary "
+        "\"<PR url; changed files; commands run and results; commit sha>\"`. Block only for a product, security, or "
+        "destructive decision.")}
 
 
 def plan_gate(tid: str, args: dict):
