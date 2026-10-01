@@ -35,4 +35,4 @@ def test_monitor_reports_a_role_gap_once_then_its_fix(tmp_path, monkeypatch):
     assert "Role `reviewer` has no working bot" in message and "roster.yaml" in message
     assert mod["build_digest"](mod["roster_stalls"](0), state, 0)[0] == ""
     (h / "roster.yaml").write_text("roles:\n  planner: archon\n  spike_explorer: probe\n  reviewer: probe\n")
-    assert "Moving again: role reviewer" in mod["build_digest"](mod["roster_stalls"](0), state, 0)[0]
+    assert mod["build_digest"](mod["roster_stalls"](0), state, 0)[0] == ""  # the fix alone is silent

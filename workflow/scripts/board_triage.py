@@ -175,7 +175,8 @@ def build_digest(cards, retried, waiting, state, now):
     if not (due or new_decide) or not cards:
         return "", new_state
     new_state["reminded_at"] = now
-    lines = [f"📋 **Board check — {len(cards)} card(s) not moving** · Mission Control: {DASHBOARD_URL}"]
+    lines = [f"📋 **Board check — {len(cards)} card(s) not moving** · Mission Control: {DASHBOARD_URL}",
+             "_Operator digest: relay it as-is. Do not open these cards; the operator replies with a decision._"]
     moved = [f"retried {len(retried)}" if retried else "", f"{len(waiting)} back to wait on parents" if waiting else ""]
     if any(moved):
         lines.append("Auto: " + ", ".join(m for m in moved if m))

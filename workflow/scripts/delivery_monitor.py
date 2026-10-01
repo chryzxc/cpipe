@@ -754,7 +754,7 @@ def build_digest(current, state, now):
             shown += 1
         if len(new) > shown:
             lines.append(f"…and {len(new) - shown} more — `hermes kanban list --status blocked`")
-    if resolved:
+    if resolved and lines:  # a recovery alone wakes the coordinator for nothing: ride along with news
         names = ", ".join(seen[k].get("name", k) for k in resolved[:5])
         more = f" (+{len(resolved) - 5} more)" if len(resolved) > 5 else ""
         lines.append(f"✅ Moving again: {names}{more}")
