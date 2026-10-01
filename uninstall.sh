@@ -1,5 +1,5 @@
 #!/bin/bash
-# Uninstall the software-delivery workflow from the Hermes user-state layer.
+# Uninstall the cpipe workflow from the Hermes user-state layer.
 # Leaves roster.yaml, kanban.db, and all profile data untouched.
 #   --purge   also remove ~/.hermes/roster.yaml (asks once unless --yes)
 #   --yes     run without confirmation prompts
@@ -17,7 +17,7 @@ for arg in "$@"; do
   esac
 done
 
-echo "== software-delivery uninstall =="
+echo "== cpipe uninstall =="
 echo "repo: $REPO"
 
 confirm() {
@@ -26,7 +26,7 @@ confirm() {
   [ "$ans" = "y" ] || [ "$ans" = "Y" ]
 }
 
-echo "-- 1/5 cron jobs (owned by software-delivery)"
+echo "-- 1/5 cron jobs (owned by cpipe)"
 python3 - "$REPO/workflow/cron.jobs.json" "$H/cron/jobs.json" <<'PY'
 import json, sys
 defs_path, live_path = sys.argv[1], sys.argv[2]
@@ -37,7 +37,7 @@ except FileNotFoundError:
 jobs = live if isinstance(live, list) else live.get('jobs', [])
 owned_names = {d['name'] for d in json.load(open(defs_path))}
 kept = [j for j in jobs if not (
-    j.get('owner') == 'software-delivery' or j.get('name') in owned_names)]
+    j.get('owner') == 'cpipe' or j.get('name') in owned_names)]
 removed = len(jobs) - len(kept)
 if isinstance(live, dict):
     live['jobs'] = kept
@@ -67,17 +67,17 @@ find "$H/profiles" -maxdepth 3 -type l -name "my-*" 2>/dev/null | while read -r 
 done
 
 echo "-- 4/5 plugin placement"
-if [ "$(readlink "$H/plugins/software-delivery" 2>/dev/null)" = "$REPO" ]; then
-  rm -f "$H/plugins/software-delivery"
+if [ "$(readlink "$H/plugins/cpipe" 2>/dev/null)" = "$REPO" ]; then
+  rm -f "$H/plugins/cpipe"
   echo "   removed plugin link"
 fi
 HERMES_BIN="$(command -v hermes || true)"
 [ -n "$HERMES_BIN" ] || HERMES_BIN="$H/hermes-agent/venv/bin/hermes"
 if [ -x "$HERMES_BIN" ]; then
-  "$HERMES_BIN" plugins disable software-delivery </dev/null >/dev/null 2>&1 || true
+  "$HERMES_BIN" plugins disable cpipe </dev/null >/dev/null 2>&1 || true
   for dir in "$H"/profiles/*/; do
-    "$HERMES_BIN" -p "$(basename "$dir")" plugins disable software-delivery </dev/null >/dev/null 2>&1 || true
-    [ -L "$dir/plugins/software-delivery" ] && rm -f "$dir/plugins/software-delivery"
+    "$HERMES_BIN" -p "$(basename "$dir")" plugins disable cpipe </dev/null >/dev/null 2>&1 || true
+    [ -L "$dir/plugins/cpipe" ] && rm -f "$dir/plugins/cpipe"
   done
 fi
 

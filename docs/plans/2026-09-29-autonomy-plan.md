@@ -99,7 +99,7 @@ All are computed from the journal (phase 0), so they're measured before and afte
                  │                                                 │
                  └────────── logs/delivery-journal.jsonl ──────────┘
                                    │
-         `hermes software-delivery log|status`, Mission Control, weekly digest
+         `hermes cpipe log|status`, Mission Control, weekly digest
    delivery_status tool (coordinator must call before answering status questions)
    supervisor LLM job → only for judgment causes the monitor queues
 ```
@@ -109,7 +109,7 @@ Existing pieces this reuses rather than replaces:
 - `workflow/scripts/stall_alert.py` already reads `kanban.db` directly. It **becomes** `delivery_monitor.py`. Today it
   sends its digest to a separate bot channel, mixes new stalls with dozens of old ones, and describes holds only
   vaguely ("dispatcher stuck, at capacity, or guarded").
-- `software_delivery/liveness.py` keeps writing the per-tick hold snapshot. The monitor treats it as one input, not as
+- `cpipe/liveness.py` keeps writing the per-tick hold snapshot. The monitor treats it as one input, not as
   authority.
 - `workflow/scripts/board_triage.py` keeps its digest, but reads classifications from the monitor instead of its own
   regexes.
@@ -143,11 +143,11 @@ Changes:
   - `nudge` (operator message that is only "continue / any update / is it done / where are we");
   - `claim.unsupported` (see phase 1);
   - `session.end` (tokens, card id).
-- `software_delivery/__init__.py`:
+- `cpipe/__init__.py`:
   - the `pre_llm_call` hook counts nudges (small regex over the user message; no LLM);
   - `on_session_end` writes `session.end` through the journal. `delivery-metrics.jsonl` is kept one release for
     compatibility, then removed.
-- CLI: `hermes software-delivery log [--card ID] [--chain ID] [--since 2h|3d] [--kind PREFIX] [--json]` prints a
+- CLI: `hermes cpipe log [--card ID] [--chain ID] [--since 2h|3d] [--kind PREFIX] [--json]` prints a
   readable timeline.
 - `workflow/scripts/delivery_baseline.py` (new): rebuilds the target numbers in section 3 from the last N days of
   `task_runs`, `task_events` and session data, prints a table, and records a `baseline` line. Run once before phase 1,
@@ -214,7 +214,7 @@ Changes:
   - One escalation per (card, cause, error signature). Repeats only update `delivery-state.json`.
 - **Side-channel digest:** the bot-channel digest keeps running. It lists only **new** stalls and chain-level summaries
   (roots, not every child) and never sends the "stuck overall: N" line unless N changed.
-- **`delivery_status` tool** (new, `software_delivery/status.py`):
+- **`delivery_status` tool** (new, `cpipe/status.py`):
   - input: a card or chain id, or none for "all chains from this chat";
   - output: state, cause, evidence, age, last run outcome, PR/CI, dependents waiting, and the next expected transition.
     It reads `delivery-state.json` and recomputes live if the file is over 5 min old.
@@ -300,7 +300,7 @@ Changes:
 
 - **Duplicates** (`submit.py`): an open card with the same issue/PR URL, or the same repo + overlapping scope paths
   + a similar title, returns the existing card id (D4). The monitor archives cards marked superseded before they spawn.
-- **Preflight** (`software_delivery/preflight.py`, new; replaces `workspace_prep.py` in `pre_llm_call`):
+- **Preflight** (`cpipe/preflight.py`, new; replaces `workspace_prep.py` in `pre_llm_call`):
   - checks: the repo is a git work tree; HEAD matches the card's pinned base or branch; deps are installed for the
     detected stack (`buildcmds.py`); the gate tools the card names are on PATH; the scope paths exist at base or are
     marked `new:`.

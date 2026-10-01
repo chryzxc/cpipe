@@ -1,8 +1,8 @@
 version: 7
 
-# Declarative software-delivery policy. Hermes does not apply this as runtime config.
+# Declarative cpipe policy. Hermes does not apply this as runtime config.
 # Profile IDs and actual provider/model placement must be verified before dispatch.
-# v7: end-to-end software delivery; Security Tester is authorization-gated and dormant by default.
+# v7: end-to-end cpipe; Security Tester is authorization-gated and dormant by default.
 scope:
   includes:
     - product_and_ux_clarification

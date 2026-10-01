@@ -1,10 +1,10 @@
-name: software-delivery
+name: cpipe
 version: 0.4.0
 manifest_version: 2
 api_version: 1
-description: Single-plugin software delivery system for Hermes Agent — orchestration policy skills, deterministic gate tools, board intelligence, and housekeeping, installed from one repo.
+description: cpipe, a request-to-PR delivery pipeline for Hermes Agent — orchestration policy skills, deterministic gate tools, board intelligence, and housekeeping, installed from one repo.
 license: MIT
-homepage: https://github.com/chryzxc/hermes-software-delivery
+homepage: https://github.com/chryzxc/cpipe
 tags: [delivery, workflow, verification, code-review, qa, kanban, orchestration]
 hooks:
   - on_session_end

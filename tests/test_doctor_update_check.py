@@ -1,4 +1,4 @@
-import software_delivery as plugin
+import cpipe as plugin
 
 
 class FakeCompleted:

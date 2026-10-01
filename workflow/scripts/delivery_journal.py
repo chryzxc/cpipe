@@ -1,7 +1,7 @@
 """Delivery journal: one JSON line per decision the plugin makes. Best-effort, never raises.
 
 Every classification change, repair, escalation and waste signal lands in
-``$HERMES_HOME/logs/delivery-journal.jsonl`` so an incident is a `hermes software-delivery log`
+``$HERMES_HOME/logs/delivery-journal.jsonl`` so an incident is a `hermes cpipe log`
 away instead of hand-written SQL, and the targets in docs/plans are measured from it.
 
 Kinds (stable names):

@@ -1,6 +1,6 @@
 # Security Delivery Lifecycle
 
-This reference governs security work inside the software-delivery control plane. It separates read-only analysis, authorized active validation, remediation, independent review, regression evidence, and closure.
+This reference governs security work inside the cpipe control plane. It separates read-only analysis, authorized active validation, remediation, independent review, regression evidence, and closure.
 
 ## Lanes
 

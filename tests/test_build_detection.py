@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from software_delivery import _mutation_check
+from cpipe import _mutation_check
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "workflow" / "scripts"))

@@ -3,7 +3,7 @@ import json
 import sqlite3
 import subprocess
 
-from software_delivery import headless_clarify as hc, submit
+from cpipe import headless_clarify as hc, submit
 
 ASK = {"question": "t_0000aaaa: fix the gap or accept the risk?", "choices": ["Fix (Recommended)", "Accept"]}
 

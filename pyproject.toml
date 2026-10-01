@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hermes-software-delivery"
+name = "cpipe"
 version = "0.4.0"
-description = "Single-plugin software delivery system for Hermes Agent."
+description = "cpipe: a request-to-PR delivery pipeline for Hermes Agent."
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
@@ -26,7 +26,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["software_delivery"]
+packages = ["cpipe"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

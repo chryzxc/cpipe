@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-from software_delivery import headless_clarify, review_gate, submit
+from cpipe import headless_clarify, review_gate, submit
 
 pytestmark = [pytest.mark.e2e, pytest.mark.skipif(not shutil.which("hermes"), reason="hermes CLI not installed")]
 
@@ -34,7 +34,7 @@ def test_delivery_flow(tmp_path, monkeypatch):
     subprocess.run(["hermes", "kanban", "list"], capture_output=True, timeout=1200)
 
     out = json.loads(submit.submit({"title": "E2E probe", "request": "Add one line to README",
-                                    "project": "hermes-software-delivery", "size": "small"}))
+                                    "project": "cpipe", "size": "small"}))
     assert out["ok"], out
     chain = out["cards"]
     board = cards(db)

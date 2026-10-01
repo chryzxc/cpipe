@@ -8,13 +8,13 @@ SCRIPTS_SRC="$REPO/workflow/scripts"
 HERMES_BIN="$(command -v hermes || true)"
 [ -n "$HERMES_BIN" ] || HERMES_BIN="$H/hermes-agent/venv/bin/hermes"
 
-echo "== software-delivery install =="
+echo "== cpipe install =="
 echo "repo: $REPO"
 
 echo "-- 1/9 plugin placement"
 mkdir -p "$H/plugins"
 rm -f "$H/plugins/delivery-workflow"
-ln -sfn "$REPO" "$H/plugins/software-delivery"
+ln -sfn "$REPO" "$H/plugins/cpipe"
 
 echo "-- 2/9 roster (role -> profile mapping)"
 python3 "$SCRIPTS_SRC/setup_roster.py" "$@" || echo "   roster not configured yet — rerun: ./install.sh --roster coordinator=<profile> implementer=<profile> reviewer=<profile> verifier=<profile> security_reviewer=<profile>"
@@ -82,20 +82,20 @@ python3 "$SCRIPTS_SRC/assert_config.py" "$REPO/workflow/config.assertions.yaml" 
 
 echo "-- 9/9 enable plugin"
 if [ -x "$HERMES_BIN" ]; then
-  "$HERMES_BIN" plugins enable software-delivery </dev/null >/dev/null 2>&1 \
+  "$HERMES_BIN" plugins enable cpipe </dev/null >/dev/null 2>&1 \
     && echo "   plugin enabled (takes effect on next session)" \
-    || echo "   could not auto-enable — run: hermes plugins enable software-delivery"
+    || echo "   could not auto-enable — run: hermes plugins enable cpipe"
   # Bots run under their own profiles, which only load plugins listed in their own config:
   # without this the worker hooks (node_modules link, liveness) and delivery_* tools never reach them.
   for dir in "$H"/profiles/*/; do
     profile="$(basename "$dir")"
     mkdir -p "$dir/plugins"
-    ln -sfn "$H/plugins/software-delivery" "$dir/plugins/software-delivery"
-    "$HERMES_BIN" -p "$profile" plugins enable software-delivery </dev/null >/dev/null 2>&1 \
-      || echo "   could not enable in profile $profile — run: hermes -p $profile plugins enable software-delivery"
+    ln -sfn "$H/plugins/cpipe" "$dir/plugins/cpipe"
+    "$HERMES_BIN" -p "$profile" plugins enable cpipe </dev/null >/dev/null 2>&1 \
+      || echo "   could not enable in profile $profile — run: hermes -p $profile plugins enable cpipe"
   done
 else
-  echo "   hermes binary not found — run: hermes plugins enable software-delivery"
+  echo "   hermes binary not found — run: hermes plugins enable cpipe"
 fi
 
 if [ -x "$HERMES_BIN" ]; then

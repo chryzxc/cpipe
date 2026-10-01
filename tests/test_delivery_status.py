@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kanban_board import board, card, subscribe  # noqa: E402
 
-from software_delivery import status  # noqa: E402
+from cpipe import status  # noqa: E402
 
 
 def test_status_reports_the_monitor_verdict(tmp_path):

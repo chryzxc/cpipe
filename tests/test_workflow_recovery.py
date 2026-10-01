@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-from software_delivery import _mutation_check
+from cpipe import _mutation_check
 
 
 ROOT = Path(__file__).resolve().parents[1]

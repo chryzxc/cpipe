@@ -1,4 +1,4 @@
-"""Hermes Software Delivery native plugin.
+"""cpipe native plugin.
 
 Registers the deterministic delivery tools (policy check, board intelligence,
 mutation check, submit, status/watch), a doctor/status/log CLI command, a passive
@@ -195,7 +195,7 @@ def _workflow_source_status() -> str:
 
 def _doctor_command(args) -> str:
     status = [
-        f"software-delivery plugin: {_REPO_ROOT}",
+        f"cpipe plugin: {_REPO_ROOT}",
         f"skills bundled: {len(list((_REPO_ROOT / 'workflow' / 'skills').iterdir()))}",
         f"scripts bundled: {len(list(_SCRIPTS.glob('*.py')))}",
     ]
@@ -249,40 +249,40 @@ _MUTATION_SCHEMA = {
 def register(ctx):
     """Register deterministic delivery tools, doctor CLI, metrics and liveness hooks."""
     ctx.register_tool(
-        name="delivery_check_policy", toolset="software_delivery",
+        name="delivery_check_policy", toolset="cpipe",
         schema=_POLICY_SCHEMA, handler=lambda args, **kw: _check_policy(),
     )
     ctx.register_tool(
-        name="delivery_board_intelligence", toolset="software_delivery",
+        name="delivery_board_intelligence", toolset="cpipe",
         schema=_INTEL_SCHEMA, handler=lambda args, **kw: _board_intelligence(),
     )
     ctx.register_tool(
-        name="delivery_mutation_check", toolset="software_delivery",
+        name="delivery_mutation_check", toolset="cpipe",
         schema=_MUTATION_SCHEMA,
         handler=lambda args, **kw: _mutation_check(
             worktree=args["worktree"], file_path=args["file_path"],
             test_filter=args["test_filter"], test_cmd=args.get("test_cmd")),
     )
     ctx.register_tool(
-        name="delivery_submit", toolset="software_delivery",
+        name="delivery_submit", toolset="cpipe",
         schema=submit.SCHEMA, handler=submit.submit,
     )
     ctx.register_tool(
-        name="delivery_verify_failed", toolset="software_delivery",
+        name="delivery_verify_failed", toolset="cpipe",
         schema=submit.VERIFY_FAILED_SCHEMA, handler=submit.verify_failed,
     )
     ctx.register_tool(
-        name="delivery_status", toolset="software_delivery",
+        name="delivery_status", toolset="cpipe",
         schema=status.STATUS_SCHEMA, handler=status.delivery_status,
     )
     ctx.register_tool(
-        name="delivery_watch", toolset="software_delivery",
+        name="delivery_watch", toolset="cpipe",
         schema=status.WATCH_SCHEMA, handler=status.delivery_watch,
     )
     ctx.register_cli_command(
-        name="software-delivery", help="Software delivery plugin doctor",
+        name="cpipe", help="cpipe plugin doctor",
         setup_fn=_cli_setup, handler_fn=_cli_command,
-        description="Check software-delivery plugin status and run the policy validator.",
+        description="Check cpipe plugin status and run the policy validator.",
     )
     ctx.register_hook("on_session_end", _on_session_end)
     ctx.register_hook("on_session_end", exit_handoff.handoff)

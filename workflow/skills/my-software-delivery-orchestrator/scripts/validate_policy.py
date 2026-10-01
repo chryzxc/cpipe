@@ -31,7 +31,7 @@ if "name: my-software-delivery-orchestrator" not in skill:
     errors.append("frontmatter:wrong-name")
 if "version: 7.0.0" not in skill:
     errors.append("frontmatter:wrong-version")
-if "sole software-delivery control plane" not in skill:
+if "sole cpipe control plane" not in skill:
     errors.append("scope:missing-control-plane")
 
 combined = "\n".join(
@@ -73,4 +73,4 @@ if errors:
     print("FAIL")
     print("\n".join(errors))
     sys.exit(1)
-print("PASS: software-delivery policy structure and security contract")
+print("PASS: cpipe policy structure and security contract")

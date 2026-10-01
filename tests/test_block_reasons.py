@@ -4,7 +4,7 @@ import sqlite3
 import time
 from datetime import datetime
 
-from software_delivery import block_reasons
+from cpipe import block_reasons
 
 
 def test_explains_each_block_once_with_run_errors(tmp_path):

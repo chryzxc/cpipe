@@ -1,6 +1,6 @@
 import json
 
-from software_delivery import register
+from cpipe import register
 
 
 class RecordingContext:
@@ -41,19 +41,19 @@ def test_registers_doctor_cli_and_session_hook():
 
     register(context)
 
-    assert context.cli_commands == ['software-delivery']
+    assert context.cli_commands == ['cpipe']
     assert [h[0] for h in context.hooks] == ['on_session_end', 'on_session_end', 'on_kanban_dispatch_tick', 'on_kanban_dispatch_tick', 'pre_llm_call', 'pre_llm_call', 'pre_llm_call', 'post_llm_call', 'pre_approval_request', 'pre_tool_call', 'pre_tool_call', 'pre_tool_call']
 
 
 def test_mutation_tool_schema_requires_worktree():
-    from software_delivery import _MUTATION_SCHEMA
+    from cpipe import _MUTATION_SCHEMA
 
     required = _MUTATION_SCHEMA['function']['parameters']['required']
     assert required == ['worktree', 'file_path', 'test_filter']
 
 
 def test_session_end_hook_appends_jsonl(tmp_path, monkeypatch):
-    import software_delivery as plugin
+    import cpipe as plugin
 
     monkeypatch.setattr(plugin, '_METRICS_LOG', tmp_path / 'metrics.jsonl')
     monkeypatch.setenv('HERMES_HOME', str(tmp_path))

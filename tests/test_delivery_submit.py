@@ -2,7 +2,7 @@
 card, then a verifier runs the tests. Large work is mapped and planned first. Missing input never reaches the board."""
 import json
 
-from software_delivery import submit
+from cpipe import submit
 
 
 def roster(tmp_path, monkeypatch):

@@ -113,7 +113,7 @@ class Resubmit(BaseModel):
 @router.post("/cards/{task_id}/resubmit")
 def resubmit(task_id: str, body: Resubmit):
     """Start the work fresh under the current flow (plan -> pin -> build -> review -> verify)."""
-    from software_delivery import submit
+    from cpipe import submit
     out = json.loads(submit.submit(body.model_dump()))
     if not out.get("ok"):
         return out

@@ -652,7 +652,7 @@ SCHEMA = {
     "function": {
         "name": "delivery_submit",
         "description": (
-            "Hand a coding task in one of the user's repositories to the software-delivery team, "
+            "Hand a coding task in one of the user's repositories to the cpipe team, "
             "instead of doing it in this chat. size=content when only text, copy, markup, styles, docs, "
             "or a config value change (add/edit a page section, legal wording, labels): one implementer "
             "session plus a wording review, no plan, no tests. size=small for any feature or fix one "
