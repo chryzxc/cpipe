@@ -74,3 +74,17 @@ def test_plan_left_in_summary_is_copied_to_result(tmp_path, monkeypatch):
     _plan_card(tmp_path, monkeypatch)
     verdict = review_gate.gate(tool_name="kanban_complete", args={"summary": FULL_PLAN, "result": "see summary"})
     assert verdict == {"action": "modify", "args": {"result": FULL_PLAN}}
+
+
+def test_third_rework_round_must_block_instead(tmp_path, monkeypatch):
+    import sqlite3
+    db = tmp_path / "kanban.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE task_runs (task_id TEXT, outcome TEXT)")
+    conn.executemany("INSERT INTO task_runs VALUES (?, ?)", [("t_1", "changes_requested")] * 2 + [("t_2", "changes_requested")])
+    conn.commit(); conn.close()
+    monkeypatch.setattr(submit, "_db", lambda: db)
+    verdict = review_gate.gate(tool_name="kanban_request_changes", args={"task_id": "t_1", "reason": "x"})
+    assert verdict["action"] == "block" and "kanban_block" in verdict["message"]
+    assert review_gate.gate(tool_name="terminal", args={"command": "hermes kanban request-changes t_1 'fix'"})["action"] == "block"
+    assert review_gate.gate(tool_name="kanban_request_changes", args={"task_id": "t_2", "reason": "x"}) is None

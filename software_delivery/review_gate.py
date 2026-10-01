@@ -21,6 +21,8 @@ from . import submit, workspace_prep
 
 MARKER = "REVIEWER (same worktree)"  # every build, fix, and content brief carries it
 PLAN_MARKER = "Produce the implementation plan in the PLAN FORMAT"  # both plan briefs, never the build brief
+MAX_REWORK = 2  # request-changes rounds per card before the reviewer must block for Christian
+CHANGES_CMD = re.compile(r"\bkanban\s+request-changes\s+(t_[0-9a-f]+)")
 COMPLETE_CMD = re.compile(r"\bkanban\s+complete\s+(t_[0-9a-f]+)")
 BLOCK_CMD = re.compile(r"\bkanban\s+block\b(.*?)\b(t_[0-9a-f]+)\b(.*)", re.S)
 COMMIT_ASK = re.compile(r"COMMIT_READY|\b(authori[sz]|approv|validat|permission|sign.?off)\w*\b[^.\n]{0,80}\bcommit"
@@ -34,6 +36,10 @@ PLATFORM_PATH = re.compile(
 
 def gate(tool_name: str = "", args: dict | None = None, **_kw):
     args = args or {}
+    if tool_name == "kanban_request_changes":
+        return rework_cap_gate(args.get("task_id") or os.environ.get("HERMES_KANBAN_TASK"))
+    if tool_name == "terminal" and (m := CHANGES_CMD.search(str(args.get("command") or ""))):
+        return rework_cap_gate(m[1])
     if tool_name == "kanban_block":
         return commit_ask_gate(args.get("task_id") or os.environ.get("HERMES_KANBAN_TASK"), str(args.get("reason") or ""))
     if tool_name == "terminal" and (m := BLOCK_CMD.search(str(args.get("command") or ""))):
@@ -60,6 +66,27 @@ def gate(tool_name: str = "", args: dict | None = None, **_kw):
     except Exception:
         return None  # never wedge a completion on a gate bug
     return None
+
+
+def rework_cap_gate(tid: str | None):
+    """After MAX_REWORK rounds, a further request-changes goes to Christian instead of a fresh implementer run."""
+    if not tid:
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{submit._db()}?mode=ro", uri=True)
+        try:
+            rounds = conn.execute("SELECT COUNT(*) FROM task_runs WHERE task_id = ? AND outcome = 'changes_requested'",
+                                  (tid,)).fetchone()[0]
+        finally:
+            conn.close()
+    except Exception:
+        return None
+    if rounds < MAX_REWORK:
+        return None
+    return {"action": "block", "message": (
+        f"{tid} already went back to the implementer {rounds} times; another rework round restarts it from scratch. "
+        f"Do not request changes again: run `kanban_block` on {tid} with your findings as the reason (what is still "
+        "wrong, file/line, the fix you expect) so Christian decides the next step.")}
 
 
 def commit_ask_gate(tid: str | None, reason: str):
