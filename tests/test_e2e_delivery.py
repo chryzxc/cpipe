@@ -34,12 +34,13 @@ def test_delivery_flow(tmp_path, monkeypatch):
     subprocess.run(["hermes", "kanban", "list"], capture_output=True, timeout=1200)
 
     out = json.loads(submit.submit({"title": "E2E probe", "request": "Add one line to README",
-                                    "project": "cpipe", "size": "small"}))
+                                    "project": "cpipe", "size": "large"}))
     assert out["ok"], out
     chain = out["cards"]
     board = cards(db)
-    assert set(chain) == {"plan", "build", "verify"}
-    assert board[chain["plan"]][:2] == ("Plan: E2E probe", "ready")
+    assert set(chain) == {"map", "plan", "build", "verify"}
+    assert board[chain["map"]][:2] == ("Map: E2E probe", "ready")
+    assert board[chain["plan"]][:2] == ("Plan: E2E probe", "todo")
     assert board[chain["build"]][1:] == ("todo", submit._role("implementer"))
     assert board[chain["verify"]][0] == "Verify: E2E probe"
 
@@ -54,11 +55,11 @@ def test_delivery_flow(tmp_path, monkeypatch):
 
     monkeypatch.setattr(submit, "HERMES_HOME", tmp_path)  # question files land in the temp home
     monkeypatch.setenv(headless_clarify.HEADLESS_ENV, str(tmp_path / "turn.json"))
-    ask = {"question": f"{chain['plan']}: ship now or wait?", "choices": ["Ship", "Wait"]}
+    ask = {"question": f"{chain['map']}: ship now or wait?", "choices": ["Ship", "Wait"]}
     queued = headless_clarify.gate(tool_name="clarify", args=ask, session_id="bot-chat")
     assert queued["action"] == "block" and "Do NOT pick" in queued["message"]
-    saved = json.loads((tmp_path / f"delivery/questions/{chain['plan']}.json").read_text())
+    saved = json.loads((tmp_path / f"delivery/questions/{chain['map']}.json").read_text())
     assert saved["session_id"] == "bot-chat" and saved["questions"][0]["choices"] == ["Ship", "Wait"]
-    assert cards(db)[chain["plan"]][1] == "blocked"
+    assert cards(db)[chain["map"]][1] == "blocked"
     waiting = headless_clarify.gate(tool_name="clarify", args={**ask, "question": f"{chain['build']}: which?"})
     assert "has a comment with" in waiting["message"]  # a todo card cannot block
