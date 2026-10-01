@@ -4,7 +4,7 @@ The main chat can run on a cheap model: it only classifies the request and calls
 this tool. Card creation, routing, and the chat subscription are deterministic.
 
 content: one build card, no plan: text/copy/markup/style/docs edits need no tests.
-small: plan (frontier planner reads the code itself, short plan) -> build: the implementer codes,
+small: build: the implementer plans inline (a plan comment, no planner card), codes,
        tests, pushes a draft PR, then hands the SAME card (same worktree) to the reviewer through the
        native review lane; changes requested go straight back. The operator tests the PR, then merges.
 large: map (cheap investigator) -> plan (frontier planner, plans from the map) -> build.
@@ -32,7 +32,8 @@ HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 # User-submitted work outranks retries of older cards (dispatcher: ORDER BY priority DESC).
 PRIORITY = {"content": 30, "small": 20, "large": 10}
 # a whole feature is one session: a timeout kills it mid-build and the retry starts cold
-MAX_RUNTIME = {"content": "15m", "small": "20m", "large": "60m", "map": "20m", "plan": "20m", "build": "60m"}
+LIVE = ("todo", "ready", "running", "review", "scheduled")  # blocked/triage wait on the user: not live
+MAX_RUNTIME = {"content": "15m", "small": "60m", "large": "60m", "map": "20m", "plan": "20m", "build": "60m"}
 MAX_FIX_ROUNDS = 2
 MAX_REQUEST_CHARS = 3000
 DUPLICATE_TITLE_RATIO = 0.85
@@ -118,19 +119,6 @@ close an item under GAPS, and name that item.
 
 """ + PLAN_TASK
 
-SMALL_PLAN_BRIEF = """SMALL TASK: plan it for the implementer card waiting on this one. Do not load skills.
-token_budget: low.
-
-REQUEST (from the user):
-{request}
-
-""" + SCOPE + """
-Read the code the REQUEST touches and its direct callers yourself (for a route, grep its URL path
-in server AND client; for a page or content, every place it renders and every way users navigate
-to it). Stop reading once every heading below has an answer. A short plan: about 2 KB.
-
-""" + PLAN_TASK
-
 IMPLEMENTER = """IMPLEMENTER
 1. PLAN. If a parent card's result is a plan, follow it; do not re-plan. Otherwise plan in one
    pass yourself: read the code the REQUEST touches and its direct callers (for a route, grep its
@@ -187,6 +175,9 @@ REVIEWER (same worktree)
   Anything the REQUEST needs is in scope even when a plan did not name the file; never ask for a
   test, harness, or file the REQUEST excludes: note it as a follow-up.
 - On re-review, check only the delta since the last reviewed commit plus the prior findings.
+  An unchanged patch (a rebase or empty push: `git diff $(git merge-base origin/<base> <sha>) <sha> |
+  git patch-id --stable` equal for the last reviewed sha and HEAD) keeps the prior verdict: re-run
+  the related tests only.
   A prior Medium/Low finding the implementer could not or would not fix is not a second
   REQUEST_CHANGES: approve with it under RESIDUAL RISK. At most 3 review rounds: on the third,
   approve with Medium/Low items under RESIDUAL RISK. RESIDUAL RISK never holds a High (wrong
@@ -328,10 +319,9 @@ def build_card(title: str, request: str, project: str, size: str) -> tuple[list[
     if size == "content":  # straight to the implementer; same-card review, no plan or verify
         assignee = _role("implementer")
         body = CONTENT_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
-    elif size == "small":  # the frontier planner reads the code and plans; submit() chains the build
-        assignee = _role("planner")
-        title = f"Plan: {title}"
-        body = SMALL_PLAN_BRIEF.format(request=request.strip())
+    elif size == "small":  # straight to the implementer, who plans inline (IMPLEMENTER step 1)
+        assignee = _role("implementer")
+        body = BUILD_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
     else:  # map first on the cheap investigator; submit() chains plan + build on it
         assignee = _role("investigator")
         title = f"Map: {title}"
@@ -435,8 +425,8 @@ def submit(args: dict, **_kw) -> str:
         return error
     result = {"ok": True, "task_id": task_id, "assignee": assignee, "size": size}
     # each stage waits on the previous card; content is one card; verify unless verify=false
-    chain = {"large": {"map": task_id}, "small": {"plan": task_id}, "content": {"build": task_id}}[size]
-    stages = {"large": ("plan", "build"), "small": ("build",), "content": ()}[size]
+    chain = {"large": {"map": task_id}, "small": {"build": task_id}, "content": {"build": task_id}}[size]
+    stages = {"large": ("plan", "build"), "small": (), "content": ()}[size]
     if args.get("verify", True) and size != "content":
         stages += ("verify",)
     for stage in stages:
@@ -449,8 +439,8 @@ def submit(args: dict, **_kw) -> str:
     result.update(
         chat_subscribed=all([_subscribe_calling_chat(tid) for tid in chain.values()]),
         next=("implementer edits, reviewer checks the wording on the same card" if size == "content" else
-              ("frontier plan -> " if size == "small" else "cheap map -> frontier plan -> ")
-              + "implementer builds, tests, and opens a draft PR; reviewer checks the same card and "
+              ("" if size == "small" else "cheap map -> frontier plan -> ")
+              + "implementer plans, builds, tests, and opens a draft PR; reviewer checks the same card and "
               "marks the PR ready" + (" -> verifier runs the tests" if "verify" in chain else ""))
              + "; you get a message on review, block, or completion; the user tests the PR, then merges")
     return json.dumps(result)
@@ -614,9 +604,33 @@ def _copy_subscriptions(src: str, dst: str) -> None:
         pass
 
 
+def _worktree_users(worktree: str) -> list[str]:
+    """Live cards working in `worktree`: on it directly, or a verify card whose parent built there."""
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        rows = conn.execute(
+            f"SELECT id FROM tasks WHERE status IN ({','.join('?' * len(LIVE))}) AND (workspace_path = ? "
+            "OR id IN (SELECT l.child_id FROM task_links l JOIN tasks p ON p.id = l.parent_id "
+            "WHERE p.workspace_path = ?)) ORDER BY created_at", (*LIVE, worktree, worktree)).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return []
+    return [r[0] for r in rows]
+
+
+def _wait_for_worktree(argv: list[str]) -> list[str]:
+    """One worktree, one running card: a card for a `dir:` worktree another live card uses waits for it
+    (as a parent) instead of editing the same files at the same time."""
+    if "--workspace" not in argv or not argv[argv.index("--workspace") + 1].startswith("dir:"):
+        return argv
+    worktree = argv[argv.index("--workspace") + 1][4:]
+    parents = {argv[i + 1] for i, a in enumerate(argv) if a == "--parent"}
+    return argv + [x for tid in _worktree_users(worktree) if tid not in parents for x in ("--parent", tid)]
+
+
 def _create(argv: list[str]) -> tuple[str | None, str | None]:
     """(task id, None) or (None, error JSON) for one `hermes kanban create`."""
-    created = _hermes(*argv)
+    created = _hermes(*_wait_for_worktree(argv))
     if created.returncode != 0:
         projects = _hermes("project", "list").stdout.strip()
         return None, json.dumps({"ok": False, "error": (created.stderr or created.stdout).strip()[-800:],
@@ -656,8 +670,8 @@ SCHEMA = {
             "instead of doing it in this chat. size=content when only text, copy, markup, styles, docs, "
             "or a config value change (add/edit a page section, legal wording, labels): one implementer "
             "session plus a wording review, no plan, no tests. size=small for any feature or fix one "
-            "developer would do in one sitting, even across several files (the default): a frontier planner "
-            "writes a short plan, the implementer builds, tests, and opens a draft PR, an independent review of the "
+            "developer would do in one sitting, even across several files (the default): the implementer "
+            "plans inline, builds, tests, and opens a draft PR, an independent review of the "
             "same card follows, then a verifier runs the tests and marks the PR ready. size=large only for work spanning several repos or modules with "
             "separate owners, or needing a design decision first: a cheap mapper reads the repo, then a "
             "frontier planner plans from that map. Never split one feature into phase cards. "

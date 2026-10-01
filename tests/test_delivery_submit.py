@@ -25,35 +25,50 @@ def fake_board(tmp_path, monkeypatch):
 arg = lambda argv, flag: argv[argv.index(flag) + 1]  # noqa: E731
 
 
-def test_small_request_is_planned_then_built(tmp_path, monkeypatch):
+def test_small_request_goes_straight_to_the_implementer(tmp_path, monkeypatch):
     calls = fake_board(tmp_path, monkeypatch)
     result = json.loads(submit.submit({"title": "Fix icon size", "request": "Make the error icon 16px",
                                        "project": "my-app", "size": "small", "verify": False}))
-    assert result["cards"] == {"plan": "t_1", "build": "t_2"} and result["task_id"] == "t_2"
-    plan, build = calls
-    assert arg(plan, "--assignee") == "archon" and plan[2] == "Plan: Fix icon size"
-    assert arg(plan, "--max-runtime") == "20m" and "--parent" not in plan
-    plan_body = arg(plan, "--body")
-    assert "SMALL TASK" in plan_body and "Make the error icon 16px" in plan_body and "{" not in plan_body
-    assert "\nENTRY POINTS:" in plan_body and "in `result`" in plan_body
-    assert arg(build, "--assignee") == "forge" and build[2] == "Fix icon size" and arg(build, "--parent") == "t_1"
+    assert result["cards"] == {"build": "t_1"} and result["task_id"] == "t_1"
+    [build] = calls
+    assert arg(build, "--assignee") == "forge" and build[2] == "Fix icon size" and "--parent" not in build
     assert arg(build, "--workspace") == "worktree" and arg(build, "--max-runtime") == "60m"
     assert int(arg(build, "--priority")) == submit.PRIORITY["small"] > submit.PRIORITY["large"]
     body = arg(build, "--body")
     assert "Make the error icon 16px" in body and "{" not in body
-    assert "follow it; do not re-plan" in body and "PIN, MODIFIED code only" in body and "--reviewer sentry" in body
+    assert "plan in one\n   pass yourself" in body and "PIN, MODIFIED code only" in body and "--reviewer sentry" in body
     assert "FINISH, DON'T STOP" in body and "gh pr create --draft" in body and "## How to test" in body
-    assert "gh pr ready" in body and "3 review rounds" in body
+    assert "gh pr ready" in body and "3 review rounds" in body and "patch-id" in body
     assert "readFileSync" in body and "never approve over it" in body and "did not ask for" in body
     assert "PLAN FORMAT" in body and "Walk the plan" in body
+
+
+def test_fix_card_waits_for_live_cards_in_its_worktree(tmp_path, monkeypatch):
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from kanban_board import board, card, link
+    conn = board(tmp_path / "kanban.db")
+    card(conn, "t_build", "done", workspace_path="/wt")
+    card(conn, "t_verify", "running", assignee="sentinel", workspace_path="/scratch")  # works in its parent's /wt
+    card(conn, "t_fix", "review", workspace_path="/wt")
+    card(conn, "t_stuck", "blocked", workspace_path="/wt")  # waits on the user: not live
+    card(conn, "t_other", "running", workspace_path="/wt2")
+    link(conn, "t_build", "t_verify")
+    conn.commit()
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "kanban.db"))
+    argv = ["kanban", "create", "Fix 2: x", "--workspace", "dir:/wt", "--parent", "t_verify"]
+    assert submit._wait_for_worktree(argv) == argv + ["--parent", "t_fix"]
+    fresh = ["kanban", "create", "x", "--workspace", "worktree"]
+    assert submit._wait_for_worktree(fresh) == fresh
 
 
 def test_verify_card_by_default(tmp_path, monkeypatch):
     calls = fake_board(tmp_path, monkeypatch)
     result = json.loads(submit.submit({"title": "Fix", "request": "r", "project": "p", "size": "small"}))
-    assert result["cards"] == {"plan": "t_1", "build": "t_2", "verify": "t_3"}
-    assert arg(calls[2], "--assignee") == "sentinel" and arg(calls[2], "--parent") == "t_2"
-    assert "PLATFORM" in arg(calls[2], "--body") and "gh pr ready" in arg(calls[2], "--body")
+    assert result["cards"] == {"build": "t_1", "verify": "t_2"}
+    assert arg(calls[1], "--assignee") == "sentinel" and arg(calls[1], "--parent") == "t_1"
+    assert "PLATFORM" in arg(calls[1], "--body") and "gh pr ready" in arg(calls[1], "--body")
     content = json.loads(submit.submit({"title": "Copy", "request": "r", "project": "p", "size": "content"}))
     assert "verify" not in content["cards"]
 
