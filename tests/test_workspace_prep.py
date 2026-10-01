@@ -3,7 +3,7 @@ parent's worktree when it was handed an empty scratch dir. Never a reason to blo
 import sqlite3
 import subprocess
 
-from software_delivery import workspace_prep
+from cpipe import workspace_prep
 
 
 def git(cwd, *args):

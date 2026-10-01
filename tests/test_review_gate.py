@@ -1,5 +1,5 @@
 """The implementer cannot complete its own reviewed card; approvals route platform diffs to the release engineer."""
-from software_delivery import review_gate, submit
+from cpipe import review_gate, submit
 
 
 def setup(tmp_path, monkeypatch, assignee, body=review_gate.MARKER):

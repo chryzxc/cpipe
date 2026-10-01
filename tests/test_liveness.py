@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 
-from software_delivery import liveness
+from cpipe import liveness
 
 
 @pytest.fixture(autouse=True)

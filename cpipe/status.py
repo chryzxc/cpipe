@@ -179,7 +179,7 @@ def chat_context(*, session_id: Optional[str] = None, user_message: Any = None, 
             parts.append("The operator asked for progress: call delivery_status and answer from its verdicts only.")
         if not parts:
             return None
-        return {"context": "[software-delivery monitor] " + "\n".join(parts)}
+        return {"context": "[cpipe monitor] " + "\n".join(parts)}
     except Exception:
         return None
 

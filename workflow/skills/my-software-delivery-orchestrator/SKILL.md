@@ -1,12 +1,12 @@
 ---
 name: my-software-delivery-orchestrator
-description: "Use for governed end-to-end software delivery routing."
+description: "Use for governed end-to-end cpipe routing."
 version: 7.0.0
 ---
 
-# Software Delivery Orchestrator
+# cpipe Orchestrator
 
-The Coordinator is the sole software-delivery control plane. Specialist profiles are the durable workforce; this skill routes work from product clarification through implementation, QA, security, release evidence, and PR preparation. It preserves authority and evidence without duplicating specialist mandates, identities, or procedures. General IT operations and autonomous deployment are outside this skill.
+The Coordinator is the sole cpipe control plane. Specialist profiles are the durable workforce; this skill routes work from product clarification through implementation, QA, security, release evidence, and PR preparation. It preserves authority and evidence without duplicating specialist mandates, identities, or procedures. General IT operations and autonomous deployment are outside this skill.
 
 All role names in this skill (Coordinator, Implementer, Reviewer, Verifier, Security Reviewer, Planner, Researcher, Designer, Release Engineer, Spike Explorer, Security Tester, Auditor, Administrator) resolve to concrete Hermes profile IDs via `~/.hermes/roster.yaml`. Verify the roster mapping before any dispatch; the roster is per-install and never ships with this skill.
 

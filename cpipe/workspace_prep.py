@@ -199,6 +199,6 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
                 notes.append(f"Your assigned workspace {ws} is empty scratch, not the repo. The parent card "
                              f"worked in {parent}; cd there and work on its current branch. Do not block "
                              "for a missing repository.")
-        return {"context": "[software-delivery workspace] " + " ".join(notes)} if notes else None
+        return {"context": "[cpipe workspace] " + " ".join(notes)} if notes else None
     except Exception:
         return None

@@ -220,7 +220,7 @@ def liveness_notice(*, session_id: Optional[str] = None, is_first_turn: bool = F
         if len(_notice_seen) >= _NOTICE_SESSIONS_MAX:
             _notice_seen.clear()
         _notice_seen[key] = cond_key
-        return {"context": f"[software-delivery liveness] {message}"}
+        return {"context": f"[cpipe liveness] {message}"}
     except Exception:
         return None
 

@@ -9,7 +9,8 @@ owner marker (foreign jobs) are never added, updated, or pruned.
 import json
 import sys
 
-OWNER = 'software-delivery'
+OWNER = 'cpipe'
+LEGACY_OWNERS = {'software-delivery'}  # renamed 2026-10-01
 OWNED = {'prompt', 'script', 'no_agent', 'monitor_script', 'model', 'provider',
          'schedule', 'enabled', 'origin', 'workdir', 'created_at'}
 
@@ -34,9 +35,9 @@ def main(defs_path, live_path):
                 j[k] = d[k]
             print(f"   updated: {d['name']}" + (f" ({', '.join(changed)})" if changed else " (in sync)"))
     pruned = [j.get('name') for j in jobs
-              if j.get('owner') == OWNER and j.get('name') not in def_names]
+              if j.get('owner') in ({OWNER} | LEGACY_OWNERS) and j.get('name') not in def_names]
     if pruned:
-        jobs[:] = [j for j in jobs if not (j.get('owner') == OWNER and j.get('name') not in def_names)]
+        jobs[:] = [j for j in jobs if not (j.get('owner') in ({OWNER} | LEGACY_OWNERS) and j.get('name') not in def_names)]
         for name in pruned:
             print(f"   pruned: {name}")
     json.dump(live, open(live_path, 'w'), indent=2, ensure_ascii=False)

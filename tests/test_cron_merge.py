@@ -27,7 +27,7 @@ def test_add_rename_prune_lifecycle(tmp_path):
     merge["main"](str(defs_a), str(live))
     jobs = load(tmp_path)
     by_name = {j["name"]: j for j in jobs}
-    assert by_name["Alpha"]["owner"] == "software-delivery"
+    assert by_name["Alpha"]["owner"] == "cpipe"
     assert by_name["Alpha"]["script"] == "a.py"
     assert by_name["Foreign"].get("owner") is None  # foreign untouched, no marker
 
@@ -59,7 +59,7 @@ def test_backfill_marks_existing_owned_names(tmp_path):
     merge["main"](str(defs), str(live))
 
     jobs = {j["name"]: j for j in load(tmp_path)}
-    assert jobs["Alpha"]["owner"] == "software-delivery"
+    assert jobs["Alpha"]["owner"] == "cpipe"
     assert jobs["Foreign"].get("owner") is None
 
 

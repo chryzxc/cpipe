@@ -1,5 +1,5 @@
 """Delivery-role cards come only from the delivery tools; other cards and the user's terminal are untouched."""
-from software_delivery import card_gate, submit
+from cpipe import card_gate, submit
 
 
 def setup(tmp_path, monkeypatch):

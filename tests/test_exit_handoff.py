@@ -3,7 +3,7 @@ import sqlite3
 import subprocess
 import time
 
-from software_delivery import exit_handoff, review_gate, submit
+from cpipe import exit_handoff, review_gate, submit
 
 
 def board(tmp_path, monkeypatch, ws, body=review_gate.MARKER, status="running", started=None):

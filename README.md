@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="Hermes Software Delivery — clarify → explore → plan → parallel TDD → gates → PR → learning">
+  <img src="assets/banner.svg" alt="cpipe — clarify → explore → plan → parallel TDD → gates → PR → learning">
 </p>
 
-# Hermes Software Delivery
+# cpipe
 
-**A structured software-delivery workflow for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** Point it at your existing AI profiles and it routes work through them: issues are clarified, planned, implemented with TDD in worktrees, reviewed on frozen commits, verified by running the tests, and delivered as evidence-backed pull requests.
+**cpipe is a request-to-PR pipeline for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** Point it at your existing AI profiles and it routes work through them: issues are clarified, planned, implemented with TDD in worktrees, reviewed on frozen commits, verified by running the tests, and delivered as evidence-backed pull requests.
 
 > **This is a workflow, not a team.** The plugin decides *which role* gets each card, *what the card asks for*, and *what evidence a stage must produce*. It does not provide the bots. The quality of the result depends on the Hermes profiles you map to each role: their model, their persona (`SOUL.md`), their role skills, and their toolsets. You configure those; see [Bring your own bots](#-bring-your-own-bots).
 
 [![Install: one command](https://img.shields.io/badge/install-one%20command-238636)](#-quickstart)
-[![CI](https://github.com/chryzxc/hermes-software-delivery/actions/workflows/ci.yml/badge.svg)](https://github.com/chryzxc/hermes-software-delivery/actions/workflows/ci.yml)
+[![CI](https://github.com/chryzxc/cpipe/actions/workflows/ci.yml/badge.svg)](https://github.com/chryzxc/cpipe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-8957e5)](LICENSE)
 [![Requires: Hermes Agent](https://img.shields.io/badge/requires-Hermes%20Agent-1f6feb)](https://github.com/NousResearch/hermes-agent)
 [![Profiles: bring your own](https://img.shields.io/badge/bots-bring%20your%20own-f0883e)](#-bring-your-own-bots)
@@ -111,14 +111,14 @@ This isn't a pile of prompts — it's several established engineering paradigms 
 Requires a working [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) install with at least one profile (bot).
 
 ```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/chryzxc/hermes-software-delivery/main/bootstrap.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/chryzxc/cpipe/main/bootstrap.sh)
 ```
 
 Answer **5 questions** mapping roles to your profiles (Enter accepts defaults; the rest auto-alias). Prefer flags?
 
 ```sh
-git clone https://github.com/chryzxc/hermes-software-delivery.git
-cd hermes-software-delivery
+git clone https://github.com/chryzxc/cpipe.git
+cd cpipe
 ./install.sh --roster coordinator=default implementer=forge reviewer=sentry verifier=sentinel security_reviewer=cypher
 ```
 
@@ -157,7 +157,7 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 
 ```
 ├── plugin.yaml                  # native Hermes plugin manifest (v2)
-├── software_delivery/           # plugin: agent tools + doctor CLI + hooks
+├── cpipe/           # plugin: agent tools + doctor CLI + hooks
 ├── dashboard/                   # Mission Control tab for `hermes dashboard`
 ├── workflow/
 │   ├── bots/                    # example personas + role skills, copied into mapped profiles
@@ -179,7 +179,7 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 - `delivery_status` — the board's truth: each open card's verdict computed from the task database now (`PROGRESSING`, `WAITING(<named thing>)`, or `STUCK(<cause>)` with the next step). The coordinator answers every status question from it
 - `delivery_watch` — registers a PR or CI run the monitor polls for a card; a pass unblocks the card, a failure or expiry tells the chat. Required before anyone says a card "will resume"
 
-Plus the `hermes software-delivery` CLI (`doctor`, `queue`, `status [--card ID]`, `log [--card ID] [--since 2h] [--kind K]`, each with `--json`), an `on_session_end` metrics hook (append-only JSONL), and the liveness hooks described below.
+Plus the `hermes cpipe` CLI (`doctor`, `queue`, `status [--card ID]`, `log [--card ID] [--since 2h] [--kind K]`, each with `--json`), an `on_session_end` metrics hook (append-only JSONL), and the liveness hooks described below.
 
 ## Liveness & autonomy
 
@@ -192,12 +192,12 @@ The chain is meant to run from plan to final report without you asking "what's n
 | Delivery monitor | Every 5 minutes a deterministic script reads the task database, worker processes and GitHub directly and gives every open card exactly one verdict: *progressing* (a live worker), *waiting on something named* (a PR check, a quota reset, your decision, a parent card), or *stuck* with a cause (`DEAD_WORKER`, `STALE_GUARD`, `QUOTA_WALL`, `AUTH_BLOCKED`, `IDENTICAL_FAILURE`, `RUN_BUDGET`, `ORPHAN_REVIEW`, …). Known stuck states are repaired (reclaim a dead claim, clear a stale respawn guard, pause cards behind a quota wall and resume them, re-subscribe a child to its chain's chat). The rest are escalated once: the card is blocked with `<CAUSE>: <why>; next: <what unsticks it>`, which notifies the chat that started the work, or, for cards that cannot be blocked, a notice is handed to that chat's next turn. A stuck parent owns its children's stall, so you hear about the root, not every card behind it. It also posts a digest when something newly stalls or starts moving again. |
 | Board supervisor | A cheap scan every 15 minutes for decisions that need judgment: verdicts parked in block reasons, rework loops, orphaned chains, unsubscribed cards. Its output is byte-stable, so the LLM only runs when something changed. It never dispatches: the gateway is the only dispatcher. |
 | Board triage | Every 20 minutes a deterministic cron retries blocked cards that only hit a rate limit, timeout, or worker crash (twice at most, never while the provider is still rate limiting) and moves reason-less blocked children back to wait on their parent. Once a day, or when a new decision is needed, it sends you a digest grouped as *needs your decision / looks done / blocked by old rules / parked*. Reply `continue <id> <what to do>`, `archive <id>` or `resubmit <id>` and the coordinator acts on it. |
-| Mission Control | A dashboard tab (`hermes dashboard` → Mission Control) with the same groups. Open a card to read its reason, body and latest comments, then Continue with a note, Resubmit it fresh under the current flow, or Archive. Tick several for bulk actions. `hermes software-delivery queue` prints the same queue as JSON for other clients (Herm uses it). |
+| Mission Control | A dashboard tab (`hermes dashboard` → Mission Control) with the same groups. Open a card to read its reason, body and latest comments, then Continue with a note, Resubmit it fresh under the current flow, or Archive. Tick several for bulk actions. `hermes cpipe queue` prints the same queue as JSON for other clients (Herm uses it). |
 | Chat hooks | `pre_llm_call` delivers the monitor's notices for this chat, tells the next turn when ESTOP is holding work, and, when you ask "any update?", makes the coordinator answer from `delivery_status`. `post_llm_call` checks a reply that says a card is moving against the board and makes the coordinator correct itself when it is not. `pre_approval_request` blocks a worker's card with `APPROVAL_NEEDED` instead of letting it wait on a prompt nobody sees. |
 
 **Emergency stop.** `~/.hermes/ESTOP` (for example the Dock's pause control) pauses the dispatcher **and every cron job, including the stall supervisor**. Work stops on purpose and nothing reports it, except the session notice and the doctor. Agents are told never to lift it and never to bypass it with `hermes kanban dispatch`, because that manual pass ignores ESTOP. Run `hermes resume` when you want work to continue.
 
-**Troubleshooting a stalled board:** run `hermes software-delivery status` for every card's verdict, `hermes software-delivery log --card <id>` for one card's full story from the delivery journal (`~/.hermes/logs/delivery-journal.jsonl`), and `hermes software-delivery` (the doctor) for ESTOP state, the dispatcher's last tick and spawn, and current holds. The hooks only load after `./install.sh` and a gateway restart.
+**Troubleshooting a stalled board:** run `hermes cpipe status` for every card's verdict, `hermes cpipe log --card <id>` for one card's full story from the delivery journal (`~/.hermes/logs/delivery-journal.jsonl`), and `hermes cpipe` (the doctor) for ESTOP state, the dispatcher's last tick and spawn, and current holds. The hooks only load after `./install.sh` and a gateway restart.
 
 ## Trust the board, not the messages
 
@@ -207,7 +207,7 @@ reads those itself:
 
 | Piece | What changes for you |
 |---|---|
-| Delivery journal | One JSON line for every decision the workflow makes (repairs, escalations, retries, nudges, wasted runs). `hermes software-delivery log` reads a card's full story. `workflow/scripts/delivery_baseline.py` measures the autonomy numbers from it. |
+| Delivery journal | One JSON line for every decision the workflow makes (repairs, escalations, retries, nudges, wasted runs). `hermes cpipe log` reads a card's full story. `workflow/scripts/delivery_baseline.py` measures the autonomy numbers from it. |
 | Truth monitor | Every open chain is progressing, waiting on something named, or it has told you. |
 | Honest status | Status answers come from `delivery_status`, never from memory. "Will resume" requires a `delivery_watch`. |
 | Retries with memory | The same failure signature twice means stop and ask, not a tenth retry. More than 10 runs, or 3 fast failures in a row, stops retries. |
@@ -232,7 +232,7 @@ reads those itself:
    After a few days, read what it would have done:
 
    ```bash
-   hermes software-delivery log --kind monitor.would_repair --since 3d
+   hermes cpipe log --kind monitor.would_repair --since 3d
    ```
 
 3. **Turn on repairs** once that list looks right. Create `~/.hermes/delivery/config.yaml`:
@@ -283,11 +283,11 @@ unblocked, and when CI fails or the watch expires you are told.
 **From the terminal:**
 
 ```bash
-hermes software-delivery status                      # every open card's verdict, stuck first
-hermes software-delivery status --card t_1a2b3c4d    # one card, or a whole chain by its root id
-hermes software-delivery log --card t_1a2b3c4d       # that card's full story: repairs, escalations, retries
-hermes software-delivery log --since 2h --kind waste.  # wasted runs in the last 2 hours
-hermes software-delivery log --kind monitor.escalate --json   # raw JSON, for scripts
+hermes cpipe status                      # every open card's verdict, stuck first
+hermes cpipe status --card t_1a2b3c4d    # one card, or a whole chain by its root id
+hermes cpipe log --card t_1a2b3c4d       # that card's full story: repairs, escalations, retries
+hermes cpipe log --since 2h --kind waste.  # wasted runs in the last 2 hours
+hermes cpipe log --kind monitor.escalate --json   # raw JSON, for scripts
 ```
 
 The journal itself is `~/.hermes/logs/delivery-journal.jsonl`, one JSON line per decision.
