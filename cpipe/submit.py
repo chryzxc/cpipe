@@ -251,9 +251,9 @@ handoff, else origin's default branch>`.
    No changed tests for a behavior change is a FAIL ("no test proves the change").
 2. RELATED: run the tests related to every changed file in each package the change reaches
    (`npx jest --findRelatedTests`, `npx vitest related --run`, or the importing tests). All pass.
-3. SUITE: run the repo's CI test and lint commands (.github/workflows, package.json scripts) for
-   the touched packages. A failure counts only if it also passes on BASE (re-run that test at BASE
-   the same way as step 1). Skip a command that needs a secret or service; name it.
+3. NO FULL SUITE: never run the whole test suite; the PR's CI does that. Lint/typecheck only the
+   changed files (`npx eslint <files>`, `ruff check <files>`, ...). Report `gh pr checks <url>`
+   as it stands (pending is a note, never a wait; a red check counts only if it is not red on BASE).
 4. PLATFORM, only if the diff touches CI, containers, deploy config, dependency manifests or
    lockfiles, or migrations: clean install from the lockfile (`npm ci`, `uv sync --frozen`, ...),
    the production build, config syntax checks (`docker compose config`, workflow YAML), and

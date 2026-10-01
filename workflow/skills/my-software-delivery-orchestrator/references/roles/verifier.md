@@ -8,7 +8,7 @@ All variants are read-only and name the exact frozen target.
 
 ### `post-review-proof`
 
-The default `Verify:` card that `delivery_submit` chains after every review. Runs in the implementer's worktree without editing: PROOF (restore changed non-test files to the merge-base: requested-behavior tests must fail, PINNED tests must pass; restore HEAD, `git status` clean), RELATED (tests of every changed file, in every package the change reaches), SUITE (the repo's CI test/lint commands; a failure counts only when it passes at the merge-base). `PASS` completes the card; `FAIL` calls `delivery_verify_failed`, which opens a fix card in the same worktree and a fresh verify card (at most 2 rounds, then block for the user).
+The default `Verify:` card that `delivery_submit` chains after every review. Runs in the implementer's worktree without editing: PROOF (restore changed non-test files to the merge-base: requested-behavior tests must fail, PINNED tests must pass; restore HEAD, `git status` clean), RELATED (tests of every changed file, in every package the change reaches), no full suite (CI runs it on the PR; lint only the changed files and report `gh pr checks`). `PASS` completes the card; `FAIL` calls `delivery_verify_failed`, which opens a fix card in the same worktree and a fresh verify card (at most 2 rounds, then block for the user).
 
 ### `general-qa`
 
