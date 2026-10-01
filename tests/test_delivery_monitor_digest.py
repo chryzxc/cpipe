@@ -37,7 +37,7 @@ def test_new_stall_alerts_once_then_resolution_is_reported(tmp_path):
     conn.execute("UPDATE tasks SET status='done' WHERE id='t_wait'")
     conn.commit()
     message, state = digest(conn, state, tmp_path)
-    assert "Moving again: Card t_wait" in message
+    assert message == "" and "t_wait" not in str(state)  # a recovery alone is silent (no coordinator turn)
 
 
 def test_engine_crash_storm_is_one_board_level_alert(tmp_path):
