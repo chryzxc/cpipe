@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import block_reasons, card_gate, headless_clarify, liveness, review_gate, status, submit, workspace_prep
+from . import block_reasons, card_gate, exit_handoff, headless_clarify, liveness, review_gate, status, submit, workspace_prep
 
 __all__ = ["register"]
 
@@ -285,6 +285,7 @@ def register(ctx):
         description="Check software-delivery plugin status and run the policy validator.",
     )
     ctx.register_hook("on_session_end", _on_session_end)
+    ctx.register_hook("on_session_end", exit_handoff.handoff)
     ctx.register_hook("on_kanban_dispatch_tick", liveness.record_dispatch_tick)
     ctx.register_hook("on_kanban_dispatch_tick", block_reasons.explain_blocks)
     ctx.register_hook("pre_llm_call", liveness.liveness_notice)
