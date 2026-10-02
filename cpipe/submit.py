@@ -46,6 +46,10 @@ SCOPE = """CONTEXT: this card is your whole assignment: the REQUEST, the code it
 callers, and the parent card's result (kanban_show -> parents). No broad searches, no web, no
 skills beyond your role's, no other cards or conversations.
 
+FIND CODE: if the repo has `.codegraph/`, start with `codegraph explore "<symbols, files, or question>"`
+in the terminal: one call returns the relevant source plus its callers. Use search_files/read_file only
+for what it did not return. Read a file once; afterwards re-read only the lines you changed.
+
 FINISH, DON'T STOP. Without asking you may: install dependencies (`npm ci`/`npm install`, and
 commit a lockfile change the build needs), run any test, lint, build, or local dev command, commit
 on this card's branch, push this card's branch, and open or update its draft PR. Change any file
@@ -141,6 +145,8 @@ IMPLEMENTER = """IMPLEMENTER
    package the change reaches (server and client), plus lint/typecheck for touched files.
    If `--listTests` shows more than 20 related suites, that is the full suite: run only the tests
    that import a changed file directly and leave the rest to the PR's CI.
+   A test command that hits the terminal timeout is hung, not slow: never rerun it unchanged. Add
+   `--forceExit` (jest) or run fewer files; if it still hangs, record it as READY_WITH_RISK.
    Commit on this card's branch and push it (`git push -u origin HEAD`). On the first push open a
    draft PR against the project's base branch (`gh pr create --draft`); later pushes update it. The
    PR body ends with `## How to test`: 3-6 manual steps a person follows to see the change work,
@@ -177,6 +183,8 @@ REVIEWER (same worktree)
   missing pin or behavior test, or unrequested behavior. Style and naming go in the approval as notes. Missing tools are noted, not blockers.
   Anything the REQUEST needs is in scope even when a plan did not name the file; never ask for a
   test, harness, or file the REQUEST excludes: note it as a follow-up.
+- On a `Fix N:` card, review only `git diff <FIX BASE from the card>..HEAD` and the callers of what
+  changed there: the earlier rounds were already approved.
 - On re-review, check only the delta since the last reviewed commit plus the prior findings.
   An unchanged patch (a rebase or empty push: `git diff $(git merge-base origin/<base> <sha>) <sha> |
   git patch-id --stable` equal for the last reviewed sha and HEAD) keeps the prior verdict: re-run
@@ -234,6 +242,10 @@ token_budget: low.
 REQUEST (from the user):
 {request}
 
+FIND CODE: if the repo has `.codegraph/`, start with `codegraph explore "<symbols, files, or question>"`
+in the terminal: one call returns the relevant source plus its callers. Use search_files/read_file only
+for what it did not return. Read a file once; afterwards re-read only the lines you changed.
+
 Work in the parent card's worktree (kanban_show -> parents -> workspace; the workspace note tells
 you when you start elsewhere). BASE = `git merge-base HEAD <base branch from the parent's review
 handoff, else origin's default branch>`.
@@ -247,6 +259,8 @@ handoff, else origin's default branch>`.
    (`npx jest --findRelatedTests`, `npx vitest related --run`, or the importing tests). All pass.
    If `--listTests` shows more than 20 related suites, that is the full suite: run only the tests
    that import a changed file directly.
+   A test command that hits the terminal timeout is hung, not slow: never rerun it unchanged. Add
+   `--forceExit` (jest) or run fewer files; if it still hangs, record it as READY_WITH_RISK.
 3. NO FULL SUITE: never run the whole test suite; the PR's CI does that. Lint/typecheck only the
    changed files (`npx eslint <files>`, `ruff check <files>`, ...). Report `gh pr checks <url>`
    as it stands (pending is a note, never a wait; a red check counts only if it is not red on BASE).
@@ -258,6 +272,9 @@ FIX ROUND (this card's title starts `Verify: Fix`): the earlier verify already c
 change. Take the sha it verified from its result (kanban_show -> parents -> the fix card -> its
 parent), re-run each command it reported failing, and run PROOF and RELATED only for files changed
 since that sha (`git diff --name-only <sha>..HEAD`). No browser or live QA unless those files are UI.
+LIVE QA you cannot run here (a real device, a browser automation permission, a server, account, or
+secret you lack) is not a failure: list it under NOT VERIFIED for the user to check by hand and judge
+on what you did run. Never call `delivery_verify_failed` or block for it.
 PASS: mark the parent's draft PR ready (`gh pr ready <url>`; a failure is a note), then complete
 this card with each command and its result.
 FAIL: call `delivery_verify_failed` with this card id and the exact failures (command, test,
@@ -275,6 +292,10 @@ FAILURES ({reporter}):
 {failures}
 
 You are in the same worktree and branch as the original change; its PR updates when you push.
+FIX BASE: {fix_base} (HEAD before this round). Files this branch already changes:
+{changed}
+Start from these files and the FAILURES' file:line; do not re-explore the repo or re-plan.
+New requests the user adds while this card waits arrive as comments: handle each in this round.
 Fix these failures only, then follow steps 3-7 (PINNED tests must still pass):
 """ + SCOPE + "\n" + IMPLEMENTER
 
@@ -444,6 +465,8 @@ def submit(args: dict, **_kw) -> str:
         if error:
             return json.dumps({**json.loads(error), "created_so_far": chain})
         chain[stage] = task_id
+        if stage == "verify" and size == "small":
+            _set_effort(task_id, "low")
     result.update(task_id=chain["build"], cards=chain)
     result.update(
         chat_subscribed=all([_subscribe_calling_chat(tid) for tid in chain.values()]),
@@ -491,7 +514,7 @@ def verify_failed(args: dict, **_kw) -> str:
     fix_argv = ["kanban", "create", fix_title, "--assignee", _role("implementer"),
                 "--body", FIX_BRIEF.format(round=rounds + 1, source="the verifier ran the reviewed change and it failed",
                                            reporter="from the verifier", request=request, failures=failures,
-                                           reviewer=_role("reviewer")),
+                                           reviewer=_role("reviewer"), **_branch_state(worktree)),
                 *(["--project", project] if project else []), "--workspace", f"dir:{worktree}",
                 "--parent", verify_id, "--priority", str(PRIORITY["small"]),
                 "--max-runtime", MAX_RUNTIME["build"], "--created-by", "delivery_submit", "--json"]
@@ -502,6 +525,7 @@ def verify_failed(args: dict, **_kw) -> str:
     reverify_id, error = _create(argv)
     if error:
         return json.dumps({**json.loads(error), "created_so_far": {"fix": fix_id}})
+    _set_effort(reverify_id, "low")
     for tid in (fix_id, reverify_id):
         _copy_subscriptions(verify_id, tid)
     return json.dumps({"ok": True, "fix": fix_id, "verify": reverify_id, "round": rounds + 1,
@@ -523,10 +547,17 @@ def fix(args: dict) -> str:
     request = _request_of(task["body"])
     rounds = len(re.findall(r"^Fix \d+:", task["title"] or ""))
     base_title = re.sub(r"^(Fix \d+: )+", "", task["title"] or "")
+    waiting = _waiting_fix(base_title, task["project_id"])
+    if waiting:  # one round takes every correction sent before it starts: no second fix + verify chain
+        added = _hermes("kanban", "comment", waiting, f"ADDED REQUEST from the user's testing (handle it in this round):\n{failures}")
+        if added.returncode == 0:
+            _journal("fix.merged", waiting, source=source_id)
+            return json.dumps({"ok": True, "task_id": waiting, "merged_into": waiting, "fix_of": source_id,
+                               "next": "added to the fix card that has not started yet; it handles both in one round"})
     argv = ["kanban", "create", f"Fix {rounds + 1}: {base_title}", "--assignee", _role("implementer"),
             "--body", FIX_BRIEF.format(round=rounds + 1, source="the user tested the PR and found a problem",
                                        reporter="from the user's testing", request=request,
-                                       failures=failures, reviewer=_role("reviewer")),
+                                       failures=failures, reviewer=_role("reviewer"), **_branch_state(worktree)),
             *(["--project", task["project_id"]] if task["project_id"] else []),
             "--workspace", f"dir:{worktree}", "--priority", str(PRIORITY["small"]),
             "--max-runtime", MAX_RUNTIME["build"], "--created-by", "delivery_submit", "--json"]
@@ -534,20 +565,67 @@ def fix(args: dict) -> str:
     if error:
         return error
     _copy_subscriptions(source_id, fix_id)
-    verify_argv, _ = chained_card("verify", f"Fix {rounds + 1}: {base_title}", request,
-                                  task["project_id"] or "", fix_id)
-    verify_id, _error = _create(verify_argv)
+    verify_id = None
+    if args.get("verify"):  # the user is the tester of their own feedback; a verifier only when asked
+        verify_argv, _ = chained_card("verify", f"Fix {rounds + 1}: {base_title}", request,
+                                      task["project_id"] or "", fix_id)
+        verify_id, _error = _create(verify_argv)
+        _set_effort(verify_id, "low")
     subscribed = all([_subscribe_calling_chat(t) for t in (fix_id, verify_id) if t])
     return json.dumps({"ok": True, "task_id": fix_id, "verify": verify_id, "fix_of": source_id,
                        "worktree": worktree, "chat_subscribed": subscribed,
                        "next": "implementer fixes on the same branch and pushes (the PR updates); reviewer "
-                               "re-checks the change, the verifier runs the tests; you get a message when "
-                               "it is ready to test again"})
+                               "re-checks the new change" + (", then the verifier runs the tests" if verify_id else "")
+                               + "; you get a message when it is ready to test again. Send further corrections "
+                               "with fix_of while it waits: they join this round"})
+
+
+def _waiting_fix(base_title: str, project) -> str | None:
+    """A fix card for the same change that no worker has started yet."""
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        rows = conn.execute("SELECT id, title FROM tasks WHERE status IN ('todo','ready') AND created_by = "
+                            "'delivery_submit' AND title LIKE 'Fix %' AND coalesce(project_id,'') = ? "
+                            "ORDER BY created_at", (project or "",)).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return None
+    return next((tid for tid, title in rows if re.sub(r"^(Fix \d+: )+", "", title or "") == base_title), None)
+
+
+def _branch_state(worktree: str) -> dict:
+    """FIX BASE sha and the files the branch already changes, so a fix round starts where the last one ended."""
+    def git(*a):
+        r = subprocess.run(["git", "-C", worktree, *a], capture_output=True, text=True, timeout=30)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    head = git("rev-parse", "--short", "HEAD") or "unknown"
+    try:
+        pr_base = subprocess.run(["gh", "pr", "view", "--json", "baseRefName", "-q", ".baseRefName"], cwd=worktree,
+                                 capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pr_base = ""
+    refs = ([f"origin/{pr_base}"] if pr_base else []) + ["origin/HEAD"]
+    base = next((b for ref in refs if (b := git("merge-base", "HEAD", ref))), "")
+    stat = git("diff", "--stat=120", f"{base}..HEAD") if base else ""
+    return {"fix_base": head, "changed": "\n".join(stat.splitlines()[-40:]) or "(unknown: run git diff --stat against the base)"}
+
+
+def _set_effort(task_id, effort: str) -> None:
+    """Checks that only run commands (verify) do not need the profile's full reasoning effort."""
+    if not task_id:
+        return
+    try:
+        from hermes_cli import kanban_db
+        from hermes_cli.kanban_db_connect import connect_closing
+        with connect_closing() as conn:
+            kanban_db.set_reasoning_effort(conn, task_id, effort)
+    except Exception:
+        pass
 
 
 def _request_of(body) -> str:
     """The user's REQUEST out of a card body this module wrote."""
-    return re.split(r"\n\n(?:CONTEXT:|FAILURES \(|Work in)", (body or "").split("REQUEST (from the user):\n", 1)[-1], 1)[0]
+    return re.split(r"\n\n(?:CONTEXT:|FAILURES \(|FIND CODE:|Work in)", (body or "").split("REQUEST (from the user):\n", 1)[-1], maxsplit=1)[0]
 
 
 def _card_worktree(task_id: str):
@@ -685,7 +763,8 @@ SCHEMA = {
             "separate owners, or needing a design decision first: a cheap mapper reads the repo, then a "
             "frontier planner plans from that map. Never split one feature into phase cards. "
             "fix_of=<card id or PR URL> when the user tested a PR and found a problem: the request says "
-            "what is wrong; one fix card on the same branch updates the PR. "
+            "what is wrong; one fix card on the same branch updates the PR (reviewed, no verify card unless "
+            "verify=true). Corrections sent before that fix card starts join it, so pass each one as it comes. "
             "Returns the card id; progress and the result come back to this chat."),
         "parameters": {
             "type": "object",
@@ -695,7 +774,7 @@ SCHEMA = {
                 "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. my-app"},
                 "size": {"type": "string", "enum": ["content", "small", "large"]},
                 "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
-                "verify": {"type": "boolean", "description": "Default true (small/large): a verify card runs the tests after review. false only when the user asks to skip it"},
+                "verify": {"type": "boolean", "description": "Default true for new small/large work: a verify card runs the tests after review; false only when the user asks to skip it. With fix_of the default is false (the user re-tests); true only when the user asks for a verifier"},
                 "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},
             },
             "required": ["request"],
