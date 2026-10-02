@@ -243,3 +243,11 @@ def test_saved_project_conventions_reach_every_card(tmp_path, monkeypatch):
     assert json.loads(submit.submit({"title": "Add dark mode", "request": "x", "project": "my-app",
                                      "size": "small"}))["ok"]
     assert calls and all("PRs target `develop`" in c[c.index("--body") + 1] for c in calls)
+
+
+def test_worker_profile_home_resolves_to_the_root(monkeypatch, tmp_path):
+    from cpipe import home
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "sentinel"))  # how workers run
+    assert home.root() == tmp_path  # roster.yaml lives here, not in the profile
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    assert home.root() == tmp_path

@@ -25,6 +25,7 @@ import sqlite3
 import time
 from pathlib import Path
 from typing import Any, Optional
+from .home import root as _root_home
 
 HEALTH_FILE = "dispatch-health.json"
 DISPATCHER_SILENT_SECONDS = 300
@@ -36,7 +37,7 @@ _notice_seen: dict[str, str] = {}
 
 
 def hermes_home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    return _root_home()
 
 
 def health_path(home: Optional[Path] = None) -> Path:

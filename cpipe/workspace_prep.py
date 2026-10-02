@@ -26,6 +26,7 @@ import sqlite3
 import subprocess
 from pathlib import Path
 from typing import Any, Optional
+from .home import root as _root_home
 
 PACKAGE_DEPTH = 2  # package.json at the root and one or two levels down (client/, server/, apps/x/)
 SKIP_DIRS = {"node_modules", ".git", ".worktrees", "dist", "build"}
@@ -99,7 +100,7 @@ def parent_worktree(task_id: str, db: Path) -> Optional[str]:
 
 
 def _home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    return _root_home()
 
 
 def project_profile(project: Optional[str], home: Optional[Path] = None) -> dict:

@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+from .home import root as _root_home
 
 AUTHOR = "why-blocked"
 REASON_KINDS = ("blocked", "gave_up", "block_loop_detected")
@@ -24,7 +25,7 @@ LOG_NOISE = re.compile(r"MCP server|Tool terminal returned error", re.I)
 
 
 def _home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    return _root_home()
 
 
 def _short(text: Any, n: int) -> str:

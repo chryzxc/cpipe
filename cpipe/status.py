@@ -19,6 +19,7 @@ import re
 import time
 from pathlib import Path
 from typing import Any, Optional
+from .home import root as _root_home
 
 _SCRIPTS = Path(__file__).resolve().parents[1] / "workflow" / "scripts"
 _modules: dict = {}
@@ -45,7 +46,7 @@ def _load(name: str):
 
 
 def _home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    return _root_home()
 
 
 def _journal(kind: str, card: Optional[str] = None, **detail) -> None:
