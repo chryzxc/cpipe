@@ -1,6 +1,6 @@
 ---
 name: my-software-delivery-orchestrator
-description: "Use for governed end-to-end cpipe routing."
+description: "Only for cases delivery_submit does not cover: security engagements, release prep, role exceptions. Never load it to submit, size, fix, or watch a delivery; the delivery_* tool descriptions are the whole procedure."
 version: 7.0.0
 ---
 

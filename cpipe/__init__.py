@@ -247,37 +247,39 @@ _MUTATION_SCHEMA = {
 
 
 def register(ctx):
-    """Register deterministic delivery tools, doctor CLI, metrics and liveness hooks."""
+    """Register deterministic delivery tools, doctor CLI, metrics and liveness hooks. The registry wants
+    the bare function schema: the OpenAI wrapper made every tool reach the model with no description
+    or parameters."""
     ctx.register_tool(
         name="delivery_check_policy", toolset="cpipe",
-        schema=_POLICY_SCHEMA, handler=lambda args, **kw: _check_policy(),
+        schema=_POLICY_SCHEMA["function"], handler=lambda args, **kw: _check_policy(),
     )
     ctx.register_tool(
         name="delivery_board_intelligence", toolset="cpipe",
-        schema=_INTEL_SCHEMA, handler=lambda args, **kw: _board_intelligence(),
+        schema=_INTEL_SCHEMA["function"], handler=lambda args, **kw: _board_intelligence(),
     )
     ctx.register_tool(
         name="delivery_mutation_check", toolset="cpipe",
-        schema=_MUTATION_SCHEMA,
+        schema=_MUTATION_SCHEMA["function"],
         handler=lambda args, **kw: _mutation_check(
             worktree=args["worktree"], file_path=args["file_path"],
             test_filter=args["test_filter"], test_cmd=args.get("test_cmd")),
     )
     ctx.register_tool(
         name="delivery_submit", toolset="cpipe",
-        schema=submit.SCHEMA, handler=submit.submit,
+        schema=submit.SCHEMA["function"], handler=submit.submit,
     )
     ctx.register_tool(
         name="delivery_verify_failed", toolset="cpipe",
-        schema=submit.VERIFY_FAILED_SCHEMA, handler=submit.verify_failed,
+        schema=submit.VERIFY_FAILED_SCHEMA["function"], handler=submit.verify_failed,
     )
     ctx.register_tool(
         name="delivery_status", toolset="cpipe",
-        schema=status.STATUS_SCHEMA, handler=status.delivery_status,
+        schema=status.STATUS_SCHEMA["function"], handler=status.delivery_status,
     )
     ctx.register_tool(
         name="delivery_watch", toolset="cpipe",
-        schema=status.WATCH_SCHEMA, handler=status.delivery_watch,
+        schema=status.WATCH_SCHEMA["function"], handler=status.delivery_watch,
     )
     ctx.register_cli_command(
         name="cpipe", help="cpipe plugin doctor",
