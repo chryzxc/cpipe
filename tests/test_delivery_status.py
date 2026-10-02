@@ -59,3 +59,17 @@ def test_approval_prompt_in_a_worker_blocks_the_card(monkeypatch):
     status.approval_requested(command="npm publish", run=lambda *a: calls.append(a))
     assert calls[0][:5] == ("kanban", "block", "t_abcdef1", "--kind", "needs_input")
     assert calls[0][5].startswith("APPROVAL_NEEDED: npm publish")
+
+
+def test_chat_kanban_show_drops_the_worker_brief(monkeypatch):
+    from cpipe import status as st
+    full = json.dumps({"task": {"id": "t_1", "result": "r" * 9000}, "parents": [], "children": [],
+                       "events": [{"kind": "k", "payload": "p" * 900}] * 8,
+                       "worker_context": "BRIEF" * 5000 + "## Comment thread\nlatest note"})
+    monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+    out = json.loads(st.compact_show(tool_name="kanban_show", result=full))
+    assert "worker_context" not in out and out["comments_tail"].endswith("latest note")
+    assert len(json.dumps(out)) < 6000 and len(out["events"]) == 5
+    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_1")
+    assert st.compact_show(tool_name="kanban_show", result=full) is None
+    assert st.compact_show(tool_name="terminal", result=full) is None
