@@ -223,3 +223,32 @@ def approval_requested(*, command: str = "", surface: str = "", session_key: str
         (run or _load("delivery_monitor").hermes)("kanban", "block", card, "--kind", "needs_input", reason)
     except Exception:
         pass
+
+
+SHOW_KEEP = 3000  # chars of result and of the comment thread a chat keeps from kanban_show
+
+
+def compact_show(*, tool_name: str = "", result: Any = None, **_: Any) -> Optional[str]:
+    """transform_tool_result: a chat's ``kanban_show`` keeps the row, links, the result and the comment tail.
+
+    The full response (11-37K chars) carries ``worker_context``, the card's whole brief, which only its
+    worker needs. In a chat it refilled the rolling window on every notification and forced a compaction
+    each turn. Workers get the full response. Full history: ``hermes kanban show <id>``."""
+    if tool_name != "kanban_show" or os.environ.get("HERMES_KANBAN_TASK") or not isinstance(result, str):
+        return None
+    try:
+        data = json.loads(result)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or "worker_context" not in data:
+        return None
+    task = data.get("task") or {}
+    for k in ("result", "last_failure_error"):
+        if isinstance(task.get(k), str) and len(task[k]) > SHOW_KEEP:
+            task[k] = task[k][:SHOW_KEEP] + " …[cut; hermes kanban show for all]"
+    ctx = data.pop("worker_context") or ""
+    _, sep, thread = ctx.rpartition("## Comment thread")
+    data["comments_tail"] = (thread[-SHOW_KEEP:] if sep else "")
+    data["events"] = [{**e, "payload": str(e.get("payload"))[:200]} for e in (data.get("events") or [])[-5:]]
+    data["note"] = "Chat view: brief and parent handoffs omitted. `hermes kanban show <id>` has everything."
+    return json.dumps(data)

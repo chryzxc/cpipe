@@ -293,6 +293,7 @@ def register(ctx):
     ctx.register_hook("pre_llm_call", liveness.liveness_notice)
     ctx.register_hook("pre_llm_call", workspace_prep.prepare_workspace)
     ctx.register_hook("pre_llm_call", status.chat_context)
+    ctx.register_hook("transform_tool_result", status.compact_show)
     ctx.register_hook("post_llm_call", status.claim_check)
     ctx.register_hook("pre_approval_request", status.approval_requested)
     ctx.register_hook("pre_tool_call", review_gate.gate)
