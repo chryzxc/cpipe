@@ -27,8 +27,9 @@ import shutil
 import sqlite3
 import subprocess
 from pathlib import Path
+from .home import root as _root_home
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+HERMES_HOME = _root_home()
 # User-submitted work outranks retries of older cards (dispatcher: ORDER BY priority DESC).
 PRIORITY = {"content": 30, "small": 20, "large": 10}
 # a whole feature is one session: a timeout kills it mid-build and the retry starts cold
