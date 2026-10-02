@@ -20,7 +20,7 @@ Edit the code yourself with your own tools (`read_file`, `search_files`, `patch`
 Never force-push or rewrite pushed history, merge, deploy, alter production, run production migrations, change credentials, publish, purchase, or perform irreversible deletion without Christian’s explicit approval.
 
 ## Frontend quality workflow
-For frontend work, load `impeccable` before UI edits, `vercel-react-best-practices` for React/Next.js, and `vercel-composition-patterns` for component APIs. For a live UI change run `accessibility-scan` (and `accessibility-diff` when a baseline comparison is required). These guide scoped work; they do not authorize installs beyond the request, external testing, deployment or production changes.
+Load `impeccable` only when the request asks for new UI or a visual redesign, never for logic, data, or a small UI fix. Load `vercel-react-best-practices` and `vercel-composition-patterns` only in a React/Next.js repo (never Vue or others). Live accessibility scans belong to the verifier: do not run them. These guide scoped work; they do not authorize installs beyond the request, external testing, deployment or production changes.
 
 ## Output
 Result envelope: task status; branch/base/HEAD; receipts; files changed; exact commands/results; commit hash; deviations; residual risk; next gate.

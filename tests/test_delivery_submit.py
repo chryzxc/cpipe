@@ -102,14 +102,30 @@ def test_fix_of_a_pr_reopens_the_same_worktree(tmp_path, monkeypatch):
     _built_card(monkeypatch)
     result = json.loads(submit.submit({"fix_of": "https://github.com/o/r/pull/7",
                                        "request": "toggle does not save"}))
-    assert result["ok"] and result["fix_of"] == "t_b" and result["verify"] == "t_2"
-    fix, verify = calls
-    assert verify[2] == "Verify: Fix 1: Gate SMS" and arg(verify, "--parent") == "t_1"
+    assert result["ok"] and result["fix_of"] == "t_b" and result["verify"] is None
+    [fix] = calls  # the user re-tests their own feedback: no verify card unless asked
     assert fix[2] == "Fix 1: Gate SMS" and arg(fix, "--assignee") == "forge"
     assert arg(fix, "--workspace") == "dir:/repo/.worktrees/t1"
     body = arg(fix, "--body")
     assert "toggle does not save" in body and "Gate SMS on consent\n\nFAILURES" in body
-    assert "--reviewer sentry" in body and "{" not in body
+    assert "--reviewer sentry" in body and "{" not in body and "FIX BASE: unknown" in body
+
+
+def test_fix_of_with_verify_adds_a_verify_card(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    _built_card(monkeypatch)
+    result = json.loads(submit.submit({"fix_of": "t_b", "request": "broken", "verify": True}))
+    assert result["verify"] == "t_2" and calls[1][2] == "Verify: Fix 1: Gate SMS" and arg(calls[1], "--parent") == "t_1"
+
+
+def test_correction_joins_a_fix_card_that_has_not_started(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    _built_card(monkeypatch)
+    monkeypatch.setattr(submit, "_waiting_fix", lambda title, project: "t_wait" if title == "Gate SMS" else None)
+    result = json.loads(submit.submit({"fix_of": "t_b", "request": "also make it single-select"}))
+    assert result["merged_into"] == "t_wait"
+    [comment] = calls
+    assert comment[:3] == ("kanban", "comment", "t_wait") and "single-select" in comment[3]
 
 
 def test_fix_of_unknown_pr_creates_nothing(tmp_path, monkeypatch):

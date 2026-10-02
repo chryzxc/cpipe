@@ -24,3 +24,12 @@ def test_other_cards_and_tools_pass(tmp_path, monkeypatch):
     assert card_gate.gate(tool_name="terminal", args={"command": "hermes kanban list"}) is None
     monkeypatch.setattr(submit, "HERMES_HOME", tmp_path / "missing")
     assert card_gate.gate(tool_name="kanban_create", args={"assignee": "forge"}) is None
+
+
+def test_chat_cannot_unblock_a_card_at_the_round_limit(monkeypatch):
+    from cpipe import card_gate
+    reasons = {"t_aa11": "delivery_verify_failed hit round limit(2). failures", "t_bb22": "needs a decision"}
+    monkeypatch.setattr(card_gate, "last_block_reason", lambda card: reasons.get(card, ""))
+    assert card_gate.gate("kanban_unblock", {"task_id": "t_aa11"})["action"] == "block"
+    assert card_gate.gate("terminal", {"command": "hermes kanban unblock t_aa11"})["action"] == "block"
+    assert card_gate.gate("kanban_unblock", {"task_id": "t_bb22"}) is None
