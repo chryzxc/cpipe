@@ -88,3 +88,12 @@ def test_third_rework_round_must_block_instead(tmp_path, monkeypatch):
     assert verdict["action"] == "block" and "kanban_block" in verdict["message"]
     assert review_gate.gate(tool_name="terminal", args={"command": "hermes kanban request-changes t_1 'fix'"})["action"] == "block"
     assert review_gate.gate(tool_name="kanban_request_changes", args={"task_id": "t_2", "reason": "x"}) is None
+
+
+def test_worker_cannot_start_a_nested_agent(monkeypatch):
+    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_1")
+    blocked = review_gate.gate("terminal", {"command": "hermes -p cypher chat -q 'judge this diff'"})
+    assert blocked and blocked["action"] == "block"
+    assert review_gate.gate("terminal", {"command": "git log --oneline | grep chat"}) is None
+    monkeypatch.delenv("HERMES_KANBAN_TASK")
+    assert review_gate.gate("terminal", {"command": "hermes -p cypher chat -q hi"}) is None
