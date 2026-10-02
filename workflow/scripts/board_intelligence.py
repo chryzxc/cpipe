@@ -122,9 +122,10 @@ def main():
                      for s in stale)
 
     conn = sqlite3.connect(f'file:{DB}?mode=ro', uri=True)
+    conn.row_factory = sqlite3.Row
     recurrent = finding_recurrence(conn, now)
     recent_done = conn.execute(
-        "SELECT id FROM tasks WHERE status='done' AND completed_at IS NOT NULL AND completed_at > ?",
+        "SELECT id, completed_at FROM tasks WHERE status='done' AND completed_at IS NOT NULL AND completed_at > ?",
         (now - 48 * 3600,)).fetchall()
     orphaned = pr_pending = 0
     unsubscribed_active = 0
@@ -146,7 +147,11 @@ def main():
             "SELECT body FROM task_comments WHERE task_id=? AND body LIKE 'CONTINUATION:%'"
             " AND created_at >= ? ORDER BY id DESC LIMIT 1", (row['id'], row['completed_at'])).fetchone()
         if not decided:
-            orphaned += 1
+            try:  # a linked successor is the continuation, as in the supervisor scan
+                linked = conn.execute("SELECT 1 FROM task_links WHERE parent_id=? LIMIT 1", (row['id'],)).fetchone()
+            except sqlite3.OperationalError:
+                linked = None
+            orphaned += 0 if linked else 1
             continue
         text = decided['body'] if isinstance(decided, sqlite3.Row) else decided[0]
         text = (text or '').lower()
