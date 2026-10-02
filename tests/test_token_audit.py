@@ -28,4 +28,6 @@ def test_audit_scales_long_sessions_to_the_window_and_diffs_against_the_last_run
     assert snap["coordinator"]["skill_loads"] == {"hermes-agent": 1}
 
     later = dict(snap, total_tokens=2000)
-    assert "total_tokens: 500 → 2000" in audit["render"](later, snap)
+    assert "total_tokens: 500 → 2,000" in audit["render"](later, snap)
+    half_day = dict(snap, hours=12)  # 500 in 12h is the same daily rate as 1000 in 24h
+    assert "total_tokens: 1,000 → 2,000" in audit["render"](later, half_day)

@@ -120,13 +120,17 @@ def collect(hours: float) -> dict:
     }
 
 
-def _flat(d: dict, prefix: str = "") -> dict:
+RATES = ("share", "per_call", "worker_reread_pct", "comment_avg_chars")
+
+
+def _flat(d: dict, prefix: str = "", per_day: float = 1.0) -> dict:
+    """Numbers by dotted key; counts scaled to a 24h rate so windows of different length compare."""
     out = {}
     for k, v in d.items():
         if isinstance(v, dict):
-            out.update(_flat(v, f"{prefix}{k}."))
+            out.update(_flat(v, f"{prefix}{k}.", per_day))
         elif isinstance(v, (int, float)) and k not in ("at", "hours"):
-            out[f"{prefix}{k}"] = v
+            out[f"{prefix}{k}"] = v if k in RATES else round(v * per_day)
     return out
 
 
@@ -143,13 +147,13 @@ def render(snap: dict, prev: dict | None) -> str:
               f"Worker re-reads: {snap['worker_reread_pct']}%   fix cards: {snap['fix_cards']}   "
               f"round-limit blocks: {snap['round_limit_blocks']}"]
     if prev:
-        a, b = _flat(prev), _flat(snap)
+        a, b = _flat(prev, per_day=24 / prev["hours"]), _flat(snap, per_day=24 / snap["hours"])
         moved = [(k, a[k], b[k]) for k in sorted(set(a) & set(b))
                  if not k.startswith(("deliveries.", "comments_by_author.")) and a[k] != b[k]
                  and abs(b[k] - a[k]) >= max(1, 0.1 * abs(a[k]))]
         when = time.strftime("%m-%d %H:%M", time.localtime(prev["at"]))
-        lines += ["", f"Change vs previous audit ({when}, {prev['hours']:g}h):"]
-        lines += [f"  {k}: {x:g} → {y:g}" for k, x, y in moved] or ["  no material change"]
+        lines += ["", f"Change vs previous audit ({when}, {prev['hours']:g}h; counts as per-24h rates):"]
+        lines += [f"  {k}: {x:,g} → {y:,g}" for k, x, y in moved] or ["  no material change"]
     return "\n".join(lines)
 
 
