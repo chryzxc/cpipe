@@ -34,7 +34,7 @@ HERMES_HOME = _root_home()
 PRIORITY = {"content": 30, "small": 20, "large": 10}
 # a whole feature is one session: a timeout kills it mid-build and the retry starts cold
 LIVE = ("todo", "ready", "running", "review", "scheduled")  # blocked/triage wait on the user: not live
-MAX_RUNTIME = {"content": "15m", "small": "60m", "large": "60m", "map": "20m", "plan": "20m", "build": "60m"}
+MAX_RUNTIME = {"content": "25m", "small": "60m", "large": "60m", "map": "20m", "plan": "20m", "build": "60m"}
 MAX_FIX_ROUNDS = 2
 MAX_REQUEST_CHARS = 3000
 DUPLICATE_TITLE_RATIO = 0.85
