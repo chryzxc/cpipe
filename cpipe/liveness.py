@@ -193,7 +193,8 @@ def stall_condition(home: Optional[Path] = None, now: Optional[float] = None) ->
             f"dispatch`: the manual CLI pass bypasses the operator's stop.",
         )
     health = read_health(home)
-    if waiting and health and health.get("last_tick_at"):
+    waiting -= len((health or {}).get("holds") or {})  # held cards can't dispatch; an idle dispatcher ticks slowly
+    if waiting > 0 and health and health.get("last_tick_at"):
         silent = now - float(health["last_tick_at"])
         if silent >= DISPATCHER_SILENT_SECONDS:
             return (

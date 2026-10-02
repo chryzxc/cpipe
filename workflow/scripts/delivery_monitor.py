@@ -685,7 +685,8 @@ def engine_stalls(conn, now):
 
 def dispatcher_stall(b, now, home: Path = HERMES_HOME):
     """Silent only when BOTH the tick telemetry and gateway.log are stale: one alone lies."""
-    waiting = sum(1 for t in b["tasks"].values() if t["status"] in ("ready", "review"))
+    # a held card can't dispatch, so an idle dispatcher ticks slowly: only dispatchable cards count
+    waiting = sum(1 for tid, t in b["tasks"].items() if t["status"] in ("ready", "review") and tid not in b["holds"])
     last_tick = float(b["health"].get("last_tick_at") or 0)
     if not waiting or not last_tick or now - last_tick < DISPATCHER_SILENT_MINUTES * 60:
         return {}

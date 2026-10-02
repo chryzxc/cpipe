@@ -102,6 +102,13 @@ def test_silent_dispatcher_notice(tmp_path):
     assert notice and "has not ticked for 10m" in notice["context"]
 
 
+def test_held_cards_do_not_make_a_slow_dispatcher_silent(tmp_path):
+    _board(tmp_path, ["review"])  # the only waiting card is held: the idle dispatcher ticks slowly
+    liveness.record_dispatch_tick(outcome="ok", home=tmp_path, now=1000.0,
+                                  result=_result(respawn_guarded=[("t1", "blocker_auth")]))
+    assert liveness.stall_condition(tmp_path, now=1000.0 + 3600) is None
+
+
 def test_doctor_report_lines(tmp_path):
     _board(tmp_path, ["ready", "blocked", "blocked"])
     (tmp_path / "ESTOP").write_text(json.dumps({"reason": "maintenance"}))
