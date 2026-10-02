@@ -140,3 +140,13 @@ def test_warm_build_uses_detected_recipe(monkeypatch, tmp_path):
     assert command[0] == sys.executable
     assert str(swift_ws) in command[3]
     assert json.loads(command[6]) == ["swift", "build", "--disable-automatic-resolution"]
+
+
+def test_tools_register_the_bare_function_schema():
+    import cpipe
+    seen = {}
+    class Ctx:
+        def register_tool(self, name, schema, **_kw): seen[name] = schema
+        def __getattr__(self, _n): return lambda *a, **k: None
+    cpipe.register(Ctx())
+    assert seen and all(s.get("name") == n and "parameters" in s for n, s in seen.items())
