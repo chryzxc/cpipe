@@ -139,6 +139,8 @@ IMPLEMENTER = """IMPLEMENTER
 4. Run the tests related to every changed file, not only the new ones (`npx jest --findRelatedTests
    <files>`, `npx vitest related --run <files>`, or the tests importing the module), in every
    package the change reaches (server and client), plus lint/typecheck for touched files.
+   If `--listTests` shows more than 20 related suites, that is the full suite: run only the tests
+   that import a changed file directly and leave the rest to the PR's CI.
    Commit on this card's branch and push it (`git push -u origin HEAD`). On the first push open a
    draft PR against the project's base branch (`gh pr create --draft`); later pushes update it. The
    PR body ends with `## How to test`: 3-6 manual steps a person follows to see the change work,
@@ -243,6 +245,8 @@ handoff, else origin's default branch>`.
    No changed tests for a behavior change is a FAIL ("no test proves the change").
 2. RELATED: run the tests related to every changed file in each package the change reaches
    (`npx jest --findRelatedTests`, `npx vitest related --run`, or the importing tests). All pass.
+   If `--listTests` shows more than 20 related suites, that is the full suite: run only the tests
+   that import a changed file directly.
 3. NO FULL SUITE: never run the whole test suite; the PR's CI does that. Lint/typecheck only the
    changed files (`npx eslint <files>`, `ruff check <files>`, ...). Report `gh pr checks <url>`
    as it stands (pending is a note, never a wait; a red check counts only if it is not red on BASE).
@@ -250,6 +254,10 @@ handoff, else origin's default branch>`.
    lockfiles, or migrations: clean install from the lockfile (`npm ci`, `uv sync --frozen`, ...),
    the production build, config syntax checks (`docker compose config`, workflow YAML), and
    migrations up then down on a local/test database. Never deploy or touch a shared environment.
+FIX ROUND (this card's title starts `Verify: Fix`): the earlier verify already covered the original
+change. Take the sha it verified from its result (kanban_show -> parents -> the fix card -> its
+parent), re-run each command it reported failing, and run PROOF and RELATED only for files changed
+since that sha (`git diff --name-only <sha>..HEAD`). No browser or live QA unless those files are UI.
 PASS: mark the parent's draft PR ready (`gh pr ready <url>`; a failure is a note), then complete
 this card with each command and its result.
 FAIL: call `delivery_verify_failed` with this card id and the exact failures (command, test,

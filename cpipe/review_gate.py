@@ -8,6 +8,8 @@
    the summary is copied into the result, and a completion with no plan at all is refused.
 4. The implementer cannot block a card to ask for commit approval: committing and pushing its own
    branch needs none, and each such block cost a whole extra run.
+5. A kanban worker cannot start another agent (`hermes chat`, `codex exec`, `claude -p`): a nested
+   consult cold-starts a whole agent and stalled one fix round about 15 minutes.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ COMPLETE_CMD = re.compile(r"\bkanban\s+complete\s+(t_[0-9a-f]+)")
 BLOCK_CMD = re.compile(r"\bkanban\s+block\b(.*?)\b(t_[0-9a-f]+)\b(.*)", re.S)
 COMMIT_ASK = re.compile(r"COMMIT_READY|\b(authori[sz]|approv|validat|permission|sign.?off)\w*\b[^.\n]{0,80}\bcommit"
                         r"|\bcommit\w*\b[^.\n]{0,80}\b(authori[sz]|approv|validat|permission|sign.?off)", re.I)
+NESTED_AGENT = re.compile(r"\bhermes\b[^|;&\n]*\bchat\b|\bcodex\s+exec\b|\bclaude\s+(-p|--print)\b")
 PLATFORM_PATH = re.compile(
     r"(^|/)(\.github/|\.gitlab-ci|\.circleci/|Dockerfile|docker-compose|compose\.ya?ml$|Procfile$|"
     r"nginx|helm/|k8s/|terraform/|infra/|deploy/|migrations?/|\.env\.example$|\.nvmrc$|"
@@ -36,6 +39,11 @@ PLATFORM_PATH = re.compile(
 
 def gate(tool_name: str = "", args: dict | None = None, **_kw):
     args = args or {}
+    if (tool_name == "terminal" and os.environ.get("HERMES_KANBAN_TASK")
+            and NESTED_AGENT.search(str(args.get("command") or ""))):
+        return {"action": "block", "message": (
+            "Do not start another agent from a kanban card: it cold-starts a whole agent and stalls the card. "
+            "Make the judgment yourself from the code, or block the card with the exact question for Christian.")}
     if tool_name == "kanban_request_changes":
         return rework_cap_gate(args.get("task_id") or os.environ.get("HERMES_KANBAN_TASK"))
     if tool_name == "terminal" and (m := CHANGES_CMD.search(str(args.get("command") or ""))):
