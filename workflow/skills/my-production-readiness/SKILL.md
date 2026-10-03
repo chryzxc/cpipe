@@ -34,7 +34,7 @@ The final go-live gate, run by Verifier (evidence owner) with Release Engineer (
 
 **Continuity**
 10. Feature flags/kill switches documented where applicable; customer-facing change notes drafted.
-11. `STANDARDS.md` and the repo map updated in this release's cards; ADRs accepted for its decisions.
+11. The repo map updated in this release's cards; ADRs accepted for its decisions.
 
 ## Verdict rules
 

@@ -56,7 +56,6 @@ Every routed task records: primary Bot profile ID; task; execution backend (dire
 | Performance fix (Implementer) | `my-optimization-audit` (findings section only, fix from PERF-### IDs) |
 | Performance validation (Verifier) | `my-optimization-audit` (re-measurement delta pass) |
 | Architecture decision / ADR (Planner) | `my-adr` |
-| Standards compliance (Implementer implements, Reviewer enforces) | `my-engineering-standards` |
 | Production go-live gate (Verifier + Release Engineer) | `my-production-readiness` |
 | Plan interrogation before material plans (Planner) | `grill-me` |
 | Structural code evidence / mechanical rewrites (Reviewer, Implementer) | `ast-grep` (binary: `sg`) |

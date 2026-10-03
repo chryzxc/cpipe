@@ -305,7 +305,7 @@ Design and rationale: [`docs/plans/2026-09-29-autonomy-plan.md`](docs/plans/2026
 
 ## The learning loop
 
-The weekly digest reports per-stage wall-clock, queue waits, gate rejection rates, and finding classes. Any review finding class appearing 3+ times auto-drafts an amendment to the engineering-standards skill — **the workflow writes its own rulebook**. A gate silent for two weeks is flagged fix-or-remove.
+The weekly digest reports per-stage wall-clock, queue waits, gate rejection rates, and finding classes. Any review finding class appearing 3+ times auto-drafts an amendment to the shared PRINCIPLES block — **the workflow writes its own rulebook**. A gate silent for two weeks is flagged fix-or-remove.
 
 ## Safety model
 
