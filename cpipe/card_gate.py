@@ -8,21 +8,25 @@ the user can still create any card from their own terminal.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
+from pathlib import Path
 
-from . import submit
+from . import home, submit
 
 ROLES = ("implementer", "reviewer", "verifier", "planner", "investigator", "release_engineer",
          "security_reviewer", "security_tester")
 UNBLOCK_CMD = re.compile(r"\bkanban\s+unblock\s+['\"]?(t_[0-9a-f]+)")
 ROUND_LIMIT = re.compile(r"round limit", re.I)
 CREATE_CMD = re.compile(r"\bkanban\s+create\b.*?--assignee[=\s]+['\"]?([\w-]+)", re.S)
+OPERATOR_DIRS = ("delivery", "memories", "skills", "plugins", "scripts", "cron")
+PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$", re.M)
 
 
 def gate(tool_name: str = "", args: dict | None = None, **_kw):
     args = args or {}
-    blocked = round_limit_unblock(tool_name, args)
+    blocked = round_limit_unblock(tool_name, args) or operator_config_write(tool_name, args)
     if blocked:
         return blocked
     if tool_name == "kanban_create":
@@ -76,3 +80,28 @@ def last_block_reason(card: str) -> str:
         return str((json.loads(row[0]) or {}).get("reason") or "") if row and row[0] else ""
     except (sqlite3.Error, ValueError, TypeError, AttributeError):
         return ""
+
+
+def operator_config_write(tool_name: str, args: dict):
+    """A worker that edits the operator's setup (launch recipes, SOUL, config, skills) changes every later
+    card: one fix round swapped the project's test server for a stub. Workers report the problem instead."""
+    worker = Path(os.environ.get("HERMES_HOME", ""))
+    if tool_name not in ("patch", "write_file") or worker.parent.name != "profiles" or worker.name not in guarded():
+        return None
+    paths = [args.get("path")] + PATCH_FILE.findall(str(args.get("patch") or ""))
+    hit = next((p for p in paths if p and operator_path(Path(str(p)).expanduser())), None)
+    if not hit:
+        return None
+    return {"action": "block", "message": (
+        f"Not written: {hit} is the operator's Hermes setup, which workers never edit. If a launch recipe, "
+        "config or skill is wrong, say what fails and what the fix is in your report; the user changes it.")}
+
+
+def operator_path(path: Path) -> bool:
+    root = home.root().resolve()
+    try:
+        rel = path.resolve().relative_to(root).parts
+    except ValueError:
+        return False
+    return (len(rel) == 1 or rel[0] in OPERATOR_DIRS
+            or (len(rel) == 3 and rel[0] == "profiles" and rel[2] in ("SOUL.md", "config.yaml")))

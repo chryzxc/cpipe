@@ -33,3 +33,17 @@ def test_chat_cannot_unblock_a_card_at_the_round_limit(monkeypatch):
     assert card_gate.gate("kanban_unblock", {"task_id": "t_aa11"})["action"] == "block"
     assert card_gate.gate("terminal", {"command": "hermes kanban unblock t_aa11"})["action"] == "block"
     assert card_gate.gate("kanban_unblock", {"task_id": "t_bb22"}) is None
+
+
+def test_workers_cannot_edit_the_operator_setup(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "forge"))
+    blocked = [("patch", {"mode": "patch", "patch": f"*** Begin Patch\n*** Update File: {tmp_path}/delivery/projects.yaml\n@@"}),
+               ("write_file", {"path": str(tmp_path / "config.yaml")}),
+               ("patch", {"mode": "replace", "path": str(tmp_path / "profiles/sentry/SOUL.md")})]
+    for name, args in blocked:
+        assert card_gate.gate(name, args)["action"] == "block"
+    for path in (tmp_path / "kanban/workspaces/t_1/a.py", tmp_path / "profiles/forge/notes.md", "/repo/src/a.js"):
+        assert card_gate.gate("write_file", {"path": str(path)}) is None
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))  # the coordinator / the user's own chat
+    assert card_gate.gate("write_file", {"path": str(tmp_path / "config.yaml")}) is None
