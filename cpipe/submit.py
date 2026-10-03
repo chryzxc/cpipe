@@ -736,13 +736,16 @@ def _copy_subscriptions(src: str, dst: str) -> None:
 
 
 def _worktree_users(worktree: str) -> list[str]:
-    """Live cards working in `worktree`: on it directly, or a verify card whose parent built there."""
+    """Live cards working in `worktree`: on it directly, or a verify card whose parent built there.
+    A card stuck behind a blocked/triage parent is skipped: waiting on it would deadlock the new card."""
     try:
         conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
         rows = conn.execute(
-            f"SELECT id FROM tasks WHERE status IN ({','.join('?' * len(LIVE))}) AND (workspace_path = ? "
-            "OR id IN (SELECT l.child_id FROM task_links l JOIN tasks p ON p.id = l.parent_id "
-            "WHERE p.workspace_path = ?)) ORDER BY created_at", (*LIVE, worktree, worktree)).fetchall()
+            f"SELECT id FROM tasks t WHERE status IN ({','.join('?' * len(LIVE))}) AND (workspace_path = ? "
+            "OR (title LIKE 'Verify:%' AND id IN (SELECT l.child_id FROM task_links l JOIN tasks p "
+            "ON p.id = l.parent_id WHERE p.workspace_path = ?))) AND NOT EXISTS (SELECT 1 FROM task_links l "
+            "JOIN tasks p ON p.id = l.parent_id WHERE l.child_id = t.id AND p.status IN ('blocked', 'triage')) "
+            "ORDER BY created_at", (*LIVE, worktree, worktree)).fetchall()
         conn.close()
     except sqlite3.Error:
         return []

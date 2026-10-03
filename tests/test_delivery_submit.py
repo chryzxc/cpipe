@@ -50,11 +50,17 @@ def test_fix_card_waits_for_live_cards_in_its_worktree(tmp_path, monkeypatch):
     from kanban_board import board, card, link
     conn = board(tmp_path / "kanban.db")
     card(conn, "t_build", "done", workspace_path="/wt")
-    card(conn, "t_verify", "running", assignee="sentinel", workspace_path="/scratch")  # works in its parent's /wt
+    card(conn, "t_verify", "running", assignee="sentinel", title="Verify: x", workspace_path="/scratch")  # in its parent's /wt
     card(conn, "t_fix", "review", workspace_path="/wt")
     card(conn, "t_stuck", "blocked", workspace_path="/wt")  # waits on the user: not live
     card(conn, "t_other", "running", workspace_path="/wt2")
     link(conn, "t_build", "t_verify")
+    # incident t_b47315c3: a verify behind a triage card never runs, and a fix in another worktree is not a user
+    card(conn, "t_asks", "triage", workspace_path="/wt")
+    card(conn, "t_old_verify", "todo", assignee="sentinel", title="Verify: old", workspace_path="/scratch2")
+    card(conn, "t_port", "todo", title="Fix 1: port", workspace_path="/wt3")
+    link(conn, "t_asks", "t_old_verify")
+    link(conn, "t_build", "t_port")
     conn.commit()
     monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "kanban.db"))
     argv = ["kanban", "create", "Fix 2: x", "--workspace", "dir:/wt", "--parent", "t_verify"]
