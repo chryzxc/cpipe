@@ -34,9 +34,8 @@ FIELD_FLAGS = ("-f", "-F", "--field", "--raw-field")
 LEAK = re.compile(
     r"/Users/|/home/\w+/|~/\.hermes|\.hermes/|\.worktrees/|\bt_[0-9a-f]{8}\b"
     r"|\b(?:READY_WITH_RISK|COMMIT_READY|OUT_OF_PLAN|PINNED|CONTINUATION|REQUEST_CHANGES|PRECHECK)\b"
-    r"|\bREV-\d+\b|\bAC\d+\b|\bOCR (?:gate|delegat|preview|review|belongs)"
-    r"|(?<!/commit/)(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])",
-    re.I)
+    r"|\bREV-\d+\b|\bAC\d+\b|\bOCR (?i:gate|delegat|preview|review|belongs)"
+    r"|(?<!/commit/)(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])")  # case-sensitive: "pinned", /users/ routes are prose
 
 
 def gate(tool_name: str = "", args: dict | None = None, **_kw):
