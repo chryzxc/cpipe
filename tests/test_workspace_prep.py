@@ -59,7 +59,7 @@ def test_outside_kanban_workers_it_does_nothing(monkeypatch):
     assert workspace_prep.prepare_workspace(is_first_turn=True) is None
 
 
-def profile_on_develop(tmp_path, monkeypatch):
+def profile_on_develop(tmp_path, monkeypatch, body=""):
     main, wt = repo_with_worktree(tmp_path)
     git(main, "branch", "develop")
     git(main, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "on develop only")
@@ -69,8 +69,8 @@ def profile_on_develop(tmp_path, monkeypatch):
         "projects:\n  my-app:\n    base_branch: develop\n    branch_prefix: feat/\n    env: cp .env.example .env\n")
     db = tmp_path / "kanban.db"
     conn = sqlite3.connect(db)
-    conn.execute("CREATE TABLE tasks (id TEXT, project_id TEXT)")
-    conn.execute("INSERT INTO tasks VALUES ('t_1', 'my-app')")
+    conn.execute("CREATE TABLE tasks (id TEXT, project_id TEXT, body TEXT)")
+    conn.execute("INSERT INTO tasks VALUES ('t_1', 'my-app', ?)", (body,))
     conn.commit(); conn.close()
     for k, v in (("HERMES_HOME", tmp_path), ("HERMES_KANBAN_DB", db), ("HERMES_KANBAN_WORKSPACE", wt),
                  ("HERMES_KANBAN_TASK", "t_1")):
@@ -86,6 +86,17 @@ def test_fresh_worktree_is_reset_onto_the_pr_base(tmp_path, monkeypatch):
     head = lambda d: subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
     assert head(wt) == head(main)
     assert workspace_prep.project_profile("other-app", tmp_path) == {}
+
+
+def test_a_cards_own_pr_base_wins_over_the_projects(tmp_path, monkeypatch):
+    # the user said "branch out from IC-develop" on a project whose base is develop: no reset onto develop
+    main, wt = profile_on_develop(tmp_path, monkeypatch, body="REQUEST...\n\nPR BASE: `ic` (start from origin/ic)")
+    git(main, "update-ref", "refs/remotes/origin/ic", "HEAD~1")
+    head = lambda d: subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+    before = head(wt)
+    note = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
+    assert "origin/develop" not in note and "PRs target `ic`" in note
+    assert head(wt) == before  # already on origin/ic
 
 
 def test_worktree_with_work_in_it_is_never_reset(tmp_path, monkeypatch):

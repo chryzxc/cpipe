@@ -16,6 +16,7 @@ import importlib.util
 import json
 import os
 import re
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -78,7 +79,8 @@ def status(card: Optional[str] = None, home: Optional[Path] = None) -> dict:
         rows.append({"card": tid, "title": t["title"], "status": t["status"], "assignee": t["assignee"],
                      "verdict": v.label, "evidence": v.evidence, "chain": v.chain,
                      "waiting_on_it": v.blocked_children or None,
-                     "next": _load("delivery_monitor").NEXT.get(v.cause) if v.state == "STUCK" else None})
+                     "next": _load("delivery_monitor").NEXT.get(v.cause) if v.state == "STUCK" else None,
+                     "latest": _latest_report(home, tid)})
     rows.sort(key=lambda r: ({"STUCK": 0, "WAITING": 1}.get(r["verdict"].split("(")[0], 2), r["card"]))
     counts: dict = {}
     for r in rows:
@@ -87,6 +89,24 @@ def status(card: Optional[str] = None, home: Optional[Path] = None) -> dict:
     if card and not rows:
         return {"ok": False, "error": f"{card} is not an open card (done, archived, or unknown)"}
     return {"ok": True, "counts": counts, "cards": rows}
+
+
+def _latest_report(home: Path, tid: str) -> Optional[str]:
+    """A worker's newest card comment (not the coordinator's `default` profile or Hermes's why-blocked): what it has found or handed over (a URL, a result),
+    so the chat answers "any update?" from the card instead of reading worker logs."""
+    try:
+        conn = sqlite3.connect(f"file:{home / 'kanban.db'}?mode=ro", uri=True)
+        try:
+            row = conn.execute("SELECT body, created_at FROM task_comments WHERE task_id = ? AND author NOT IN "
+                               "('default', 'why-blocked') ORDER BY id DESC LIMIT 1", (tid,)).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    age = max(0, int((time.time() - row[1]) // 60))
+    return f"{age}m ago: {' '.join((row[0] or '').split())[:400]}"
 
 
 def delivery_status(args: dict, **_: Any) -> str:
@@ -125,7 +145,8 @@ STATUS_SCHEMA = {
         "description": ("The board's truth for delivery work: each open card's verdict computed from kanban.db "
                         "now — PROGRESSING (live worker), WAITING(<named thing>), or STUCK(<cause>) with the next "
                         "step. Call this before answering ANY status question; never report progress from memory "
-                        "or from a worker's last message."),
+                        "or from a worker's last message. `latest` is the worker's newest report on the card (a URL or result it "
+                        "handed over): relay it; never read worker logs or processes instead."),
         "parameters": {"type": "object", "properties": {
             "card": {"type": "string", "description": "Optional card id or chain root id; omit for the whole board"}},
             "required": []},

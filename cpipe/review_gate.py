@@ -1,7 +1,8 @@
 """``pre_tool_call`` gate on completing a same-card-review delivery card.
 
 1. The implementer cannot complete its own card: a build/fix/content card finishes only through the
-   reviewer (``request-review``), so no push ships unreviewed.
+   reviewer (``request-review``), so no push ships unreviewed. A fix round that committed nothing is
+   the exception: nothing changed to review, so its result (a repro, a local URL) reaches the user now.
 2. When the reviewer approves, a pending ``Verify:`` child goes to the release engineer instead of
    the verifier if the diff touches CI, containers, deploy config, dependencies, or migrations.
 3. A ``Plan:`` card completes only with a plan: the build card reads its result, so a plan left in
@@ -64,7 +65,7 @@ def gate(tool_name: str = "", args: dict | None = None, **_kw):
             return plan_gate(tid, args)
         if not row or MARKER not in (row["body"] or ""):
             return None
-        if row["assignee"] == submit._role("implementer"):
+        if row["assignee"] == submit._role("implementer") and not _nothing_to_review(row):
             return {"action": "block", "message": (
                 f"{tid} is reviewed on the same card: you cannot complete it yourself. Push, then run "
                 f"`hermes kanban request-review {tid} --reviewer {submit._role('reviewer')} --summary \"<PR url; "
@@ -74,6 +75,15 @@ def gate(tool_name: str = "", args: dict | None = None, **_kw):
     except Exception:
         return None  # never wedge a completion on a gate bug
     return None
+
+
+def _nothing_to_review(row) -> bool:
+    """A fix round that committed nothing (it ran, reproduced, or set something up for the user): the PR
+    is unchanged, so a review would re-check the same code. The implementer completes it with its result."""
+    m = re.search(r"^FIX BASE: ([0-9a-f]{7,40}) ", row["body"] or "", re.M)
+    head = m and subprocess.run(["git", "-C", row["workspace_path"] or ".", "rev-parse", "HEAD"],
+                                capture_output=True, text=True, timeout=10).stdout.strip()
+    return bool(head) and head.startswith(m[1])
 
 
 def rework_cap_gate(tid: str | None):
@@ -158,7 +168,7 @@ def route_verify(tid: str, worktree: str | None, project: str | None) -> str | N
         conn.close()
     if not child:
         return None
-    base = workspace_prep.project_profile(project, submit.HERMES_HOME).get("base_branch")
+    base = workspace_prep.card_profile(tid, submit._db(), submit.HERMES_HOME).get("base_branch")
     touched = platform_files(worktree, base)
     if not touched:
         return None

@@ -149,7 +149,7 @@ IMPLEMENTER = """IMPLEMENTER
    `--forceExit` (jest) or run fewer files; if it still hangs, record it as READY_WITH_RISK.
    Commit on this card's branch and push it (`git push -u origin HEAD`). Never create, switch, or rename
    the branch: the coordinator named it. On the first push open a
-   draft PR against the project's base branch (`gh pr create --draft`). The title and body describe
+   draft PR against the PR base (the card's `PR BASE:` line, else the project's base branch; `gh pr create --draft --base <it>`). The title and body describe
    the whole branch (`git diff <base>...HEAD`), never only the latest commit: after every later
    push, rewrite them with `gh pr edit <url> --title ... --body ...` to cover all the changes so
    far. Write them with the `creating-pr-content` skill when it is installed (load it once per
@@ -315,6 +315,10 @@ and trace it to its cause; before removing an existing condition, read its histo
 One that does not reproduce: list it in the review handoff with what you ran, fix the rest. One
 that needs a product decision: block with the question (2-4 options, recommended first).
 New requests the user adds while this card waits arrive as comments: handle each in this round.
+A request that needs no code change (run something locally, reproduce, set up data for the user to
+test): do only that, and the moment it works complete this card with `hermes kanban complete <this
+card id> --summary "<URLs / how to use it / what you verified>"` with no new commit, so the user gets it
+now. No extra hardening, receipts, or review for it.
 Fix these failures only, then follow steps 3-7 (PINNED tests must still pass):
 """ + SCOPE + "\n" + IMPLEMENTER
 
@@ -532,7 +536,7 @@ def submit(args: dict, **_kw) -> str:
     bug = args.get("kind") == "bug" and size != "content"
     if bug:
         argv = _as_bug(argv, "map" if size == "large" else "build")
-    conventions = _conventions(project)
+    conventions = _conventions(project, args.get("base") or "")
     branch = branch_name(project, args.get("branch") or "")
     with_branch = (lambda a: [*a, "--branch", branch]) if branch else (lambda a: a)
     if size != "large":  # the implementer works on this first card
@@ -578,9 +582,17 @@ def _as_bug(argv: list[str], stage: str) -> list[str]:
     return [*argv[:i], body, *argv[i + 1:]]
 
 
-def _conventions(project: str) -> str:
+def _conventions(project: str, base: str = "") -> str:
+    """The project's saved conventions for a card body. `base`: this card's PR base when it is not the
+    project's (the user named one, or a fix follows its PR): stamped so the worker hook and the
+    reviewer use it instead of the project's base_branch."""
     from . import workspace_prep
-    return workspace_prep.profile_brief(workspace_prep.project_profile(project, HERMES_HOME))
+    profile = workspace_prep.project_profile(project, HERMES_HOME)
+    base = (base or "").strip()
+    if not base or base == profile.get("base_branch"):
+        return workspace_prep.profile_brief(profile)
+    return (f"PR BASE: `{base}` (start from origin/{base} and open the PR against it; this overrides the "
+            "project's base branch below)\n" + workspace_prep.profile_brief({**profile, "base_branch": base}))
 
 
 def _stamp(argv: list[str], conventions: str) -> list[str]:
@@ -611,14 +623,15 @@ def verify_failed(args: dict, **_kw) -> str:
     request = _request_of(task["body"])
     project = task["project_id"] or ""
     fix_title = f"Fix {rounds + 1}: {base_title}"
+    state = _branch_state(worktree)
     fix_argv = ["kanban", "create", fix_title, "--assignee", _role("implementer"),
                 "--body", FIX_BRIEF.format(round=rounds + 1, source="the verifier ran the reviewed change and it failed",
                                            reporter="from the verifier", request=request, failures=failures,
-                                           reviewer=_role("reviewer"), **_branch_state(worktree)),
+                                           reviewer=_role("reviewer"), **state),
                 *(["--project", project] if project else []), "--workspace", f"dir:{worktree}",
                 "--parent", verify_id, "--priority", str(PRIORITY["small"]),
                 "--max-runtime", MAX_RUNTIME["build"], "--created-by", "delivery_submit", "--json"]
-    fix_id, error = _create(fix_argv)
+    fix_id, error = _create(_stamp(fix_argv, _conventions(project, state["pr_base"])))
     if error:
         return error
     argv, _ = chained_card("verify", fix_title, request, project, fix_id)
@@ -645,6 +658,7 @@ def fix(args: dict) -> str:
         return json.dumps({"ok": False, "error": f"no card with a live worktree found for {ref}; "
                            "submit it as new work (size=small) naming the PR branch"})
     request = _request_of(task["body"])
+    state = _branch_state(worktree)
     rounds = len(re.findall(r"^Fix \d+:", task["title"] or ""))
     base_title = re.sub(r"^(Fix \d+: )+", "", task["title"] or "")
     waiting = _waiting_fix(base_title, task["project_id"])
@@ -657,11 +671,11 @@ def fix(args: dict) -> str:
     argv = ["kanban", "create", f"Fix {rounds + 1}: {base_title}", "--assignee", _role("implementer"),
             "--body", FIX_BRIEF.format(round=rounds + 1, source="the user tested the PR and found a problem",
                                        reporter="from the user's testing", request=request,
-                                       failures=failures, reviewer=_role("reviewer"), **_branch_state(worktree)),
+                                       failures=failures, reviewer=_role("reviewer"), **state),
             *(["--project", task["project_id"]] if task["project_id"] else []),
             "--workspace", f"dir:{worktree}", "--priority", str(PRIORITY["small"]),
             "--max-runtime", MAX_RUNTIME["build"], "--created-by", "delivery_submit", "--json"]
-    fix_id, error = _create(_stamp(argv, _conventions(task["project_id"] or "")))
+    fix_id, error = _create(_stamp(argv, _conventions(task["project_id"] or "", state["pr_base"])))
     if error:
         return error
     _copy_subscriptions(source_id, fix_id)
@@ -707,7 +721,8 @@ def _branch_state(worktree: str) -> dict:
     refs = ([f"origin/{pr_base}"] if pr_base else []) + ["origin/HEAD"]
     base = next((b for ref in refs if (b := git("merge-base", "HEAD", ref))), "")
     stat = git("diff", "--stat=120", f"{base}..HEAD") if base else ""
-    return {"fix_base": head, "changed": "\n".join(stat.splitlines()[-40:]) or "(unknown: run git diff --stat against the base)"}
+    return {"fix_base": head, "pr_base": pr_base,
+            "changed": "\n".join(stat.splitlines()[-40:]) or "(unknown: run git diff --stat against the base)"}
 
 
 def _set_effort(task_id, effort: str) -> None:
@@ -883,6 +898,7 @@ SCHEMA = {
                 "verify": {"type": "boolean", "description": "Default true for new small/large work: a verify card runs the tests after review; false only when the user asks to skip it. With fix_of the default is false (the user re-tests); true only when the user asks for a verifier"},
                 "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},
                 "branch": {"type": "string", "description": "New work: the branch to create, named by your project conventions (memory). Omit for Hermes's default. Not for fix_of."},
+                "base": {"type": "string", "description": "New work: the branch to start from and open the PR against when the user names one (\"branch out from X\"), e.g. IC-develop. Omit for the project's base branch. Not for fix_of: a fix follows its PR's base."},
             },
             "required": ["request"],
         },

@@ -268,6 +268,19 @@ def test_saved_project_conventions_reach_every_card(tmp_path, monkeypatch):
     assert calls and all("PRs target `develop`" in c[c.index("--body") + 1] for c in calls)
 
 
+def test_a_named_base_overrides_the_projects_on_every_card(tmp_path, monkeypatch):
+    roster(tmp_path, monkeypatch)
+    calls = _fake_board(tmp_path, monkeypatch)
+    (tmp_path / "delivery").mkdir()
+    (tmp_path / "delivery" / "projects.yaml").write_text("projects:\n  my-app:\n    base_branch: develop\n")
+    assert json.loads(submit.submit({"title": "Fix ADLs", "request": "x", "project": "my-app",
+                                     "size": "small", "base": "IC-develop"}))["ok"]
+    bodies = [c[c.index("--body") + 1] for c in calls]
+    assert all("PR BASE: `IC-develop`" in b and "PRs target `IC-develop`" in b for b in bodies)
+    assert not any("PRs target `develop`" in b for b in bodies)
+    assert submit._conventions("my-app", "develop") == submit._conventions("my-app")  # same base: no stamp
+
+
 def test_worker_profile_home_resolves_to_the_root(monkeypatch, tmp_path):
     from cpipe import home
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "sentinel"))  # how workers run

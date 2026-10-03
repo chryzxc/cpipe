@@ -65,3 +65,23 @@ def test_session_end_hook_appends_jsonl(tmp_path, monkeypatch):
     record = json.loads(lines[0])
     assert record['profile'] == 'forge'
     assert 'duration' not in record
+
+
+def test_a_registered_hook_runs_the_modules_current_code(monkeypatch):
+    """A fix to a module reaches Herm's long-running chat server without a relaunch."""
+    import cpipe
+    from cpipe import status
+    context = RecordingContext()
+    register(context)
+    compact = next(cb for name, cb in context.hooks if name == "transform_tool_result")
+    monkeypatch.setattr(status, "compact_show", lambda *a, **kw: "new code")
+    assert compact() == "new code"
+
+    reloaded = []
+    monkeypatch.setattr(cpipe.importlib, "reload", lambda mod: reloaded.append(mod.__name__))
+    monkeypatch.setattr(cpipe, "_loaded_at", 0)
+    compact()
+    assert reloaded[0] == "cpipe.home" and "cpipe.submit" in reloaded
+    reloaded.clear()
+    compact()
+    assert reloaded == []

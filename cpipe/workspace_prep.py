@@ -22,6 +22,7 @@ projects.yaml::
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -30,6 +31,7 @@ from .home import root as _root_home
 
 PACKAGE_DEPTH = 2  # package.json at the root and one or two levels down (client/, server/, apps/x/)
 SKIP_DIRS = {"node_modules", ".git", ".worktrees", "dist", "build"}
+PR_BASE = re.compile(r"^PR BASE: `([^`]+)`", re.M)  # submit stamps it when a card's base is not the project's
 
 
 def _git(ws: Path, *args: str, timeout: int = 10) -> Optional[str]:
@@ -161,14 +163,20 @@ def convention_notes(ws: Path, profile: dict) -> list[str]:
     return notes + ([brief] if brief else [])
 
 
-def _card_project(task_id: str, db: Path) -> Optional[str]:
+def card_profile(task_id: Optional[str], db: Path, home: Optional[Path] = None) -> dict:
+    """The card's project profile, its base_branch replaced by the card's own `PR BASE:` line (the
+    user picked a different base for this task, or a fix card follows its open PR's base)."""
     try:
         conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        row = conn.execute("SELECT project_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute("SELECT project_id, body FROM tasks WHERE id = ?", (task_id,)).fetchone()
         conn.close()
-        return row[0] if row else None
     except sqlite3.Error:
-        return None
+        row = None
+    if not row:
+        return {}
+    profile = project_profile(row[0], home)
+    base = PR_BASE.search(row[1] or "")
+    return {**profile, "base_branch": base[1]} if base else profile
 
 
 def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict]:
@@ -180,7 +188,7 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
         ws = Path(ws_env)
         notes = []
         db = Path(os.environ.get("HERMES_KANBAN_DB") or _home() / "kanban.db")
-        profile = project_profile(_card_project(task_id, db))
+        profile = card_profile(task_id, db)
         if _git(ws, "rev-parse", "--is-inside-work-tree") == "true":
             reset = rebase_fresh_worktree(ws, profile.get("base_branch"))
             notes += [reset] if reset else []

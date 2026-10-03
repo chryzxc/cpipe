@@ -20,6 +20,16 @@ def test_implementer_self_complete_is_blocked(tmp_path, monkeypatch):
         assert verdict["action"] == "block" and "request-review" in verdict["message"]
 
 
+def test_fix_round_with_no_new_commit_completes_without_review(tmp_path, monkeypatch):
+    import subprocess
+    setup(tmp_path, monkeypatch, "forge", body=f"FIX BASE: abc1234 (HEAD before this round)\n{review_gate.MARKER}")
+    head = {"sha": "abc1234def"}
+    monkeypatch.setattr(review_gate.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, head["sha"] + "\n", ""))
+    assert review_gate.gate(tool_name="kanban_complete", args={"task_id": "t_1"}) is None  # a URL for the user, no code
+    head["sha"] = "fff9999aaa"  # it committed: the PR changed, so the reviewer must see it
+    assert review_gate.gate(tool_name="kanban_complete", args={"task_id": "t_1"})["action"] == "block"
+
+
 def test_reviewer_approval_passes_and_routes_verify(tmp_path, monkeypatch):
     routed = setup(tmp_path, monkeypatch, "sentry")
     assert review_gate.gate(tool_name="kanban_complete", args={"task_id": "t_1"}) is None
