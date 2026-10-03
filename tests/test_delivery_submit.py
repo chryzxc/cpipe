@@ -69,6 +69,7 @@ def test_verify_card_by_default(tmp_path, monkeypatch):
     assert result["cards"] == {"build": "t_1", "verify": "t_2"}
     assert arg(calls[1], "--assignee") == "sentinel" and arg(calls[1], "--parent") == "t_1"
     assert "PLATFORM" in arg(calls[1], "--body") and "gh pr ready" in arg(calls[1], "--body")
+    assert "PRE-EXISTING" in arg(calls[1], "--body") and "NO BROWSER OR LIVE QA" in arg(calls[1], "--body")
     content = json.loads(submit.submit({"title": "Copy", "request": "r", "project": "p", "size": "content"}))
     assert "verify" not in content["cards"]
 

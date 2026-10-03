@@ -262,6 +262,9 @@ handoff, else origin's default branch>`.
    No changed tests for a behavior change is a FAIL ("no test proves the change").
 2. RELATED: run the tests related to every changed file in each package the change reaches
    (`npx jest --findRelatedTests`, `npx vitest related --run`, or the importing tests). All pass.
+   PRE-EXISTING: a failing suite, unhandled error, or hang is not a FAIL when it also fails with the
+   changed files restored to BASE (re-run just that file at BASE, then restore HEAD). List it under
+   PRE-EXISTING with both results; the user owns it. Only failures new at HEAD count.
    If `--listTests` shows more than 20 related suites, that is the full suite: run only the tests
    that import a changed file directly.
    A test command that hits the terminal timeout is hung, not slow: never rerun it unchanged. Add
@@ -276,8 +279,10 @@ handoff, else origin's default branch>`.
 FIX ROUND (this card's title starts `Verify: Fix`): the earlier verify already covered the original
 change. Take the sha it verified from its result (kanban_show -> parents -> the fix card -> its
 parent), re-run each command it reported failing, and run PROOF and RELATED only for files changed
-since that sha (`git diff --name-only <sha>..HEAD`). No browser or live QA unless those files are UI.
-LIVE QA you cannot run here (a real device, a browser automation permission, a server, account, or
+since that sha (`git diff --name-only <sha>..HEAD`); skip any failure the earlier verify listed as
+PRE-EXISTING.
+NO BROWSER OR LIVE QA unless the REQUEST asks for it: no dev servers, logins, or browser tools. The
+user tests the PR by hand. LIVE QA the REQUEST asks for but you cannot run here (a real device, a browser automation permission, a server, account, or
 secret you lack) is not a failure: list it under NOT VERIFIED for the user to check by hand and judge
 on what you did run. Never call `delivery_verify_failed` or block for it.
 PASS: mark the parent's draft PR ready (`gh pr ready <url>`; a failure is a note), then complete
