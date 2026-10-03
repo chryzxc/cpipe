@@ -268,3 +268,21 @@ def test_worker_profile_home_resolves_to_the_root(monkeypatch, tmp_path):
     assert home.root() == tmp_path  # roster.yaml lives here, not in the profile
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     assert home.root() == tmp_path
+
+
+def test_branch_follows_the_project_prefix_and_type_and_never_reuses_a_taken_name(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    from cpipe import workspace_prep
+    monkeypatch.setattr(workspace_prep, "project_profile", lambda p, h=None: {"branch_prefix": "shop/"} if p == "shop" else {})
+    taken = {"shop/fix/order-report-filters"}
+    monkeypatch.setattr(submit, "_branch_exists", lambda project: taken.__contains__)
+    submit.submit({"title": "Fix order report", "request": "r", "project": "shop", "size": "small",
+                   "branch_type": "fix", "branch_slug": "Order report filters"})
+    assert arg(calls[0], "--branch") == "shop/fix/order-report-filters-2"
+    assert "--branch" not in calls[1]  # the verify card works in the build card's worktree
+    calls.clear()
+    submit.submit({"title": "Big change", "request": "r", "project": "shop", "size": "large", "branch_type": "feat"})
+    assert "--branch" not in calls[0] and arg(calls[2], "--branch") == "shop/feat/big-change"  # map, plan, build
+    calls.clear()
+    submit.submit({"title": "Other repo", "request": "r", "project": "my-app", "size": "small"})
+    assert "--branch" not in calls[0]  # no saved prefix: Hermes names it
