@@ -2,7 +2,7 @@ name: cpipe
 version: 0.4.0
 manifest_version: 2
 api_version: 1
-description: cpipe, an AI dev team pipeline for Hermes Agent: your profiles plan, build, review, and verify — orchestration policy skills, deterministic gate tools, board intelligence, and housekeeping, installed from one repo.
+description: cpipe, the workflow for your AI dev team in Hermes Agent: each request goes through your own profiles (plan → build → review → verify), every stage gated on evidence — orchestration policy skills, deterministic gate tools, board intelligence, and housekeeping, installed from one repo.
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
 tags: [delivery, workflow, verification, code-review, qa, kanban, orchestration]
