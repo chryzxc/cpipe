@@ -147,7 +147,8 @@ IMPLEMENTER = """IMPLEMENTER
    that import a changed file directly and leave the rest to the PR's CI.
    A test command that hits the terminal timeout is hung, not slow: never rerun it unchanged. Add
    `--forceExit` (jest) or run fewer files; if it still hangs, record it as READY_WITH_RISK.
-   Commit on this card's branch and push it (`git push -u origin HEAD`). On the first push open a
+   Commit on this card's branch and push it (`git push -u origin HEAD`). Never create, switch, or rename
+   the branch: the coordinator named it. On the first push open a
    draft PR against the project's base branch (`gh pr create --draft`). The title and body describe
    the whole branch (`git diff <base>...HEAD`), never only the latest commit: after every later
    push, rewrite them with `gh pr edit <url> --title ... --body ...` to cover all the changes so
@@ -427,24 +428,17 @@ def _journal(kind: str, card: str | None = None, **detail) -> None:
         pass
 
 
-BRANCH_TYPES = ("feat", "fix", "refactor", "perf", "style", "docs", "test", "chore")
-
-
-def branch_name(project: str, kind: str, slug: str, exists=None) -> str | None:
-    """`<branch_prefix><type>/<slug>` from the project's saved conventions; None (Hermes's default
-    `<project>/<card id>-...` name) when the project has no prefix. A taken name gets `-2`, `-3`, ...:
+def branch_name(project: str, branch: str, exists=None) -> str | None:
+    """The coordinator's branch name, or None (Hermes's default). A taken name gets `-2`, `-3`, ...:
     Hermes would otherwise reuse the old branch."""
-    from . import workspace_prep
-    prefix = workspace_prep.project_profile(project, HERMES_HOME).get("branch_prefix")
-    slug = re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")[:40].strip("-")
-    if not (prefix and slug):
+    branch = (branch or "").strip()
+    if not branch:
         return None
-    name = f"{prefix}{kind if kind in BRANCH_TYPES else 'feat'}/{slug}"
     exists = exists or _branch_exists(project)
-    n, candidate = 1, name
+    n, candidate = 1, branch
     while exists(candidate):
         n += 1
-        candidate = f"{name}-{n}"
+        candidate = f"{branch}-{n}"
     return candidate
 
 
@@ -496,7 +490,7 @@ def submit(args: dict, **_kw) -> str:
     except (OSError, KeyError) as exc:
         return json.dumps({"ok": False, "error": str(exc)})
     conventions = _conventions(project)
-    branch = branch_name(project, args.get("branch_type") or "", args.get("branch_slug") or title)
+    branch = branch_name(project, args.get("branch") or "")
     with_branch = (lambda a: [*a, "--branch", branch]) if branch else (lambda a: a)
     if size != "large":  # the implementer works on this first card
         argv = with_branch(argv)
@@ -826,8 +820,7 @@ SCHEMA = {
                 "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
                 "verify": {"type": "boolean", "description": "Default true for new small/large work: a verify card runs the tests after review; false only when the user asks to skip it. With fix_of the default is false (the user re-tests); true only when the user asks for a verifier"},
                 "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},
-                "branch_type": {"type": "string", "enum": list(BRANCH_TYPES), "description": "Conventional type of the change: the branch is `<project prefix><type>/<slug>`"},
-                "branch_slug": {"type": "string", "description": "2-5 word kebab-case branch name, e.g. staff-report-filters (no card id)"},
+                "branch": {"type": "string", "description": "New work: the branch to create, named by your project conventions (memory). Omit for Hermes's default. Not for fix_of."},
             },
             "required": ["request"],
         },

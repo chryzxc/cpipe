@@ -270,19 +270,17 @@ def test_worker_profile_home_resolves_to_the_root(monkeypatch, tmp_path):
     assert home.root() == tmp_path
 
 
-def test_branch_follows_the_project_prefix_and_type_and_never_reuses_a_taken_name(tmp_path, monkeypatch):
+def test_branch_is_the_coordinators_name_and_never_reuses_a_taken_one(tmp_path, monkeypatch):
     calls = fake_board(tmp_path, monkeypatch)
-    from cpipe import workspace_prep
-    monkeypatch.setattr(workspace_prep, "project_profile", lambda p, h=None: {"branch_prefix": "climate/"} if p == "crx" else {})
     taken = {"climate/fix/staff-report-filters"}
     monkeypatch.setattr(submit, "_branch_exists", lambda project: taken.__contains__)
     submit.submit({"title": "Fix staff report", "request": "r", "project": "crx", "size": "small",
-                   "branch_type": "fix", "branch_slug": "Staff report filters"})
+                   "branch": "climate/fix/staff-report-filters"})
     assert arg(calls[0], "--branch") == "climate/fix/staff-report-filters-2"
     assert "--branch" not in calls[1]  # the verify card works in the build card's worktree
     calls.clear()
-    submit.submit({"title": "Big change", "request": "r", "project": "crx", "size": "large", "branch_type": "feat"})
-    assert "--branch" not in calls[0] and arg(calls[2], "--branch") == "climate/feat/big-change"  # map, plan, build
+    submit.submit({"title": "Big change", "request": "r", "project": "crx", "size": "large", "branch": "feat/big-change"})
+    assert "--branch" not in calls[0] and arg(calls[2], "--branch") == "feat/big-change"  # map, plan, build
     calls.clear()
     submit.submit({"title": "Other repo", "request": "r", "project": "my-app", "size": "small"})
-    assert "--branch" not in calls[0]  # no saved prefix: Hermes names it
+    assert "--branch" not in calls[0]  # no name given: Hermes names it
