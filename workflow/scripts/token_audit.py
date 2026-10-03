@@ -95,8 +95,13 @@ def collect(hours: float) -> dict:
         fixes = k.execute("SELECT COUNT(*) FROM tasks WHERE created_at >= ? AND title LIKE 'Fix %'", (since,)).fetchone()[0]
         round_limits = k.execute("SELECT COUNT(*) FROM task_events WHERE created_at >= ? AND kind='blocked' "
                                  "AND payload LIKE '%round limit%'", (since,)).fetchone()[0]
+        runs = collections.defaultdict(list)
+        for title, secs in k.execute("SELECT t.title, r.ended_at - r.started_at FROM task_runs r JOIN tasks t "
+                                     "ON t.id = r.task_id WHERE r.started_at >= ? AND r.ended_at IS NOT NULL", (since,)):
+            kind = re.match(r"(Verify|Fix)", title or "")
+            runs[kind[1].lower() if kind else "build"].append(secs / 60)
     except sqlite3.Error:
-        comments, fixes, round_limits = [], 0, 0
+        comments, fixes, round_limits, runs = [], 0, 0, {}
     by_author = {a: {"n": n, "avg_chars": round(l)} for a, n, l in comments}  # Nexus comments as "default"
     total = sum(b["tokens"] for b in bots.values()) or 1
     coord = bots.get(COORDINATOR, {"tokens": 0, "calls": 0})
@@ -116,11 +121,13 @@ def collect(hours: float) -> dict:
         "compactions": dict(compactions.most_common()),
         "worker_reread_pct": round(100 * rereads / reads, 1) if reads else 0.0,
         "fix_cards": fixes, "round_limit_blocks": round_limits,
+        "run_minutes": {kd: {"runs": len(v), "median": round(sorted(v)[len(v) // 2], 1), "total": round(sum(v))}
+                        for kd, v in runs.items()},
         "comments_by_author": by_author,
     }
 
 
-RATES = ("share", "per_call", "worker_reread_pct", "comment_avg_chars")
+RATES = ("share", "per_call", "worker_reread_pct", "comment_avg_chars", "median")
 
 
 def _flat(d: dict, prefix: str = "", per_day: float = 1.0) -> dict:
@@ -145,7 +152,9 @@ def render(snap: dict, prev: dict | None) -> str:
               f"  repo tool calls={c['repo_tool_calls']}  comments={c['comments']} avg {c['comment_avg_chars']} chars",
               f"Compactions: {snap['compactions']}",
               f"Worker re-reads: {snap['worker_reread_pct']}%   fix cards: {snap['fix_cards']}   "
-              f"round-limit blocks: {snap['round_limit_blocks']}"]
+              f"round-limit blocks: {snap['round_limit_blocks']}",
+              "Run minutes: " + "  ".join(f"{kd} median={v['median']}m total={v['total']}m ({v['runs']} runs)"
+                                          for kd, v in snap.get("run_minutes", {}).items())]
     if prev:
         a, b = _flat(prev, per_day=24 / prev["hours"]), _flat(snap, per_day=24 / snap["hours"])
         moved = [(k, a[k], b[k]) for k in sorted(set(a) & set(b))
