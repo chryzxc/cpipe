@@ -44,7 +44,8 @@ URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/(?:pull|issues)/\d+")
 
 CONTEXT = """CONTEXT: this card is your whole assignment: the REQUEST, the code it touches and its
 callers, and the parent card's result (kanban_show -> parents). No broad searches, no web, no
-skills beyond your role's, no other cards or conversations.
+skills beyond your role's, no other cards or conversations. Make independent reads, searches, and
+commands in ONE turn (several tool calls at once): every extra turn is a full model round trip.
 """
 
 # Planner designs by them, implementer follows them, reviewer cites them by name.
@@ -312,7 +313,8 @@ handoff, else origin's default branch>`.
    `git checkout HEAD -- <files>` and confirm `git status --porcelain` is empty.
    No changed tests for a behavior change is a FAIL ("no test proves the change").
 2. RELATED: run the tests related to every changed file in each package the change reaches
-   (`npx jest --findRelatedTests`, `npx vitest related --run`, or the importing tests). All pass.
+   (`npx jest --findRelatedTests`, `npx vitest related --run`, or the importing tests; a related-test
+   runner your first-turn notes name does this and PRE-EXISTING in one command). All pass.
    PRE-EXISTING: a failing suite, unhandled error, or hang is not a FAIL when it also fails with the
    changed files restored to BASE (re-run just that file at BASE, then restore HEAD). List it under
    PRE-EXISTING with both results; the user owns it. Only failures new at HEAD count.
