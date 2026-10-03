@@ -72,7 +72,8 @@ def test_planner_plans_from_the_map_within_its_lookup_budget(tmp_path, monkeypat
 def test_public_pr_text_carries_no_internal_data(tmp_path, monkeypatch):
     setup(tmp_path, monkeypatch)
     body = tmp_path / "body.md"
-    body.write_text("## Summary\nAdds SMS consent.\n\n## Verification\n- Passed: `npm test` (36 tests)\n")
+    body.write_text("## Summary\nAdds SMS consent to the pinned message on `/users/info`.\n\n"
+                    "## Verification\n- Passed: `npm test` (36 tests)\n")
     clean = f"cd /Users/x/repo/.worktrees/t_7f86d74b && gh pr edit 5 --title 'Add SMS consent' --body-file {body}"
     assert card_gate.gate("terminal", {"command": clean}) is None
     for leak in ("TMPDIR=/Users/christian/.hermes/profiles/forge/cache node --test",
