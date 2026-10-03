@@ -109,6 +109,44 @@ def _latest_report(home: Path, tid: str) -> Optional[str]:
     return f"{age}m ago: {' '.join((row[0] or '').split())[:400]}"
 
 
+BOARD_NOISE = ("heartbeat", "respawn_guarded", "claim_extended", "dependency_wait", "promoted")
+PAYLOAD_NOISE = ("lock", "expires", "started_at", "run_id", "len", "tenant", "creator_task_id", "skills",
+                 "goal_mode", "model_override", "provider_override", "project_id", "workspace_kind")
+
+
+def board_timeline(card: str, home: Optional[Path] = None) -> list[dict]:
+    """What the bots did on a card and the cards linked under it, from kanban.db, shaped as journal entries:
+    the journal alone holds the monitor's view, not the claims, runs, blocks and outcomes."""
+    home = home or _home()
+    try:
+        conn = sqlite3.connect(f"file:{home / 'kanban.db'}?mode=ro", uri=True)
+        try:
+            rows = conn.execute(
+                "WITH RECURSIVE chain(id) AS (SELECT ? UNION SELECT child_id FROM task_links JOIN chain "
+                "ON parent_id = chain.id) SELECT e.task_id, e.kind, e.payload, e.created_at, r.profile "
+                "FROM task_events e LEFT JOIN task_runs r ON r.id = e.run_id "
+                "WHERE e.task_id IN (SELECT id FROM chain) ORDER BY e.id", (card,)).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []
+    out = []
+    for tid, kind, payload, ts, profile in rows:
+        try:
+            detail = json.loads(payload or "null") or {}
+        except ValueError:
+            detail = {}
+        if not isinstance(detail, dict):
+            detail = {}
+        if kind in BOARD_NOISE and not detail.get("note"):
+            continue
+        detail = {("block_kind" if k == "kind" else k): v for k, v in detail.items()
+                  if k not in PAYLOAD_NOISE and v not in (None, "", [])}
+        out.append({"ts": ts, "kind": f"board.{kind}", "card": tid, **({"profile": profile} if profile else {}),
+                    **detail})
+    return out
+
+
 def delivery_status(args: dict, **_: Any) -> str:
     try:
         return json.dumps(status(args.get("card")), default=str)

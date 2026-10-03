@@ -157,8 +157,11 @@ def _status_text(args) -> str:
 
 def _log_text(args) -> str:
     journal = status._load("delivery_journal")
-    entries = journal.read(journal.parse_since(getattr(args, "since", None)), getattr(args, "card", None),
-                           getattr(args, "kind", None), home=status._home())
+    since, card, kind = journal.parse_since(getattr(args, "since", None)), getattr(args, "card", None), getattr(args, "kind", None)
+    entries = list(journal.read(since, card, kind, home=status._home()))
+    if card:  # one card's whole story: the bots' board events beside the monitor's verdicts
+        entries = sorted(entries + [e for e in status.board_timeline(card) if (not since or e["ts"] >= since)
+                                    and (not kind or e["kind"].startswith(kind))], key=lambda e: e["ts"])
     if getattr(args, "json", False):
         return "\n".join(json.dumps(e) for e in entries)
     return "\n".join(journal.format_line(e) for e in entries) or "journal empty for this filter"

@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from kanban_board import board, card, subscribe  # noqa: E402
+from kanban_board import board, card, event, link, subscribe  # noqa: E402
 
 from cpipe import status  # noqa: E402
 
@@ -85,3 +85,18 @@ def test_chat_kanban_show_drops_the_worker_brief(monkeypatch):
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_1")
     assert st.compact_show(tool_name="kanban_show", result=full) is None
     assert st.compact_show(tool_name="terminal", result=full) is None
+
+
+def test_board_timeline_covers_the_chain_without_heartbeats(tmp_path):
+    conn = board(tmp_path / "kanban.db")
+    card(conn, "t_root0001", "done", minutes_ago=30)
+    card(conn, "t_kid00001", "blocked", minutes_ago=20, assignee="critic")
+    link(conn, "t_root0001", "t_kid00001")
+    event(conn, "t_kid00001", "heartbeat", 15)
+    conn.execute("INSERT INTO task_events (task_id, kind, payload, created_at) VALUES "
+                 "('t_kid00001', 'blocked', '{\"kind\": \"capability\"}', ?)", (int(time.time()) - 840,))
+    event(conn, "t_kid00001", "heartbeat", 14, note="tests green")
+    card(conn, "t_other001", "ready", minutes_ago=10)
+    kinds = [(e["card"], e["kind"]) for e in status.board_timeline("t_root0001", home=tmp_path)]
+    assert kinds == [("t_root0001", "board.created"), ("t_kid00001", "board.blocked"),
+                     ("t_kid00001", "board.blocked"), ("t_kid00001", "board.heartbeat")]
