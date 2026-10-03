@@ -230,6 +230,16 @@ def inline_scripts_refused(home: Optional[Path] = None) -> bool:
             and not {"script execution via -e/-c flag", "script execution via heredoc"} <= allowed)
 
 
+def testscope_note(profile: dict) -> list[str]:
+    """Verify runs that hand-rolled the BASE/HEAD comparison and waited out hung jest files took 15-20 min."""
+    if not shutil.which("testscope"):
+        return []
+    base = f" --base origin/{profile['base_branch']}" if profile.get("base_branch") else ""
+    return [f"`testscope{base}` (in the worktree) runs only the tests the change touches, in parallel, kills and "
+            "names hung files, and reruns failures at the base to mark them new or pre-existing: use it for related "
+            "tests and pre-existing checks instead of running files one by one or writing a comparison script."]
+
+
 def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict]:
     """``pre_llm_call`` hook for kanban workers; silent everywhere else."""
     ws_env, task_id = os.environ.get("HERMES_KANBAN_WORKSPACE"), os.environ.get("HERMES_KANBAN_TASK")
@@ -255,10 +265,7 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
             if missing:
                 notes.append(f"No node_modules for: {', '.join(missing)}. Install them with the project's "
                              "package manager (lockfile install) before testing; do not block for it.")
-            if shutil.which("testscope"):
-                base = f" --base origin/{profile['base_branch']}" if profile.get("base_branch") else ""
-                notes.append(f"`testscope{base}` runs only the tests your change touches, names hung files and "
-                             "marks failures new or pre-existing; run it before the full suite.")
+            notes += testscope_note(profile)
             if inline_scripts_refused():
                 notes.append("This run refuses inline interpreter code (`python -c`, `node -e`, `python3 - <<EOF`) "
                              "and execute_code; write the script to a file under $TMPDIR and run that file.")
@@ -269,6 +276,7 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
                 notes.append(f"Your assigned workspace {ws} is empty scratch, not the repo. The parent card "
                              f"worked in {parent}; cd there and work on its current branch. Do not block "
                              "for a missing repository.")
+                notes += testscope_note(profile)
         home = Path(os.environ.get("HERMES_HOME", ""))
         notes += quality.first_turn_notes(home.name if home.parent.name == "profiles" else "default",
                                           profile.get("project"))

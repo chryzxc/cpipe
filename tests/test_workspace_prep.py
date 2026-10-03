@@ -54,8 +54,10 @@ def test_empty_scratch_workspace_points_at_parent_worktree(tmp_path, monkeypatch
     monkeypatch.setenv("HERMES_KANBAN_WORKSPACE", str(scratch))
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_child")
     monkeypatch.setenv("HERMES_KANBAN_DB", str(db))
+    monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: cmd == "testscope" and "/bin/testscope")
     note = workspace_prep.prepare_workspace(is_first_turn=True)
     assert str(wt) in note["context"] and "Do not block" in note["context"]
+    assert "`testscope`" in note["context"]  # verify cards start in scratch and need it most
 
 
 def test_outside_kanban_workers_it_does_nothing(monkeypatch):
