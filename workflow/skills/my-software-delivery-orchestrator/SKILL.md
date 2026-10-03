@@ -15,7 +15,7 @@ All role names in this skill (Coordinator, Implementer, Reviewer, Verifier, Secu
 | Responsibility | Owner |
 | --- | --- |
 | User intent, authorization, task graph, integration, final report | Coordinator |
-| PR title, body, and metadata (kept current for the whole branch after every push) | Implementer using `creating-pr-content` |
+| PR title, body, and metadata (kept current for the whole branch after every push) | Implementer using `creating-pr-content`; Coordinator one final pass when the delivery ends |
 | External research and source verification | Researcher |
 | Small deterministic repository mapping | Coordinator direct tools |
 | Cross-cutting repository discovery, architecture, ADRs, and implementation plans | Planner |
@@ -61,7 +61,7 @@ The orchestrator skill stays on **Coordinator only**. Do not copy it into specia
 Commit count is never a review finding: history is squashed at merge, so never request a squash or a force-push.
 11. Require `PRECHECK`, `RED`, `IMPLEMENTING`, `GREEN`, `REGRESSION`, `COMMIT_READY`, or `BLOCKED` heartbeats with elapsed time and the current command/result. Workers finish rather than stop: they install missing dependencies, change any file the REQUEST needs (listed as `OUT_OF_PLAN`), and near the end of the budget push what is green with `READY_WITH_RISK`. A block is only a product, security, or destructive/external decision.
 12. Use native same-card review for an ordinary implementation slice: Implementer requests Reviewer review; Reviewer completes, requests changes, or blocks that card. Create separate linked QA/security/operations cards only when their independent gate is actually distinct. Dispatch only the current executable slice.
-13. The implementer writes the PR title/body/metadata with `creating-pr-content` and rewrites them after every push to describe the whole branch. Coordinator does not rewrite them; other specialists supply evidence only.
+13. The implementer writes the PR title/body/metadata with `creating-pr-content` and rewrites them after every push to describe the whole branch. When the delivery ends, Coordinator does one final pass adding only what the user's conversation knows (why, decisions, linked issues) and keeps the evidence; other specialists supply evidence only. No user, bot, or tool names, card ids, or local paths in the PR.
 
 Load `references/routing.md` for the Bot selector, backend, placement, and skill baselines, `references/handoffs.md` before any Bot or Kanban handoff, `references/parallel-execution.md` before dispatching concurrent gates or batched cards, `references/native-bot-dispatch.md` before creating, reviewing, or recovering a Kanban task, and `references/security-lifecycle.md` for audit, authorization, active validation, remediation, and closure. Load `kanban-orchestrator` for board mechanics after routing and authority are resolved here. Load `references/pr-delivery.md` only after PR authorization and final gates.
 
