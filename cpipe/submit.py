@@ -148,9 +148,12 @@ IMPLEMENTER = """IMPLEMENTER
    A test command that hits the terminal timeout is hung, not slow: never rerun it unchanged. Add
    `--forceExit` (jest) or run fewer files; if it still hangs, record it as READY_WITH_RISK.
    Commit on this card's branch and push it (`git push -u origin HEAD`). On the first push open a
-   draft PR against the project's base branch (`gh pr create --draft`); later pushes update it. The
-   PR body ends with `## How to test`: 3-6 manual steps a person follows to see the change work,
-   and what could regress. If push or the PR fails, record the exact error as READY_WITH_RISK.
+   draft PR against the project's base branch (`gh pr create --draft`). The title and body describe
+   the whole branch (`git diff <base>...HEAD`), never only the latest commit: after every later
+   push, rewrite them with `gh pr edit <url> --title ... --body ...` to cover all the changes so
+   far. The body ends with `## How to test`: 3-6 manual steps a person follows to see the whole
+   change work, and what could regress. If push or the PR fails, record the exact error as
+   READY_WITH_RISK.
 5. If a check cannot run because the environment lacks a tool, dependency, config, or secret,
    record the exact gap in your summary and continue (READY_WITH_RISK). Do not block for it.
    The OCR gate belongs to the reviewer: do not run it and never block on it.
