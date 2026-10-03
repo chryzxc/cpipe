@@ -50,8 +50,11 @@ skills beyond your role's, no other cards or conversations.
 # Planner designs by them, implementer follows them, reviewer cites them by name.
 PRINCIPLES = """PRINCIPLES (planner designs by these, implementer follows them, reviewer cites one by name when the
 diff breaks it; anything else is a note, not a finding):
-- REUSE: an existing helper, pattern, or component wins over new code; the plan names it.
+- REUSE: an existing helper, pattern, or component wins over new code; the plan names it. Then the
+  standard library, a platform feature, or an installed dependency; never a new dependency for a few lines.
 - SMALLEST CHANGE that meets the REQUEST: no speculative abstraction, config, dependency, or refactor.
+- KNOWN SHORTCUTS: a deliberate simplification with a real ceiling (naive scan, global lock) gets a
+  one-line comment naming the ceiling and the upgrade path.
 - ROOT CAUSE: fix it once where every caller routes through, not in each caller.
 - KEEP BEHAVIOR: existing behavior stays unless the REQUEST changes it; pinned by tests.
 - TRUST BOUNDARIES: validate input where it enters; never log secrets, tokens, or personal/health data.
