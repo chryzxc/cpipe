@@ -23,6 +23,18 @@ def test_status_reports_the_monitor_verdict(tmp_path):
     assert status.status("t_nope", home=tmp_path)["ok"] is False
 
 
+def test_status_carries_the_workers_latest_report(tmp_path):
+    conn = board(tmp_path / "kanban.db")
+    card(conn, "t_aaaaaa3", "running", minutes_ago=10, assignee="forge")
+    for author, body in (("forge", "PRECHECK ok"), ("forge", "LOCAL URL READY: http://127.0.0.1:1/x"),
+                         ("default", "CONTINUATION: keep going")):
+        conn.execute("INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+                     ("t_aaaaaa3", author, body, int(time.time()) - 60))
+    conn.commit()
+    row = status.status("t_aaaaaa3", home=tmp_path)["cards"][0]
+    assert row["latest"].endswith("LOCAL URL READY: http://127.0.0.1:1/x")  # the worker's, not the coordinator's
+
+
 def test_watch_validates_and_persists(tmp_path):
     assert not status.watch("t_abcdef1", "pr", "rm -rf /", home=tmp_path)["ok"]
     assert status.watch("t_abcdef1", "ci", "https://github.com/o/r/pull/7", hours=2, home=tmp_path)["ok"]

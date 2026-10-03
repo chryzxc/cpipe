@@ -10,6 +10,8 @@ Policy skills, scripts, cron definitions, and config assertions live in
 
 from __future__ import annotations
 
+import functools
+import importlib
 import importlib.util
 import json
 import shlex
@@ -246,6 +248,43 @@ _MUTATION_SCHEMA = {
 }
 
 
+# Dependency order: a module reloads after the modules it imports by name.
+_RELOAD_ORDER = ("home", "workspace_prep", "block_reasons", "liveness", "status", "submit", "review_gate",
+                 "card_gate", "headless_clarify", "exit_handoff", "test_env")
+_PKG_DIR = Path(__file__).resolve().parent
+_loaded_at = time.time()
+
+
+def _reload_if_changed() -> None:
+    """Herm's chat server imports cpipe once and runs for days: a pushed fix only reached its chats
+    after a relaunch, so cards were made by code already fixed. Reload changed modules in place (every
+    `from . import x` keeps pointing at the same module object). Tool schemas still load at start."""
+    global _loaded_at
+    try:
+        newest = max(f.stat().st_mtime for f in _PKG_DIR.glob("*.py"))
+    except (OSError, ValueError):
+        return
+    if newest <= _loaded_at:
+        return
+    _loaded_at = newest
+    for name in _RELOAD_ORDER:
+        module = sys.modules.get(f"{__name__}.{name}")
+        if module:
+            try:
+                importlib.reload(module)
+            except Exception:  # a half-saved file: keep running the previous code
+                pass
+
+
+def _live(module, name: str):
+    """A tool or hook that always runs the module's current code."""
+    @functools.wraps(getattr(module, name))
+    def call(*args, **kwargs):
+        _reload_if_changed()
+        return getattr(module, name)(*args, **kwargs)
+    return call
+
+
 def register(ctx):
     """Register deterministic delivery tools, doctor CLI, metrics and liveness hooks. The registry wants
     the bare function schema: the OpenAI wrapper made every tool reach the model with no description
@@ -267,23 +306,23 @@ def register(ctx):
     )
     ctx.register_tool(
         name="delivery_submit", toolset="cpipe",
-        schema=submit.SCHEMA["function"], handler=submit.submit,
+        schema=submit.SCHEMA["function"], handler=_live(submit, "submit"),
     )
     ctx.register_tool(
         name="delivery_verify_failed", toolset="cpipe",
-        schema=submit.VERIFY_FAILED_SCHEMA["function"], handler=submit.verify_failed,
+        schema=submit.VERIFY_FAILED_SCHEMA["function"], handler=_live(submit, "verify_failed"),
     )
     ctx.register_tool(
         name="delivery_test_env", toolset="cpipe",
-        schema=test_env.SCHEMA["function"], handler=test_env.run,
+        schema=test_env.SCHEMA["function"], handler=_live(test_env, "run"),
     )
     ctx.register_tool(
         name="delivery_status", toolset="cpipe",
-        schema=status.STATUS_SCHEMA["function"], handler=status.delivery_status,
+        schema=status.STATUS_SCHEMA["function"], handler=_live(status, "delivery_status"),
     )
     ctx.register_tool(
         name="delivery_watch", toolset="cpipe",
-        schema=status.WATCH_SCHEMA["function"], handler=status.delivery_watch,
+        schema=status.WATCH_SCHEMA["function"], handler=_live(status, "delivery_watch"),
     )
     ctx.register_cli_command(
         name="cpipe", help="cpipe plugin doctor",
@@ -291,15 +330,15 @@ def register(ctx):
         description="Check cpipe plugin status and run the policy validator.",
     )
     ctx.register_hook("on_session_end", _on_session_end)
-    ctx.register_hook("on_session_end", exit_handoff.handoff)
-    ctx.register_hook("on_kanban_dispatch_tick", liveness.record_dispatch_tick)
-    ctx.register_hook("on_kanban_dispatch_tick", block_reasons.explain_blocks)
-    ctx.register_hook("pre_llm_call", liveness.liveness_notice)
-    ctx.register_hook("pre_llm_call", workspace_prep.prepare_workspace)
-    ctx.register_hook("pre_llm_call", status.chat_context)
-    ctx.register_hook("transform_tool_result", status.compact_show)
-    ctx.register_hook("post_llm_call", status.claim_check)
-    ctx.register_hook("pre_approval_request", status.approval_requested)
-    ctx.register_hook("pre_tool_call", review_gate.gate)
-    ctx.register_hook("pre_tool_call", headless_clarify.gate)
-    ctx.register_hook("pre_tool_call", card_gate.gate)
+    ctx.register_hook("on_session_end", _live(exit_handoff, "handoff"))
+    ctx.register_hook("on_kanban_dispatch_tick", _live(liveness, "record_dispatch_tick"))
+    ctx.register_hook("on_kanban_dispatch_tick", _live(block_reasons, "explain_blocks"))
+    ctx.register_hook("pre_llm_call", _live(liveness, "liveness_notice"))
+    ctx.register_hook("pre_llm_call", _live(workspace_prep, "prepare_workspace"))
+    ctx.register_hook("pre_llm_call", _live(status, "chat_context"))
+    ctx.register_hook("transform_tool_result", _live(status, "compact_show"))
+    ctx.register_hook("post_llm_call", _live(status, "claim_check"))
+    ctx.register_hook("pre_approval_request", _live(status, "approval_requested"))
+    ctx.register_hook("pre_tool_call", _live(review_gate, "gate"))
+    ctx.register_hook("pre_tool_call", _live(headless_clarify, "gate"))
+    ctx.register_hook("pre_tool_call", _live(card_gate, "gate"))
