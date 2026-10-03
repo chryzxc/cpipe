@@ -151,7 +151,8 @@ IMPLEMENTER = """IMPLEMENTER
    draft PR against the project's base branch (`gh pr create --draft`). The title and body describe
    the whole branch (`git diff <base>...HEAD`), never only the latest commit: after every later
    push, rewrite them with `gh pr edit <url> --title ... --body ...` to cover all the changes so
-   far. The body ends with `## How to test`: 3-6 manual steps a person follows to see the whole
+   far. Write them with the `creating-pr-content` skill when it is installed (load it once per
+   card). The body includes `## How to test`: 3-6 manual steps a person follows to see the whole
    change work, and what could regress. If push or the PR fails, record the exact error as
    READY_WITH_RISK.
 5. If a check cannot run because the environment lacks a tool, dependency, config, or secret,
