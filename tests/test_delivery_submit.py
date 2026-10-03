@@ -37,7 +37,7 @@ def test_small_request_goes_straight_to_the_implementer(tmp_path, monkeypatch):
     body = arg(build, "--body")
     assert "Make the error icon 16px" in body and "{" not in body
     assert "plan in one\n   pass yourself" in body and "PIN, MODIFIED code only" in body and "--reviewer sentry" in body
-    assert "FINISH, DON'T STOP" in body and "gh pr create --draft" in body and "## How to test" in body
+    assert "FINISH, DON'T STOP" in body and "gh pr create --draft" in body and "## How to test" in body and "gh pr edit" in body
     assert "gh pr ready" in body and "3 review rounds" in body and "patch-id" in body
     assert "readFileSync" in body and "never approve over it" in body and "did not ask for" in body
     assert "PLAN FORMAT" in body and "Walk the plan" in body
