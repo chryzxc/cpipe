@@ -83,7 +83,10 @@ def test_chat_kanban_show_drops_the_worker_brief(monkeypatch):
     assert "worker_context" not in out and out["comments_tail"].endswith("latest note")
     assert len(json.dumps(out)) < 6000 and len(out["events"]) == 5
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_1")
-    assert st.compact_show(tool_name="kanban_show", result=full) is None
+    monkeypatch.setattr(st, "_SHOWN", set())
+    assert st.compact_show(tool_name="kanban_show", result=full) is None  # a worker sees each card in full once
+    again = json.loads(st.compact_show(tool_name="kanban_show", result=full))
+    assert "worker_context" not in again and again["note"].startswith("Repeat view")
     assert st.compact_show(tool_name="terminal", result=full) is None
 
 

@@ -28,6 +28,7 @@ def test_first_turn_links_missing_node_modules_once(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_KANBAN_WORKSPACE", str(wt))
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_1")
     monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: None)  # no codegraph, no testscope
+    monkeypatch.setattr(workspace_prep, "inline_scripts_refused", lambda: False)
     note = workspace_prep.prepare_workspace(is_first_turn=True)
     assert "symlinked" in note["context"] and "client" in note["context"]
     assert (wt / "client" / "node_modules" / "vitest").is_dir()
@@ -126,3 +127,9 @@ def test_worktree_gets_a_clone_of_the_code_index(tmp_path, monkeypatch):
     assert ".codegraph" not in status.stdout
     assert not workspace_prep.link_codegraph(wt)      # already there
     assert not workspace_prep.link_codegraph(main)    # the main checkout keeps its own
+
+
+def test_inline_scripts_note_follows_the_approval_config(tmp_path):
+    assert workspace_prep.inline_scripts_refused(tmp_path)  # no config: Hermes defaults to deny
+    (tmp_path / "config.yaml").write_text("approvals:\n  single_query_mode: allow\n")
+    assert not workspace_prep.inline_scripts_refused(tmp_path)

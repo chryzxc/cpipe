@@ -285,21 +285,28 @@ def approval_requested(*, command: str = "", surface: str = "", session_key: str
 
 
 SHOW_KEEP = 3000  # chars of result and of the comment thread a chat keeps from kanban_show
+_SHOWN: set = set()  # cards this worker process has already seen in full
 
 
 def compact_show(*, tool_name: str = "", result: Any = None, **_: Any) -> Optional[str]:
-    """transform_tool_result: a chat's ``kanban_show`` keeps the row, links, the result and the comment tail.
+    """transform_tool_result: ``kanban_show`` keeps the row, links, the result and the comment tail.
 
-    The full response (11-37K chars) carries ``worker_context``, the card's whole brief, which only its
-    worker needs. In a chat it refilled the rolling window on every notification and forced a compaction
-    each turn. Workers get the full response. Full history: ``hermes kanban show <id>``."""
-    if tool_name != "kanban_show" or os.environ.get("HERMES_KANBAN_TASK") or not isinstance(result, str):
+    The full response (11-37K chars) carries ``worker_context``, the card's whole brief. In a chat it
+    refilled the rolling window on every notification and forced a compaction each turn. A worker gets
+    each card in full once; it re-showed its card 2-6 times a run (19K chars each, carried in every later
+    call) to check new comments. Full history: ``hermes kanban show <id>``."""
+    if tool_name != "kanban_show" or not isinstance(result, str):
         return None
     try:
         data = json.loads(result)
     except ValueError:
         return None
     if not isinstance(data, dict) or "worker_context" not in data:
+        return None
+    worker = bool(os.environ.get("HERMES_KANBAN_TASK"))
+    card = (data.get("task") or {}).get("id")
+    if worker and card not in _SHOWN:
+        _SHOWN.add(card)
         return None
     task = data.get("task") or {}
     for k in ("result", "last_failure_error"):
@@ -309,5 +316,7 @@ def compact_show(*, tool_name: str = "", result: Any = None, **_: Any) -> Option
     _, sep, thread = ctx.rpartition("## Comment thread")
     data["comments_tail"] = (thread[-SHOW_KEEP:] if sep else "")
     data["events"] = [{**e, "payload": str(e.get("payload"))[:200]} for e in (data.get("events") or [])[-5:]]
-    data["note"] = "Chat view: brief and parent handoffs omitted. `hermes kanban show <id>` has everything."
+    data["note"] = ("Repeat view: the brief and parent handoffs were in your first kanban_show of this card."
+                    if worker else "Chat view: brief and parent handoffs omitted.") + \
+        " `hermes kanban show <id>` has everything."
     return json.dumps(data)
