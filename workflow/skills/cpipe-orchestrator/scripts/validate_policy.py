@@ -27,7 +27,7 @@ for rel in sorted(REQUIRED):
 skill = (ROOT / "SKILL.md").read_text()
 if not skill.startswith("---\n"):
     errors.append("frontmatter:not-at-byte-zero")
-if "name: my-cpipe-orchestrator" not in skill:
+if "name: cpipe-orchestrator" not in skill:
     errors.append("frontmatter:wrong-name")
 if "version: 7.0.0" not in skill:
     errors.append("frontmatter:wrong-version")

@@ -11,11 +11,11 @@ Recipes are conditional lifecycle examples, not fixed teams. Select only trigger
 - **Parallel gates:** one frozen SHA → Reviewer + Verifier + Security Reviewer cards dispatched concurrently (no shared output) → Coordinator reconciles (most severe verdict wins; card holds until all return).
 - **Batched execution:** ≥2 queued small cards in the same module → one Implementer session, max 3 cards, one frozen commit per card, zero shared files.
 - **Spike:** question → Spike Explorer sandbox repro → `SPIKE_VERDICT` → optional Planner plan for the winning option.
-- **Performance audit:** Planner + `my-optimization-audit` (baseline, findings PERF-###) → Implementer fixes → Verifier re-measurement delta → verdict.
+- **Performance audit:** Planner + `cpipe-optimization-audit` (baseline, findings PERF-###) → Implementer fixes → Verifier re-measurement delta → verdict.
 - **Proactive audit (scheduled):** Auditor scan script → LLM triage of pre-filtered output → PERF-### cards → same performance-audit chain.
 - **Refactor:** characterization → `Implementer/refactor` → regression → `Reviewer/code`.
 - **Review-only:** frozen target → Reviewer + targeted Verifiers/Security; no edits.
-- **Production go-live:** final gates + `my-production-readiness` (Verifier evidence + Release Engineer development-platform sections) → GO / GO_WITH_RISKS / NO_GO on the release card → explicit the operator approval; deployment execution is outside this orchestrator.
+- **Production go-live:** final gates + `cpipe-production-readiness` (Verifier evidence + Release Engineer development-platform sections) → GO / GO_WITH_RISKS / NO_GO on the release card → explicit the operator approval; deployment execution is outside this orchestrator.
 - **Delivery:** final gates + explicit `CREATE_PR` → `PR Delivery`; never merge/deploy implicitly.
 - **Security audit:** Security Reviewer read-only audit → Coordinator reconciliation → optional blocked Security Tester engagement request.
 - **Active validation:** confirmed Security Reviewer hypothesis + authorization receipt → Security Tester → Security Reviewer interpretation → optional Implementer remediation.

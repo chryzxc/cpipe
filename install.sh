@@ -22,20 +22,24 @@ python3 "$SCRIPTS_SRC/setup_roster.py" "$@" || echo "   roster not configured ye
 echo "-- 3/9 global skills (symlinks)"
 for dir in "$SKILLS_SRC"/*/; do
   name="$(basename "$dir")"
-  case "$name" in my-*) ;; *) continue ;; esac
+  case "$name" in cpipe-*) ;; *) continue ;; esac
   rm -rf "$H/skills/$name"
   ln -sfn "$SKILLS_SRC/$name" "$H/skills/$name"
 done
-for link in "$H"/skills/my-*; do  # skills removed from cpipe
+for link in "$H"/skills/cpipe-*; do  # skills removed from cpipe
   [ -L "$link" ] && [ ! -e "$link" ] && rm -f "$link"
 done
 
 echo "-- 4/9 profile skill fan-out (symlinks)"
-for old in "$H"/profiles/*/skills/my-software-delivery-orchestrator; do  # renamed 2026-10-04
-  [ -e "$old" ] || [ -L "$old" ] || continue
+# skills were named my-* until 2026-10-04: move every profile's links to the cpipe-* names, drop the old global links
+while IFS= read -r old; do
+  case "$(readlink "$old")" in "$SKILLS_SRC"/my-*) ;; *) continue ;; esac  # only links into this repo
+  name="${old##*/my-}"
+  case "$name" in software-delivery-orchestrator|cpipe-orchestrator) name=orchestrator ;; esac
+  [ -d "$SKILLS_SRC/cpipe-$name" ] || continue
+  case "$old" in "$H/skills/"*) ;; *) ln -sfn "$SKILLS_SRC/cpipe-$name" "$(dirname "$old")/cpipe-$name" ;; esac
   rm -rf "$old"
-  ln -sfn "$SKILLS_SRC/my-cpipe-orchestrator" "$(dirname "$old")/my-cpipe-orchestrator"
-done
+done < <(find "$H/skills" "$H/profiles" -maxdepth 3 -name "my-*" -type l 2>/dev/null)
 count=0
 while IFS= read -r d; do
   name="$(basename "$d")"
@@ -46,7 +50,7 @@ while IFS= read -r d; do
   rm -rf "$d"
   ln -sfn "$SKILLS_SRC/$name" "$d"
   count=$((count + 1))
-done < <(find "$H/profiles" -maxdepth 3 -name "my-*" \( -type d -o -type l \) 2>/dev/null)
+done < <(find "$H/profiles" -maxdepth 3 -name "cpipe-*" \( -type d -o -type l \) 2>/dev/null)
 echo "   profile links: $count"
 
 echo "-- 5/9 scripts (copies; cron requires resolution inside $H/scripts)"

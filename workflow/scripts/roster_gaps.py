@@ -13,7 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-TEAM_CONFIG = "skills/my-cpipe-orchestrator/references/team-config.yaml"
+TEAM_CONFIG = "skills/cpipe-orchestrator/references/team-config.yaml"
 
 
 def _home(home=None) -> Path:

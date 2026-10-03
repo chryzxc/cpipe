@@ -1,5 +1,5 @@
 ---
-name: my-optimization-audit
+name: cpipe-optimization-audit
 description: "Audit any codebase for performance issues and rank fixes."
 version: 0.1.0
 ---
