@@ -45,7 +45,7 @@
   {
     "id": "boardintel001",
     "name": "Board intelligence weekly",
-    "prompt": "You are the weekly learning-loop steward. The injected board-intelligence digest may include a 'Finding-class recurrence (28d)' section. For each listed class with count >= 3, put all of them on exactly ONE todo Kanban card titled 'Standards amendment drafts: <YYYY-MM-DD>' with NO assignee (no bot works it: the operator reads and approves it); for each class the body has a 'Standards amendment draft: <class>' section with the proposed engineering-standards rule text plus the evidence lines from the digest. Never edit skill files yourself; the operator approves drafts on the card. If the digest has no recurrence section, reply with the digest only.",
+    "prompt": "You are the weekly learning-loop steward. The injected board-intelligence digest may include a 'Finding-class recurrence (28d)' section. For each listed class with count >= 3, put all of them on exactly ONE todo Kanban card titled 'Standards amendment drafts: <YYYY-MM-DD>' with NO assignee (no bot works it: the operator reads and approves it); for each class the body has a 'Standards amendment draft: <class>' section with the proposed rule text for the PRINCIPLES block or the reviewer brief in cpipe/submit.py plus the evidence lines from the digest. Never edit skill files yourself; the operator approves drafts on the card. If the digest has no recurrence section, reply with the digest only.",
     "script": "board_intelligence.py",
     "no_agent": false,
     "model": "gpt-5.6-luna",

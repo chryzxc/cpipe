@@ -26,12 +26,18 @@ for dir in "$SKILLS_SRC"/*/; do
   rm -rf "$H/skills/$name"
   ln -sfn "$SKILLS_SRC/$name" "$H/skills/$name"
 done
+for link in "$H"/skills/my-*; do  # skills removed from cpipe
+  [ -L "$link" ] && [ ! -e "$link" ] && rm -f "$link"
+done
 
 echo "-- 4/9 profile skill fan-out (symlinks)"
 count=0
 while IFS= read -r d; do
   name="$(basename "$d")"
-  [ -d "$SKILLS_SRC/$name" ] || continue
+  if [ ! -d "$SKILLS_SRC/$name" ]; then  # skill removed from cpipe: drop its dead link
+    [ -L "$d" ] && [ ! -e "$d" ] && rm -f "$d"
+    continue
+  fi
   rm -rf "$d"
   ln -sfn "$SKILLS_SRC/$name" "$d"
   count=$((count + 1))
