@@ -22,11 +22,14 @@ ROUND_LIMIT = re.compile(r"round limit", re.I)
 CREATE_CMD = re.compile(r"\bkanban\s+create\b.*?--assignee[=\s]+['\"]?([\w-]+)", re.S)
 OPERATOR_DIRS = ("delivery", "memories", "skills", "plugins", "scripts", "cron")
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$", re.M)
+LOOKUP_TOOLS = ("read_file", "search_files", "terminal")
+_lookups: dict[str, int] = {}  # Plan: card -> lookups so far (per worker process)
 
 
 def gate(tool_name: str = "", args: dict | None = None, **_kw):
     args = args or {}
-    blocked = round_limit_unblock(tool_name, args) or operator_config_write(tool_name, args)
+    blocked = (round_limit_unblock(tool_name, args) or operator_config_write(tool_name, args)
+               or plan_lookup_budget(tool_name, args))
     if blocked:
         return blocked
     if tool_name == "kanban_create":
@@ -105,3 +108,31 @@ def operator_path(path: Path) -> bool:
         return False
     return (len(rel) == 1 or rel[0] in OPERATOR_DIRS
             or (len(rel) == 3 and rel[0] == "profiles" and rel[2] in ("SOUL.md", "config.yaml")))
+
+
+def plan_lookup_budget(tool_name: str, args: dict):
+    """The planner plans from the investigator's map. Exploring the repo itself took 40-74 lookups a plan
+    on the most expensive model; the brief allows submit.PLAN_LOOKUPS to close named GAPs."""
+    tid = os.environ.get("HERMES_KANBAN_TASK", "")
+    if tool_name not in LOOKUP_TOOLS or not tid or "hermes kanban" in str(args.get("command") or ""):
+        return None
+    if Path(os.environ.get("HERMES_HOME", "")).name != _planner():
+        return None
+    if tid not in _lookups:
+        row = submit._task_row(tid)
+        if not (row and str(row["title"]).startswith("Plan:")):
+            return None
+        _lookups[tid] = 0
+    _lookups[tid] += 1
+    if _lookups[tid] <= submit.PLAN_LOOKUPS:
+        return None
+    return {"action": "block", "message": (
+        f"Lookup budget spent ({submit.PLAN_LOOKUPS}): plan from the map you have. Put each fact still open "
+        "under VERIFY for the implementer and complete the card with the full plan.")}
+
+
+def _planner() -> str:
+    try:
+        return submit._role("planner")
+    except (KeyError, OSError):
+        return ""
