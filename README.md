@@ -4,7 +4,7 @@
 
 # cpipe
 
-**cpipe is an AI dev team pipeline for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** It turns your existing AI profiles into a dev team that plans, builds, reviews, and verifies: issues are clarified, planned, implemented with TDD in worktrees, reviewed on frozen commits, verified by running the tests, and delivered as evidence-backed pull requests.
+**cpipe is the workflow for your AI dev team in [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** It routes each request through your own profiles (plan → build → review → verify) and gates every stage on evidence, ending in a reviewed, tested PR. Requests are clarified first, built with TDD in worktrees, reviewed on frozen commits, and verified by actually running the tests.
 
 > **cpipe runs the team; you bring the members.** The plugin decides *which role* gets each card, *what the card asks for*, and *what evidence a stage must produce*. It does not provide the bots. The quality of the result depends on the Hermes profiles you map to each role: their model, their persona (`SOUL.md`), their role skills, and their toolsets. You configure those; see [Bring your own bots](#-bring-your-own-bots).
 
