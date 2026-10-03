@@ -12,6 +12,7 @@ import os
 import re
 import shlex
 import sqlite3
+import subprocess
 from pathlib import Path
 
 from . import home, submit
@@ -36,12 +37,17 @@ LEAK = re.compile(
     r"|\b(?:READY_WITH_RISK|COMMIT_READY|OUT_OF_PLAN|PINNED|CONTINUATION|REQUEST_CHANGES|PRECHECK)\b"
     r"|\bREV-\d+\b|\bAC\d+\b|\bOCR (?i:gate|delegat|preview|review|belongs)"
     r"|(?<!/commit/)(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])")  # case-sensitive: "pinned", /users/ routes are prose
+# In commits, SHAs (action pins, lockfiles, cherry-picks) and AC<n> are real content.
+CODE_LEAK = re.compile(LEAK.pattern.replace(r"|\bAC\d+\b", "").rsplit("|(?<!/commit/)", 1)[0])
+GIT_PUSH = re.compile(r"\bgit\s+(?:-C\s+(\S+)\s+)?push\b")
+CD = re.compile(r"^\s*cd\s+(\S+)\s*&&")
 
 
 def gate(tool_name: str = "", args: dict | None = None, **_kw):
     args = args or {}
     blocked = (round_limit_unblock(tool_name, args) or operator_config_write(tool_name, args)
-               or plan_lookup_budget(tool_name, args) or public_github_text(tool_name, args))
+               or plan_lookup_budget(tool_name, args) or public_github_text(tool_name, args)
+               or pushed_commits(tool_name, args))
     if blocked:
         return blocked
     if tool_name == "kanban_create":
@@ -171,6 +177,25 @@ def public_github_text(tool_name: str, args: dict):
         f"Not sent: the PR text contains {hit[0]!r}, which is internal. The PR is public: describe the change, "
         "how to test it and real risks; never local paths, card/plan/review ids, bot or tool names, models, "
         "SHAs, delivery tokens, or review rounds. Rewrite it and send again.")}
+
+
+def pushed_commits(tool_name: str, args: dict):
+    """Commits are public too: a worker's test names carried review ids (REV-005), a code comment and a
+    commit message a card id. Checks the messages and added lines of the commits no remote has yet."""
+    cmd = str(args.get("command") or "") if tool_name == "terminal" else ""
+    worker = Path(os.environ.get("HERMES_HOME", ""))
+    if not (m := GIT_PUSH.search(cmd)) or worker.parent.name != "profiles" or worker.name not in guarded():
+        return None
+    repo = m[1] or ((c := CD.match(cmd)) and c[1]) or os.environ.get("HERMES_KANBAN_WORKSPACE") or "."
+    log = subprocess.run(["git", "-C", os.path.expanduser(repo), "log", "HEAD", "--not", "--remotes", "-p",
+                          "--format=%n%B"], capture_output=True, text=True, errors="replace").stdout
+    added = "\n".join(line for line in log.splitlines() if not line.startswith(("-", " ", "+++", "diff ", "@@", "index ")))
+    if not (hit := CODE_LEAK.search(added)):
+        return None
+    return {"action": "block", "message": (
+        f"Not pushed: a commit contains {hit[0]!r}, which is internal. Commits are public: no local paths, "
+        "card/plan/review ids or delivery tokens in code, test names, comments or messages. Amend or reword the "
+        "unpushed commits, then push again.")}
 
 
 def _gh_text(cmd: str) -> str:
