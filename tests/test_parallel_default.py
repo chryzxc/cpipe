@@ -1,8 +1,8 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL = (ROOT / "workflow" / "skills" / "my-software-delivery-orchestrator" / "SKILL.md").read_text()
-PARALLEL = (ROOT / "workflow" / "skills" / "my-software-delivery-orchestrator" /
+SKILL = (ROOT / "workflow" / "skills" / "my-cpipe-orchestrator" / "SKILL.md").read_text()
+PARALLEL = (ROOT / "workflow" / "skills" / "my-cpipe-orchestrator" /
             "references" / "parallel-execution.md").read_text()
 README = (ROOT / "README.md").read_text()
 

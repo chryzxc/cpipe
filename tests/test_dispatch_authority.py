@@ -161,7 +161,7 @@ def test_supervisor_prompt_carries_new_rules():
 
 
 def test_skill_carries_dispatch_authority_rule():
-    skill = (ROOT / "workflow" / "skills" / "my-software-delivery-orchestrator" / "SKILL.md").read_text()
+    skill = (ROOT / "workflow" / "skills" / "my-cpipe-orchestrator" / "SKILL.md").read_text()
     assert "dispatcher alone decides spawning and concurrency" in skill
     assert "Never run `hermes kanban dispatch` yourself" in skill and "then dispatch" not in skill
     assert "Never block, hold, or \"park\" a `ready` card for capacity" in skill
