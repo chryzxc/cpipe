@@ -20,7 +20,7 @@ Choose one primary Bot with the narrowest mandate. Add a second Bot only for a r
 | Authorized live validation of a specific Security Reviewer finding | Security Tester | Security Reviewer interpretation, then Implementer remediation when confirmed |
 | CI/CD, IaC, containers, development tooling, rollback preparation, or release-platform readiness | Release Engineer | Verifier, Security Reviewer when triggered |
 | Regression, CI, integration, visual, performance-validation, or release evidence | Verifier | Reviewer and Coordinator |
-| Fresh code/maintainability review, OCR gate | Reviewer | owning implementer for named findings |
+| Fresh code/maintainability review, setup review gates | Reviewer | owning implementer for named findings |
 
 | Scheduled proactive audit from script output | Auditor | findings route via performance_audit key |
 | PR title/body/metadata, kept current for the whole branch | Implementer using `creating-pr-content`; Coordinator final pass | remote read-back and CI-state report |

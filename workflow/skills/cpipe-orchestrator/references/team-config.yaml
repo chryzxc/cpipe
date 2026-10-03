@@ -158,7 +158,7 @@ kanban:
     - card_skills_must_exist_on_assignee_profile_not_global_catalog
 
 quality:
-  ocr_required_for_meaningful_code_diff: true
+  setup_review_gates_required_for_meaningful_code_diff: true
   independent_reviewer_review_required_for_meaningful_code_diff: true
   security_review_trigger: changed_trust_boundary_or_plausible_vulnerability
   release_evidence_owner: verifier

@@ -87,7 +87,7 @@ def round_limit_unblock(tool_name: str, args: dict):
     if not ROUND_LIMIT.search(last_block_reason(card)):
         return None
     return {"action": "block", "message": (
-        f"{card} stopped at the fix-round limit, so the decision is Christian's. Do not unblock it: give him the "
+        f"{card} stopped at the fix-round limit, so the decision is the user's. Do not unblock it: give them the "
         f"remaining failures and 2-3 options (accept as is, one more fix round, or drop it). If he chooses to go "
         f"on, he runs `hermes kanban unblock {card}` himself.")}
 
