@@ -4,6 +4,8 @@ Two causes blocked most cards: a fresh git worktree has no ``node_modules`` (tes
 cannot run, and briefs forbid installs), and follow-up cards created without a workspace land
 in an empty scratch dir. On the first turn of a kanban worker session this hook
   * symlinks each missing ``node_modules`` from the repo's main checkout,
+  * clones the main checkout's code index (``.codegraph/``, git-ignored so a worktree lacks it) with a
+    copy-on-write copy and syncs it in the background, so workers query it instead of grepping,
   * when the workspace is not a git repo, points the worker at its parent card's worktree, and
   * applies the card's project profile (``$HERMES_HOME/delivery/projects.yaml``): a fresh worktree
     (clean, nothing committed or pushed) is reset onto ``origin/<base_branch>``, so a PR never starts
@@ -21,10 +23,13 @@ projects.yaml::
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Optional
 from .home import root as _root_home
@@ -74,14 +79,46 @@ def link_node_modules(ws: Path) -> list[str]:
         if not target.exists() and not target.is_symlink() and source.is_dir():
             target.symlink_to(source)
             linked.append(str(rel))
-    if linked:  # a symlink is a file: `node_modules/` in .gitignore misses it, so a `git add -A` would commit it
-        exclude = Path(common) / "info" / "exclude"
-        exclude.parent.mkdir(parents=True, exist_ok=True)
-        have = exclude.read_text().splitlines() if exclude.is_file() else []
-        extra = [p for p in (f"/{r}/node_modules".replace("/./", "/") for r in linked) if p not in have]
-        if extra:
-            exclude.write_text("\n".join(have + extra) + "\n")
+    # a symlink is a file: `node_modules/` in .gitignore misses it, so a `git add -A` would commit it
+    _exclude(Path(common), [f"/{r}/node_modules".replace("/./", "/") for r in linked])
     return linked
+
+
+def _exclude(common: Path, patterns: list[str]) -> None:
+    exclude = common / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    have = exclude.read_text().splitlines() if exclude.is_file() else []
+    extra = [p for p in patterns if p not in have]
+    if extra:
+        exclude.write_text("\n".join(have + extra) + "\n")
+
+
+def link_codegraph(ws: Path) -> bool:
+    """Clone the main checkout's codegraph index into the worktree and sync it in the background.
+    Workers used it on 38 of ~22,700 tool calls because a fresh worktree had none; the brief only says
+    to use it when `.codegraph/` exists. Copy-on-write only: a full copy of a 500 MB index is not worth it."""
+    common = _git(ws, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not common or (ws / ".codegraph").exists() or not shutil.which("codegraph"):
+        return False
+    main = Path(common).parent
+    db = main / ".codegraph" / "codegraph.db"
+    if main.resolve() == ws.resolve() or not db.is_file():
+        return False
+    target = ws / ".codegraph"
+    target.mkdir()
+    clone = ["cp", "-c"] if sys.platform == "darwin" else ["cp", "--reflink=always"]
+    if subprocess.run([*clone, str(db), str(target)], capture_output=True).returncode != 0:
+        shutil.rmtree(target, ignore_errors=True)
+        return False
+    (target / "source.json").write_text(json.dumps({"sourceDir": str(ws), "version": 1}, indent=2) + "\n")
+    _exclude(Path(common), ["/.codegraph"])
+    _sync_codegraph(ws)
+    return True
+
+
+def _sync_codegraph(ws: Path) -> None:
+    subprocess.Popen(["codegraph", "sync", str(ws)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
 
 
 def parent_worktree(task_id: str, db: Path) -> Optional[str]:
@@ -197,6 +234,9 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
                 notes.append("node_modules was missing in this worktree and is now symlinked from the main "
                              f"checkout for: {', '.join(linked)}. Run tests/lint normally. If this branch "
                              "changes dependencies, replace the symlink with a real install.")
+            if link_codegraph(ws):
+                notes.append("This worktree has the repo's code index (`.codegraph/`, syncing to this branch "
+                             "in the background): find code with `codegraph explore` first.")
             missing = [str(r) for r in _package_dirs(ws) if not (ws / r / "node_modules").exists()]
             if missing:
                 notes.append(f"No node_modules for: {', '.join(missing)}. Install them with the project's "

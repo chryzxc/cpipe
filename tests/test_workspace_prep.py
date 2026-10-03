@@ -106,3 +106,20 @@ def test_worktree_with_work_in_it_is_never_reset(tmp_path, monkeypatch):
     note = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
     assert "not based on origin/develop" in note and "reset" not in note
     assert (wt / "draft.txt").read_text() == "uncommitted"
+
+
+def test_worktree_gets_a_clone_of_the_code_index(tmp_path, monkeypatch):
+    main, wt = repo_with_worktree(tmp_path)
+    (main / ".codegraph").mkdir()
+    (main / ".codegraph" / "codegraph.db").write_text("index")
+    calls = []
+    monkeypatch.setattr(workspace_prep.shutil, "which", lambda name: "/bin/" + name)
+    monkeypatch.setattr(workspace_prep, "_sync_codegraph", calls.append)
+    assert workspace_prep.link_codegraph(wt)
+    assert (wt / ".codegraph" / "codegraph.db").read_text() == "index"
+    assert str(wt) in (wt / ".codegraph" / "source.json").read_text()
+    assert calls == [wt]
+    status = subprocess.run(["git", "-C", str(wt), "status", "--porcelain"], capture_output=True, text=True)
+    assert ".codegraph" not in status.stdout
+    assert not workspace_prep.link_codegraph(wt)      # already there
+    assert not workspace_prep.link_codegraph(main)    # the main checkout keeps its own
