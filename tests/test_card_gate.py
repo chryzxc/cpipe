@@ -47,3 +47,23 @@ def test_workers_cannot_edit_the_operator_setup(tmp_path, monkeypatch):
         assert card_gate.gate("write_file", {"path": str(path)}) is None
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))  # the coordinator / the user's own chat
     assert card_gate.gate("write_file", {"path": str(tmp_path / "config.yaml")}) is None
+
+
+def test_planner_plans_from_the_map_within_its_lookup_budget(tmp_path, monkeypatch):
+    (tmp_path / "roster.yaml").write_text("roles:\n  planner: archon\n  implementer: forge\n")
+    monkeypatch.setattr(submit, "HERMES_HOME", tmp_path)
+    monkeypatch.setattr(card_gate, "_lookups", {})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "archon"))
+    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_plan")
+    titles = {"t_plan": "Plan: add reminders", "t_spec": "Decide OTP architecture"}
+    monkeypatch.setattr(submit, "_task_row", lambda tid: {"title": titles[tid]})
+    for _ in range(submit.PLAN_LOOKUPS):
+        assert card_gate.gate("read_file", {"path": "/repo/a.js"}) is None
+    assert card_gate.gate("terminal", {"command": "hermes kanban complete t_plan"}) is None
+    assert card_gate.gate("terminal", {"command": "grep -rn x ."})["action"] == "block"
+    assert card_gate.gate("kanban_complete", {"result": "plan"}) is None
+    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_spec")  # Archon's own non-delivery specs may explore
+    assert all(card_gate.gate("read_file", {"path": "/a"}) is None for _ in range(10))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "forge"))
+    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_plan")
+    assert card_gate.gate("read_file", {"path": "/a"}) is None

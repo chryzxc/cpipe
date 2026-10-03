@@ -42,10 +42,25 @@ STAGE_PREFIX = re.compile(r"^(map|plan|verify|fix \d+|review)\s*:\s*", re.I)
 REVIEW_TITLE = re.compile(r"^\s*(code[\s-]*)?review\b|^\s*re-?review\b", re.I)
 URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/(?:pull|issues)/\d+")
 
-SCOPE = """CONTEXT: this card is your whole assignment: the REQUEST, the code it touches and its
+CONTEXT = """CONTEXT: this card is your whole assignment: the REQUEST, the code it touches and its
 callers, and the parent card's result (kanban_show -> parents). No broad searches, no web, no
 skills beyond your role's, no other cards or conversations.
+"""
 
+# Planner designs by them, implementer follows them, reviewer cites them by name.
+PRINCIPLES = """PRINCIPLES (planner designs by these, implementer follows them, reviewer cites one by name when the
+diff breaks it; anything else is a note, not a finding):
+- REUSE: an existing helper, pattern, or component wins over new code; the plan names it.
+- SMALLEST CHANGE that meets the REQUEST: no speculative abstraction, config, dependency, or refactor.
+- ROOT CAUSE: fix it once where every caller routes through, not in each caller.
+- KEEP BEHAVIOR: existing behavior stays unless the REQUEST changes it; pinned by tests.
+- TRUST BOUNDARIES: validate input where it enters; never log secrets, tokens, or personal/health data.
+- ERRORS: handle them where something can act; never swallow one silently.
+- MATCH THE CODE AROUND IT: its naming and idiom; the linter and formatter own formatting.
+- TESTS PROVE BEHAVIOR through real code (never source text); one behavior per commit.
+"""
+
+SCOPE = CONTEXT + """
 FIND CODE: if the repo has `.codegraph/`, start with `codegraph explore "<symbols, files, or question>"`
 in the terminal: one call returns the relevant source plus its callers. Use search_files/read_file only
 for what it did not return. Read a file once; afterwards re-read only the lines you changed.
@@ -58,19 +73,27 @@ summary. Never force-push or rewrite pushed history, merge, deploy, touch produc
 credentials. Never create kanban cards: findings, follow-ups, and questions go in your summary or
 the PR. Block only for a decision only the user can make (product behavior, security policy, a
 destructive or external action): state the exact question with 2-4 options, recommended first.
-"""
+
+""" + PRINCIPLES
 
 # One plan shape for the planner card and the implementer's own plan; review_gate checks the headings.
 PLAN_FORMAT = """PLAN FORMAT: every heading below, in this order, at the start of a line. Write `none` under a
-heading that does not apply; never drop it. Every file reference is path:line from a file you opened.
+heading that does not apply; never drop it. Every file reference is path:line from the map or a file
+you opened. One line per item.
+SHAPE: ui | api | data | job | integration | bug | mixed. It sets where the detail goes: ui = ENTRY
+  POINTS (every route and in-app link) and mounted tests; api/data = CONTRACTS field by field and any
+  migration; job = trigger, schedule/timezone, safe to run twice; integration = the external contract
+  and where tests stub it; bug = REPRO first. Other headings stay short or `none`.
 GOAL: one sentence.
-ACCEPTANCE: AC1..n, each something a person or a test can observe.
+ACCEPTANCE: AC1..n, each observable, each ending `-> TEST <file> "<test name>"` or `-> MANUAL <step>`.
+  This list is the test contract: the implementer writes exactly these, the reviewer checks them.
 NON-GOALS: only what the REQUEST excludes, quoted.
 ENTRY POINTS: each way users or systems reach the change (direct URL, in-app navigation/router,
-  API client, job, another package) -> path:line -> IN SCOPE, or NON-GOAL with the REQUEST's words.
+  API client, job, another package) -> path:line -> IN SCOPE -> ACn, or NON-GOAL with the REQUEST's words.
   Never drop one by assumption: check how users actually get there.
 CONTRACTS: each value crossing a boundary: sender path:line field -> receiver path:line field ->
   agree | MISMATCH (fixed in slice N). Client payload, route, model/DB, response.
+REUSES: existing helpers, patterns, or components the change calls or copies, path:line.
 ADD: each new file, function, route, component: purpose, slice N. (NEW: tests after the code.)
 CHANGE: each existing symbol path:line: what changes, slice N. (MODIFIED: pinned first.)
 DON'T TOUCH: files that look related but must not change, and why.
@@ -82,13 +105,17 @@ CHECK: each command to run after the build (related tests in every package, lint
   build) and the result that counts as pass.
 RISKS: what could regress, where, and which test or CHECK catches it.
 OPEN DECISIONS: product questions the code cannot answer, with 2-4 options, recommended first; or none.
-SLICES: ordered; each: files, tests, done-when.
+VERIFY: facts the map left open that the implementer confirms first (path or command), or none.
+SLICES: ordered, one line each: `S<n>: files | test command | commit "<Conventional Commit>"`.
+  The implementer commits once per slice, so a retried run resumes at the first missing commit.
 """
 PLAN_TASK = """Produce the implementation plan in the PLAN FORMAT below. The first slice adds every UNPINNED
 test, passing on today's code. If an OPEN DECISION changes what gets built, block this card with it
 instead of guessing. PINS cover behavior only: static text, markup, and styles need none. Plan the
 smallest change that meets the request: nothing it did not ask for (no extra tests, refactors,
-or hardening). Complete this card with the FULL plan in `result` (not only the summary): the
+or hardening).
+""" + PRINCIPLES + """
+Complete this card with the FULL plan in `result` (not only the summary): the
 implementer card waiting on this one reads it from there and has no other copy.
 
 """ + PLAN_FORMAT
@@ -101,31 +128,39 @@ REQUEST (from the user):
 {request}
 
 """ + SCOPE + """
-Read only the code this request touches, then complete this card with the map (FILES, SYMBOLS,
+Read only the code this request touches, then complete this card with the map (SHAPE (ui, api, data,
+job, integration, bug, or mixed), FILES, SYMBOLS, REUSE (existing helpers/patterns that already do
+part of this), EXCERPTS (the exact current lines, at most 15 each, of every place likely to change),
 CALLERS, ENTRY POINTS (every way a user or system reaches this behavior or content: direct URL,
 in-app router/navigation, API clients, jobs, other packages that render or call it), CONTRACTS
 (field names and shapes at each handoff: client payload -> route -> model/DB -> response),
 TESTS (plus HARNESS: an existing test that already mounts this kind of component or calls this kind
 of route, and its command), UNPINNED (caller behaviors this change reaches that no test covers),
-COMMANDS, CONVENTIONS, GAPS; about 4 KB, every path:line from a file you opened).
-The planner card waiting on this one plans from your map instead of exploring the repo itself.
+COMMANDS, CONVENTIONS, GAPS; about 8 KB, every path:line from a file you opened).
+The planner card waiting on this one does not open files: it plans only from your map, so anything
+missing here becomes a guess. Be complete on ENTRY POINTS, CONTRACTS, and HARNESS.
 """
 
+PLAN_LOOKUPS = 6  # card_gate refuses the planner more file reads/searches/terminal calls on a Plan: card
 PLAN_BRIEF = """LARGE TASK: plan from the repository map. Do not load skills.
 token_budget: medium.
 
 REQUEST (from the user):
 {request}
 
-""" + SCOPE + """
-The parent card's result is a repository map made by a cheaper model. Treat its
-FILES/SYMBOLS/TESTS/COMMANDS as your evidence. Open a file only to confirm a line you cite or to
-close an item under GAPS, and name that item.
+""" + CONTEXT + """
+PLAN, DON'T EXPLORE. The parent card's result is a repository map made by a cheaper model: it is your
+evidence. Do not explore the repo, run tests, or install anything. At most {lookups} lookups (file
+reads, searches, terminal), each to close one GAP you name; the plugin refuses more. A fact still
+open goes under VERIFY for the implementer.
 
 """ + PLAN_TASK
 
-IMPLEMENTER = """IMPLEMENTER
-1. PLAN. If a parent card's result is a plan, follow it; do not re-plan. Otherwise plan in one
+IMPLEMENTER = """RETRY: if an earlier run of this card stopped (timeout, rate limit, crash), run `git log --oneline
+<base>..HEAD` and resume at the first plan slice not yet committed; never redo committed work.
+
+IMPLEMENTER
+1. PLAN. If a parent card's result is a plan, follow it; do not re-plan; confirm its VERIFY items first. Otherwise plan in one
    pass yourself: read the code the REQUEST touches and its direct callers (for a route, grep its
    URL path in server AND client; for content or a page, every place it renders and every way users
    navigate to it), then post the plan as a card comment in the PLAN FORMAT at the end of this
@@ -171,6 +206,9 @@ REVIEWER (same worktree)
   with file:line. Walk the plan: every ACCEPTANCE item met, every IN SCOPE ENTRY POINT works, every
   CONTRACTS mismatch fixed, every TESTS line exists and exercises real code, and no changed file
   outside ADD/CHANGE without an OUT_OF_PLAN note. A plan item skipped silently is a missed requirement.
+  Each ACCEPTANCE `-> TEST` must exist and pass. A test the plan did not name is a request only
+  when a behavior is broken or a reachable caller is unpinned; otherwise note it as residual risk.
+  A PRINCIPLES finding names the principle and the diff line; style and preference are notes.
 - Callers: for every changed function, route, API field, event, or component prop, find its users
   (grep the name and, for routes, the URL path across server AND client). Your verdict lists
   `CALLERS CHECKED: <symbol> -> <file:line> safe (<test that proves it>)|broken`. A broken caller
@@ -428,7 +466,7 @@ def chained_card(stage: str, title: str, request: str, project: str, parent: str
     workspace = "worktree"
     if stage == "plan":
         assignee, title = _role("planner"), f"Plan: {title}"
-        body = PLAN_BRIEF.format(request=request.strip())
+        body = PLAN_BRIEF.format(request=request.strip(), lookups=PLAN_LOOKUPS)
     elif stage == "verify":
         assignee, title, workspace = _role("verifier"), f"Verify: {title}", "scratch"
         body = VERIFY_BRIEF.format(request=request.strip())
