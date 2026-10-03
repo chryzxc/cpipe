@@ -37,8 +37,9 @@ def test_first_turn_links_missing_node_modules_once(tmp_path, monkeypatch):
     assert "node_modules" not in status.stdout                              # never committable
     assert workspace_prep.prepare_workspace(is_first_turn=True) is None     # nothing left to do
     assert workspace_prep.prepare_workspace(is_first_turn=False) is None
-    monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: cmd == "testscope" and "/bin/testscope")
-    assert "`testscope`" in workspace_prep.prepare_workspace(is_first_turn=True)["context"]
+    monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: cmd in ("testscope", "ast-grep") and "/bin/x")
+    context = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
+    assert "`testscope`" in context and "`ast-grep run" in context
 
 
 def test_empty_scratch_workspace_points_at_parent_worktree(tmp_path, monkeypatch):

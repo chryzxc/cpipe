@@ -261,6 +261,10 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
             if link_codegraph(ws):
                 notes.append("This worktree has the repo's code index (`.codegraph/`, syncing to this branch "
                              "in the background): find code with `codegraph explore` first.")
+            if shutil.which("ast-grep"):
+                notes.append("`ast-grep run -p '<code pattern>' -l <lang>` matches code by syntax (calls, imports, "
+                             "JSX, arguments), not text: use it over grep to find a code shape or make a mechanical "
+                             "rewrite.")
             missing = [str(r) for r in _package_dirs(ws) if not (ws / r / "node_modules").exists()]
             if missing:
                 notes.append(f"No node_modules for: {', '.join(missing)}. Install them with the project's "
