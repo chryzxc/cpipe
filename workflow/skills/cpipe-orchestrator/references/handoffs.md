@@ -25,7 +25,7 @@ STATE AND PREFLIGHT
 - project instructions:
 - dependency readiness:
 - focused-test baseline and natural teardown result:
-- required profile, skill, OCR, and gate readiness:
+- required profile, skill, and review-gate readiness:
 
 EXECUTION CONTRACT
 - exact write allowlist:

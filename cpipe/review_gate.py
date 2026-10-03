@@ -26,7 +26,7 @@ from . import quality, submit, workspace_prep
 
 MARKER = "REVIEWER (same worktree)"  # every build, fix, and content brief carries it
 PLAN_MARKER = "Produce the implementation plan in the PLAN FORMAT"  # both plan briefs, never the build brief
-MAX_REWORK = 2  # request-changes rounds per card before the reviewer must block for Christian
+MAX_REWORK = 2  # request-changes rounds per card before the reviewer must block for the user
 REVIEW_CMD = re.compile(r"\bkanban\s+request-review\s+(t_[0-9a-f]+)")
 CHANGES_CMD = re.compile(r"\bkanban\s+request-changes\s+(t_[0-9a-f]+)")
 COMPLETE_CMD = re.compile(r"\bkanban\s+complete\s+(t_[0-9a-f]+)")
@@ -47,7 +47,7 @@ def gate(tool_name: str = "", args: dict | None = None, **_kw):
             and NESTED_AGENT.search(str(args.get("command") or ""))):
         return {"action": "block", "message": (
             "Do not start another agent from a kanban card: it cold-starts a whole agent and stalls the card. "
-            "Make the judgment yourself from the code, or block the card with the exact question for Christian.")}
+            "Make the judgment yourself from the code, or block the card with the exact question for the user.")}
     if tool_name == "kanban_request_review":
         return quality_gate(args.get("task_id") or os.environ.get("HERMES_KANBAN_TASK"))
     if tool_name == "terminal" and (m := REVIEW_CMD.search(str(args.get("command") or ""))):
@@ -105,7 +105,7 @@ def quality_gate(tid: str | None):
 
 
 def rework_cap_gate(tid: str | None):
-    """After MAX_REWORK rounds, a further request-changes goes to Christian instead of a fresh implementer run."""
+    """After MAX_REWORK rounds, a further request-changes goes to the user instead of a fresh implementer run."""
     if not tid:
         return None
     try:
@@ -122,7 +122,7 @@ def rework_cap_gate(tid: str | None):
     return {"action": "block", "message": (
         f"{tid} already went back to the implementer {rounds} times; another rework round restarts it from scratch. "
         f"Do not request changes again: run `kanban_block` on {tid} with your findings as the reason (what is still "
-        "wrong, file/line, the fix you expect) so Christian decides the next step.")}
+        "wrong, file/line, the fix you expect) so the user decides the next step.")}
 
 
 def commit_ask_gate(tid: str | None, reason: str):
