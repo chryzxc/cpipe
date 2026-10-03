@@ -98,7 +98,9 @@ def run(args: dict, **_kw) -> str:
     deadline = time.time() + int(recipe.get("ready_seconds") or READY_SECONDS)
     pending = dict(started)
     while True:
-        pending = {n: v for n, v in pending.items() if not (v[0] and _answers(v[0]))}
+        env = _wtg_env(worktree)  # a service's URL appears in `wtg env` only once it has registered
+        started = {n: (u or env.get(f"WG_{n.upper()}_URL", ""), log) for n, (u, log) in started.items()}
+        pending = {n: started[n] for n in pending if not (started[n][0] and _answers(started[n][0]))}
         if not pending or time.time() >= deadline:
             break
         time.sleep(5)

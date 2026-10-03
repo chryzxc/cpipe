@@ -35,3 +35,9 @@ def test_runs_the_saved_recipe_under_wtg_and_reports_what_it_serves(tmp_path, mo
     monkeypatch.setattr(test_env, "READY_SECONDS", 0)
     out = json.loads(test_env.run({"target": "t_1"}))
     assert not out["ok"] and list(out["log_tail"]) == ["api"]
+
+    envs = iter([{}, {"WG_API_URL": "https://api.x", "WG_WEB_URL": "https://x"}])  # services not registered yet
+    monkeypatch.setattr(test_env, "_wtg_env", lambda w: next(envs, {"WG_API_URL": "https://api.x", "WG_WEB_URL": "https://x"}))
+    monkeypatch.setattr(test_env, "_answers", lambda url: True)
+    out = json.loads(test_env.run({"target": "t_1"}))
+    assert out["ok"] and out["urls"] == {"api": "https://api.x", "web": "https://x"}
