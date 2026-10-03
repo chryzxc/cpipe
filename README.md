@@ -182,6 +182,11 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 
 Plus the `hermes cpipe` CLI (`doctor`, `queue`, `status [--card ID]`, `log [--card ID] [--since 2h] [--kind K]`, each with `--json`), an `on_session_end` metrics hook (append-only JSONL), and the liveness hooks described below.
 
+**Worker hooks** (deterministic, no LLM tokens):
+
+- **Workspace prep.** On a worker's first turn in a fresh worktree, the plugin symlinks the main checkout's `node_modules`. If the repo has a [codegraph](https://github.com/colbymchenry/codegraph) index (`.codegraph/`), it gives the worktree a copy-on-write clone of that index, which syncs to the branch in the background. If `testscope` is on `PATH`, it tells the worker to run `testscope --base origin/<base>` before the full suite. testscope runs only the tests the change touches, names hung files and marks failures new or pre-existing.
+- **Public text gate.** PR titles, bodies and comments are public, and so are commits. A delivery worker's `gh pr create/edit` is refused when its text contains local paths, card ids, review ids, delivery tokens, SHAs or bot names. So is a `git push` whose unpushed commits carry those in their messages or added lines. Workers never comment on or review PRs on GitHub. Tokens and paths match by case, so prose like "pinned" and `/users/` routes pass.
+
 ## Liveness & autonomy
 
 The chain is meant to run from plan to final report without you asking "what's next?". The pieces that keep it moving:
@@ -190,7 +195,7 @@ The chain is meant to run from plan to final report without you asking "what's n
 |---|---|
 | Gateway dispatcher | Every 15s it claims `ready` cards **and** `review` cards (native same-card review). Linked children are promoted automatically when their parents finish, so pre-created chains need no coordinator turn between steps. |
 | Dispatch telemetry | The plugin's `on_kanban_dispatch_tick` hook writes `~/.hermes/logs/dispatch-health.json`: last tick, last spawn, and why each held card was held (per-profile cap, respawn guard, unassigned…). |
-| Delivery monitor | Every 5 minutes a deterministic script reads the task database, worker processes and GitHub directly and gives every open card exactly one verdict: *progressing* (a live worker), *waiting on something named* (a PR check, a quota reset, your decision, a parent card), or *stuck* with a cause (`DEAD_WORKER`, `STALE_GUARD`, `QUOTA_WALL`, `AUTH_BLOCKED`, `IDENTICAL_FAILURE`, `RUN_BUDGET`, `ORPHAN_REVIEW`, …). Known stuck states are repaired (reclaim a dead claim, clear a stale respawn guard, pause cards behind a quota wall and resume them, re-subscribe a child to its chain's chat). The rest are escalated once: the card is blocked with `<CAUSE>: <why>; next: <what unsticks it>`, which notifies the chat that started the work, or, for cards that cannot be blocked, a notice is handed to that chat's next turn. A stuck parent owns its children's stall, so you hear about the root, not every card behind it. It also posts a digest when something newly stalls or starts moving again. |
+| Delivery monitor | Every 5 minutes a deterministic script reads the task database, worker processes and GitHub directly and gives every open card exactly one verdict: *progressing* (a live worker), *waiting on something named* (a PR check, a quota reset, your decision, a parent card), or *stuck* with a cause (`DEAD_WORKER`, `STALE_GUARD`, `QUOTA_WALL`, `AUTH_BLOCKED`, `IDENTICAL_FAILURE`, `RUN_BUDGET`, `ORPHAN_REVIEW`, …). Known stuck states are repaired (reclaim a dead claim, clear a stale respawn guard, pause cards behind a quota wall until the provider's reported reset (`hermes usage`) and resume them, re-subscribe a child to its chain's chat). The rest are escalated once: the card is blocked with `<CAUSE>: <why>; next: <what unsticks it>`, which notifies the chat that started the work, or, for cards that cannot be blocked, a notice is handed to that chat's next turn. A stuck parent owns its children's stall, so you hear about the root, not every card behind it. It also posts a digest when something newly stalls or starts moving again. |
 | Board supervisor | A cheap scan every 15 minutes for decisions that need judgment: verdicts parked in block reasons, rework loops, orphaned chains, unsubscribed cards. Its output is byte-stable, so the LLM only runs when something changed. It never dispatches: the gateway is the only dispatcher. |
 | Board triage | Every 20 minutes a deterministic cron retries blocked cards that only hit a rate limit, timeout, or worker crash (twice at most, never while the provider is still rate limiting) and moves reason-less blocked children back to wait on their parent. Once a day, or when a new decision is needed, it sends you a digest grouped as *needs your decision / looks done / blocked by old rules / parked*. Reply `continue <id> <what to do>`, `archive <id>` or `resubmit <id>` and the coordinator acts on it. |
 | Mission Control | A dashboard tab (`hermes dashboard` → Mission Control) with the same groups. Open a card to read its reason, body and latest comments, then Continue with a note, Resubmit it fresh under the current flow, or Archive. Tick several for bulk actions. `hermes cpipe queue` prints the same queue as JSON for other clients (Herm uses it). |
@@ -286,7 +291,8 @@ unblocked, and when CI fails or the watch expires you are told.
 ```bash
 hermes cpipe status                      # every open card's verdict, stuck first
 hermes cpipe status --card t_1a2b3c4d    # one card, or a whole chain by its root id
-hermes cpipe log --card t_1a2b3c4d       # that card's full story: repairs, escalations, retries
+hermes cpipe log --card t_1a2b3c4d       # that card's full story: repairs, escalations, retries, plus the
+                                         # bots' board events (claims, blocks, comments) for its whole chain
 hermes cpipe log --since 2h --kind waste.  # wasted runs in the last 2 hours
 hermes cpipe log --kind monitor.escalate --json   # raw JSON, for scripts
 ```
@@ -305,6 +311,8 @@ Design and rationale: [`docs/plans/2026-09-29-autonomy-plan.md`](docs/plans/2026
 
 ## The learning loop
 
+**Did a brief change help?** `python3 -m cpipe.brief_replay --stage plan --limit 2` re-runs past done Map/Plan cards on their own profiles, using the brief `submit.py` writes today. Each runs in a detached worktree at the commit the card started from, and the output compares old and new tool calls, tokens and cost. Only the read-only stages are replayed. Replays spend real quota; `--dry-run` compares brief sizes only.
+
 The weekly digest reports per-stage wall-clock, queue waits, gate rejection rates, and finding classes. Any review finding class appearing 3+ times auto-drafts an amendment to the shared PRINCIPLES block — **the workflow writes its own rulebook**. A gate silent for two weeks is flagged fix-or-remove.
 
 ## Safety model
@@ -314,6 +322,7 @@ The weekly digest reports per-stage wall-clock, queue waits, gate rejection rate
 - `./install.sh` writes the example bots into your mapped profiles unless `SKIP_BOTS=1`, and backs up every file it replaces
 - Human approval gates are unchanged and always yours: merge, deploy, production, credentials, purchases, publishing, irreversible deletion
 - `delivery_mutation_check` mutates only a disposable git worktree file and restores it
+- `cpipe.brief_replay` runs in a temporary detached worktree, which it removes afterwards. It replays only Map/Plan cards, which push nothing
 - The engine install (`~/.hermes/hermes-agent`) is never modified — everything lives in the user-state layer and survives `hermes update`
 
 ## FAQ

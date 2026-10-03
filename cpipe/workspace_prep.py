@@ -241,6 +241,10 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
             if missing:
                 notes.append(f"No node_modules for: {', '.join(missing)}. Install them with the project's "
                              "package manager (lockfile install) before testing; do not block for it.")
+            if shutil.which("testscope"):
+                base = f" --base origin/{profile['base_branch']}" if profile.get("base_branch") else ""
+                notes.append(f"`testscope{base}` runs only the tests your change touches, names hung files and "
+                             "marks failures new or pre-existing; run it before the full suite.")
             notes += convention_notes(ws, profile)
         else:
             parent = parent_worktree(task_id, db)
