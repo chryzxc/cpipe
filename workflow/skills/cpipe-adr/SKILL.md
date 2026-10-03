@@ -1,5 +1,5 @@
 ---
-name: my-adr
+name: cpipe-adr
 description: "Record architecture decisions as numbered ADRs in the repo."
 version: 0.1.0
 ---
@@ -12,7 +12,7 @@ Lightweight Architecture Decision Records: the durable trail of *why* the code i
 
 - A plan introduces or changes a cross-cutting choice: data model, external contract, dependency, concurrency model, security boundary, persistence, build/deploy shape.
 - A rejected alternative is expensive to rediscover (that rejection is the ADR's most valuable content).
-- Don't use for local implementation details (function choice, file layout) or anything `my-repo-map` already captures.
+- Don't use for local implementation details (function choice, file layout) or anything `cpipe-repo-map` already captures.
 
 ## Procedure
 
@@ -40,7 +40,7 @@ Date: <date> · Scope: <repos/modules touched>
 - One decision per ADR; split coupled decisions into numbered parts.
 - `Compliance` must name a checkable signal (file path, test, command) — Reviewer cites it when reviewing behavior in that area.
 - Superseding keeps the old file, status-flipped, with a pointer both directions.
-- The repo map (`my-repo-map`) links ADR numbers from its Contracts and Invariants sections.
+- The repo map (`cpipe-repo-map`) links ADR numbers from its Contracts and Invariants sections.
 
 ## Non-goals
 

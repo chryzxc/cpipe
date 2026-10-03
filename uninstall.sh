@@ -59,10 +59,10 @@ if [ -d "$H/scripts" ]; then
 fi
 
 echo "-- 3/5 skill symlinks (global + profiles, only links into this repo)"
-find "$H/skills" -maxdepth 1 -type l -name "my-*" 2>/dev/null | while read -r link; do
+find "$H/skills" -maxdepth 1 -type l -name "cpipe-*" 2>/dev/null | while read -r link; do
   [ "$(readlink "$link")" = "$REPO/workflow/skills/$(basename "$link")" ] && rm -f "$link" && echo "   removed $link"
 done
-find "$H/profiles" -maxdepth 3 -type l -name "my-*" 2>/dev/null | while read -r link; do
+find "$H/profiles" -maxdepth 3 -type l -name "cpipe-*" 2>/dev/null | while read -r link; do
   [ "$(readlink "$link")" = "$REPO/workflow/skills/$(basename "$link")" ] && rm -f "$link"
 done
 

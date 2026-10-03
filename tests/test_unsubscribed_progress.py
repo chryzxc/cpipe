@@ -160,7 +160,7 @@ def test_supervisor_prompt_is_small_and_each_rule_appears_once():
 
 
 def test_policy_files_carry_push_contract():
-    skill = (ROOT / "workflow" / "skills" / "my-cpipe-orchestrator" / "SKILL.md").read_text()
+    skill = (ROOT / "workflow" / "skills" / "cpipe-orchestrator" / "SKILL.md").read_text()
     assert "notify-list" in skill
     assert "never through the operator asking" in skill
     assert "CONTINUATION:" in skill

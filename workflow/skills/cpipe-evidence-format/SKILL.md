@@ -1,5 +1,5 @@
 ---
-name: my-evidence-format
+name: cpipe-evidence-format
 description: "Emit terse machine-parseable evidence in every bot output."
 version: 0.1.0
 ---

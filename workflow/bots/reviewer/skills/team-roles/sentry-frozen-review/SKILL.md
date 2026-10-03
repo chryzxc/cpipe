@@ -14,7 +14,7 @@ Require: repository/worktree, exact base and HEAD, named files, task contract, a
 2. Before inspecting the diff or issuing a verdict, run `ocr delegate preview --from $(git merge-base <BASE> HEAD) --to HEAD` from the assigned repository (merge-base, never the raw base tip). This command is a local review-manifest generator; retain its range, selected files, and excluded-file reasons in the review evidence.
 3. OCR delegate mode is mandatory and must remain local-only. Never invoke `ocr review`, `ocr scan`, `ocr config`, `ocr llm`, provider/model setup, or any OCR command that sends repository content to an LLM, external provider, or remote service. Do not substitute an LLM-backed OCR review for the independent Sentry review.
 4. Reconcile the OCR manifest with the live changed-file list. Inspect every changed file. When OCR excludes a file, record the exclusion reason and manually inspect that file's frozen diff; an exclusion never permits an unreviewed changed file.
-5. Read the repository map (`ARCHITECTURE.md`, `my-repo-map`) first: its Contracts, Invariants, and Known-sharp-edges sections scope what a regression can break. A missing map is not a blocker; note it and derive boundaries from the diff.
+5. Read the repository map (`ARCHITECTURE.md`, `cpipe-repo-map`) first: its Contracts, Invariants, and Known-sharp-edges sections scope what a regression can break. A missing map is not a blocker; note it and derive boundaries from the diff.
 6. Inspect the diff and enough adjacent source to validate contract compliance, error paths, compatibility, and test meaning.
 7. Run the smallest focused read-only check only when it materially validates the diff. Do not perform Sentinel QA/release work unless explicitly assigned.
 

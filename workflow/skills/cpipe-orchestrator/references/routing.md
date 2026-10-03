@@ -12,7 +12,7 @@ Choose one primary Bot with the narrowest mandate. Add a second Bot only for a r
 | "Will this work? which option wins?" throwaway spike | Spike Explorer | Planner only if a plan follows |
 | Product flow, UI specification, accessibility design | Designer | Implementer and Verifier |
 | Architecture, contracts, ADR, approved implementation plan | Planner | Implementer or Release Engineer |
-| Performance/optimization audit (read-only) | Planner with `my-optimization-audit` | Implementer fixes, Verifier validation |
+| Performance/optimization audit (read-only) | Planner with `cpipe-optimization-audit` | Implementer fixes, Verifier validation |
 | Small deterministic repository map | Coordinator direct tools | Implementer or Planner |
 | Unfamiliar cross-cutting repository, dependency map, blast radius | Planner | Implementer or Release Engineer |
 | API, domain, data access, integrations, frontend, or full-stack behavior | Implementer | Reviewer; Verifier/Security Reviewer when triggered |
@@ -47,16 +47,16 @@ Every routed task records: primary Bot profile ID; task; execution backend (dire
 | Implementer variants | `test-driven-development` + exact domain skill |
 | Verifier / frontend-visual | `dogfood` + exact browser/framework skill |
 | Reviewer / plan | `plan`, `independent-code-review` |
-| Reviewer / code (Reviewer) | `frozen-diff-review` + `independent-code-review` + `code-quality-review.md`; impact sweep via `ast-grep` + `my-repo-map`; findings REG/BRK/SIMP/REV |
+| Reviewer / code (Reviewer) | `frozen-diff-review` + `independent-code-review` + `code-quality-review.md`; impact sweep via `ast-grep` + `cpipe-repo-map`; findings REG/BRK/SIMP/REV |
 | Implementer / simplify fix (Implementer, from SIMP findings) | `simplify-code` + `test-driven-development` |
 | Implementer / refactor | `maintainability-refactor.md` + testing/domain skill |
 | Security Reviewer | narrowest matching security skill |
-| Authorized active validation (Security Tester) | `web-pentest` + `my-evidence-format` |
-| Performance audit (Planner) | `my-optimization-audit` |
-| Performance fix (Implementer) | `my-optimization-audit` (findings section only, fix from PERF-### IDs) |
-| Performance validation (Verifier) | `my-optimization-audit` (re-measurement delta pass) |
-| Architecture decision / ADR (Planner) | `my-adr` |
-| Production go-live gate (Verifier + Release Engineer) | `my-production-readiness` |
+| Authorized active validation (Security Tester) | `web-pentest` + `cpipe-evidence-format` |
+| Performance audit (Planner) | `cpipe-optimization-audit` |
+| Performance fix (Implementer) | `cpipe-optimization-audit` (findings section only, fix from PERF-### IDs) |
+| Performance validation (Verifier) | `cpipe-optimization-audit` (re-measurement delta pass) |
+| Architecture decision / ADR (Planner) | `cpipe-adr` |
+| Production go-live gate (Verifier + Release Engineer) | `cpipe-production-readiness` |
 | Plan interrogation before material plans (Planner) | `grill-me` |
 | Structural code evidence / mechanical rewrites (Reviewer, Implementer) | `ast-grep` (binary: `sg`) |
 | Web app browser validation (Verifier) | `webapp-testing` + `dogfood` |
@@ -64,7 +64,7 @@ Every routed task records: primary Bot profile ID; task; execution backend (dire
 | Supply-chain incident forensics (Security Reviewer) | `oss-forensics` |
 | Container operations (Release Engineer) | `docker-management` |
 | Watchers/monitoring with dedup (Release Engineer, Auditor) | `watchers` |
-| All bots, evidence output | `my-evidence-format` |
+| All bots, evidence output | `cpipe-evidence-format` |
 | PR Delivery | `github-pr-workflow` after activation |
 
 Load only the 1–3 exact baselines the objective needs; verify readiness before dispatch. Substitute a missing/unready skill with an installed equivalent, a repository/live-help/official-documentation procedure — or return `NEEDS_ASSISTANCE` for a real gap — and record the substitution. The optimization-audit chain is checklist work: low/standard tier profiles only, never the high-tier planner.

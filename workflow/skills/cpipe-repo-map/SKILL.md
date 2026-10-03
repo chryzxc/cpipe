@@ -1,5 +1,5 @@
 ---
-name: my-repo-map
+name: cpipe-repo-map
 description: "Maintain and read a canonical repo map before discovery."
 version: 0.1.0
 ---

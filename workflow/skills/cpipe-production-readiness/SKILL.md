@@ -1,5 +1,5 @@
 ---
-name: my-production-readiness
+name: cpipe-production-readiness
 description: "Run the production go-live gate before any release."
 version: 0.1.0
 ---
@@ -29,7 +29,7 @@ The final go-live gate, run by Verifier (evidence owner) with Release Engineer (
 7. No secrets in code/config/images; dependency CVEs at or above the agreed floor triaged.
 
 **Performance & capacity**
-8. Load/latency evidence for expected traffic (or `my-optimization-audit` baseline cited); resource ceilings known.
+8. Load/latency evidence for expected traffic (or `cpipe-optimization-audit` baseline cited); resource ceilings known.
 9. Rate limits, backpressure, and graceful degradation behavior stated.
 
 **Continuity**
