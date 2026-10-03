@@ -27,6 +27,7 @@ def test_first_turn_links_missing_node_modules_once(tmp_path, monkeypatch):
     main, wt = repo_with_worktree(tmp_path)
     monkeypatch.setenv("HERMES_KANBAN_WORKSPACE", str(wt))
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_1")
+    monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: None)  # no codegraph, no testscope
     note = workspace_prep.prepare_workspace(is_first_turn=True)
     assert "symlinked" in note["context"] and "client" in note["context"]
     assert (wt / "client" / "node_modules" / "vitest").is_dir()
@@ -35,6 +36,8 @@ def test_first_turn_links_missing_node_modules_once(tmp_path, monkeypatch):
     assert "node_modules" not in status.stdout                              # never committable
     assert workspace_prep.prepare_workspace(is_first_turn=True) is None     # nothing left to do
     assert workspace_prep.prepare_workspace(is_first_turn=False) is None
+    monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: cmd == "testscope" and "/bin/testscope")
+    assert "`testscope`" in workspace_prep.prepare_workspace(is_first_turn=True)["context"]
 
 
 def test_empty_scratch_workspace_points_at_parent_worktree(tmp_path, monkeypatch):
