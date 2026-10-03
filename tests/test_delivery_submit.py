@@ -290,3 +290,27 @@ def test_branch_is_the_coordinators_name_and_never_reuses_a_taken_one(tmp_path, 
     calls.clear()
     submit.submit({"title": "Other repo", "request": "r", "project": "my-app", "size": "small"})
     assert "--branch" not in calls[0]  # no name given: Hermes names it
+
+
+def test_bug_report_diagnoses_before_fixing_on_every_stage(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    body = lambda c: arg(c, "--body")
+    submit.submit({"title": "ADLs missing", "request": "r", "project": "crx", "size": "small", "kind": "bug"})
+    build = body(calls[0])
+    assert build.index("BUG REPORT: DIAGNOSE") < build.index("IMPLEMENTER\n1. PLAN.")
+    assert "BUG REPORT" not in body(calls[1])  # verify: PROOF already demands RED at BASE
+    calls.clear()
+    submit.submit({"title": "ADLs missing 2", "request": "r", "project": "crx", "size": "large", "kind": "bug"})
+    assert "SUSPECTS" in body(calls[0]) and "plan the proof" in body(calls[1]) and "DIAGNOSE" in body(calls[2])
+    calls.clear()
+    submit.submit({"title": "New page", "request": "r", "project": "crx", "size": "small"})
+    assert "BUG REPORT" not in body(calls[0])
+    assert "REPRODUCE each failure" in submit.FIX_BRIEF and "DIAGNOSIS comment" in submit.IMPLEMENTER
+
+
+def test_a_chained_card_inherits_its_parents_subscriptions(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    copied = []
+    monkeypatch.setattr(submit, "_copy_subscriptions", lambda src, dst: copied.append((src, dst)))
+    submit.submit({"title": "T", "request": "r", "project": "crx", "size": "small"})
+    assert copied == [("t_1", "t_2")]  # the verify card follows the build card's chat

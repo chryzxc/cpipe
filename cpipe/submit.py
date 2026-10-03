@@ -183,6 +183,10 @@ REVIEWER (same worktree)
 - Tests must exercise behavior: a test that reads source text (readFileSync or a regex over the
   file) or calls a copied/extracted piece of the logic proves nothing. Require a rendered/mounted
   component or a real route/function call asserting the effect: REQUEST_CHANGES.
+- A DIAGNOSIS comment (bug card): run its REPRO at BASE (must fail for the reported reason) and at
+  HEAD (must pass), and check the change sits at the ROOT CAUSE instead of masking the symptom.
+  Any removed or loosened existing condition, filter, or check (bug or not) needs its history in
+  the DIAGNOSIS or plan; without it, REQUEST_CHANGES.
 - Behavior the REQUEST did not ask for (new handlers, refactors, changed defaults, "while I was
   here" hardening) is a finding: revert it, or list it so the user approves it.
 - REQUEST_CHANGES only for correctness, security, data-loss, regression, a missed requirement, a
@@ -306,9 +310,45 @@ You are in the same worktree and branch as the original change; its PR updates w
 FIX BASE: {fix_base} (HEAD before this round). Files this branch already changes:
 {changed}
 Start from these files and the FAILURES' file:line; do not re-explore the repo or re-plan.
+REPRODUCE each failure on FIX BASE first (a test or command that goes RED for the reported reason)
+and trace it to its cause; before removing an existing condition, read its history (`git log -S`).
+One that does not reproduce: list it in the review handoff with what you ran, fix the rest. One
+that needs a product decision: block with the question (2-4 options, recommended first).
 New requests the user adds while this card waits arrive as comments: handle each in this round.
 Fix these failures only, then follow steps 3-7 (PINNED tests must still pass):
 """ + SCOPE + "\n" + IMPLEMENTER
+
+
+BUG_DIAGNOSE = """BUG REPORT: DIAGNOSE BEFORE YOU FIX. This replaces IMPLEMENTER step 1's planning, even with a
+parent plan: a cause is a guess until it reproduces. Load `systematic-debugging` once if installed.
+a. REPRODUCE the user's exact symptom on the unchanged code: a focused test through the real route,
+   job, or component, a script, or a read-only query on a local/test database (never write to a
+   shared one). Run it: it must go RED for the reported reason, not merely error.
+b. TRACE from the symptom back to its cause (the data, query, condition, or time/locale boundary
+   that produces it), confirming each step by running or printing it, not by reading alone.
+c. INTENT: before you change or remove an existing condition, filter, or check, read its history
+   (`git log -S'<code>' --oneline`, `git blame -L`, that commit's message). If it is there on
+   purpose, fix the cause and keep the purpose.
+d. Post ONE card comment: DIAGNOSIS (SYMPTOM: the report, quoted. REPRO: command -> the RED lines.
+   ROOT CAUSE: path:line and why it produces the symptom. INTENT: what the history says, or `new
+   code`. FIX: the smallest change at the root cause and every caller it reaches.), then the plan
+   in the PLAN FORMAT with ACCEPTANCE including "REPRO goes GREEN".
+e. It does not reproduce, or two causes fit and only the user can say which behavior is right:
+   block with the DIAGNOSIS so far and the exact question (2-4 options, recommended first). Never
+   ship a guessed fix. The REPRO is step 3's requested-behavior test: RED now, GREEN after.
+"""
+
+BUG_MAP = """BUG REPORT: also map SUSPECTS (each path:line that could produce the symptom, with the evidence
+for and against), HISTORY (`git log -S` for the conditions involved: why they exist), and REPRO
+(the test, script, or read-only query that should show the symptom, and its command). Do not decide
+the cause and do not fix anything.
+"""
+
+BUG_PLAN = """BUG REPORT: plan the proof, not a guessed fix. The first slice is the REPRO test (RED on today's
+code for the reported reason). GOAL names the root cause only when the map proves it; otherwise
+"confirm the cause among <suspects>" and the fix slice says which suspect each result points to.
+Never plan removing an existing condition without its HISTORY.
+"""
 
 
 def _roster_gaps():
@@ -489,6 +529,9 @@ def submit(args: dict, **_kw) -> str:
         argv, assignee = build_card(title, request, project, size)
     except (OSError, KeyError) as exc:
         return json.dumps({"ok": False, "error": str(exc)})
+    bug = args.get("kind") == "bug" and size != "content"
+    if bug:
+        argv = _as_bug(argv, "map" if size == "large" else "build")
     conventions = _conventions(project)
     branch = branch_name(project, args.get("branch") or "")
     with_branch = (lambda a: [*a, "--branch", branch]) if branch else (lambda a: a)
@@ -505,6 +548,8 @@ def submit(args: dict, **_kw) -> str:
         stages += ("verify",)
     for stage in stages:
         argv, _ = chained_card(stage, title, request, project, task_id, size)
+        if bug and stage != "verify":
+            argv = _as_bug(argv, stage)
         task_id, error = _create(_stamp(with_branch(argv) if stage == "build" else argv, conventions))
         if error:
             return json.dumps({**json.loads(error), "created_so_far": chain})
@@ -520,6 +565,17 @@ def submit(args: dict, **_kw) -> str:
               "marks the PR ready" + (" -> verifier runs the tests" if "verify" in chain else ""))
              + "; you get a message on review, block, or completion; the user tests the PR, then merges")
     return json.dumps(result)
+
+
+def _as_bug(argv: list[str], stage: str) -> list[str]:
+    """Bug report: the build card diagnoses before it plans; map and plan cards look for the cause."""
+    i = argv.index("--body") + 1
+    body, step1 = argv[i], "IMPLEMENTER\n1. PLAN."
+    if stage == "build" and step1 in body:
+        body = body.replace(step1, BUG_DIAGNOSE + "\n" + step1, 1)
+    else:
+        body += "\n" + {"map": BUG_MAP, "plan": BUG_PLAN}.get(stage, BUG_DIAGNOSE)
+    return [*argv[:i], body, *argv[i + 1:]]
 
 
 def _conventions(project: str) -> str:
@@ -775,6 +831,8 @@ def _create(argv: list[str]) -> tuple[str | None, str | None]:
         task_id = None
     if not task_id:
         return None, json.dumps({"ok": False, "error": f"unexpected create output: {created.stdout[-400:]}"})
+    for parent in {argv[i + 1] for i, a in enumerate(argv) if a == "--parent"}:  # whoever follows the chain
+        _copy_subscriptions(parent, task_id)  # hears this card too, even when no chat called the tool
     return task_id, None
 
 
@@ -820,6 +878,7 @@ SCHEMA = {
                 "request": {"type": "string", "description": "A brief, not the conversation: the goal, acceptance criteria, and any file, route, or area the user named. Workers see only this. Max 3000 chars. If an acceptance criterion needs a guess about product behavior (which screen, which users, error/empty cases, what stays unchanged), ask the user with clarify first."},
                 "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. my-app"},
                 "size": {"type": "string", "enum": ["content", "small", "large"]},
+                "kind": {"type": "string", "enum": ["feature", "bug"], "description": "bug when the user reports something broken or wrong (an error, missing or wrong data, a regression): the implementer reproduces it and finds the root cause before fixing. For a bug the request quotes the symptom and says where (page/route, which users or records), expected vs actual, and since when if known."},
                 "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
                 "verify": {"type": "boolean", "description": "Default true for new small/large work: a verify card runs the tests after review; false only when the user asks to skip it. With fix_of the default is false (the user re-tests); true only when the user asks for a verifier"},
                 "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},

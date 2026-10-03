@@ -31,6 +31,7 @@ def test_registers_delivery_tools():
         'delivery_mutation_check',
         'delivery_status',
         'delivery_submit',
+        'delivery_test_env',
         'delivery_verify_failed',
         'delivery_watch',
     ]
