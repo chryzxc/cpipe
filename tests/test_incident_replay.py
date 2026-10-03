@@ -97,12 +97,23 @@ def test_quota_wall_pauses_ready_cards_and_waits_on_review(mon, tmp_path):
     verdicts, _, calls, st = tick(mon, conn, tmp_path)
     assert verdicts["t_r"].label.startswith("WAITING(critic quota")
     assert verdicts["t_v"].state == "WAITING"
-    assert ("kanban", "schedule") == calls[0][:2] and "t_r" in st["quota_pause"]
+    assert ("-p", "critic", "usage", "--json") == calls[0] and ("kanban", "schedule") == calls[1][:2]
+    assert 25 * 60 < st["quota_pause"]["t_r"] - time.time() <= 30 * 60  # usage said nothing: fixed pause
     st["quota_pause"]["t_r"] = time.time() - 1
     conn.execute("UPDATE tasks SET status='scheduled' WHERE id='t_r'")
     conn.commit()
     _, _, calls, _ = tick(mon, conn, tmp_path, st=st)
     assert ("kanban", "unblock", "t_r") == calls[0][:3]
+
+
+def test_quota_pause_waits_for_the_providers_reset(mon):
+    from datetime import datetime, timedelta, timezone
+    now = time.time()
+    week = datetime.now(timezone.utc) + timedelta(days=2)
+    usage = {"windows": [{"used_percent": 40, "resets_at": (week - timedelta(days=1)).isoformat()},
+                         {"used_percent": 100, "resets_at": week.isoformat()}]}
+    assert mon["quota_reset"]("critic", now, lambda *a: (True, json.dumps(usage))) == week.timestamp() + 120
+    assert mon["quota_reset"]("critic", now, lambda *a: (False, "")) == now + 30 * 60
 
 
 def test_parked_triage_after_rework_is_waiting_when_subscribed(mon, tmp_path):
