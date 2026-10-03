@@ -32,6 +32,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
+from . import quality
 from .home import root as _root_home
 
 PACKAGE_DEPTH = 2  # package.json at the root and one or two levels down (client/, server/, apps/x/)
@@ -211,7 +212,7 @@ def card_profile(task_id: Optional[str], db: Path, home: Optional[Path] = None) 
         row = None
     if not row:
         return {}
-    profile = project_profile(row[0], home)
+    profile = {**project_profile(row[0], home), "project": row[0]}
     base = PR_BASE.search(row[1] or "")
     return {**profile, "base_branch": base[1]} if base else profile
 
@@ -268,6 +269,9 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
                 notes.append(f"Your assigned workspace {ws} is empty scratch, not the repo. The parent card "
                              f"worked in {parent}; cd there and work on its current branch. Do not block "
                              "for a missing repository.")
+        home = Path(os.environ.get("HERMES_HOME", ""))
+        notes += quality.first_turn_notes(home.name if home.parent.name == "profiles" else "default",
+                                          profile.get("project"))
         return {"context": "[cpipe workspace] " + " ".join(notes)} if notes else None
     except Exception:
         return None

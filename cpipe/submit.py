@@ -199,7 +199,7 @@ IMPLEMENTER
    READY_WITH_RISK.
 5. If a check cannot run because the environment lacks a tool, dependency, config, or secret,
    record the exact gap in your summary and continue (READY_WITH_RISK). Do not block for it.
-   The OCR gate belongs to the reviewer: do not run it and never block on it.
+   The reviewer's own gates belong to the reviewer: do not run them and never block on them.
 6. Hand this SAME card to review: `hermes kanban request-review <this card id> --reviewer {reviewer}
    --summary "<PR url; changed files; OUT_OF_PLAN files; PINNED: <test ids>; commands run and
    results; commit sha; any READY_WITH_RISK gaps>"`.
@@ -276,7 +276,7 @@ IMPLEMENTER
 REVIEWER (same worktree)
 - Review `git diff <base>...HEAD` against the REQUEST only: required wording (exact where the
   request quotes it), spelling and branding, broken markup or links, every place the content
-  renders, and files outside the request. No tests, pins, harnesses, OCR, or caller traces:
+  renders, and files outside the request. No tests, pins, harnesses, review gates, or caller traces:
   a content change has none.
 - One pass, every finding at once. Approve (`hermes kanban complete`) or REQUEST_CHANGES only
   for wrong or missing required text, broken markup/links, or out-of-scope files.
