@@ -88,7 +88,7 @@ def test_large_request_maps_cheaply_then_plans_from_the_map(tmp_path, monkeypatc
     assert arg(map_argv, "--assignee") == "scout" and "Read-only" in arg(map_argv, "--body")
     assert arg(plan_argv, "--assignee") == "archon" and arg(plan_argv, "--parent") == "t_1"
     assert "Do not load skills" in arg(plan_argv, "--body")
-    assert "my-software-delivery-orchestrator" not in arg(plan_argv, "--body")
+    assert "my-cpipe-orchestrator" not in arg(plan_argv, "--body")
     assert arg(build_argv, "--assignee") == "forge" and arg(build_argv, "--parent") == "t_2"
     assert arg(build_argv, "--max-runtime") == "60m" and arg(plan_argv, "--max-runtime") == "20m"
     assert "--reviewer sentry" in arg(build_argv, "--body") and "{" not in arg(build_argv, "--body")
@@ -189,7 +189,7 @@ def test_missing_fields_never_create_a_card(tmp_path, monkeypatch):
 
 def test_role_without_a_bot_blocks_handoff_and_names_the_fix(tmp_path, monkeypatch):
     roster(tmp_path, monkeypatch)
-    team = tmp_path / "skills/my-software-delivery-orchestrator/references/team-config.yaml"
+    team = tmp_path / "skills/my-cpipe-orchestrator/references/team-config.yaml"
     team.parent.mkdir(parents=True)
     team.write_text("bots:\n  implementer: {mission: code}\n  reviewer: {mission: review}\n"
                     "  investigator: {mission: map}\n")

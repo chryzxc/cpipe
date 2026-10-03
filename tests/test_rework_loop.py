@@ -109,10 +109,10 @@ def test_supervisor_prompt_carries_rework_rule():
 
 
 def test_skill_carries_review_cycle_contract():
-    skill = (ROOT / "workflow" / "skills" / "my-software-delivery-orchestrator" / "SKILL.md").read_text()
+    skill = (ROOT / "workflow" / "skills" / "my-cpipe-orchestrator" / "SKILL.md").read_text()
     assert "delta-scoped" in skill
     assert "after 3 cycles" in skill
-    reference = (ROOT / "workflow" / "skills" / "my-software-delivery-orchestrator" /
+    reference = (ROOT / "workflow" / "skills" / "my-cpipe-orchestrator" /
                  "references" / "code-quality-review.md").read_text()
     assert "Pass-one exhaustiveness" in reference
     assert "Delta-scope rework review" in reference

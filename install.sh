@@ -31,6 +31,11 @@ for link in "$H"/skills/my-*; do  # skills removed from cpipe
 done
 
 echo "-- 4/9 profile skill fan-out (symlinks)"
+for old in "$H"/profiles/*/skills/my-software-delivery-orchestrator; do  # renamed 2026-10-04
+  [ -e "$old" ] || [ -L "$old" ] || continue
+  rm -rf "$old"
+  ln -sfn "$SKILLS_SRC/my-cpipe-orchestrator" "$(dirname "$old")/my-cpipe-orchestrator"
+done
 count=0
 while IFS= read -r d; do
   name="$(basename "$d")"

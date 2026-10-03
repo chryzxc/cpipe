@@ -6,7 +6,7 @@ from pathlib import Path
 
 H = Path(os.environ.get('HERMES_HOME', str(Path.home() / '.hermes')))
 CFG = (H / 'config.yaml').read_text()
-SKILL = H / 'skills/my-software-delivery-orchestrator'
+SKILL = H / 'skills/my-cpipe-orchestrator'
 TEAM = (SKILL / 'references/team-config.yaml').read_text()
 errors = []
 
