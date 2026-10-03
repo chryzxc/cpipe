@@ -183,6 +183,9 @@ REVIEWER (same worktree)
 - Tests must exercise behavior: a test that reads source text (readFileSync or a regex over the
   file) or calls a copied/extracted piece of the logic proves nothing. Require a rendered/mounted
   component or a real route/function call asserting the effect: REQUEST_CHANGES.
+  Mocking a dependency at a boundary (HTTP client, database, provider, router) is fine; never
+  ask for a deeper harness (real router, database, rendered file, browser) the REQUEST or plan
+  does not name: note it as residual risk.
 - A DIAGNOSIS comment (bug card): run its REPRO at BASE (must fail for the reported reason) and at
   HEAD (must pass), and check the change sits at the ROOT CAUSE instead of masking the symptom.
   Any removed or loosened existing condition, filter, or check (bug or not) needs its history in
