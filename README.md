@@ -4,9 +4,9 @@
 
 # cpipe
 
-**cpipe is a request-to-PR pipeline for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** Point it at your existing AI profiles and it routes work through them: issues are clarified, planned, implemented with TDD in worktrees, reviewed on frozen commits, verified by running the tests, and delivered as evidence-backed pull requests.
+**cpipe is an AI dev team pipeline for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** It turns your existing AI profiles into a dev team that plans, builds, reviews, and verifies: issues are clarified, planned, implemented with TDD in worktrees, reviewed on frozen commits, verified by running the tests, and delivered as evidence-backed pull requests.
 
-> **This is a workflow, not a team.** The plugin decides *which role* gets each card, *what the card asks for*, and *what evidence a stage must produce*. It does not provide the bots. The quality of the result depends on the Hermes profiles you map to each role: their model, their persona (`SOUL.md`), their role skills, and their toolsets. You configure those; see [Bring your own bots](#-bring-your-own-bots).
+> **cpipe runs the team; you bring the members.** The plugin decides *which role* gets each card, *what the card asks for*, and *what evidence a stage must produce*. It does not provide the bots. The quality of the result depends on the Hermes profiles you map to each role: their model, their persona (`SOUL.md`), their role skills, and their toolsets. You configure those; see [Bring your own bots](#-bring-your-own-bots).
 
 [![Install: one command](https://img.shields.io/badge/install-one%20command-238636)](#-quickstart)
 [![CI](https://github.com/chryzxc/cpipe/actions/workflows/ci.yml/badge.svg)](https://github.com/chryzxc/cpipe/actions/workflows/ci.yml)

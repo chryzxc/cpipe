@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cpipe"
 version = "0.4.0"
-description = "cpipe: a request-to-PR delivery pipeline for Hermes Agent."
+description = "cpipe: an AI dev team pipeline for Hermes Agent: your profiles plan, build, review, and verify."
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
