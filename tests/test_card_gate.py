@@ -93,3 +93,29 @@ def test_public_pr_text_carries_no_internal_data(tmp_path, monkeypatch):
     assert "never comment" in verdict["message"]
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     assert card_gate.gate("terminal", {"command": "gh pr comment 5 --body 'Looks good'"}) is None
+
+
+def test_pushed_commits_carry_no_internal_data(tmp_path, monkeypatch):
+    import subprocess
+    setup(tmp_path, monkeypatch)
+    repo = tmp_path / "repo"
+    git = lambda *a: subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", *a],
+                                    check=True, capture_output=True)
+    repo.mkdir()
+    git("init", "-q")
+    (repo / "a.test.js").write_text("// see t_897988ac\n")  # already on the remote: not this push's leak
+    git("add", ".")
+    git("commit", "-qm", "base")
+    git("update-ref", "refs/remotes/origin/main", "HEAD")
+    (repo / "b.test.js").write_text("uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # AC1\n")
+    git("add", ".")
+    git("commit", "-qm", "Pin checkout")
+    push = {"command": f"cd {repo} && git push -u origin HEAD"}
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "forge"))
+    assert card_gate.gate("terminal", push) is None
+    (repo / "b.test.js").write_text("test('REV-005 consent persists', () => {})\n")
+    git("commit", "-qam", "Add consent test")
+    assert "REV-005" in card_gate.gate("terminal", push)["message"]
+    assert card_gate.gate("terminal", {"command": f"git -C {repo} push"})["action"] == "block"
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))  # the user's own pushes are untouched
+    assert card_gate.gate("terminal", push) is None
