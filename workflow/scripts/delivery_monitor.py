@@ -54,7 +54,7 @@ AT_CAP_ESCALATE_MINUTES = 60
 HOLD_FRESH_MINUTES = 10       # a respawn_guarded event newer than this is a live hold
 QUOTA_WINDOW_MINUTES = 30
 QUOTA_EVENTS = 3
-QUOTA_PAUSE_MINUTES = 30      # provider reset time is not on the board; retry after this
+QUOTA_PAUSE_MINUTES = 30      # retry after this when `hermes usage` cannot say when the provider resets
 RUN_BUDGET = 10
 FAST_FAIL_SECONDS = 60
 FAST_FAIL_RUNS = 3
@@ -194,7 +194,7 @@ def hermes(*args: str) -> tuple[bool, str]:
         out = subprocess.run([exe, *args], capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return False, str(exc)
-    return out.returncode == 0, _short(out.stdout or out.stderr, 300)
+    return out.returncode == 0, out.stdout if "--json" in args else _short(out.stdout or out.stderr, 300)
 
 
 # ---------------------------------------------------------------- board snapshot
@@ -498,10 +498,12 @@ def _repair(v: Verdict, b, st, now, run, db) -> tuple[bool, str]:
         ok = clear_stale_guard(db, tid)
         return ok, "cleared stale last_failure_error" if ok else "preconditions no longer hold"
     if v.repair == "quota_pause":
-        ok, out = run("kanban", "schedule", tid, f"delivery monitor: {b['tasks'][tid]['assignee']} quota wall; "
-                      f"retrying after {QUOTA_PAUSE_MINUTES}m")
+        who = b["tasks"][tid]["assignee"]
+        resume_at = quota_reset(who, now, run)
+        ok, out = run("kanban", "schedule", tid, f"delivery monitor: {who} quota wall; "
+                      f"retrying at {time.strftime('%H:%M %a', time.localtime(resume_at))}")
         if ok:
-            st.setdefault("quota_pause", {})[tid] = now + QUOTA_PAUSE_MINUTES * 60
+            st.setdefault("quota_pause", {})[tid] = resume_at
         return ok, out
     if v.repair == "resume":
         ok, out = run("kanban", "unblock", tid, "--reason", "delivery monitor: quota pause elapsed")
@@ -515,6 +517,19 @@ def _repair(v: Verdict, b, st, now, run, db) -> tuple[bool, str]:
             f"{t.get('workspace_path') or 'none'}. Revive with `hermes kanban unarchive` or resubmit.")
         return run("kanban", "archive", tid)
     return False, f"unknown repair {v.repair}"
+
+
+def quota_reset(profile: str, now: float, run) -> float:
+    """When the profile's provider frees up: the latest reset of its exhausted windows (`hermes usage`),
+    else QUOTA_PAUSE_MINUTES from now. A fixed pause retried a weekly wall every 30 minutes."""
+    from datetime import datetime
+    ok, out = run("-p", profile, "usage", "--json")
+    try:
+        resets = [datetime.fromisoformat(w["resets_at"]).timestamp() for w in json.loads(out)["windows"]
+                  if w.get("resets_at") and (w.get("used_percent") or 0) >= 100] if ok else []
+    except (ValueError, TypeError, KeyError):
+        resets = []
+    return max(resets) + 120 if resets and max(resets) > now else now + QUOTA_PAUSE_MINUTES * 60
 
 
 def _escalate(v: Verdict, b, mode, run, notices) -> str:
