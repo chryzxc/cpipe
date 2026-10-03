@@ -427,6 +427,42 @@ def _journal(kind: str, card: str | None = None, **detail) -> None:
         pass
 
 
+BRANCH_TYPES = ("feat", "fix", "refactor", "perf", "style", "docs", "test", "chore")
+
+
+def branch_name(project: str, kind: str, slug: str, exists=None) -> str | None:
+    """`<branch_prefix><type>/<slug>` from the project's saved conventions; None (Hermes's default
+    `<project>/<card id>-...` name) when the project has no prefix. A taken name gets `-2`, `-3`, ...:
+    Hermes would otherwise reuse the old branch."""
+    from . import workspace_prep
+    prefix = workspace_prep.project_profile(project, HERMES_HOME).get("branch_prefix")
+    slug = re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")[:40].strip("-")
+    if not (prefix and slug):
+        return None
+    name = f"{prefix}{kind if kind in BRANCH_TYPES else 'feat'}/{slug}"
+    exists = exists or _branch_exists(project)
+    n, candidate = 1, name
+    while exists(candidate):
+        n += 1
+        candidate = f"{name}-{n}"
+    return candidate
+
+
+def _branch_exists(project: str):
+    """Checker for local or origin branches in the project's primary repo (never true when unknown)."""
+    try:
+        from hermes_cli import projects_db
+        with projects_db.connect_closing() as conn:
+            proj = projects_db.get_project(conn, project)
+        repo = proj and (proj.primary_path or (proj.folders[0].path if proj.folders else None))
+    except Exception:
+        repo = None
+    if not repo:
+        return lambda name: False
+    return lambda name: any(subprocess.run(["git", "-C", repo, "show-ref", "--verify", "--quiet", ref]).returncode == 0
+                            for ref in (f"refs/heads/{name}", f"refs/remotes/origin/{name}"))
+
+
 def submit(args: dict, **_kw) -> str:
     title = (args.get("title") or "").strip()
     request = (args.get("request") or "").strip()
@@ -460,6 +496,10 @@ def submit(args: dict, **_kw) -> str:
     except (OSError, KeyError) as exc:
         return json.dumps({"ok": False, "error": str(exc)})
     conventions = _conventions(project)
+    branch = branch_name(project, args.get("branch_type") or "", args.get("branch_slug") or title)
+    with_branch = (lambda a: [*a, "--branch", branch]) if branch else (lambda a: a)
+    if size != "large":  # the implementer works on this first card
+        argv = with_branch(argv)
     task_id, error = _create(_stamp(argv, conventions))
     if error:
         return error
@@ -471,7 +511,7 @@ def submit(args: dict, **_kw) -> str:
         stages += ("verify",)
     for stage in stages:
         argv, _ = chained_card(stage, title, request, project, task_id, size)
-        task_id, error = _create(_stamp(argv, conventions))
+        task_id, error = _create(_stamp(with_branch(argv) if stage == "build" else argv, conventions))
         if error:
             return json.dumps({**json.loads(error), "created_so_far": chain})
         chain[stage] = task_id
@@ -786,6 +826,8 @@ SCHEMA = {
                 "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
                 "verify": {"type": "boolean", "description": "Default true for new small/large work: a verify card runs the tests after review; false only when the user asks to skip it. With fix_of the default is false (the user re-tests); true only when the user asks for a verifier"},
                 "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},
+                "branch_type": {"type": "string", "enum": list(BRANCH_TYPES), "description": "Conventional type of the change: the branch is `<project prefix><type>/<slug>`"},
+                "branch_slug": {"type": "string", "description": "2-5 word kebab-case branch name, e.g. staff-report-filters (no card id)"},
             },
             "required": ["request"],
         },
