@@ -189,7 +189,9 @@ IMPLEMENTER
    push, rewrite them with `gh pr edit <url> --title ... --body ...` to cover all the changes so
    far. Write them with the `creating-pr-content` skill when it is installed (load it once per
    card) and run its linter before each create/edit. The PR is public: never name the user,
-   bots, tools, card ids, local paths, or emails. The body includes `## How to test`: 3-6 manual steps a person follows to see the whole
+   bots, tools, card ids, local paths, or emails. It describes the change as it stands now, never
+   its history: no review rounds, corrections, findings, SHAs, or delivery status; Verification lists
+   commands a reader can run and their results. The body includes `## How to test`: 3-6 manual steps a person follows to see the whole
    change work, and what could regress. If push or the PR fails, record the exact error as
    READY_WITH_RISK.
 5. If a check cannot run because the environment lacks a tool, dependency, config, or secret,
