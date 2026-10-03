@@ -148,6 +148,7 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 | **Persona** (`SOUL.md`) | The bot's standing rules. It must not contradict the card brief (for example, an implementer SOUL that says "run only focused tests" undoes the brief's "run related tests") |
 | **Role skills** | The procedure the bot follows for its role (review checklist, TDD loop, verification steps) |
 | **Toolsets and disabled skills** | Fewer tools and skills means a smaller prompt and a faster, more focused worker |
+| **Quality checks and guidance** (`delivery/quality.yaml`) | Your linters run before every review; your skill and design rules reach each role's first turn (see Setup step 5) |
 
 ### Example bots
 
@@ -265,7 +266,29 @@ reads those itself:
    it here before replying. Every new card carries these rules, and workspace prep flags `CONVENTION_MISMATCH` when a
    worktree is on the wrong base or branch.
 
-5. **Measure** (optional): `python3 ~/.hermes/scripts/delivery_baseline.py 7` prints the autonomy numbers for the
+5. **Plug in your quality setup** (optional). cpipe ships no linters, skills, or style rules: your checks and your
+   per-role guidance live in `~/.hermes/delivery/quality.yaml`, and the workflow decides when they apply:
+
+   ```yaml
+   checks:            # run in the card's worktree when the implementer requests review
+     - name: lint
+       files: "*.js *.ts *.vue"                  # globs; the check is skipped when no changed file matches
+       run: "npx eslint --max-warnings=0 {files}" # {files}: the changed files that matched; {base}: the diff base sha
+       projects: [my-app]                        # optional: only cards of these projects
+   guidance:          # added to the first turn of every card worked by the profile mapped to that role
+     implementer: "For new screens load skill `my-ui-skill`; otherwise reuse the app's components and tokens."
+     reviewer: "Also check: duplicated logic, unbounded lists, swallowed errors, loading/empty/error states."
+     verifier: "For UI cards, run my accessibility scan on the changed pages."
+   ```
+
+   A check that exits non-zero refuses the review request and shows the implementer its output (the last 2500
+   characters), so the reviewer never spends a round on what a command can find. Checks run on the changed files only
+   (a fix round from its `FIX BASE`, a build from where it left the base branch). A check that runs past 180 seconds
+   is skipped, and after 3 refusals on one card the request goes through, so a broken check never wedges delivery. The
+   implementer's first turn lists the checks so it runs them before asking. Keep tool- and skill-specific rules here,
+   not in the bot SOULs: the same workflow then serves a team with different skills.
+
+6. **Measure** (optional): `python3 ~/.hermes/scripts/delivery_baseline.py 7` prints the autonomy numbers for the
    last 7 days (spawns per completed run, cards over the run budget, undecided cards, nudges per delivered card). Run
    it before switching to `act` and again a week later to compare.
 

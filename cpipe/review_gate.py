@@ -11,6 +11,8 @@
    branch needs none, and each such block cost a whole extra run.
 5. A kanban worker cannot start another agent (`hermes chat`, `codex exec`, `claude -p`): a nested
    consult cold-starts a whole agent and stalled one fix round about 15 minutes.
+6. The implementer's review request runs the operator's quality checks first (``quality.py``); a failure
+   refuses it with the output, so the reviewer never spends a round on what a command finds.
 """
 
 from __future__ import annotations
@@ -20,11 +22,12 @@ import re
 import sqlite3
 import subprocess
 
-from . import submit, workspace_prep
+from . import quality, submit, workspace_prep
 
 MARKER = "REVIEWER (same worktree)"  # every build, fix, and content brief carries it
 PLAN_MARKER = "Produce the implementation plan in the PLAN FORMAT"  # both plan briefs, never the build brief
 MAX_REWORK = 2  # request-changes rounds per card before the reviewer must block for Christian
+REVIEW_CMD = re.compile(r"\bkanban\s+request-review\s+(t_[0-9a-f]+)")
 CHANGES_CMD = re.compile(r"\bkanban\s+request-changes\s+(t_[0-9a-f]+)")
 COMPLETE_CMD = re.compile(r"\bkanban\s+complete\s+(t_[0-9a-f]+)")
 BLOCK_CMD = re.compile(r"\bkanban\s+block\b(.*?)\b(t_[0-9a-f]+)\b(.*)", re.S)
@@ -45,6 +48,10 @@ def gate(tool_name: str = "", args: dict | None = None, **_kw):
         return {"action": "block", "message": (
             "Do not start another agent from a kanban card: it cold-starts a whole agent and stalls the card. "
             "Make the judgment yourself from the code, or block the card with the exact question for Christian.")}
+    if tool_name == "kanban_request_review":
+        return quality_gate(args.get("task_id") or os.environ.get("HERMES_KANBAN_TASK"))
+    if tool_name == "terminal" and (m := REVIEW_CMD.search(str(args.get("command") or ""))):
+        return quality_gate(m[1])
     if tool_name == "kanban_request_changes":
         return rework_cap_gate(args.get("task_id") or os.environ.get("HERMES_KANBAN_TASK"))
     if tool_name == "terminal" and (m := CHANGES_CMD.search(str(args.get("command") or ""))):
@@ -84,6 +91,17 @@ def _nothing_to_review(row) -> bool:
     head = m and subprocess.run(["git", "-C", row["workspace_path"] or ".", "rev-parse", "HEAD"],
                                 capture_output=True, text=True, timeout=10).stdout.strip()
     return bool(head) and head.startswith(m[1])
+
+
+def quality_gate(tid: str | None):
+    try:
+        row = _task(tid)
+        if not row or MARKER not in (row["body"] or "") or row["assignee"] != submit._role("implementer"):
+            return None
+        base = workspace_prep.card_profile(tid, submit._db(), submit.HERMES_HOME).get("base_branch")
+        return quality.review_request_gate(tid, row, base, submit.HERMES_HOME)
+    except Exception:
+        return None  # a broken check setup never wedges a review request
 
 
 def rework_cap_gate(tid: str | None):
