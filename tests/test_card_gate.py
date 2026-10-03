@@ -67,3 +67,28 @@ def test_planner_plans_from_the_map_within_its_lookup_budget(tmp_path, monkeypat
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "forge"))
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_plan")
     assert card_gate.gate("read_file", {"path": "/a"}) is None
+
+
+def test_public_pr_text_carries_no_internal_data(tmp_path, monkeypatch):
+    setup(tmp_path, monkeypatch)
+    body = tmp_path / "body.md"
+    body.write_text("## Summary\nAdds SMS consent.\n\n## Verification\n- Passed: `npm test` (36 tests)\n")
+    clean = f"cd /Users/x/repo/.worktrees/t_7f86d74b && gh pr edit 5 --title 'Add SMS consent' --body-file {body}"
+    assert card_gate.gate("terminal", {"command": clean}) is None
+    for leak in ("TMPDIR=/Users/christian/.hermes/profiles/forge/cache node --test",
+                 "independent Sentry review pending, then Sentinel QA",
+                 "REV-005 correction moves Update", "Frozen HEAD: effe812aefdfb40a1e07a5dea87419fcf55a9462",
+                 "OCR delegate preview: 1 reviewable", "Necessary OUT_OF_PLAN file"):
+        body.write_text(f"## Summary\n{leak}\n")
+        verdict = card_gate.gate("terminal", {"command": clean})
+        assert verdict and verdict["action"] == "block", leak
+    inline = "gh pr create --draft --title 'Fix sort' --body \"$(cat <<'EOF'\nSee card t_897988ac\nEOF\n)\""
+    assert card_gate.gate("terminal", {"command": inline})["action"] == "block"
+    api = "gh api repos/o/r/issues/5/comments -f body='READY_WITH_RISK at HEAD'"
+    assert card_gate.gate("terminal", {"command": api})["action"] == "block"
+    # Workers report on the card, not on GitHub.
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "sentinel"))
+    verdict = card_gate.gate("terminal", {"command": "gh pr comment 5 --body 'Looks good'"})
+    assert "never comment" in verdict["message"]
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    assert card_gate.gate("terminal", {"command": "gh pr comment 5 --body 'Looks good'"}) is None

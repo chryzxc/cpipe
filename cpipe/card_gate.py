@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sqlite3
 from pathlib import Path
 
@@ -24,12 +25,24 @@ OPERATOR_DIRS = ("delivery", "memories", "skills", "plugins", "scripts", "cron")
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$", re.M)
 LOOKUP_TOOLS = ("read_file", "search_files", "terminal")
 _lookups: dict[str, int] = {}  # Plan: card -> lookups so far (per worker process)
+GH_WRITE = re.compile(r"\bgh\s+(?:(?:pr|issue)\s+(create|edit|comment|review)|api\b.*/(comments|reviews)\b)", re.S)
+BODY_FLAGS = ("--body", "-b", "--title", "-t")
+FILE_FLAGS = ("--body-file", "-F")
+FIELD_FLAGS = ("-f", "-F", "--field", "--raw-field")
+# What leaked into public PRs: local paths, card ids, delivery tokens, plan and review ids, gate names, SHAs.
+# ponytail: tool names (Hermes, cpipe) are left out: they are real content in repos about them.
+LEAK = re.compile(
+    r"/Users/|/home/\w+/|~/\.hermes|\.hermes/|\.worktrees/|\bt_[0-9a-f]{8}\b"
+    r"|\b(?:READY_WITH_RISK|COMMIT_READY|OUT_OF_PLAN|PINNED|CONTINUATION|REQUEST_CHANGES|PRECHECK)\b"
+    r"|\bREV-\d+\b|\bAC\d+\b|\bOCR (?:gate|delegat|preview|review|belongs)"
+    r"|(?<!/commit/)(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])",
+    re.I)
 
 
 def gate(tool_name: str = "", args: dict | None = None, **_kw):
     args = args or {}
     blocked = (round_limit_unblock(tool_name, args) or operator_config_write(tool_name, args)
-               or plan_lookup_budget(tool_name, args))
+               or plan_lookup_budget(tool_name, args) or public_github_text(tool_name, args))
     if blocked:
         return blocked
     if tool_name == "kanban_create":
@@ -134,5 +147,62 @@ def plan_lookup_budget(tool_name: str, args: dict):
 def _planner() -> str:
     try:
         return submit._role("planner")
+    except (KeyError, OSError):
+        return ""
+
+
+def public_github_text(tool_name: str, args: dict):
+    """PR titles, bodies and comments are public. The rule was prose plus an optional linter: workers ran it
+    on 19 of 80 PR writes and leaked local paths, card ids, bot names and review rounds into PRs."""
+    cmd = str(args.get("command") or "") if tool_name == "terminal" else ""
+    m = GH_WRITE.search(cmd)
+    if not m:
+        return None
+    worker = Path(os.environ.get("HERMES_HOME", ""))
+    if m[1] in ("comment", "review") or m[2]:
+        if worker.parent.name == "profiles" and worker.name in guarded():
+            return {"action": "block", "message": (
+                "Not posted: delivery workers never comment on or review the PR on GitHub. Your findings and "
+                "evidence go in your card report; the PR body is the only public text you write.")}
+    text = _gh_text(cmd[m.start():])
+    hit = LEAK.search(text) or _bot_name(text)
+    if not hit:
+        return None
+    return {"action": "block", "message": (
+        f"Not sent: the PR text contains {hit[0]!r}, which is internal. The PR is public: describe the change, "
+        "how to test it and real risks; never local paths, card/plan/review ids, bot or tool names, models, "
+        "SHAs, delivery tokens, or review rounds. Rewrite it and send again.")}
+
+
+def _gh_text(cmd: str) -> str:
+    """Titles and bodies a gh command would publish, from inline flags, body files and api fields."""
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return cmd
+    out = []
+    for flag, value in zip(tokens, tokens[1:]):
+        if flag in FIELD_FLAGS and value.startswith("body="):
+            value = value[5:]
+            flag = "--body-file" if value.startswith("@") else "--body"
+            value = value.lstrip("@")
+        if flag in BODY_FLAGS:
+            out.append(value)
+        elif flag in FILE_FLAGS and value != "-":
+            try:
+                out.append(Path(value).expanduser().read_text(errors="replace"))
+            except OSError:
+                pass
+    return "\n".join(out)
+
+
+def _bot_name(text: str):
+    names = "|".join(re.escape(n) for n in guarded() | {_coordinator()} if n)
+    return names and re.search(rf"\b(?:{names})\b\s*(?:/|review|QA|verif|approv|gate|pass|fail)", text, re.I)
+
+
+def _coordinator() -> str:
+    try:
+        return submit._role("coordinator")
     except (KeyError, OSError):
         return ""
