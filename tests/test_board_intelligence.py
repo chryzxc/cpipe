@@ -133,4 +133,4 @@ def test_cron_learning_loop_rule_present():
     job = next(j for j in defs if j["name"] == "Board intelligence weekly")
     assert job["no_agent"] is False
     assert "STANDARDS_AMENDMENT" in job["prompt"] or "Standards amendment draft" in job["prompt"]
-    assert "resolve_role.py coordinator" in job["prompt"]
+    assert "NO assignee" in job["prompt"] and "resolve_role.py coordinator" not in job["prompt"]  # the operator approves; no bot works it

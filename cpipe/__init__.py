@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import block_reasons, card_gate, exit_handoff, headless_clarify, liveness, review_gate, status, submit, workspace_prep
+from . import block_reasons, card_gate, exit_handoff, headless_clarify, liveness, review_gate, status, submit, test_env, workspace_prep
 
 __all__ = ["register"]
 
@@ -272,6 +272,10 @@ def register(ctx):
     ctx.register_tool(
         name="delivery_verify_failed", toolset="cpipe",
         schema=submit.VERIFY_FAILED_SCHEMA["function"], handler=submit.verify_failed,
+    )
+    ctx.register_tool(
+        name="delivery_test_env", toolset="cpipe",
+        schema=test_env.SCHEMA["function"], handler=test_env.run,
     )
     ctx.register_tool(
         name="delivery_status", toolset="cpipe",
