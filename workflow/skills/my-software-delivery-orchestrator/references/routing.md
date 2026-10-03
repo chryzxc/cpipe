@@ -23,7 +23,7 @@ Choose one primary Bot with the narrowest mandate. Add a second Bot only for a r
 | Fresh code/maintainability review, OCR gate | Reviewer | owning implementer for named findings |
 
 | Scheduled proactive audit from script output | Auditor | findings route via performance_audit key |
-| PR title/body/metadata, kept current for the whole branch | Implementer using `creating-pr-content` | remote read-back and CI-state report |
+| PR title/body/metadata, kept current for the whole branch | Implementer using `creating-pr-content`; Coordinator final pass | remote read-back and CI-state report |
 
 ## Backend choice
 
