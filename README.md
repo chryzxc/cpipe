@@ -90,6 +90,8 @@ A feature is one card: the implementer plans, builds, tests, pushes, and opens a
 
 Every plan, the implementer's own or a reviewed one, has a **COMPLETE FEATURE** line: what a careful senior ships with the change without being asked (errors that tell the user why, choices that cannot be combined, sibling UI that stays consistent, existing records, production data volume, side effects like SMS or email that fail without breaking the main flow, new env vars in the example file). These count as part of the request, not as extras, and the reviewer checks them by using the change as a user would. Re-reviews converge: from round two the reviewer raises no new minor findings, must say why a new serious one was missed before, and the implementer disputes a wrong finding with evidence instead of patching around it.
 
+Each delivery also gets its own conversation in the Hermes conversation list, titled `⛓ <request>`: a header with the repo, worktree and route, then one message per board event as it happens (stage started, handed to review, changes requested with the findings, approved with the PR link and the next stage, blocked, timed out, fix rounds, and `Ready for you to test` at the end). It is written straight from the board on each dispatcher tick, so it costs no tokens.
+
 ## The concepts behind it
 
 This isn't a pile of prompts — it's several established engineering paradigms composed into one delivery system. Knowing the vocabulary makes it easier to adopt, adapt, and trust:

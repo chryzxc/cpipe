@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import block_reasons, card_gate, exit_handoff, headless_clarify, liveness, review_gate, status, submit, test_env, workspace_prep
+from . import block_reasons, card_gate, exit_handoff, flow, headless_clarify, liveness, review_gate, status, submit, test_env, workspace_prep
 
 __all__ = ["register"]
 
@@ -336,6 +336,7 @@ def register(ctx):
     ctx.register_hook("on_session_end", _live(exit_handoff, "handoff"))
     ctx.register_hook("on_kanban_dispatch_tick", _live(liveness, "record_dispatch_tick"))
     ctx.register_hook("on_kanban_dispatch_tick", _live(block_reasons, "explain_blocks"))
+    ctx.register_hook("on_kanban_dispatch_tick", _live(flow, "sync_flows"))
     ctx.register_hook("pre_llm_call", _live(liveness, "liveness_notice"))
     ctx.register_hook("pre_llm_call", _live(workspace_prep, "prepare_workspace"))
     ctx.register_hook("pre_llm_call", _live(status, "chat_context"))
