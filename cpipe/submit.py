@@ -225,7 +225,11 @@ IMPLEMENTER
 6. Hand this SAME card to review: `hermes kanban request-review <this card id> --reviewer {reviewer}
    --summary "<PR url; changed files; OUT_OF_PLAN files; PINNED: <test ids>; commands run and
    results; commit sha; any READY_WITH_RISK gaps>"`.
-7. If review requests changes, fix them on this card, push, and request review again.
+7. If review requests changes: check each finding against the code first. Fix the right ones on
+   this card, one at a time, rerunning the test that showed each. A finding that is wrong for this
+   code gets a reply with the evidence (the test, the line, the constraint) instead of a change made
+   only to close it; never fix something adjacent and call the finding done. Push and request
+   review again, listing each finding as fixed (commit) or disputed (reason).
 
 REVIEWER (same worktree)
 - Review `git diff <base>...HEAD` in this card's worktree against the REQUEST and the plan (the
@@ -248,7 +252,9 @@ REVIEWER (same worktree)
   change reaches. A failure that passes at BASE is a regression: REQUEST_CHANGES.
 - Tests must exercise behavior: a test that reads source text (readFileSync or a regex over the
   file) or calls a copied/extracted piece of the logic proves nothing. Require a rendered/mounted
-  component or a real route/function call asserting the effect: REQUEST_CHANGES.
+  component or a real route/function call asserting the effect: REQUEST_CHANGES. Ask "if this
+  behavior broke, would an assertion fail?": snapshot-only, no-throw, or only-asserts-a-mock-was-
+  called tests, and tests that mock the module under change, do not count.
   Mocking a dependency at a boundary (HTTP client, database, provider, router) is fine; never
   ask for a deeper harness (real router, database, rendered file, browser) the REQUEST or plan
   does not name: note it as residual risk.
@@ -269,7 +275,13 @@ REVIEWER (same worktree)
   test, harness, or file the REQUEST excludes: note it as a follow-up.
 - On a `Fix N:` card, review only `git diff <FIX BASE from the card>..HEAD` and the callers of what
   changed there: the earlier rounds were already approved.
-- On re-review, check only the delta since the last reviewed commit plus the prior findings.
+- On re-review, report only on the delta since the last reviewed commit plus the prior findings
+  (read outside it: a break the delta causes in another file is a delta finding). From round two:
+  no new Medium/Low findings; a new High on code an earlier round already reviewed says why it
+  was not raised then (a fix revealed it, a file arrived, an assumption proved wrong, or you did
+  not look) or it is a note. Withdraw your own earlier findings that were scope creep or
+  preference, and say so. A disputed finding is judged on the implementer's evidence, not
+  restated.
   An unchanged patch (a rebase or empty push: `git diff $(git merge-base origin/<base> <sha>) <sha> |
   git patch-id --stable` equal for the last reviewed sha and HEAD) keeps the prior verdict: re-run
   the related tests only.
