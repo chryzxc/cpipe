@@ -13,6 +13,8 @@ board-adjacent facts:
   work, or the dispatcher has stopped ticking, the next session turn is told so
   the operator hears it without asking. ESTOP also pauses cron — including the
   stall supervisor — so a chat turn is the only channel still open.
+* ``keep_awake`` (same tick): on macOS, holds a ``caffeinate`` sleep assertion while any card runs.
+  A sleeping laptop froze runs for 15 minutes at a time until the 60-minute run limit killed them.
 
 Every entry point is best-effort and never raises into the engine.
 """
@@ -21,7 +23,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -34,6 +39,7 @@ _NOTICE_SESSIONS_MAX = 256
 
 _count_cache: dict[str, Any] = {"at": 0.0, "home": None, "counts": None}
 _notice_seen: dict[str, str] = {}
+_awake: dict[str, Any] = {"proc": None}
 
 
 def hermes_home() -> Path:
@@ -85,6 +91,7 @@ def record_dispatch_tick(*, outcome: str = "ok", result: Any = None, dry_run: bo
     if dry_run or board not in (None, "", "default"):
         return
     try:
+        keep_awake(home)
         now = time.time() if now is None else now
         data = read_health(home) or {}
         data["last_tick_at"] = now
@@ -108,6 +115,25 @@ def record_dispatch_tick(*, outcome: str = "ok", result: Any = None, dry_run: bo
         _write_health(data, home)
     except Exception:
         pass
+
+
+def keep_awake(home: Optional[Path] = None, *, platform: str = sys.platform, spawn: Any = subprocess.Popen) -> bool:
+    """Hold ``caffeinate -i -s`` (idle sleep; system sleep on AC power) while cards run, release it when none do.
+
+    Tied to this process with ``-w``, so a dead gateway never leaves the Mac awake. On battery a closed lid
+    still sleeps: macOS allows no assertion against that."""
+    if platform != "darwin" or not shutil.which("caffeinate"):
+        return False
+    running = (board_counts(home) or {}).get("running", 0) > 0
+    proc = _awake["proc"]
+    alive = proc is not None and proc.poll() is None
+    if running and not alive:
+        _awake["proc"] = spawn(["caffeinate", "-i", "-s", "-w", str(os.getpid())],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif not running and alive:
+        proc.terminate()
+        _awake["proc"] = None
+    return running
 
 
 def estop_state(home: Optional[Path] = None) -> Optional[dict]:

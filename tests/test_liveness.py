@@ -121,3 +121,33 @@ def test_doctor_report_lines(tmp_path):
     assert lines[1] == "dispatcher: last tick 60s ago (ok), last spawn never recorded"
     assert "dispatcher holds: per_profile_cap=1" in lines
     assert lines[-1] == "board: ready=1, review=0, running=0, todo=0, blocked=2, triage=0"
+
+
+def test_keep_awake_holds_caffeinate_only_while_cards_run(tmp_path, monkeypatch):
+    conn = sqlite3.connect(tmp_path / "kanban.db")
+    conn.execute("CREATE TABLE tasks (id TEXT, status TEXT)")
+    conn.execute("INSERT INTO tasks VALUES ('t_1', 'running')")
+    conn.commit()
+
+    class Proc:
+        def __init__(self, argv, **_):
+            self.argv, self.done = argv, False
+        def poll(self):
+            return 0 if self.done else None
+        def terminate(self):
+            self.done = True
+
+    spawned = []
+    spawn = lambda argv, **kw: spawned.append(Proc(argv)) or spawned[-1]
+    monkeypatch.setattr(liveness.shutil, "which", lambda _: "/usr/bin/caffeinate")
+    monkeypatch.setitem(liveness._awake, "proc", None)
+    assert not liveness.keep_awake(tmp_path, platform="linux", spawn=spawn) and not spawned
+    assert liveness.keep_awake(tmp_path, platform="darwin", spawn=spawn)
+    liveness._count_cache["at"] = 0.0
+    liveness.keep_awake(tmp_path, platform="darwin", spawn=spawn)
+    assert len(spawned) == 1 and spawned[0].argv[:3] == ["caffeinate", "-i", "-s"]  # one hold, not one per tick
+    conn.execute("UPDATE tasks SET status = 'done'")
+    conn.commit()
+    liveness._count_cache["at"] = 0.0
+    assert not liveness.keep_awake(tmp_path, platform="darwin", spawn=spawn)
+    assert spawned[0].done and liveness._awake["proc"] is None  # released when the board is idle
