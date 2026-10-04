@@ -24,11 +24,11 @@
     <rect x="710" y="178" width="126" height="44" rx="22" fill="#8957e5" opacity="0.3"/>
     <text x="773" y="206" fill="#d2a8ff" text-anchor="middle">gates</text>
     <text x="848" y="206" fill="#484f58">→</text>
-    <rect x="870" y="178" width="82" height="44" rx="22" fill="#da3633" opacity="0.3"/>
-    <text x="911" y="206" fill="#ffa198" text-anchor="middle">PR</text>
-    <text x="964" y="206" fill="#484f58">→</text>
-    <rect x="986" y="178" width="150" height="44" rx="22" fill="#8957e5" opacity="0.3"/>
-    <text x="1061" y="206" fill="#d2a8ff" text-anchor="middle">learning</text>
+    <rect x="870" y="178" width="164" height="44" rx="22" fill="#da3633" opacity="0.3"/>
+    <text x="952" y="206" fill="#ffa198" text-anchor="middle">deliverable</text>
+    <text x="1046" y="206" fill="#484f58">→</text>
+    <rect x="1068" y="178" width="128" height="44" rx="22" fill="#8957e5" opacity="0.3"/>
+    <text x="1132" y="206" fill="#d2a8ff" text-anchor="middle">learning</text>
   </g>
-  <text x="60" y="266" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" fill="#6e7681">risk-tiered ceremony · frozen-SHA review gates · evidence-based PRs · self-healing kanban</text>
+  <text x="60" y="266" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="15" fill="#6e7681">risk-tiered ceremony · frozen-SHA review gates · evidence-based deliverables · self-healing kanban</text>
 </svg>

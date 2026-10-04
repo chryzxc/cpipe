@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="cpipe — clarify → explore → plan → parallel TDD → gates → PR → learning">
+  <img src="assets/banner.svg" alt="cpipe — clarify → explore → plan → parallel TDD → gates → deliverable → learning">
 </p>
 
 # cpipe
 
-**cpipe is the workflow for your AI dev team in [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** It routes each request through your own profiles (plan → build → review → verify) and gates every stage on evidence, ending in a reviewed, tested PR. Requests are clarified first, built with TDD in worktrees, reviewed on frozen commits, and verified by actually running the tests.
+**cpipe is the workflow for your AI dev team in [Hermes Agent](https://github.com/NousResearch/hermes-agent) — shipped as one plugin.** It routes each request through your own profiles (plan → build → review → verify) and gates every stage on evidence, ending in a reviewed, tested deliverable. Requests are clarified first, built with TDD in worktrees, reviewed on frozen commits, and verified by actually running the tests.
 
 > **cpipe runs the team; you bring the members.** The plugin decides *which role* gets each card, *what the card asks for*, and *what evidence a stage must produce*. It does not provide the bots. The quality of the result depends on the Hermes profiles you map to each role: their model, their persona (`SOUL.md`), their role skills, and their toolsets. You configure those; see [Bring your own bots](#-bring-your-own-bots).
 
@@ -51,7 +51,7 @@ The result: **you review evidence, not code.**
 ## The flow
 
 ```
-issue ──► clarify ──► explore ──► plan ──► PIN ──► TDD ──► review ──► verify ──► PR ──► learning
+issue ──► clarify ──► explore ──► plan ──► PIN ──► TDD ──► review ──► verify ──► deliverable ──► learning
         intake brief   surfaces    frontier   tests    RED→    frontier   PROOF +     evidence   weekly digest
         + risk tier    artifact    model:     for      GREEN   model:     RELATED +   block +    + standards
                                   change +   today's          callers +  SUITE       approvals  loop
@@ -72,7 +72,7 @@ issue ──► clarify ──► explore ──► plan ──► PIN ──►
 | 5 | **Refactor** | Simplification findings become their own card — never mixed with behavior | Separate simplify card | Zero behavior change |
 | 6 | **Review** | Independent review of the frozen SHA: diff, every caller of every changed symbol or route, security when triggered | `CALLERS CHECKED` list | No approval without the list |
 | 6b | **Verify** | The Verifier runs the change in the same worktree: PROOF (changed tests fail at the merge-base), RELATED (tests of every changed file, every package), SUITE (repo CI commands) | Command + result per step | Any failure → `delivery_verify_failed` opens a fix card and a new verify card |
-| 7 | **PR** | Draft PR generated from verified evidence; approvals batched per wave | PR with evidence block | Your one `ship N / hold N` reply |
+| 7 | **Deliverable** | Draft deliverable generated from verified evidence; approvals batched per wave | Deliverable with evidence block | Your one `ship N / hold N` reply |
 | 8 | **Learning** | Weekly digest: flow metrics, gate effectiveness, finding classes → standards amendments | Weekly digest | You approve drafts only |
 
 ### Risk-tiered ceremony
@@ -86,11 +86,11 @@ Not every change earns the same process. The intake tier decides:
 | Review | same-card reviewer (one-shot) | dispatched review | reviewer + QA + security in parallel |
 | Verify card (PROOF/RELATED/SUITE) | on request (`verify: true`) | on request | + mutation check |
 
-A feature is one card: the implementer plans, builds, tests, pushes, and opens a draft PR with a `## How to test` checklist; the reviewer checks the same card (at most 3 rounds) and marks the PR ready. You test the PR and merge, or send `fix <PR> <issue>`, which reopens the same branch. Every worker sees only its card (the request brief plus the parent card's result), never the chat, so each session stays small.
+A feature is one card: the implementer plans, builds, tests, pushes, and opens a draft deliverable with a `## How to test` checklist; the reviewer checks the same card (at most 3 rounds) and marks the deliverable ready. You test the deliverable and merge, or send `fix <deliverable> <issue>`, which reopens the same branch. Every worker sees only its card (the request brief plus the parent card's result), never the chat, so each session stays small.
 
 Every plan, the implementer's own or a reviewed one, has a **COMPLETE FEATURE** line: what a careful senior ships with the change without being asked (errors that tell the user why, choices that cannot be combined, sibling UI that stays consistent, existing records, production data volume, side effects like SMS or email that fail without breaking the main flow, new env vars in the example file). These count as part of the request, not as extras, and the reviewer checks them by using the change as a user would. Re-reviews converge: from round two the reviewer raises no new minor findings, must say why a new serious one was missed before, and the implementer disputes a wrong finding with evidence instead of patching around it.
 
-Each delivery also gets its own conversation in the Hermes conversation list, titled `⛓ <request>`: a header with the repo, worktree and route, then one message per board event as it happens (stage started, handed to review, changes requested with the findings, approved with the PR link and the next stage, blocked, timed out, fix rounds, and `Ready for you to test` at the end). It is written straight from the board on each dispatcher tick, so it costs no tokens.
+Each delivery also gets its own conversation in the Hermes conversation list, titled `⛓ <request>`: a header with the repo, worktree and route, then one message per board event as it happens (stage started, handed to review, changes requested with the findings, approved with the deliverable link and the next stage, blocked, timed out, fix rounds, and `Ready for you to test` at the end). It is written straight from the board on each dispatcher tick, so it costs no tokens.
 
 ## The concepts behind it
 
@@ -182,15 +182,15 @@ The plugin writes each card's brief, but a worker is still *your* profile. For e
 - `delivery_submit` — turns a request brief (max 3000 chars) into one build card with a same-card review (map → plan → build for large work; then a verify card unless `verify: false`, routed to the release engineer when CI, deps, containers, or migrations change), or with `fix_of` a fix card on an existing card's branch, and subscribes the chat to every card. The implementer cannot complete its own card: a `pre_tool_call` gate sends it to review. A clarify from a background (headless) coordinator turn is queued as a question on the card for Herm to show instead of being auto-answered
 - `delivery_verify_failed` — called by the Verifier on a failed verify card; opens a fix card in the same worktree plus a fresh verify card, and stops after 2 rounds
 - `delivery_status` — the board's truth: each open card's verdict computed from the task database now (`PROGRESSING`, `WAITING(<named thing>)`, or `STUCK(<cause>)` with the next step). The coordinator answers every status question from it
-- `delivery_test_env` — runs a card's or PR's branch for the operator to test with the project's saved `test_env` recipe (projects.yaml) under wtg; returns the URLs and the commit they serve, or the failing service's log
-- `delivery_watch` — registers a PR or CI run the monitor polls for a card; a pass unblocks the card, a failure or expiry tells the chat. Required before anyone says a card "will resume"
+- `delivery_test_env` — runs a card's or deliverable's branch for the operator to test with the project's saved `test_env` recipe (projects.yaml) under wtg; returns the URLs and the commit they serve, or the failing service's log
+- `delivery_watch` — registers a deliverable or CI run the monitor polls for a card; a pass unblocks the card, a failure or expiry tells the chat. Required before anyone says a card "will resume"
 
 Plus the `hermes cpipe` CLI (`doctor`, `queue`, `status [--card ID]`, `log [--card ID] [--since 2h] [--kind K]`, each with `--json`), an `on_session_end` metrics hook (append-only JSONL), and the liveness hooks described below.
 
 **Worker hooks** (deterministic, no LLM tokens):
 
 - **Workspace prep.** On a worker's first turn in a fresh worktree, the plugin symlinks the main checkout's `node_modules`. If the repo has a [codegraph](https://github.com/colbymchenry/codegraph) index (`.codegraph/`), it gives the worktree a copy-on-write clone of that index, which syncs to the branch in the background. If `testscope` is on `PATH`, it tells the worker to run `testscope --base origin/<base>` before the full suite. testscope runs only the tests the change touches, names hung files and marks failures new or pre-existing.
-- **Public text gate.** PR titles, bodies and comments are public, and so are commits. A delivery worker's `gh pr create/edit` is refused when its text contains local paths, card ids, review ids, delivery tokens, SHAs or bot names. So is a `git push` whose unpushed commits carry those in their messages or added lines. Workers never comment on or review PRs on GitHub. Tokens and paths match by case, so prose like "pinned" and `/users/` routes pass.
+- **Public text gate.** Deliverable titles, bodies and comments are public, and so are commits. A delivery worker's `gh pr create/edit` is refused when its text contains local paths, card ids, review ids, delivery tokens, SHAs or bot names. So is a `git push` whose unpushed commits carry those in their messages or added lines. Workers never comment on or review deliverables on GitHub. Tokens and paths match by case, so prose like "pinned" and `/users/` routes pass.
 
 ## Liveness & autonomy
 
@@ -200,7 +200,7 @@ The chain is meant to run from plan to final report without you asking "what's n
 |---|---|
 | Gateway dispatcher | Every 15s it claims `ready` cards **and** `review` cards (native same-card review). Linked children are promoted automatically when their parents finish, so pre-created chains need no coordinator turn between steps. |
 | Dispatch telemetry | The plugin's `on_kanban_dispatch_tick` hook writes `~/.hermes/logs/dispatch-health.json`: last tick, last spawn, and why each held card was held (per-profile cap, respawn guard, unassigned…). |
-| Delivery monitor | Every 5 minutes a deterministic script reads the task database, worker processes and GitHub directly and gives every open card exactly one verdict: *progressing* (a live worker), *waiting on something named* (a PR check, a quota reset, your decision, a parent card), or *stuck* with a cause (`DEAD_WORKER`, `STALE_GUARD`, `QUOTA_WALL`, `AUTH_BLOCKED`, `IDENTICAL_FAILURE`, `RUN_BUDGET`, `ORPHAN_REVIEW`, …). Known stuck states are repaired (reclaim a dead claim, clear a stale respawn guard, pause cards behind a quota wall until the provider's reported reset (`hermes usage`) and resume them, re-subscribe a child to its chain's chat). The rest are escalated once: the card is blocked with `<CAUSE>: <why>; next: <what unsticks it>`, which notifies the chat that started the work, or, for cards that cannot be blocked, a notice is handed to that chat's next turn. A stuck parent owns its children's stall, so you hear about the root, not every card behind it. It also posts a digest when something newly stalls or starts moving again. |
+| Delivery monitor | Every 5 minutes a deterministic script reads the task database, worker processes and GitHub directly and gives every open card exactly one verdict: *progressing* (a live worker), *waiting on something named* (a deliverable check, a quota reset, your decision, a parent card), or *stuck* with a cause (`DEAD_WORKER`, `STALE_GUARD`, `QUOTA_WALL`, `AUTH_BLOCKED`, `IDENTICAL_FAILURE`, `RUN_BUDGET`, `ORPHAN_REVIEW`, …). Known stuck states are repaired (reclaim a dead claim, clear a stale respawn guard, pause cards behind a quota wall until the provider's reported reset (`hermes usage`) and resume them, re-subscribe a child to its chain's chat). The rest are escalated once: the card is blocked with `<CAUSE>: <why>; next: <what unsticks it>`, which notifies the chat that started the work, or, for cards that cannot be blocked, a notice is handed to that chat's next turn. A stuck parent owns its children's stall, so you hear about the root, not every card behind it. It also posts a digest when something newly stalls or starts moving again. |
 | Board supervisor | A cheap scan every 15 minutes for decisions that need judgment: verdicts parked in block reasons, rework loops, orphaned chains, unsubscribed cards. Its output is byte-stable, so the LLM only runs when something changed. It never dispatches: the gateway is the only dispatcher. |
 | Board triage | Every 20 minutes a deterministic cron retries blocked cards that only hit a rate limit, timeout, or worker crash (twice at most, never while the provider is still rate limiting) and moves reason-less blocked children back to wait on their parent. Once a day, or when a new decision is needed, it sends you a digest grouped as *needs your decision / looks done / blocked by old rules / parked*. Reply `continue <id> <what to do>`, `archive <id>` or `resubmit <id>` and the coordinator acts on it. |
 | Mission Control | A dashboard tab (`hermes dashboard` → Mission Control) with the same groups. Open a card to read its reason, body and latest comments, then Continue with a note, Resubmit it fresh under the current flow, or Archive. Tick several for bulk actions. `hermes cpipe queue` prints the same queue as JSON for other clients (Herm uses it). |
@@ -223,7 +223,7 @@ reads those itself:
 | Honest status | Status answers come from `delivery_status`, never from memory. "Will resume" requires a `delivery_watch`. |
 | Retries with memory | The same failure signature twice means stop and ask, not a tenth retry. More than 10 runs, or 3 fast failures in a row, stops retries. |
 | No doomed work | A duplicate submission returns the existing card, a hand-made "Review …" card is refused, and workspace prep flags a branch or base that breaks the project's rules. |
-| Your rules stick | Base branch, branch naming, environment setup and conventions (draft-PR timing, forbidden tools) are saved per project and stamped into every card. |
+| Your rules stick | Base branch, branch naming, environment setup and conventions (draft-deliverable timing, forbidden tools) are saved per project and stamped into every card. |
 | Clean backlog | An undecided card gets one reminder at 7 days, then is archived at 10 with a final comment (only after that reminder). |
 
 ### Setup
@@ -236,7 +236,7 @@ reads those itself:
    ```
 
    `./install.sh` copies the monitor into `~/.hermes/scripts/` and registers it as the `Delivery monitor` cron job
-   (every 5 minutes). Check it is there with `hermes cron list`. PR/CI watches need an authenticated `gh` CLI.
+   (every 5 minutes). Check it is there with `hermes cron list`. Deliverable/CI watches need an authenticated `gh` CLI.
 
 2. **Let it observe first.** Out of the box the monitor runs in `observe` mode: it classifies every card, sends the
    stall digest and journals what it *would* repair (`monitor.would_repair`), but changes nothing on the board.
@@ -254,7 +254,7 @@ reads those itself:
 
    The next tick picks it up; no restart needed. While ESTOP is engaged the monitor only observes, whatever this says.
 
-4. **Save your project rules** (optional, but it is how "PRs target develop" stops being forgotten). Create
+4. **Save your project rules** (optional, but it is how "deliverables target develop" stops being forgotten). Create
    `~/.hermes/delivery/projects.yaml`, keyed by the project name you pass to `delivery_submit`:
 
    ```yaml
@@ -263,10 +263,10 @@ reads those itself:
        base_branch: develop        # every card's worktree must contain origin/<base_branch>
        branch_prefix: feat/        # branch naming
        env: "cp .env.example .env" # setup notes told to workers
-       conventions: "draft PR at the first pushable commit; never use some-tool"   # copied into every brief
+       conventions: "draft deliverable at the first pushable commit; never use some-tool"   # copied into every brief
    ```
 
-   You rarely edit this by hand: when you state a rule in chat ("this repo's PRs go to develop"), the coordinator saves
+   You rarely edit this by hand: when you state a rule in chat ("this repo's deliverables go to develop"), the coordinator saves
    it here before replying. Every new card carries these rules, and workspace prep flags `CONVENTION_MISMATCH` when a
    worktree is on the wrong base or branch.
 
@@ -310,7 +310,7 @@ t_9c0d1e2f  Plan settings page   PROGRESSING
 When a card stops, you hear about it without asking: the card is blocked with a one-line reason and next step, which
 notifies the chat that started the work, or the reason is added to that chat's next turn. Reply with what to do
 (`continue <id> <instruction>`, `archive <id>`, `resubmit <id>`) as with the triage digest. If the coordinator says a
-card "will resume" after a PR merges or CI passes, it has registered a `delivery_watch`; when the PR merges the card is
+card "will resume" after a deliverable merges or CI passes, it has registered a `delivery_watch`; when the deliverable merges the card is
 unblocked, and when CI fails or the watch expires you are told.
 
 **From the terminal:**
@@ -331,7 +331,7 @@ The journal itself is `~/.hermes/logs/delivery-journal.jsonl`, one JSON line per
 | Verdict | Meaning | What happens |
 |---|---|---|
 | `PROGRESSING` | A live worker holds the card | Nothing |
-| `WAITING(<thing>)` | Waiting on something named: your decision (including a worker's `APPROVAL_NEEDED`), a PR/CI watch, a quota reset, a parent card, a scheduled time | Nothing until that thing changes; undecided cards get one reminder at 7 days and are archived at 10 |
+| `WAITING(<thing>)` | Waiting on something named: your decision (including a worker's `APPROVAL_NEEDED`), a deliverable/CI watch, a quota reset, a parent card, a scheduled time | Nothing until that thing changes; undecided cards get one reminder at 7 days and are archived at 10 |
 | `STUCK(<cause>)` | Stopped, with a cause | Repaired when the cause is known and safe (`DEAD_WORKER`, `STALE_GUARD`, `QUOTA_WALL`, `UNSUBSCRIBED`), otherwise escalated once with the next step (`AUTH_BLOCKED`, `IDENTICAL_FAILURE`, `RUN_BUDGET`, `FAST_FAIL`, `ORPHAN_REVIEW`, …) |
 
 Design and rationale: [`docs/plans/2026-09-29-autonomy-plan.md`](docs/plans/2026-09-29-autonomy-plan.md).
