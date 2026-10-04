@@ -88,6 +88,8 @@ Not every change earns the same process. The intake tier decides:
 
 A feature is one card: the implementer plans, builds, tests, pushes, and opens a draft PR with a `## How to test` checklist; the reviewer checks the same card (at most 3 rounds) and marks the PR ready. You test the PR and merge, or send `fix <PR> <issue>`, which reopens the same branch. Every worker sees only its card (the request brief plus the parent card's result), never the chat, so each session stays small.
 
+Every plan, the implementer's own or a reviewed one, has a **COMPLETE FEATURE** line: what a careful senior ships with the change without being asked (errors that tell the user why, choices that cannot be combined, sibling UI that stays consistent, existing records, production data volume, side effects like SMS or email that fail without breaking the main flow, new env vars in the example file). These count as part of the request, not as extras, and the reviewer checks them by using the change as a user would. Re-reviews converge: from round two the reviewer raises no new minor findings, must say why a new serious one was missed before, and the implementer disputes a wrong finding with evidence instead of patching around it.
+
 ## The concepts behind it
 
 This isn't a pile of prompts — it's several established engineering paradigms composed into one delivery system. Knowing the vocabulary makes it easier to adopt, adapt, and trust:
