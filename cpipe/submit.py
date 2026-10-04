@@ -102,9 +102,15 @@ ADD: each new file, function, route, component: purpose, slice N. (NEW: tests af
 CHANGE: each existing symbol path:line: what changes, slice N. (MODIFIED: pinned first.)
 DON'T TOUCH: files that look related but must not change, and why.
 PINS: each caller behavior a CHANGE reaches -> covered by <test> | UNPINNED -> <test to add>.
+EDGE CASES: for this change, each that applies -> ACn/test, or `none`: invalid or empty input, missing
+  or revoked access, concurrent or repeated calls, other paths to the same state (tabs, links, jobs),
+  time and timezone, large or long data.
 TESTS: each test file -> copies harness <existing test that already mounts this component or calls
-  this route> -> asserts <observable effect> -> command. Behavior only: mount/render or call real
-  code, never read source text. No harness in the repo: say so and add the smallest real one as a slice.
+  this route> -> enters at <the real entry: route, mounted view, event, job> -> asserts at <the real
+  receiving side: response, stored record, rendered DOM, emitted event> -> command. Mock only external
+  edges (network, provider, clock), never the module under change. AVOID: reading or regex-matching
+  source, a copied router or handler, calling a helper the entry point does not go through. No harness
+  in the repo: say so and add the smallest real one as a slice.
 CHECK: each command to run after the build (related tests in every package, lint, typecheck,
   build) and the result that counts as pass.
 RISKS: what could regress, where, and which test or CHECK catches it.
@@ -138,8 +144,8 @@ part of this), EXCERPTS (the exact current lines, at most 15 each, of every plac
 CALLERS, ENTRY POINTS (every way a user or system reaches this behavior or content: direct URL,
 in-app router/navigation, API clients, jobs, other packages that render or call it), CONTRACTS
 (field names and shapes at each handoff: client payload -> route -> model/DB -> response),
-TESTS (plus HARNESS: an existing test that already mounts this kind of component or calls this kind
-of route, and its command), UNPINNED (caller behaviors this change reaches that no test covers),
+TESTS (plus HARNESS: an existing test that already enters through this route, view, event, or job and
+asserts on the real result, and its command), UNPINNED (caller behaviors this change reaches that no test covers),
 COMMANDS, CONVENTIONS, GAPS; about 8 KB, every path:line from a file you opened).
 The planner card waiting on this one does not open files: it plans only from your map, so anything
 missing here becomes a guess. Be complete on ENTRY POINTS, CONTRACTS, and HARNESS.
@@ -210,7 +216,8 @@ REVIEWER (same worktree)
 - Review `git diff <base>...HEAD` in this card's worktree against the REQUEST and the plan (the
   parent card's result, or the implementer's plan comment). One pass: list every finding at once
   with file:line. Walk the plan: every ACCEPTANCE item met, every IN SCOPE ENTRY POINT works, every
-  CONTRACTS mismatch fixed, every TESTS line exists and exercises real code, and no changed file
+  CONTRACTS mismatch fixed, every EDGE CASES line handled, every TESTS line exists and runs the
+  real entry to the real receiving side, and no changed file
   outside ADD/CHANGE without an OUT_OF_PLAN note. A plan item skipped silently is a missed requirement.
   Each ACCEPTANCE `-> TEST` must exist and pass. A test the plan did not name is a request only
   when a behavior is broken or a reachable caller is unpinned; otherwise note it as residual risk.
@@ -940,7 +947,7 @@ SCHEMA = {
                 "title": {"type": "string", "description": "Short imperative card title"},
                 "request": {"type": "string", "description": "A brief, not the conversation: the goal, acceptance criteria, and any file, route, or area the user named. Workers see only this. Max 3000 chars. If an acceptance criterion needs a guess about product behavior (which screen, which users, error/empty cases, what stays unchanged), ask the user with clarify first."},
                 "project": {"type": "string", "description": "Hermes project slug (see `hermes project list`), e.g. my-app"},
-                "size": {"type": "string", "enum": ["content", "small", "large"]},
+                "size": {"type": "string", "enum": ["content", "small", "large"], "description": "content: text/copy/docs only. large when the change crosses a boundary (UI -> API -> DB, sockets/events, auth/permissions/consent, persistence or migrations, jobs) or spans more than one package: it gets a mapped, reviewed plan before the build. small: one area, no boundary."},
                 "kind": {"type": "string", "enum": ["feature", "bug"], "description": "bug when the user reports something broken or wrong (an error, missing or wrong data, a regression): the implementer reproduces it and finds the root cause before fixing. For a bug the request quotes the symptom and says where (page/route, which users or records), expected vs actual, and since when if known."},
                 "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
                 "verify": {"type": "boolean", "description": "Default true for new small/large work: a verify card runs the tests after review; false only when the user asks to skip it. With fix_of the default is false (the user re-tests); true only when the user asks for a verifier"},
