@@ -85,3 +85,10 @@ def test_a_registered_hook_runs_the_modules_current_code(monkeypatch):
     reloaded.clear()
     compact()
     assert reloaded == []
+
+
+def test_manifest_is_valid_yaml():
+    from pathlib import Path
+    import yaml
+    manifest = yaml.safe_load((Path(__file__).parent.parent / "plugin.yaml").read_text())
+    assert manifest["name"] == "cpipe" and isinstance(manifest["description"], str)
