@@ -54,10 +54,14 @@ diff breaks it; anything else is a note, not a finding):
 - REUSE: an existing helper, pattern, or component wins over new code; the plan names it. Then the
   standard library, a platform feature, or an installed dependency; never a new dependency for a few lines.
 - SMALLEST CHANGE that meets the REQUEST: no speculative abstraction, config, dependency, or refactor.
+  Smallest COMPLETE change: what a careful senior ships with the feature unasked (the plan's
+  COMPLETE FEATURE lines) is part of the REQUEST, not an extra.
 - KNOWN SHORTCUTS: a deliberate simplification with a real ceiling (naive scan, global lock) gets a
   one-line comment naming the ceiling and the upgrade path.
 - ROOT CAUSE: fix it once where every caller routes through, not in each caller.
-- KEEP BEHAVIOR: existing behavior stays unless the REQUEST changes it; pinned by tests.
+- KEEP BEHAVIOR: existing behavior stays unless the REQUEST changes it; pinned by tests. Before
+  removing or loosening a filter, limit, or check, find why it exists (`git log -S`, blame); no
+  clear reason -> ask (OPEN DECISION).
 - TRUST BOUNDARIES: validate input where it enters; never log secrets, tokens, or personal/health data.
 - ERRORS: handle them where something can act; never swallow one silently.
 - MATCH THE CODE AROUND IT: its naming and idiom; the linter and formatter own formatting.
@@ -105,6 +109,15 @@ PINS: each caller behavior a CHANGE reaches -> covered by <test> | UNPINNED -> <
 EDGE CASES: for this change, each that applies -> ACn/test, or `none`: invalid or empty input, missing
   or revoked access, concurrent or repeated calls, other paths to the same state (tabs, links, jobs),
   time and timezone, large or long data.
+COMPLETE FEATURE: what a careful senior ships with this unasked; each that applies -> ACn/test, or
+  `none`: the user never guesses (every disabled control, rejected input, or failure says why and what
+  to do); choices that cannot combine cannot be picked together; the same thing looks and works the
+  same everywhere (sibling controls on the screen, every page that shows it, the existing email/SMS/
+  push formats); records and users created before the change (default, backfill, re-verify);
+  production volume (queries and loops at real data size: index, batch, bound); side effects (SMS,
+  email, push, webhook) that fail without breaking or rolling back the main flow; writes and deletes
+  only what the REQUEST names; deploy needs (new env vars in the example file with placeholders,
+  migration, flag).
 TESTS: each test file -> copies harness <existing test that already mounts this component or calls
   this route> -> enters at <the real entry: route, mounted view, event, job> -> asserts at <the real
   receiving side: response, stored record, rendered DOM, emitted event> -> command. Mock only external
@@ -122,8 +135,8 @@ SLICES: ordered, one line each: `S<n>: files | test command | commit "<Conventio
 PLAN_TASK = """Produce the implementation plan in the PLAN FORMAT below. The first slice adds every UNPINNED
 test, passing on today's code. If an OPEN DECISION changes what gets built, block this card with it
 instead of guessing. PINS cover behavior only: static text, markup, and styles need none. Plan the
-smallest change that meets the request: nothing it did not ask for (no extra tests, refactors,
-or hardening).
+smallest complete change: nothing unrelated (no refactors, speculative hardening, or tests the plan
+does not need); the COMPLETE FEATURE lines are part of the request, not extras.
 """ + PRINCIPLES + """
 Complete this card with the FULL plan in `result` (not only the summary): the
 implementer card waiting on this one reads it from there and has no other copy.
@@ -146,7 +159,9 @@ in-app router/navigation, API clients, jobs, other packages that render or call 
 (field names and shapes at each handoff: client payload -> route -> model/DB -> response),
 TESTS (plus HARNESS: an existing test that already enters through this route, view, event, or job and
 asserts on the real result, and its command), UNPINNED (caller behaviors this change reaches that no test covers),
-COMMANDS, CONVENTIONS, GAPS; about 8 KB, every path:line from a file you opened).
+SIBLINGS (the nearest existing feature of the same kind and its format: neighbouring controls, message
+templates, settings rows), SCALE (tables/collections touched, their indexes), DEPLOY (env example
+file, migrations, flags), COMMANDS, CONVENTIONS, GAPS; about 8 KB, every path:line from a file you opened).
 The planner card waiting on this one does not open files: it plans only from your map, so anything
 missing here becomes a guess. Be complete on ENTRY POINTS, CONTRACTS, and HARNESS.
 """
@@ -176,8 +191,8 @@ IMPLEMENTER
    navigate to it), then post the plan as a card comment in the PLAN FORMAT at the end of this
    card, one line per item (a two-file change fits in about 1.5 KB). NEW = a new file, function,
    route, or component nothing existing calls yet; MODIFIED = existing code whose behavior callers
-   rely on. Add any reachable caller a parent plan missed to PINS. Plan nothing the REQUEST did not
-   ask for.
+   rely on. Add any reachable caller a parent plan missed to PINS. Plan nothing unrelated to the
+   REQUEST; COMPLETE FEATURE items belong to it.
 2. PIN, MODIFIED code only, before editing it: write each UNPINNED test so it asserts what the
    code does TODAY, and run it: it must PASS on the unchanged code. Commit these first
    (`test: pin current behavior of <area>`). Pure NEW code skips this step: nothing to break.
@@ -216,8 +231,8 @@ REVIEWER (same worktree)
 - Review `git diff <base>...HEAD` in this card's worktree against the REQUEST and the plan (the
   parent card's result, or the implementer's plan comment). One pass: list every finding at once
   with file:line. Walk the plan: every ACCEPTANCE item met, every IN SCOPE ENTRY POINT works, every
-  CONTRACTS mismatch fixed, every EDGE CASES line handled, every TESTS line exists and runs the
-  real entry to the real receiving side, and no changed file
+  CONTRACTS mismatch fixed, every EDGE CASES and COMPLETE FEATURE line handled, every TESTS line
+  exists and runs the real entry to the real receiving side, and no changed file
   outside ADD/CHANGE without an OUT_OF_PLAN note. A plan item skipped silently is a missed requirement.
   Each ACCEPTANCE `-> TEST` must exist and pass. A test the plan did not name is a request only
   when a behavior is broken or a reachable caller is unpinned; otherwise note it as residual risk.
@@ -242,7 +257,12 @@ REVIEWER (same worktree)
   Any removed or loosened existing condition, filter, or check (bug or not) needs its history in
   the DIAGNOSIS or plan; without it, REQUEST_CHANGES.
 - Behavior the REQUEST did not ask for (new handlers, refactors, changed defaults, "while I was
-  here" hardening) is a finding: revert it, or list it so the user approves it.
+  here" hardening) is a finding: revert it, or list it so the user approves it. COMPLETE FEATURE
+  items are not unrequested.
+- Use it as the user would: a control disabled with no reason, an input rejected silently, a side
+  effect (SMS, email, push) whose failure breaks the main flow, a sibling on the same screen that
+  now looks or works differently, or a query unbounded at production size is a missed
+  requirement, even when the plan said `none`.
 - REQUEST_CHANGES only for correctness, security, data-loss, regression, a missed requirement, a
   missing pin or behavior test, or unrequested behavior. Style and naming go in the approval as notes. Missing tools are noted, not blockers.
   Anything the REQUEST needs is in scope even when a plan did not name the file; never ask for a
