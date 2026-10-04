@@ -41,6 +41,7 @@ def test_small_request_goes_straight_to_the_implementer(tmp_path, monkeypatch):
     assert "gh pr ready" in body and "3 review rounds" in body and "patch-id" in body
     assert "readFileSync" in body and "never approve over it" in body and "did not ask for" in body
     assert "PLAN FORMAT" in body and "Walk the plan" in body
+    assert "From round two" in body and "disputed (reason)" in body and "would an assertion fail" in body
     assert "COMPLETE FEATURE:" in body and "Use it as the user would" in body and "git log -S" in body
 
 
