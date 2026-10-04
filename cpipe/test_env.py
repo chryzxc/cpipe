@@ -29,7 +29,7 @@ SCHEMA = {
     "function": {
         "name": "delivery_test_env",
         "description": (
-            "Chat only: run a card's or PR's branch locally so the user can test it: the project's saved recipe, "
+            "Chat, or a verify card running the LIVE QA the user asked for: run a card's or PR's branch locally so it can be tested: the project's saved recipe, "
             "under wtg, on that card's worktree. Returns the URLs and the commit they serve, or the "
             "failing service's log. Use it whenever the user asks to run, rerun, or restart the app for "
             "testing; never start dev servers by hand. If it reports no recipe, ask the user for the "

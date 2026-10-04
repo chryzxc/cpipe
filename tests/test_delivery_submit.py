@@ -82,6 +82,27 @@ def test_verify_card_by_default(tmp_path, monkeypatch):
     assert "verify" not in content["cards"]
 
 
+def test_live_qa_keeps_the_test_account_off_the_card(tmp_path, monkeypatch):
+    import os
+    calls = fake_board(tmp_path, monkeypatch)
+    efforts = []
+    monkeypatch.setattr(submit, "_set_effort", lambda tid, e: efforts.append(tid))
+    json.loads(submit.submit({"title": "Redo table", "request": "r", "project": "p", "size": "small",
+                              "live_qa": True, "qa_login": {"username": "qa@example.test", "password": "s3cret"}}))
+    body = arg(calls[1], "--body")
+    login = tmp_path / "delivery/qa/t_1/login.json"
+    assert "LIVE QA (the user asked" in body and "target t_1" in body and str(login) in body
+    assert "s3cret" not in body and "qa@example.test" not in body and "never a FAIL" in body
+    assert json.loads(login.read_text())["password"] == "s3cret" and os.stat(login).st_mode & 0o777 == 0o600
+    assert efforts == []  # browser work keeps the normal effort
+    calls.clear()
+    json.loads(submit.submit({"title": "Public page", "request": "r", "project": "p", "size": "small", "live_qa": True}))
+    assert "no test account" in arg(calls[1], "--body")
+    calls.clear()
+    json.loads(submit.submit({"title": "Plain", "request": "r", "project": "p", "size": "small"}))
+    assert "LIVE QA (the user asked" not in arg(calls[1], "--body")
+
+
 def test_large_request_maps_cheaply_then_plans_from_the_map(tmp_path, monkeypatch):
     calls = fake_board(tmp_path, monkeypatch)
     result = json.loads(submit.submit({"title": "Add SSO", "request": "Add SSO login",
@@ -172,6 +193,23 @@ def test_verify_failure_opens_fix_in_same_worktree_and_reverifies(tmp_path, monk
     assert "jest: consent.spec fails" in arg(fix, "--body") and "Gate SMS on consent" in arg(fix, "--body")
     assert fix[2] == "Fix 1: Gate SMS" and arg(fix, "--parent") == "t_v"
     assert reverify[2] == "Verify: Fix 1: Gate SMS" and arg(reverify, "--parent") == "t_1"
+
+
+def test_reverify_repeats_the_live_qa(tmp_path, monkeypatch):
+    roster(tmp_path, monkeypatch)
+    _verify_card(monkeypatch, "Verify: Gate SMS")
+    qa = submit.live_qa_section("t_b", None)
+    row = submit._task_row("t_v")
+    monkeypatch.setattr(submit, "_task_row", lambda tid: {**row, "body": row["body"] + "\n" + qa})
+    calls = []
+    monkeypatch.setattr(submit, "_hermes", lambda *argv: calls.append(argv) or type(
+        "P", (), {"returncode": 0, "stdout": json.dumps({"id": f"t_{len(calls)}"}), "stderr": ""}))
+    efforts = []
+    monkeypatch.setattr(submit, "_set_effort", lambda tid, e: efforts.append(tid))
+    submit.verify_failed({"task_id": "t_v", "failures": "login button dead"})
+    assert efforts == []
+    _fix, reverify = calls
+    assert qa in reverify[reverify.index("--body") + 1]
 
 
 def test_verify_failure_stops_after_round_limit(tmp_path, monkeypatch):
