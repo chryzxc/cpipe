@@ -384,6 +384,27 @@ error), then complete this card with the same evidence. If that tool says the ro
 reached, block this card with the failures instead.
 """
 
+LIVE_QA_BRIEF = """LIVE QA (the user asked for it; it overrides NO BROWSER above). Run it after step 3, with the
+worktree back at HEAD:
+1. Start the app: `delivery_test_env` with target {build}. If it fails, list LIVE QA under NOT VERIFIED with
+   its error and judge on the rest; never start servers by hand, never block for it.
+2. Login: {login}
+3. Open only the screens the change touches (the diff and the review handoff say which). For each one:
+   a screenshot at 1440px and at 390px wide checked with vision against the REQUEST and the states it
+   names (loading, empty, error, disabled, long text), and `browser_console` for errors and failed requests.
+4. FAIL, as for a test: a broken flow, an acceptance criterion that does not work, or a console error or
+   failed request this change introduced. Design issues (spacing, alignment, hierarchy, contrast, copy)
+   are never a FAIL: list each under DESIGN NOTES with the screen and the fix; the user decides.
+5. Save the screenshots in {shots}/ and list their paths. Never attach them to the PR or post them
+   anywhere: logged-in screens show real data.
+END LIVE QA
+"""
+QA_LOGIN_FILE = ("read the test account from `{path}` (JSON: username, password, notes). Type it only into the "
+                 "app's login form; never put the password in a comment, result, PR, commit, or file.")
+QA_NO_LOGIN = "the user gave no test account: test what works without one and list the rest under NOT VERIFIED."
+LIVE_QA_RE = re.compile(r"LIVE QA \(the user asked for it.*?END LIVE QA\n", re.S)
+
+
 FIX_BRIEF = """FIX ROUND {round}: {source}.
 token_budget: low.
 
@@ -641,11 +662,13 @@ def submit(args: dict, **_kw) -> str:
         argv, _ = chained_card(stage, title, request, project, task_id, size)
         if bug and stage != "verify":
             argv = _as_bug(argv, stage)
+        if stage == "verify" and args.get("live_qa"):
+            argv = _add_body(argv, live_qa_section(chain["build"], args.get("qa_login")))
         task_id, error = _create(_stamp(with_branch(argv) if stage == "build" else argv, conventions))
         if error:
             return json.dumps({**json.loads(error), "created_so_far": chain})
         chain[stage] = task_id
-        if stage == "verify" and size == "small":
+        if stage == "verify" and size == "small" and not args.get("live_qa"):
             _set_effort(task_id, "low")
     result.update(task_id=chain["build"], cards=chain)
     result.update(
@@ -690,6 +713,25 @@ def _stamp(argv: list[str], conventions: str) -> list[str]:
     return [*argv[:i], f"{argv[i]}\n\n{conventions}", *argv[i + 1:]]
 
 
+def live_qa_section(build_id: str, login: dict | None) -> str:
+    """The verify card's LIVE QA section. The test account goes to a 0600 file, never into the card."""
+    qa_dir = HERMES_HOME / "delivery" / "qa" / build_id
+    text = QA_NO_LOGIN
+    if login and (login.get("username") or login.get("password")):
+        qa_dir.mkdir(parents=True, exist_ok=True)
+        path = qa_dir / "login.json"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            json.dump({k: str(login.get(k) or "") for k in ("username", "password", "notes")}, fh)
+        text = QA_LOGIN_FILE.format(path=path)
+    return LIVE_QA_BRIEF.format(build=build_id, login=text, shots=qa_dir / "shots")
+
+
+def _add_body(argv: list[str], extra: str) -> list[str]:
+    i = argv.index("--body") + 1
+    return [*argv[:i], f"{argv[i]}\n{extra}", *argv[i + 1:]]
+
+
 def verify_failed(args: dict, **_kw) -> str:
     """Verifier found failures: fix card in the build worktree + a fresh verify card after it."""
     verify_id, failures = (args.get("task_id") or "").strip(), (args.get("failures") or "").strip()
@@ -722,10 +764,14 @@ def verify_failed(args: dict, **_kw) -> str:
     if error:
         return error
     argv, _ = chained_card("verify", fix_title, request, project, fix_id)
+    live_qa = LIVE_QA_RE.search(task["body"] or "")
+    if live_qa:  # the re-verify tests the fixed screens again, same account
+        argv = _add_body(argv, live_qa.group(0))
     reverify_id, error = _create(argv)
     if error:
         return json.dumps({**json.loads(error), "created_so_far": {"fix": fix_id}})
-    _set_effort(reverify_id, "low")
+    if not live_qa:  # browser work needs the normal effort
+        _set_effort(reverify_id, "low")
     for tid in (fix_id, reverify_id):
         _copy_subscriptions(verify_id, tid)
     return json.dumps({"ok": True, "fix": fix_id, "verify": reverify_id, "round": rounds + 1,
@@ -983,6 +1029,8 @@ SCHEMA = {
                 "kind": {"type": "string", "enum": ["feature", "bug"], "description": "bug when the user reports something broken or wrong (an error, missing or wrong data, a regression): the implementer reproduces it and finds the root cause before fixing. For a bug the request quotes the symptom and says where (page/route, which users or records), expected vs actual, and since when if known."},
                 "force": {"type": "boolean", "description": "Only when the user confirmed this is new work although an open card looks the same"},
                 "verify": {"type": "boolean", "description": "Default true for new small/large work: a verify card runs the tests after review; false only when the user asks to skip it. With fix_of the default is false (the user re-tests); true only when the user asks for a verifier"},
+                "live_qa": {"type": "boolean", "description": "UI changes only. Before submitting one, ask the user once (clarify): should the verifier test it live in the browser, and if the app needs a login, which test account? true only when they say yes. The verifier starts the app, logs in, checks the changed screens at desktop and mobile width, and reports breaks as failures and design issues as notes."},
+                "qa_login": {"type": "object", "description": "With live_qa: the test account the user gave (never a real person's account, never guessed). Stored in a private file, not on the card.", "properties": {"username": {"type": "string"}, "password": {"type": "string"}, "notes": {"type": "string", "description": "Login URL, 2FA or role notes the user gave"}}},
                 "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},
                 "branch": {"type": "string", "description": "New work: the branch to create, named by your project conventions (memory). Omit for Hermes's default. Not for fix_of."},
                 "base": {"type": "string", "description": "New work: the branch to start from and open the PR against when the user names one (\"branch out from X\"), e.g. IC-develop. Omit for the project's base branch. Not for fix_of: a fix follows its PR's base."},
