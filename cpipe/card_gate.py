@@ -138,7 +138,7 @@ def plan_lookup_budget(tool_name: str, args: dict):
         return None
     if tid not in _lookups:
         row = submit._task_row(tid)
-        if not (row and str(row["title"]).startswith("Plan:")):
+        if not (row and row["step"] == "plan"):
             return None
         _lookups[tid] = 0
     _lookups[tid] += 1
