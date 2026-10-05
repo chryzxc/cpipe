@@ -11,7 +11,8 @@ large: map (cheap investigator) -> plan (frontier planner, plans from the map) -
 small/large (and fix_of) get a verify card unless verify=false: the verifier runs the tests in the
 build worktree (review_gate hands it to the release engineer when platform files changed). On failure it
 calls ``delivery_verify_failed``, which opens a fix card in the same worktree plus a fresh verify
-card, at most MAX_FIX_ROUNDS times.
+card, at most MAX_FIX_ROUNDS times. cpipe.checks starts the verify beside review, in its own checkout;
+a failure then joins the open review round instead of opening a fix card.
 fix_of=<card or PR>: the operator found a problem while testing; one fix card in that card's
 worktree and branch, reviewed on the same card and then verified, so the open PR updates.
 """
@@ -225,7 +226,7 @@ IMPLEMENTER
 6. Hand this SAME card to review: `hermes kanban request-review <this card id> --reviewer {reviewer}
    --summary "<PR url; changed files; OUT_OF_PLAN files; PINNED: <test ids>; commands run and
    results; commit sha; any READY_WITH_RISK gaps>"`.
-7. If review requests changes: check each finding against the code first. Fix the right ones on
+7. If review requests changes: check each finding, and each VERIFY FAILED comment on this card, against the code first. Fix the right ones on
    this card, one at a time, rerunning the test that showed each. A finding that is wrong for this
    code gets a reply with the evidence (the test, the line, the constraint) instead of a change made
    only to close it; never fix something adjacent and call the finding done. Push and request
@@ -290,8 +291,11 @@ REVIEWER (same worktree)
   approve with Medium/Low items under RESIDUAL RISK. RESIDUAL RISK never holds a High (wrong
   behavior, security, data loss, regression): if one is still open, block this card with the
   finding and 2-3 options so the user decides; never approve over it.
-- On APPROVED: if kanban_show lists a `Verify:` child card, leave the PR draft (the verifier marks
-  it ready once the tests pass); otherwise mark it ready (`gh pr ready <url>`); a failure is a note.
+- A VERIFY FAILED comment on this card is a High finding: REQUEST_CHANGES with it, unless its failing
+  command passes at HEAD.
+- On APPROVED: if kanban_show lists a `Verify:` child card or a PARALLEL CHECK comment, leave the PR
+  draft (cpipe marks it ready once verify passes on the approved commit); otherwise mark it ready
+  (`gh pr ready <url>`); a failure is a note.
   Never merge. The user tests the PR by hand and merges.
 """
 
@@ -342,9 +346,11 @@ FIND CODE: if the repo has `.codegraph/`, start with `codegraph explore "<symbol
 in the terminal: one call returns the relevant source plus its callers. Use search_files/read_file only
 for what it did not return. Read a file once; afterwards re-read only the lines you changed.
 
-Work in the parent card's worktree (kanban_show -> parents -> workspace; the workspace note tells
-you when you start elsewhere). BASE = `git merge-base HEAD <base branch from the parent's review
-handoff, else origin's default branch>`.
+WHERE: a PARALLEL CHECK comment means your workspace is a detached checkout of the commit handed to
+review: work there while the reviewer reviews, and take the PR url and PINNED tests from that comment.
+Otherwise work in the parent card's worktree (kanban_show -> parents -> workspace; the workspace note
+tells you when you start elsewhere). BASE = `git merge-base HEAD <base branch from the review handoff,
+else origin's default branch>`.
 1. PROOF: `git diff --name-only BASE..HEAD`. Restore the changed NON-test files to BASE
    (`git checkout BASE -- <files>`), run the changed/new tests: at least one requested-behavior
    test must FAIL, and every test the review handoff lists as PINNED must PASS (a pin failing at
@@ -377,8 +383,10 @@ NO BROWSER OR LIVE QA unless the REQUEST asks for it: no dev servers, logins, or
 user tests the PR by hand. LIVE QA the REQUEST asks for but you cannot run here (a real device, a browser automation permission, a server, account, or
 secret you lack) is not a failure: list it under NOT VERIFIED for the user to check by hand and judge
 on what you did run. Never call `delivery_verify_failed` or block for it.
-PASS: mark the parent's draft PR ready (`gh pr ready <url>`; a failure is a note), then complete
-this card with each command and its result.
+RESULT: the first line is `VERDICT: PASS <sha>` or `VERDICT: FAIL <sha>` (`git rev-parse HEAD`, the commit
+you verified), then each command and its result. Never mark the PR ready: cpipe does once review has
+approved the same commit.
+PASS: complete this card.
 FAIL: call `delivery_verify_failed` with this card id and the exact failures (command, test,
 error), then complete this card with the same evidence. If that tool says the round limit is
 reached, block this card with the failures instead.
@@ -536,7 +544,7 @@ def chained_card(stage: str, title: str, request: str, project: str, parent: str
         body = PLAN_BRIEF.format(request=request.strip(), lookups=PLAN_LOOKUPS)
     elif stage == "verify":
         assignee, title, workspace = _role("verifier"), f"Verify: {title}", "scratch"
-        body = VERIFY_BRIEF.format(request=request.strip())
+        body = VERIFY_BRIEF.format(request=request.strip()) + f"BUILD CARD: {parent}\n"
     else:
         assignee = _role("implementer")
         body = BUILD_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
@@ -746,7 +754,16 @@ def verify_failed(args: dict, **_kw) -> str:
     if rounds >= MAX_FIX_ROUNDS:
         return json.dumps({"ok": False, "error": f"round limit ({MAX_FIX_ROUNDS}) reached: block your card "
                            "with the failures so the user decides"})
-    worktree = _parent_worktree(verify_id)
+    build = _verify_build(verify_id)
+    if build and build["status"] not in ("done", "archived"):  # a parallel check: still in its review round
+        posted = _hermes("kanban", "comment", build["id"], f"VERIFY FAILED ({verify_id}, run beside this review):\n"
+                         f"{failures}\nReviewer: a High finding unless its failing command passes at HEAD. "
+                         "Implementer: fix it with the review findings.")
+        if posted.returncode == 0:
+            _journal("verify.failed_into_review", build["id"], verify=verify_id)
+            return json.dumps({"ok": True, "routed_to": build["id"], "next": (
+                "the failures joined the open review round; complete your verify card with the failure evidence")})
+    worktree = _parent_worktree(verify_id) or (build and build["workspace_path"])  # released: no link left
     if not worktree:
         return json.dumps({"ok": False, "error": "no parent worktree found; block your card with the failures"})
     request = _request_of(task["body"])
@@ -918,6 +935,20 @@ def _task_row(task_id: str):
         return row
     except sqlite3.Error:
         return None
+
+
+def _verify_build(verify_id: str):
+    """The build or fix card a verify checks (its parent, or its `BUILD CARD:` line once released)."""
+    from . import checks
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        try:
+            row = checks.build_of(conn, verify_id)
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    return dict(zip(("id", "status", "workspace_path", "title", "body"), row)) if row else None
 
 
 def _parent_worktree(task_id: str):
