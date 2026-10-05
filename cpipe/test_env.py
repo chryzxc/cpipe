@@ -32,12 +32,15 @@ SCHEMA = {
             "Chat, or a verify card running the LIVE QA the user asked for: run a card's or PR's branch locally so it can be tested: the project's saved recipe, "
             "under wtg, on that card's worktree. Returns the URLs and the commit they serve, or the "
             "failing service's log. Use it whenever the user asks to run, rerun, or restart the app for "
-            "testing; never start dev servers by hand. If it reports no recipe, ask the user for the "
+            "testing, for any PR or branch (cpipe's or not); never start dev servers by hand and never "
+            "submit a delivery just to run an app. If it reports no recipe, ask the user for the "
             "commands and do not improvise."),
         "parameters": {
             "type": "object",
             "properties": {
-                "target": {"type": "string", "description": "Card id or PR URL whose branch to run"},
+                "target": {"type": "string", "description": "Card id, PR URL, or branch name to run"},
+                "project": {"type": "string", "description": "The project, needed when no card owns the PR or "
+                            "branch: it gets its own detached worktree at the branch's latest pushed commit"},
             },
             "required": ["target"],
         },
@@ -65,14 +68,45 @@ def _tail(path: Path, n: int = 30) -> str:
         return ""
 
 
+def _branch_worktree(ref: str, project: str):
+    """(worktree, error) for a PR or branch no card owns: `<repo>/.worktrees/test-<branch>`, detached at the
+    branch's pushed head, so a checkout of the branch elsewhere is never touched."""
+    repo = submit._project_repo(project) if project else None
+    if not repo:
+        return None, (f"no card owns {ref}; pass project= (the project the PR or branch belongs to)"
+                      if not project else f"project {project!r} has no repository path")
+    branch = ref
+    if submit.URL_RE.fullmatch(ref):
+        view = subprocess.run(["gh", "pr", "view", ref, "--json", "headRefName", "-q", ".headRefName"],
+                              cwd=repo, capture_output=True, text=True, timeout=60)
+        branch = view.stdout.strip()
+        if view.returncode != 0 or not branch:
+            return None, f"gh could not read {ref}: {(view.stderr or view.stdout).strip()[-300:]}"
+    git = lambda *a, cwd=repo: subprocess.run(["git", "-C", cwd, *a], capture_output=True, text=True, timeout=300)
+    fetched = git("fetch", "-q", "origin", branch)
+    if fetched.returncode != 0:
+        return None, f"git fetch origin {branch} failed: {fetched.stderr.strip()[-300:]}"
+    sha = git("rev-parse", "FETCH_HEAD").stdout.strip()  # FETCH_HEAD is per worktree: pass the sha
+    path = Path(repo) / ".worktrees" / ("test-" + re.sub(r"[^\w.-]+", "-", branch))
+    if not path.is_dir():
+        done = git("worktree", "add", "-q", "--detach", str(path), sha)
+    elif not git("status", "--porcelain", "--untracked-files=no", cwd=str(path)).stdout.strip():
+        done = git("checkout", "-q", "--detach", sha, cwd=str(path))
+    else:
+        return str(path), None  # someone changed files there: run it as it is
+    return (str(path), None) if done.returncode == 0 else (None, done.stderr.strip()[-300:])
+
+
 def run(args: dict, **_kw) -> str:
     ref = str(args.get("target") or "").strip()
     card = ref if re.fullmatch(r"t_[0-9a-f]+", ref) else submit._card_for_pr(ref)
     worktree = submit._card_worktree(card) if card else None
+    row = submit._task_row(card) if worktree else None
+    project = (row["project_id"] if row else str(args.get("project") or "").strip()) or ""
     if not worktree or not Path(worktree).is_dir():
-        return json.dumps({"ok": False, "error": f"no live worktree found for {ref}"})
-    row = submit._task_row(card)
-    project = (row["project_id"] if row else "") or ""
+        worktree, error = _branch_worktree(ref, project)
+        if error:
+            return json.dumps({"ok": False, "error": error})
     recipe = workspace_prep.project_profile(project, submit.HERMES_HOME).get("test_env") or {}
     if not recipe.get("services"):
         return json.dumps({"ok": False, "error": f"no test_env recipe for project {project!r} in "
