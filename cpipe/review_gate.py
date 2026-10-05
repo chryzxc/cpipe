@@ -13,6 +13,9 @@
    consult cold-starts a whole agent and stalled one fix round about 15 minutes.
 6. The implementer's review request runs the operator's quality checks first (``quality.py``); a failure
    refuses it with the output, so the reviewer never spends a round on what a command finds.
+7. A verify card completes only with a `VERDICT: PASS|FAIL <sha>` line: cpipe's join (``checks.py``) reads it.
+8. While a card has a verify check, neither its reviewer nor the verifier marks the PR ready: the join does,
+   once review approved and verify passed on the same commit.
 """
 
 from __future__ import annotations
@@ -26,6 +29,8 @@ from . import quality, submit, workspace_prep
 
 MARKER = "REVIEWER (same worktree)"  # every build, fix, and content brief carries it
 PLAN_MARKER = "Produce the implementation plan in the PLAN FORMAT"  # both plan briefs, never the build brief
+VERIFY_MARKER = "VERIFY the reviewed change by running it."
+PR_READY_CMD = re.compile(r"\bgh\s+pr\s+ready\b(?!.*--undo)")
 MAX_REWORK = 2  # request-changes rounds per card before the reviewer must block for the user
 REVIEW_CMD = re.compile(r"\bkanban\s+request-review\s+(t_[0-9a-f]+)")
 CHANGES_CMD = re.compile(r"\bkanban\s+request-changes\s+(t_[0-9a-f]+)")
@@ -48,6 +53,8 @@ def gate(tool_name: str = "", args: dict | None = None, **_kw):
         return {"action": "block", "message": (
             "Do not start another agent from a kanban card: it cold-starts a whole agent and stalls the card. "
             "Make the judgment yourself from the code, or block the card with the exact question for the user.")}
+    if tool_name == "terminal" and os.environ.get("HERMES_KANBAN_TASK") and PR_READY_CMD.search(str(args.get("command") or "")):
+        return pr_ready_gate(os.environ["HERMES_KANBAN_TASK"])
     if tool_name == "kanban_request_review":
         return quality_gate(args.get("task_id") or os.environ.get("HERMES_KANBAN_TASK"))
     if tool_name == "terminal" and (m := REVIEW_CMD.search(str(args.get("command") or ""))):
@@ -70,6 +77,8 @@ def gate(tool_name: str = "", args: dict | None = None, **_kw):
         row = _task(tid)
         if row and PLAN_MARKER in (row["body"] or "") and tool_name == "kanban_complete":
             return plan_gate(tid, args)
+        if row and VERIFY_MARKER in (row["body"] or "") and tool_name == "kanban_complete":
+            return verdict_gate(tid, args)
         if not row or MARKER not in (row["body"] or ""):
             return None
         if row["assignee"] == submit._role("implementer") and not _nothing_to_review(row):
@@ -156,6 +165,36 @@ def plan_gate(tid: str, args: dict):
     return None
 
 
+def verdict_gate(tid: str, args: dict):
+    from . import checks
+    if checks.VERDICT.search(f"{args.get('result') or ''}\n{args.get('summary') or ''}"):
+        return None
+    return {"action": "block", "message": (
+        f"{tid}: start the result with `VERDICT: PASS <sha>` or `VERDICT: FAIL <sha>` (the commit you verified, "
+        "`git rev-parse HEAD`), then the commands and their results: cpipe reads it to mark the PR ready.")}
+
+
+def pr_ready_gate(tid: str):
+    """The join marks the PR ready; a reviewer approving before verify finished made a failing PR look ready."""
+    try:
+        row = _task(tid)
+        conn = sqlite3.connect(f"file:{submit._db()}?mode=ro", uri=True)
+        try:
+            checked = conn.execute(
+                "SELECT 1 FROM tasks WHERE title LIKE 'Verify:%' AND (instr(body, ?) > 0 OR id IN "
+                "(SELECT child_id FROM task_links WHERE parent_id = ?)) LIMIT 1",
+                (f"BUILD CARD: {tid}", tid)).fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        return None
+    if not row or not (VERIFY_MARKER in (row["body"] or "") or checked):
+        return None
+    return {"action": "block", "message": (
+        f"Do not mark the PR ready from {tid}: cpipe marks it ready once review approved and verify passed on "
+        "the same commit. Finish your card as your brief says.")}
+
+
 def platform_files(worktree: str | None, base_branch: str | None) -> list[str]:
     if not worktree:
         return []
@@ -173,8 +212,9 @@ def platform_files(worktree: str | None, base_branch: str | None) -> list[str]:
     return [n for n in names if PLATFORM_PATH.search(n)]
 
 
-def route_verify(tid: str, worktree: str | None, project: str | None) -> str | None:
-    """Reassign the pending Verify child to the release engineer when platform files changed."""
+def route_verify(tid: str, worktree: str | None, project: str | None, board=None) -> str | None:
+    """Reassign the pending Verify child to the release engineer when platform files changed. `board` (in-process
+    kanban writes) replaces the CLI when the gateway tick calls this."""
     engineer = submit._role("release_engineer")
     conn = sqlite3.connect(f"file:{submit._db()}?mode=ro", uri=True)
     try:
@@ -190,10 +230,14 @@ def route_verify(tid: str, worktree: str | None, project: str | None) -> str | N
     touched = platform_files(worktree, base)
     if not touched:
         return None
-    submit._hermes("kanban", "assign", child[0], engineer)
-    submit._hermes("kanban", "comment", child[0],
-                   f"Routed to {engineer}: the change touches platform files ({', '.join(touched[:8])}). "
-                   "Run the PLATFORM step of the brief as well.")
+    note = (f"Routed to {engineer}: the change touches platform files ({', '.join(touched[:8])}). "
+            "Run the PLATFORM step of the brief as well.")
+    if board:
+        board.assign(child[0], engineer)
+        board.comment(child[0], note)
+    else:
+        submit._hermes("kanban", "assign", child[0], engineer)
+        submit._hermes("kanban", "comment", child[0], note)
     submit._journal("verify.routed_platform", child[0], files=touched[:8])
     return child[0]
 

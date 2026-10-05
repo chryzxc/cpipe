@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import block_reasons, card_gate, exit_handoff, flow, headless_clarify, liveness, review_gate, status, submit, test_env, workspace_prep
+from . import block_reasons, card_gate, checks, exit_handoff, flow, headless_clarify, liveness, review_gate, status, submit, test_env, workspace_prep
 
 __all__ = ["register"]
 
@@ -253,7 +253,7 @@ _MUTATION_SCHEMA = {
 
 # Dependency order: a module reloads after the modules it imports by name.
 _RELOAD_ORDER = ("home", "workspace_prep", "block_reasons", "liveness", "status", "submit", "review_gate",
-                 "card_gate", "headless_clarify", "exit_handoff", "test_env")
+                 "checks", "card_gate", "headless_clarify", "exit_handoff", "test_env")
 _PKG_DIR = Path(__file__).resolve().parent
 _loaded_at = time.time()
 
@@ -337,6 +337,7 @@ def register(ctx):
     ctx.register_hook("on_kanban_dispatch_tick", _live(liveness, "record_dispatch_tick"))
     ctx.register_hook("on_kanban_dispatch_tick", _live(block_reasons, "explain_blocks"))
     ctx.register_hook("on_kanban_dispatch_tick", _live(flow, "sync_flows"))
+    ctx.register_hook("on_kanban_dispatch_tick", _live(checks, "run_checks"))
     ctx.register_hook("pre_llm_call", _live(liveness, "liveness_notice"))
     ctx.register_hook("pre_llm_call", _live(workspace_prep, "prepare_workspace"))
     ctx.register_hook("pre_llm_call", _live(status, "chat_context"))

@@ -92,7 +92,8 @@ def render(conn: sqlite3.Connection, ev: dict, first: bool) -> Optional[str]:
     if kind == "completed":
         pr = URL_RE.search(str(summary or ""))
         nxt = conn.execute("SELECT t.title, t.assignee FROM task_links l JOIN tasks t ON t.id = l.child_id "
-                           "WHERE l.parent_id = ?", (ev["task_id"],)).fetchall()
+                           "WHERE l.parent_id = ? UNION SELECT title, assignee FROM tasks WHERE instr(body, ?) > 0",
+                           (ev["task_id"], f"BUILD CARD: {ev['task_id']}")).fetchall()  # + a verify run beside review
         lines = [f"✅ {label} {'approved' if stage == 'Review' else 'done'} · @{who} {card}"
                  f"{_dur(ev['run_start'], ev['ts'])}" + _quote(summary)]
         if pr:
