@@ -1097,6 +1097,38 @@ def design_pick(args: dict, **_kw) -> str:
     return json.dumps({**result, "picked": letter})
 
 
+def decide(args: dict, **_kw) -> str:
+    """The user's answer at the fix-round limit (EDGES: verify fail_limit -> ask_user). `fix`: one more
+    round on the same branch with a fresh verify, which comes back to the user if it fails again. `stop`:
+    the PR stays as it is for the user to finish. Either way the blocked verify card is archived."""
+    from . import card_gate
+    if os.environ.get("HERMES_KANBAN_TASK"):
+        return json.dumps({"ok": False, "error": "the user decides this, not a worker"})
+    card, choice = str(args.get("card") or "").strip(), str(args.get("choice") or "").strip().lower()
+    reason = card_gate.last_block_reason(card)
+    if not card_gate.ROUND_LIMIT.search(reason):
+        return json.dumps({"ok": False, "error": f"{card} is not waiting at the fix-round limit"})
+    if choice not in ("fix", "stop"):
+        return json.dumps({"ok": False, "error": "choice is fix or stop"})
+    build = _verify_build(card)
+    out = {"ok": True, "choice": choice}
+    if choice == "fix":
+        if not build:
+            return json.dumps({"ok": False, "error": f"no build card found for {card}"})
+        failures = re.sub(r"(?i)^\s*round limit:\s*", "", reason)
+        notes = (args.get("notes") or "").strip()
+        out = json.loads(fix({"fix_of": build["id"], "verify": True,
+                              "request": failures + (f"\n\nTHE USER ADDS: {notes}" if notes else "")}))
+        if not out.get("ok"):
+            return json.dumps(out)
+    if _hermes("kanban", "archive", card).returncode != 0:
+        out["warning"] = f"could not archive {card}: archive it from the board"
+    _journal("decide." + choice, card, build=build and build["id"])
+    if choice == "stop":
+        out["next"] = "the PR stays as it is: the user marks it ready, merges or closes it themselves"
+    return json.dumps(out)
+
+
 def _design_output(task_id: str) -> tuple[list[str], str, str]:
     """(kept files, result text, status) of a design card: Hermes copies the files it named to attachments."""
     try:
@@ -1288,6 +1320,25 @@ def _create(argv: list[str]) -> tuple[str | None, str | None]:
         _copy_subscriptions(parent, task_id)  # hears this card too, even when no chat called the tool
     return task_id, None
 
+
+DECIDE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "delivery_decide",
+        "description": ("The user's answer for a delivery stopped at the fix-round limit (its verify card is "
+                        "blocked with `round limit:`). Show them the failures first. fix: one more fix round and "
+                        "verify; stop: leave the PR for them to finish."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "card": {"type": "string", "description": "The blocked verify card id"},
+                "choice": {"type": "string", "enum": ["fix", "stop"]},
+                "notes": {"type": "string", "description": "With fix: anything the user adds for the round"},
+            },
+            "required": ["card", "choice"],
+        },
+    },
+}
 
 VERIFY_FAILED_SCHEMA = {
     "type": "function",

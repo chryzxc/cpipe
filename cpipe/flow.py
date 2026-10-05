@@ -103,7 +103,9 @@ def render(conn: sqlite3.Connection, ev: dict, first: bool) -> Optional[str]:
             lines.append("🏁 **Ready for you to test**")
         return "\n".join(lines)
     if kind == "blocked":
-        return f"⏸ {label} blocked · @{who} {card}" + _quote(p.get("reason"), 700) + "\nNeeds a decision."
+        ask = ("\nThe fix-round limit is reached, so it's your call: one more fix round, or stop and finish "
+               "the PR yourself." if re.search(r"(?i)round limit", str(p.get("reason") or "")) else "\nNeeds a decision.")
+        return f"⏸ {label} blocked · @{who} {card}" + _quote(p.get("reason"), 700) + ask
     if kind == "unblocked":
         return f"▶ {label} unblocked {card}"
     if kind == "timed_out":
