@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cpipe"
 version = "0.4.0"
-description = "cpipe: the workflow for your AI dev team in Hermes Agent, every stage gated on evidence."
+description = "cpipe: the workflow for your AI dev team in Hermes Agent, every stage gated on evidence, and self-learning from how each delivery went."
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
