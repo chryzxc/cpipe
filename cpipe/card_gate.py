@@ -77,7 +77,7 @@ def guarded() -> set[str]:
 
 def round_limit_unblock(tool_name: str, args: dict):
     """A card blocked at the fix-round limit waits for the user: a chat unblocking it re-runs the loop
-    the limit stopped. The user unblocks it from their own terminal."""
+    the limit stopped. The coordinator passes their answer to delivery_decide."""
     if tool_name == "kanban_unblock":
         card = str(args.get("task_id") or "")
     elif tool_name == "terminal" and (m := UNBLOCK_CMD.search(str(args.get("command") or ""))):
@@ -88,8 +88,8 @@ def round_limit_unblock(tool_name: str, args: dict):
         return None
     return {"action": "block", "message": (
         f"{card} stopped at the fix-round limit, so the decision is the user's. Do not unblock it: give them the "
-        f"remaining failures and 2-3 options (accept as is, one more fix round, or drop it). If he chooses to go "
-        f"on, he runs `hermes kanban unblock {card}` himself.")}
+        f"remaining failures and ask: one more fix round, or stop and leave the PR to them. Then call "
+        f"delivery_decide(card={card}, choice=fix|stop) with their answer.")}
 
 
 def last_block_reason(card: str) -> str:

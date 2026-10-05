@@ -180,3 +180,36 @@ def test_a_failure_past_the_round_limit_waits_for_the_user(tmp_path, monkeypatch
     blocked = review_gate.gate("kanban_complete", {"task_id": "t_v", "result": "VERDICT: FAIL abc1234\nx"})
     assert blocked["action"] == "block" and "round limit" in blocked["message"]
     assert review_gate.gate("kanban_complete", {"task_id": "t_v", "result": "VERDICT: PASS abc1234\nok"}) is None
+
+
+def round_limit(tmp_path, monkeypatch):
+    """A verify blocked at the fix-round limit, waiting for the user."""
+    conn, *_ = delivery(tmp_path, monkeypatch)
+    finish(conn, "t_b", "done")
+    conn.execute("UPDATE tasks SET status = 'blocked' WHERE id = 't_v'")
+    event(conn, "t_v", "blocked", reason="round limit: jest: a.test.js fails")
+    conn.commit()
+    monkeypatch.setattr(submit, "_db", lambda: tmp_path / "kanban.db")
+    calls, fixes = [], []
+    monkeypatch.setattr(submit, "_hermes", lambda *argv: calls.append(argv) or type("P", (), {"returncode": 0}))
+    monkeypatch.setattr(submit, "fix", lambda args: fixes.append(args) or json.dumps({"ok": True, "task_id": "t_f"}))
+    monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+    return calls, fixes
+
+
+def test_at_the_round_limit_the_user_picks_one_more_round(tmp_path, monkeypatch):
+    calls, fixes = round_limit(tmp_path, monkeypatch)
+    out = json.loads(submit.decide({"card": "t_v", "choice": "fix", "notes": "mock the clock"}))
+    assert out["ok"] and out["task_id"] == "t_f" and calls == [("kanban", "archive", "t_v")]
+    assert fixes[0]["fix_of"] == "t_b" and fixes[0]["verify"] is True
+    assert fixes[0]["request"] == "jest: a.test.js fails\n\nTHE USER ADDS: mock the clock"
+
+
+def test_at_the_round_limit_the_user_can_stop_and_only_the_user_decides(tmp_path, monkeypatch):
+    calls, fixes = round_limit(tmp_path, monkeypatch)
+    assert json.loads(submit.decide({"card": "t_b", "choice": "stop"}))["ok"] is False  # not at the limit
+    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_v")
+    assert json.loads(submit.decide({"card": "t_v", "choice": "stop"}))["ok"] is False  # a worker
+    monkeypatch.delenv("HERMES_KANBAN_TASK")
+    out = json.loads(submit.decide({"card": "t_v", "choice": "stop"}))
+    assert out["ok"] and "themselves" in out["next"] and fixes == [] and calls == [("kanban", "archive", "t_v")]

@@ -320,6 +320,10 @@ def register(ctx):
         schema=submit.DESIGN_PICK_SCHEMA["function"], handler=_live(submit, "design_pick"),
     )
     ctx.register_tool(
+        name="delivery_decide", toolset="cpipe",
+        schema=submit.DECIDE_SCHEMA["function"], handler=_live(submit, "decide"),
+    )
+    ctx.register_tool(
         name="delivery_test_env", toolset="cpipe",
         schema=test_env.SCHEMA["function"], handler=_live(test_env, "run"),
     )

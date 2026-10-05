@@ -57,7 +57,7 @@ A test (`tests/test_flows.py`) fails if any step has no edge out.
 | **Context isolation** | Each card sees its brief and its parent's result, never the chat, in its own worktree |
 | **Kanban pull** | The Hermes dispatcher pulls ready cards within per-profile caps. Children start when their parents finish |
 | **Learning loop** | Weekly, `board_intelligence.py` counts review finding classes; any class seen 3+ times in 28 days becomes a drafted standards amendment for you to approve. `python3 -m cpipe.outcomes` reads how each delivery went (review rounds, fix rounds, verify fails, fixes you had to send); a failure repeated across deliveries of one project becomes a drafted lesson, and the lessons you approve in `~/.hermes/delivery/lessons.yaml` are stamped into that project's next cards. `python3 -m cpipe.brief_replay` re-runs past map/plan cards with today's briefs to show whether a change made them cheaper |
-| **Human in the loop** | You decide at round limits, on design picks, and on merge, deploy and credentials. Bots never do |
+| **Human in the loop** | You are a node in the graph: at the fix-round limit the delivery chat asks you (one more round or stop, via `delivery_decide`), and a design pick starts the build. Merge, deploy and credentials stay yours |
 
 ## What each step must prove
 
@@ -121,6 +121,7 @@ my-app:
 |---|---|
 | `delivery_submit` | Turns a request into its flow's cards and subscribes the chat |
 | `delivery_design_pick` | Starts the build from a chosen design |
+| `delivery_decide` | Your answer when a delivery stops at the fix-round limit: one more round, or stop and finish the PR yourself |
 | `delivery_status` | Each open card's verdict, from the database |
 | `delivery_watch` | Waits on a PR or CI run; required before anyone says a card "will resume" |
 | `delivery_test_env` | Runs a branch with the project's saved test recipe and returns the URLs |
