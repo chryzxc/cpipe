@@ -77,7 +77,7 @@ def test_verify_card_by_default(tmp_path, monkeypatch):
     assert result["cards"] == {"build": "t_1", "verify": "t_2"}
     assert arg(calls[1], "--assignee") == "sentinel" and arg(calls[1], "--parent") == "t_1"
     assert "PLATFORM" in arg(calls[1], "--body") and "VERDICT: PASS" in arg(calls[1], "--body")
-    assert arg(calls[1], "--body").endswith("BUILD CARD: t_1\n")
+    assert "\nBUILD CARD: t_1\n" in arg(calls[1], "--body") and arg(calls[1], "--body").endswith("DELIVERY: t_1")
     # a project would make Hermes give the verify its own fresh worktree off the base branch
     assert "--project" not in calls[1] and arg(calls[1], "--workspace") == "scratch" and arg(calls[0], "--project") == "p"
     assert "PRE-EXISTING" in arg(calls[1], "--body") and "NO BROWSER OR LIVE QA" in arg(calls[1], "--body")
@@ -154,7 +154,7 @@ def test_fix_of_with_verify_adds_a_verify_card(tmp_path, monkeypatch):
 def test_correction_joins_a_fix_card_that_has_not_started(tmp_path, monkeypatch):
     calls = fake_board(tmp_path, monkeypatch)
     _built_card(monkeypatch)
-    monkeypatch.setattr(submit, "_waiting_fix", lambda title, project: "t_wait" if title == "Gate SMS" else None)
+    monkeypatch.setattr(submit, "_waiting_fix", lambda title, project, *_: "t_wait" if title == "Gate SMS" else None)
     result = json.loads(submit.submit({"fix_of": "t_b", "request": "also make it single-select"}))
     assert result["merged_into"] == "t_wait"
     [comment] = calls

@@ -383,13 +383,12 @@ PRE-EXISTING.
 NO BROWSER OR LIVE QA unless the REQUEST asks for it: no dev servers, logins, or browser tools. The
 user tests the PR by hand. LIVE QA the REQUEST asks for but you cannot run here (a real device, a browser automation permission, a server, account, or
 secret you lack) is not a failure: list it under NOT VERIFIED for the user to check by hand and judge
-on what you did run. Never call `delivery_verify_failed` or block for it.
+on what you did run, never a reason to block.
 RESULT: the first line is `VERDICT: PASS <sha>` or `VERDICT: FAIL <sha>` (`git rev-parse HEAD`, the commit
 you verified), then each command and its result. Never mark the PR ready: cpipe does once review has
 approved the same commit.
-PASS: complete this card.
-FAIL: call `delivery_verify_failed` with this card id and the exact failures (command, test,
-error), then complete this card with the same evidence. If that tool says the round limit is
+PASS or FAIL: complete this card. On FAIL list each failure exactly (command, test, error): cpipe
+sends them to the open review round or opens the fix round. If completing says the round limit is
 reached, block this card with the failures instead.
 """
 
@@ -545,6 +544,29 @@ FLOWS = {
     "design": tuple(Step("design", "designer", DESIGN_BRIEF, "25m", f"Design {v}: ", "scratch", True, v, "implementer")
                     for v in DESIGN_DIRECTIONS),
 }
+# Where a delivery goes after each step's outcome. The tick (checks.outcome) reads a finished card's outcome and
+# runs checks.ACTIONS[action]; "next" is Hermes starting the child card; "ask_user" is the verdict gate making
+# the verifier block its card; "user_pick" is delivery_design_pick. tests/test_flows.py keeps it free of dead ends.
+EDGES = {
+    ("map", "done"): "next",
+    ("plan", "done"): "next",
+    ("build", "in_review"): "start_verify",  # verify runs beside review
+    ("build", "done"): "next",
+    ("fix", "in_review"): "start_verify",
+    ("fix", "done"): "next",
+    ("design", "done"): "user_pick",
+    ("verify", "wait"): "none",  # passed while review is open: join when it is approved
+    ("verify", "fail_review"): "to_review",  # failed while review is open: the failures join that round
+    ("verify", "pass"): "ready",  # passed on the approved commit
+    ("verify", "pass_old"): "delta",  # review changed the code after it ran: re-verify what changed
+    ("verify", "fail_old"): "delta",
+    ("verify", "fail"): "fix",  # failed on the approved commit: the fix flow, then verify again
+    ("verify", "fail_limit"): "ask_user",  # MAX_FIX_ROUNDS fix rounds already ran
+    ("verify", "fixing"): "none",  # a fix round is already open for it
+    ("verify", "no_verdict"): "none",
+    ("verify", "orphan"): "none",  # its card is gone or has no worktree
+}
+DELIVERY_RE = re.compile(r"^DELIVERY: (t_[0-9a-f]+)$", re.M)  # the delivery's first card, on every later card
 STEP_TITLES = {"verify": "Verify:%", "fix": "Fix %", "plan": "Plan:%", "map": "Map:%", "design": "Design %"}
 
 
@@ -579,22 +601,54 @@ def card_argv(step: Step, title: str, request: str, project: str, parent: str | 
 
 
 def run_flow(flow: str, title: str, request: str, project: str, *, parent: str | None = None, skip=(),
-             edit=lambda step, argv, chain: argv, after=lambda step, tid: None, **kw) -> tuple[dict, str | None]:
+             delivery: str | None = None, edit=lambda step, argv, chain: argv, after=lambda step, tid: None,
+             **kw) -> tuple[dict, str | None]:
     """Create a flow's cards in order: each waits on the one before (a parallel step on the same parent as
-    its siblings), tagged with the flow and step. (chain {step or variant: id}, error JSON or None)."""
+    its siblings), tagged with the flow and step. Every card names its `delivery` (default: the first card).
+    (chain {step or variant: id}, error JSON or None)."""
     chain, prev = {}, parent
     for step in FLOWS[flow]:
         if step.key in skip:
             continue
         argv, _ = card_argv(step, title, request, project, parent if step.parallel else prev, **kw)
+        argv = _add_body(argv, f"DELIVERY: {delivery}") if delivery else argv
         tid, error = _create(edit(step, argv, chain))
         if error:
             return chain, (json.dumps({**json.loads(error), "created_so_far": chain}) if chain else error)
         chain[step.variant or step.key] = tid
         prev = prev if step.parallel else tid
+        delivery = delivery or (None if step.parallel else tid)
         _tag(tid, flow, step.key)
         after(step, tid)
     return chain, None
+
+
+def delivery_of(task_id: str, body) -> str:
+    return (m := DELIVERY_RE.search(body or "")) and m[1] or task_id
+
+
+def _fix_rounds(delivery: str) -> tuple[int, int]:
+    """(fix cards, fix cards a failed verify opened) in a delivery."""
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        try:
+            return tuple(conn.execute(
+                "SELECT count(*), coalesce(sum(EXISTS (SELECT 1 FROM task_links l JOIN tasks v ON v.id = l.parent_id "
+                f"WHERE l.child_id = f.id AND {step_sql('v')} = 'verify')), 0) FROM tasks f "
+                f"WHERE {step_sql('f')} = 'fix' AND instr(f.body, ?) > 0", (f"DELIVERY: {delivery}",)).fetchone())
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return 0, 0
+
+
+def verify_rounds(verify_id: str, title, body) -> tuple[int, int]:
+    """(fix rounds, fix rounds a failed verify opened) in a verify card's delivery; a card made before
+    deliveries were named counts by its title."""
+    if DELIVERY_RE.search(body or ""):
+        return _fix_rounds(delivery_of(verify_id, body))
+    m = re.match(r"Verify: Fix (\d+): ", title or "")
+    return (int(m[1]),) * 2 if m else (0, 0)
 
 
 def _tag(task_id: str, flow: str, step: str) -> None:
@@ -863,8 +917,10 @@ def verify_failed(args: dict, **_kw) -> str:
         return json.dumps({"ok": False, "error": f"unknown card {verify_id}"})
     title = task["title"] or ""
     m = re.match(r"Verify: Fix (\d+): (.*)", title, re.S)
-    rounds, base_title = (int(m[1]), m[2]) if m else (0, title.removeprefix("Verify: "))
-    if rounds >= MAX_FIX_ROUNDS:
+    base_title = m[2] if m else title.removeprefix("Verify: ")
+    delivery = delivery_of(verify_id, task["body"])
+    rounds, failed = verify_rounds(verify_id, title, task["body"])
+    if failed >= MAX_FIX_ROUNDS:
         return json.dumps({"ok": False, "error": f"round limit ({MAX_FIX_ROUNDS}) reached: block your card "
                            "with the failures so the user decides"})
     build = _verify_build(verify_id)
@@ -891,6 +947,7 @@ def verify_failed(args: dict, **_kw) -> str:
         return _add_body(argv, live_qa.group(0)) if live_qa else argv  # the re-verify tests the fixed screens again
 
     chain, error = run_flow("fix", base_title, request, project, parent=verify_id, worktree=worktree, edit=edit,
+                            delivery=delivery,
                             after=lambda step, tid: step.key == "verify" and not live_qa and _set_effort(tid, "low"),
                             round=rounds + 1, source="the verifier ran the reviewed change and it failed",
                             reporter="from the verifier", failures=failures, **state)
@@ -920,8 +977,9 @@ def fix(args: dict) -> str:
     if args.get("design") and not args.get("picked_design"):
         return design(args, base_title, f"{request}\n\nTHE USER TESTED THE PR AND WANTS:\n{failures}", worktree)
     state = _branch_state(worktree)
-    rounds = len(re.findall(r"^Fix \d+:", task["title"] or ""))
-    waiting = _waiting_fix(base_title, task["project_id"])
+    delivery = delivery_of(source_id, task["body"])
+    rounds = max(_fix_rounds(delivery)[0], len(re.findall(r"^Fix \d+:", task["title"] or "")))
+    waiting = _waiting_fix(base_title, task["project_id"], delivery)
     if waiting:  # one round takes every correction sent before it starts: no second fix + verify chain
         added = _hermes("kanban", "comment", waiting, f"ADDED REQUEST from the user's testing (handle it in this round):\n{failures}")
         if added.returncode == 0:
@@ -944,6 +1002,7 @@ def fix(args: dict) -> str:
 
     # the user is the tester of their own feedback; a verifier only when asked
     chain, error = run_flow("fix", base_title, request, project, worktree=worktree, edit=edit, after=after,
+                            delivery=delivery,
                             skip=() if args.get("verify") else ("verify",), round=rounds + 1,
                             source="the user tested the PR and found a problem", reporter="from the user's testing",
                             failures=failures, **state)
@@ -1037,17 +1096,18 @@ def _design_output(task_id: str) -> tuple[list[str], str, str]:
     return files, result, status
 
 
-def _waiting_fix(base_title: str, project) -> str | None:
-    """A fix card for the same change that no worker has started yet."""
+def _waiting_fix(base_title: str, project, delivery: str = "") -> str | None:
+    """A fix card for the same delivery (or, made before deliveries were named, title) that no worker has started."""
     try:
         conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
-        rows = conn.execute("SELECT id, title FROM tasks WHERE status IN ('todo','ready') AND created_by = "
+        rows = conn.execute("SELECT id, title, body FROM tasks WHERE status IN ('todo','ready') AND created_by = "
                             f"'delivery_submit' AND {step_sql()} = 'fix' AND coalesce(project_id,'') = ? "
                             "ORDER BY created_at", (project or "",)).fetchall()
         conn.close()
     except sqlite3.Error:
         return None
-    return next((tid for tid, title in rows if re.sub(r"^(Fix \d+: )+", "", title or "") == base_title), None)
+    return next((tid for tid, title, body in rows if delivery and f"DELIVERY: {delivery}" in (body or "")
+                 or re.sub(r"^(Fix \d+: )+", "", title or "") == base_title), None)
 
 
 def _branch_state(worktree: str) -> dict:
@@ -1213,8 +1273,8 @@ VERIFY_FAILED_SCHEMA = {
     "type": "function",
     "function": {
         "name": "delivery_verify_failed",
-        "description": ("Verifier only: the change failed verification. Opens a fix card for the "
-                        "implementer in the same worktree and a new verify card after it."),
+        "description": ("Rarely needed: cpipe opens the fix round itself when a verify card completes with "
+                        "VERDICT: FAIL. Opens a fix card in the same worktree and a new verify card after it."),
         "parameters": {
             "type": "object",
             "properties": {

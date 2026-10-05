@@ -168,11 +168,26 @@ def plan_gate(tid: str, args: dict):
 
 def verdict_gate(tid: str, args: dict):
     from . import checks
-    if checks.VERDICT.search(f"{args.get('result') or ''}\n{args.get('summary') or ''}"):
+    verdict = checks.VERDICT.search(f"{args.get('result') or ''}\n{args.get('summary') or ''}")
+    if verdict and verdict[1].upper() == "FAIL" and _at_round_limit(tid):  # submit.EDGES: fail_limit -> ask_user
+        return {"action": "block", "message": (
+            f"{tid}: the fix-round limit ({submit.MAX_FIX_ROUNDS}) is reached, so the user decides. Do not complete: "
+            "block this card with a reason that starts `round limit:` followed by the failures.")}
+    if verdict:
         return None
     return {"action": "block", "message": (
         f"{tid}: start the result with `VERDICT: PASS <sha>` or `VERDICT: FAIL <sha>` (the commit you verified, "
         "`git rev-parse HEAD`), then the commands and their results: cpipe reads it to mark the PR ready.")}
+
+
+def _at_round_limit(tid: str) -> bool:
+    """A failure on the approved commit would open a fix round past the limit (one during review joins it)."""
+    try:
+        row, build = submit._task_row(tid), submit._verify_build(tid)
+        return bool(row and build and build["status"] == "done"
+                    and submit.verify_rounds(tid, row["title"], row["body"])[1] >= submit.MAX_FIX_ROUNDS)
+    except Exception:
+        return False
 
 
 def pr_ready_gate(tid: str):
