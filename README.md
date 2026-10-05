@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-8957e5)](LICENSE)
 [![Requires: Hermes Agent](https://img.shields.io/badge/requires-Hermes%20Agent-1f6feb)](https://github.com/NousResearch/hermes-agent)
 
-**A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that turns your bots into a delivery team.** You ask for a change in chat; cpipe puts it on the Kanban board as a graph of cards (map → plan → build → review → verify), routes each card to one of your profiles, checks every step's evidence with code instead of trusting the bot, and ends with a tested draft PR for you to merge.
+**A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that turns your bots into a delivery team.** You ask for a change in chat; cpipe puts it on the Kanban board as a graph of cards (map → plan → build → review → verify), routes each card to one of your profiles, checks every step's evidence with code instead of trusting the bot, and ends with a tested draft PR for you to merge. It is self-learning: every week it reads how each delivery went, drafts lessons from the failures that keep coming back, and the ones you approve go on that project's next cards.
 
 You bring the bots (your Hermes profiles, models and personas). cpipe decides which role gets each card, what the card asks for, and what has to be true before it moves on.
 
@@ -79,6 +79,19 @@ The board is watched by scripts that read the task database, worker processes an
 - **Delivery chat**: each delivery gets its own conversation (`⛓ <request>`) with one line per board event, written straight from the board at no token cost.
 - **Mission Control**: a `hermes dashboard` tab with the same queue.
 - **ESTOP**: `~/.hermes/ESTOP` pauses the dispatcher and every cron job; `hermes resume` restarts them.
+
+## How it learns
+
+```
+deliveries ─► outcomes (rounds, verify fails, fixes you sent) ─► repeated failure? ─► lesson draft
+     ▲                                                                                   │
+     └──────────── next cards of that project carry it ◄── you approve ◄── weekly chat message
+```
+
+- **Every week** the steward sends you one message: numbered lesson drafts (a failure seen in 2+ deliveries of one project) and standards drafts (a review finding class seen 3+ times in 28 days). Reply `approve 1,3` or `skip`.
+- **Approved lessons** go in `~/.hermes/delivery/lessons.yaml`, outside the repo, so a `git pull` never overwrites them. The newest 10 go on every card of that project. Standards drafts that apply everywhere become a reviewed commit to cpipe.
+- **Nothing changes without you**: a bot that writes its own rules unchecked can quietly lower the bar ("skip the flaky test").
+- **Where to look**: the weekly message in your chat, the `Standards amendment drafts: <date>` card on the board, `python3 -m cpipe.outcomes` for how each delivery went, `~/.hermes/logs/board-intelligence.md` for the full digest, and `lessons.yaml` for what it has learned.
 
 ## Install
 
