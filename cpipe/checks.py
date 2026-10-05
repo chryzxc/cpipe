@@ -31,6 +31,10 @@ from .home import root as _root_home
 
 VERDICT = re.compile(r"VERDICT:\s*(PASS|FAIL)\b(?:\s+([0-9a-f]{7,40}))?", re.I)
 BUILD_LINE = re.compile(r"^BUILD CARD: (t_[0-9a-f]+)", re.M)
+# The dispatcher's respawn guard holds any card with a PR url in a recent comment ("active_pr"), so a
+# verify handed that url would never start. owner/repo#N names the same PR (`gh pr view N -R owner/repo`).
+PR_URL = re.compile(r"https?://github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)", re.I)
+PR_GUARD_WINDOW = 86400  # the guard's own window
 
 VERIFY_NOTE = ("PARALLEL CHECK: {build} was handed to review at {sha}. Your workspace is a detached checkout of "
                "that commit, so you verify while the reviewer reviews; do not cd into {worktree}. The implementer's "
@@ -106,13 +110,36 @@ def release(conn, board, root: Path, state: dict) -> list[str]:
         handoff = conn.execute("SELECT payload FROM task_events WHERE task_id = ? AND kind = 'review_requested' "
                                "ORDER BY id DESC LIMIT 1", (build,)).fetchone()
         summary = (json.loads(handoff[0] or "{}").get("summary") if handoff else "") or "see kanban_show " + build
-        board.comment(verify, VERIFY_NOTE.format(build=build, sha=sha, worktree=worktree, summary=summary))
+        board.comment(verify, VERIFY_NOTE.format(build=build, sha=sha, worktree=worktree,
+                                                 summary=PR_URL.sub(r"\1/\2#\3", summary)))
         board.comment(build, BUILD_NOTE.format(verify=verify, sha=sha[:12]))
         board.unlink(build, verify)
         state.setdefault("released", {})[verify] = sha
         submit._journal("verify.parallel", verify, build=build, sha=sha)
         released.append(verify)
     return released
+
+
+def lift_pr_guards(conn, board, now: Optional[float] = None) -> list[str]:
+    """Start ready cards the active_pr guard holds over a PR url someone else posted (an implementer's
+    handoff on its verify, a coordinator note). The guard exists so the worker that opened a PR is not
+    re-spawned into a duplicate; it lifts on a handoff, which is what an unassign/reassign records."""
+    now = now or time.time()
+    lifted = []
+    for tid, who in conn.execute(
+            "SELECT t.id, t.assignee FROM tasks t WHERE t.status = 'ready' AND t.assignee IS NOT NULL AND EXISTS "
+            "(SELECT 1 FROM task_events e WHERE e.task_id = t.id AND e.kind = 'respawn_guarded' "
+            "AND e.payload LIKE '%active_pr%' AND e.created_at > ?)", (now - 300,)).fetchall():
+        url_by = next((a for a, body in conn.execute(
+            "SELECT author, body FROM task_comments WHERE task_id = ? AND created_at >= ? ORDER BY id DESC",
+            (tid, now - PR_GUARD_WINDOW)) if PR_URL.search(body or "")), None)
+        if not url_by or url_by == who:
+            continue  # its own worker opened that PR: the guard is right
+        board.assign(tid, None)
+        board.assign(tid, who)
+        submit._journal("pr_guard.lifted", tid, url_by=url_by, assignee=who)
+        lifted.append(tid)
+    return lifted
 
 
 def _verdict(conn, verify: str, result: Optional[str]):
@@ -243,6 +270,7 @@ def run_checks(*, dry_run: bool = False, board: Optional[str] = None, home: Opti
             from hermes_cli.kanban_db_connect import connect_closing
             root = kanban_db.workspaces_root()
             with connect_closing() as conn:
+                lift_pr_guards(conn, Board(conn))
                 release(conn, Board(conn), root, state)
                 join(conn, root, state, board=Board(conn))
             state_path.write_text(json.dumps(state))

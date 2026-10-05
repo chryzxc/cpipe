@@ -194,3 +194,13 @@ def test_signature_ignores_pids_paths_and_numbers(mon):
     sig = mon["signature"]
     assert sig("pid 12 failed at /tmp/a/b.py line 4") == sig("pid 99 failed at /var/x.py line 70")
     assert sig("missing script: build") != sig("missing script: test")
+
+
+def test_a_lasting_pr_guard_is_stuck_not_progressing(mon, tmp_path):
+    """The dispatcher refused a ready card every tick over a PR url; it read PROGRESSING for 13 minutes."""
+    conn = board(tmp_path / "kanban.db")
+    card(conn, "t_v", "ready", minutes_ago=20, assignee="sentinel")
+    for m in (15, 8, 1):
+        event(conn, "t_v", "respawn_guarded", m, reason="active_pr")
+    verdicts, _, _, _ = tick(mon, conn, tmp_path, mode="observe")
+    assert (verdicts["t_v"].state, verdicts["t_v"].cause) == ("STUCK", "PR_GUARD")

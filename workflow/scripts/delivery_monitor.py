@@ -85,6 +85,7 @@ WHY = {
     "transient": "waiting on quota/retry, should resume by itself",
 }
 NEXT = {
+    "PR_GUARD": "the worker that opened the PR would start again; reassign the card if a second run is right",
     "DEAD_WORKER": "the claim is released so the card respawns; restart the gateway if it recurs",
     "STALE_GUARD": "a stale quota error holds the card; clear it (`hermes kanban show` → last error)",
     "AUTH_BLOCKED": "the assignee's provider login failed; fix credentials, then `hermes kanban unblock`",
@@ -395,6 +396,9 @@ def classify(tid, b, now, st=None, watches=None) -> Verdict:
                      repair=None if tries >= REPAIR_ATTEMPTS else "clear_guard",
                      escalate=tries >= REPAIR_ATTEMPTS, signature=signature(err))
         return v("STUCK", "AUTH_BLOCKED", err, escalate=True, signature=signature(err))
+    if hold == "respawn_guarded:active_pr" and now - hold_since >= CLAIM_GRACE_MINUTES * 60:
+        return v("STUCK", "PR_GUARD", f"{status} {_age(now - hold_since)}: its own worker posted a PR url",
+                 escalate=True)
     if hold.startswith("per_profile_cap"):
         if now - hold_since >= AT_CAP_ESCALATE_MINUTES * 60:
             return v("STUCK", "AT_CAP", hold, escalate=True)
