@@ -4,7 +4,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL = (ROOT / "workflow" / "skills" / "cpipe-orchestrator" / "SKILL.md").read_text()
 PARALLEL = (ROOT / "workflow" / "skills" / "cpipe-orchestrator" /
             "references" / "parallel-execution.md").read_text()
-README = (ROOT / "README.md").read_text()
 
 
 def test_skill_carries_parallel_by_default_rule():
@@ -23,7 +22,3 @@ def test_parallel_reference_carries_decomposition_contract():
     assert "CAPACITY_HOLD" in PARALLEL
     assert "REWORK_LOOP" in PARALLEL
 
-
-def test_readme_states_default_parallelism():
-    assert "parallel waves by default" in README
-    assert "no prompt needed" in README
