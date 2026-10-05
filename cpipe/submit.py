@@ -993,6 +993,7 @@ def fix(args: dict) -> str:
     worktree = _card_worktree(source_id) if task else None
     if not worktree:
         return json.dumps({"ok": False, "error": f"no card with a live worktree found for {ref}; "
+                           "to only run it for testing use delivery_test_env(target, project); to change its code, "
                            "submit it as new work (size=small) naming the PR branch"})
     request = _request_of(task["body"])
     base_title = re.sub(r"^(Fix \d+: )+", "", task["title"] or "")
@@ -1385,7 +1386,8 @@ SCHEMA = {
         "name": "delivery_submit",
         "description": (
             "Hand a coding task in one of the user's repositories to the cpipe team, "
-            "instead of doing it in this chat. size=content when only text, copy, markup, styles, docs, "
+            "instead of doing it in this chat. Not for work that changes no code (run, restart, or set up "
+            "an app: delivery_test_env; a question or a command: answer it in the chat). size=content when only text, copy, markup, styles, docs, "
             "or a config value change (add/edit a page section, legal wording, labels): one implementer "
             "session plus a wording review, no plan, no tests. size=small for any feature or fix one "
             "developer would do in one sitting, even across several files (the default): the implementer "
