@@ -19,7 +19,7 @@
     <text x="402" y="206" fill="#79c0ff" text-anchor="middle">plan</text>
     <text x="464" y="206" fill="#484f58">→</text>
     <rect x="486" y="178" width="190" height="44" rx="22" fill="#238636" opacity="0.3"/>
-    <text x="581" y="206" fill="#7ee787" text-anchor="middle">parallel TDD</text>
+    <text x="581" y="206" fill="#7ee787" text-anchor="middle">TDD</text>
     <text x="688" y="206" fill="#484f58">→</text>
     <rect x="710" y="178" width="126" height="44" rx="22" fill="#8957e5" opacity="0.3"/>
     <text x="773" y="206" fill="#d2a8ff" text-anchor="middle">gates</text>

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="cpipe — clarify → explore → plan → parallel TDD → gates → deliverable → learning">
+  <img src="assets/banner.svg" alt="cpipe — clarify → explore → plan → TDD → gates → deliverable → learning">
 </p>
 
 # cpipe
@@ -18,7 +18,7 @@
 
 ## The idea in one paragraph
 
-This workflow is a **composition of established engineering paradigms**, not a pile of prompts. **Task-graph (DAG) engineering** decomposes issues into dependency-aware nodes that execute in parallel waves. **Loop engineering** nests four closed feedback loops — the RED→GREEN TDD loop inside a card, the implement→review→rework loop across cards, the supervisor's sense→act loop every 15 minutes, and the weekly learning loop that writes the rulebook. **Evidence-based gating** makes every claim fail-closed and machine-verifiable, **risk-tiered ceremony** scales process weight to blast radius, and **policy-as-code** keeps deterministic checks out of the LLM path. Together they turn a set of AI profiles into a delivery team whose output you can trust without reading every diff.
+This workflow is a **composition of established engineering paradigms**, not a pile of prompts. **Staged delivery** runs each request through a dependency-ordered chain of cards (map → plan → build → verify for large work, build → verify for small), each starting when its parent is done. **Loop engineering** nests four closed feedback loops — the RED→GREEN TDD loop inside a card, the implement→review→rework loop across cards, the supervisor's sense→act loop every 15 minutes, and the weekly learning loop that writes the rulebook. **Evidence-based gating** makes every claim fail-closed and machine-verifiable, **risk-tiered ceremony** scales process weight to blast radius, and **policy-as-code** keeps deterministic checks out of the LLM path. Together they turn a set of AI profiles into a delivery team whose output you can trust without reading every diff.
 
 ## The problem it solves
 
@@ -38,7 +38,6 @@ AI teams move fast; trusting what they ship is the hard part. This workflow turn
 
 | You get | How it works |
 |---|---|
-| Parallelism you can trust | Independent slices run as parallel waves by default — wave plans computed from the engine's live caps, so what's promised is what runs |
 | TDD by construction | RED evidence is required *before* implementation; mutation checks prove the tests bite |
 | Reviews that can't drift | Gates review a frozen SHA; any base or head movement invalidates prior evidence |
 | `done` means proven | After review, a Verifier card runs the change: the new tests must fail without the fix, the related tests and the CI suite must pass. A failure opens a fix card automatically |
@@ -68,11 +67,11 @@ issue ──► clarify ──► explore ──► plan ──► PIN ──►
 | 2 | **Explore** | Blast-radius investigation: affected files, modules, contract surfaces | SURFACES section | Declared surfaces match reality |
 | 3 | **Plan** | Implementation plan with frozen interfaces, SHA256-locked to the card | Plan file + hash (MED/HIGH) | Plan locked; amendments supersede |
 | 3b | **Pin** | Before touching source, the implementer writes a test for every caller behavior the plan marked UNPINNED, asserting what the code does *today*. They must pass on the unchanged code | `PINNED:` test list | Verify re-runs them at the merge-base |
-| 4 | **Parallel TDD** | Implementer instances in per-issue worktrees: RED → IMPLEMENTING → GREEN → REGRESSION, with every pin still green | RED line before implementation | RED evidence exists |
+| 4 | **TDD** | The implementer, in the request's own worktree: RED → IMPLEMENTING → GREEN → REGRESSION, with every pin still green | RED line before implementation | RED evidence exists |
 | 5 | **Refactor** | Simplification findings become their own card — never mixed with behavior | Separate simplify card | Zero behavior change |
 | 6 | **Review** | Independent review of the frozen SHA: diff, every caller of every changed symbol or route, security when triggered | `CALLERS CHECKED` list | No approval without the list |
 | 6b | **Verify** | The Verifier runs the change in the same worktree: PROOF (changed tests fail at the merge-base), RELATED (tests of every changed file, every package), SUITE (repo CI commands) | Command + result per step | Any failure → `delivery_verify_failed` opens a fix card and a new verify card |
-| 7 | **Deliverable** | Draft deliverable generated from verified evidence; approvals batched per wave | Deliverable with evidence block | Your one `ship N / hold N` reply |
+| 7 | **Deliverable** | Draft deliverable generated from verified evidence | Deliverable with evidence block | Your one `ship N / hold N` reply |
 | 8 | **Learning** | Weekly digest: flow metrics, gate effectiveness, finding classes → standards amendments | Weekly digest | You approve drafts only |
 
 ### Risk-tiered ceremony
@@ -83,7 +82,7 @@ Not every change earns the same process. The intake tier decides:
 |---|---|---|---|
 | Trigger | ≤2 files, no contract change, existing coverage | behavior or UI change | schema/API/security boundary |
 | Plan | the implementer, on its own card: CHANGE + PINS + RED | cheap map → frontier plan | + adversarial interrogation |
-| Review | same-card reviewer (one-shot) | dispatched review | reviewer + QA + security in parallel |
+| Review | same-card reviewer (one-shot) | dispatched review | dispatched review, security included |
 | Verify card (PROOF/RELATED/SUITE) | on request (`verify: true`) | on request | + mutation check |
 
 A feature is one card: the implementer plans, builds, tests, pushes, and opens a draft deliverable with a `## How to test` checklist; the reviewer checks the same card (at most 3 rounds) and marks the deliverable ready. You test the deliverable and merge, or send `fix <number> <issue>`, which reopens the same branch. Every worker sees only its card (the request brief plus the parent card's result), never the chat, so each session stays small.
@@ -99,13 +98,12 @@ This isn't a pile of prompts — it's several established engineering paradigms 
 | Concept | How it shows up here |
 |---|---|
 | **Orchestrator–worker architecture** | A coordinator role is the control plane: it routes, reconciles, and reports — never implements. Workers are disposable instances of role profiles, spawned per card by the engine dispatcher. |
-| **Task-graph (DAG) engineering** | Work is decomposed into dependency-aware task nodes (`references/task-graph-flow.md`). Ready nodes execute in parallel waves; integration happens before gates, so reviews see integrated reality, not divergent branches. |
+| **Staged delivery chain** | Each request becomes a chain of linked cards (map → plan → build → verify for large work; build → verify for small). The engine starts a card when its parent is done; separate requests run side by side in their own worktrees, but one request is never split into parallel builds. |
 | **Loop engineering (closed feedback loops)** | Four nested loops: the RED→GREEN TDD loop inside a card; the implement→review→rework loop bounded by gates across cards; the supervisor's sense→act loop every 15 minutes; and the weekly learning loop that turns repeated findings into standards. |
 | **Autonomic operation** | A deterministic supervisor keeps the board healthy on its own schedule — reclaims dead claims, refreshes queues, and routes cards that need a decision to the coordinator. |
 | **Evidence-based gating (fail-closed)** | Nothing passes without machine-verifiable evidence: criteria re-run independently, frozen-SHA review, hash-locked plans, mutation checks. Missing evidence is a blocker, never a pass. |
 | **Risk-tiered adaptive ceremony** | Process weight scales with blast radius — LOW/MED/HIGH tiers decided at intake from the brief's own fields, so small changes move fast and dangerous ones earn full scrutiny. |
-| **Pipelined parallelism** | Independent slices decompose into parallel waves by default — no prompt needed; reviews of one wave overlap implementation of the next; same-module cards batch into one session to amortize boot cost. Parallelism comes from *instantiation* of roles, not from more bots. |
-| **Pull system with WIP limits (Kanban)** | Per-profile concurrency caps, queue signals, and wave plans computed from live engine caps — never from wishful policy numbers. |
+| **Pull system with WIP limits (Kanban)** | Per-profile concurrency caps and queue signals from the live engine — never from wishful policy numbers. |
 | **Deterministic-first / policy as code** | Anything expressible as a script runs without an LLM (validators, metrics, mutation checks, housekeeping); config assertions fail loudly on drift; declarative policy mirrors are validated against engine reality. |
 | **Role-based least authority** | Authority ceilings attach to roles and cards; no skill, card, or model can expand them. Human approval gates (merge, deploy, credentials...) are structural, not conventional. |
 | **Single-source-of-truth deployment** | The whole workflow is git-versioned and deployed idempotently — skills are symlinks, so drift across profiles is structurally impossible and `git pull && ./install.sh` is the only update path. |
