@@ -2,6 +2,7 @@
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from cpipe import checks, review_gate, submit
@@ -21,7 +22,7 @@ class FakeBoard:
         self.conn.execute("DELETE FROM task_links WHERE parent_id = ? AND child_id = ?", (parent, child))
 
     def assign(self, tid, who):
-        pass
+        self.conn.execute("UPDATE tasks SET assignee = ? WHERE id = ?", (who, tid))
 
 
 def repo(tmp_path):
@@ -56,7 +57,7 @@ def test_verify_starts_beside_review_in_its_own_checkout(tmp_path, monkeypatch):
     assert checkout.stdout.strip() == head and state["released"] == {"t_v": head}
     assert conn.execute("SELECT count(*) FROM task_links").fetchone()[0] == 0  # Hermes may now start it
     (vid, note), (bid, _) = fake.comments
-    assert (vid, bid) == ("t_v", "t_b") and "pull/7" in note and head in note
+    assert (vid, bid) == ("t_v", "t_b") and "o/r#7" in note and "pull/7" not in note and head in note
     assert checks.build_of(conn, "t_v")[0] == "t_b"  # the BUILD CARD line keeps the relation
     assert checks.release(conn, fake, root, state) == []  # nothing left to release
 
@@ -213,3 +214,15 @@ def test_at_the_round_limit_the_user_can_stop_and_only_the_user_decides(tmp_path
     monkeypatch.delenv("HERMES_KANBAN_TASK")
     out = json.loads(submit.decide({"card": "t_v", "choice": "stop"}))
     assert out["ok"] and "themselves" in out["next"] and fixes == [] and calls == [("kanban", "archive", "t_v")]
+
+
+def test_a_pr_url_someone_else_posted_never_parks_a_ready_card(tmp_path, monkeypatch):
+    monkeypatch.setattr(submit, "_journal", lambda *a, **k: None)
+    conn = board(tmp_path / "kanban.db")
+    for tid, who, poster in (("t_v", "sentinel", "forge"), ("t_own", "forge", "forge")):
+        card(conn, tid, "ready", assignee=who)
+        conn.execute("INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?,?,?,?)",
+                     (tid, poster, "PR is https://github.com/o/r/pull/9", int(time.time())))
+        event(conn, tid, "respawn_guarded", reason="active_pr")
+    assert checks.lift_pr_guards(conn, FakeBoard(conn)) == ["t_v"]  # its own PR: the guard stays
+    assert conn.execute("SELECT assignee FROM tasks WHERE id = 't_v'").fetchone()[0] == "sentinel"
