@@ -56,6 +56,7 @@ A test (`tests/test_flows.py`) fails if any step has no edge out.
 | **Sized ceremony** | Process scales with blast radius: content skips plan and tests, large gets a mapped, reviewed plan |
 | **Context isolation** | Each card sees its brief and its parent's result, never the chat, in its own worktree |
 | **Kanban pull** | The Hermes dispatcher pulls ready cards within per-profile caps. Children start when their parents finish |
+| **Learning loop** | Weekly, `board_intelligence.py` counts review finding classes; any class seen 3+ times in 28 days becomes a drafted standards amendment for you to approve. `python3 -m cpipe.brief_replay` re-runs past map/plan cards with today's briefs to show whether a change made them cheaper |
 | **Human in the loop** | You decide at round limits, on design picks, and on merge, deploy and credentials. Bots never do |
 
 ## What each step must prove
