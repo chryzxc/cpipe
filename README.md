@@ -18,7 +18,7 @@
 
 ## The idea in one paragraph
 
-This workflow is a **composition of established engineering paradigms**, not a pile of prompts. **Staged delivery** runs each request through a dependency-ordered chain of cards (map → plan → build → verify for large work, build → verify for small), each starting when its parent is done. **Loop engineering** nests four closed feedback loops — the RED→GREEN TDD loop inside a card, the implement→review→rework loop across cards, the supervisor's sense→act loop every 15 minutes, and the weekly learning loop that writes the rulebook. **Evidence-based gating** makes every claim fail-closed and machine-verifiable, **risk-tiered ceremony** scales process weight to blast radius, and **policy-as-code** keeps deterministic checks out of the LLM path. Together they turn a set of AI profiles into a delivery team whose output you can trust without reading every diff.
+This workflow is a **composition of established engineering paradigms**, not a pile of prompts. **Staged delivery** runs each request through a dependency-ordered chain of cards (map → plan → build → verify for large work, build → verify for small), each starting when its parent is done. **Loop engineering** nests four closed feedback loops — the RED→GREEN TDD loop inside a card, the implement→review→rework loop across cards, the supervisor's sense→act loop every 15 minutes, and the weekly learning loop that writes the rulebook. **Evidence-based gating** makes every claim fail-closed and machine-verifiable, **sized ceremony** scales process weight to blast radius, and **policy-as-code** keeps deterministic checks out of the LLM path. Together they turn a set of AI profiles into a delivery team whose output you can trust without reading every diff.
 
 ## The problem it solves
 
@@ -52,7 +52,7 @@ The result: **you review evidence, not code.**
 ```
 issue ──► clarify ──► explore ──► plan ──► PIN ──► TDD ──► review ──► verify ──► deliverable ──► learning
         intake brief   surfaces    frontier   tests    RED→    frontier   PROOF +     evidence   weekly digest
-        + risk tier    artifact    model:     for      GREEN   model:     RELATED +   block +    + standards
+        + size         artifact    model:     for      GREEN   model:     RELATED +   block +    + standards
                                   change +   today's          callers +  SUITE       approvals  loop
                                   pins       behavior         pins
                                                                   ▲           │ fail
@@ -63,9 +63,9 @@ issue ──► clarify ──► explore ──► plan ──► PIN ──►
 
 | # | Stage | What happens | Required artifact | Gate to pass |
 |---|---|---|---|---|
-| 1 | **Clarify** | Issue becomes a brief: problem, acceptance criteria, non-goals, risk tier (LOW/MED/HIGH) | Intake brief | Brief complete — no routing on assumptions |
+| 1 | **Clarify** | Issue becomes a brief: problem, acceptance criteria, non-goals, size (content/small/large) | Intake brief | Brief complete — no routing on assumptions |
 | 2 | **Explore** | Blast-radius investigation: affected files, modules, contract surfaces | SURFACES section | Declared surfaces match reality |
-| 3 | **Plan** | Implementation plan with frozen interfaces, SHA256-locked to the card | Plan file + hash (MED/HIGH) | Plan locked; amendments supersede |
+| 3 | **Plan** | Implementation plan with frozen interfaces, SHA256-locked to the card | Plan file + hash (large) | Plan locked; amendments supersede |
 | 3b | **Pin** | Before touching source, the implementer writes a test for every caller behavior the plan marked UNPINNED, asserting what the code does *today*. They must pass on the unchanged code | `PINNED:` test list | Verify re-runs them at the merge-base |
 | 4 | **TDD** | The implementer, in the request's own worktree: RED → IMPLEMENTING → GREEN → REGRESSION, with every pin still green | RED line before implementation | RED evidence exists |
 | 5 | **Refactor** | Simplification findings become their own card — never mixed with behavior | Separate simplify card | Zero behavior change |
@@ -74,18 +74,20 @@ issue ──► clarify ──► explore ──► plan ──► PIN ──►
 | 7 | **Deliverable** | Draft deliverable generated from verified evidence | Deliverable with evidence block | Your one `ship N / hold N` reply |
 | 8 | **Learning** | Weekly digest: flow metrics, gate effectiveness, finding classes → standards amendments | Weekly digest | You approve drafts only |
 
-### Risk-tiered ceremony
+### Sized ceremony
 
-Not every change earns the same process. The intake tier decides:
+Not every change earns the same process. The size passed at intake (`size` in `delivery_submit`) picks the flow:
 
-| | LOW | MED | HIGH |
+| | content | small | large |
 |---|---|---|---|
-| Trigger | ≤2 files, no contract change, existing coverage | behavior or UI change | schema/API/security boundary |
-| Plan | the implementer, on its own card: CHANGE + PINS + RED | cheap map → frontier plan | + adversarial interrogation |
-| Review | same-card reviewer (one-shot) | dispatched review | dispatched review, security included |
-| Verify card (PROOF/RELATED/SUITE) | on request (`verify: true`) | on request | + mutation check |
+| Trigger | only text, copy, markup, styles, docs or a config value | one area, no boundary crossed | crosses a boundary (UI → API → DB, events, auth, persistence, jobs) or spans packages |
+| Plan | none | the implementer, on its own card: CHANGE + PINS + RED | cheap map (investigator) → frontier plan (planner) |
+| Review | same-card reviewer | same-card reviewer | same-card reviewer |
+| Verify card (PROOF/RELATED/SUITE) | none | by default (`verify: false` skips it) | by default |
 
-A feature is one card: the implementer plans, builds, tests, pushes, and opens a draft deliverable with a `## How to test` checklist; the reviewer checks the same card (at most 3 rounds) and marks the deliverable ready. You test the deliverable and merge, or send `fix <number> <issue>`, which reopens the same branch. Every worker sees only its card (the request brief plus the parent card's result), never the chat, so each session stays small.
+Two more flows reuse the same steps: **fix** (`fix_of`: one fix card in the same worktree, then a verify only when asked) and **design** (three parallel design variants you pick from). A verify whose diff touches platform files (CI, Docker, deploy config, migrations, manifests and lockfiles) goes to the release engineer instead of the verifier.
+
+A feature is one card: the implementer plans, builds, tests, pushes, and opens a draft deliverable with a `## How to test` checklist; the reviewer checks the same card (at most 3 rounds), and cpipe marks the deliverable ready once verify passes on the approved commit. You test the deliverable and merge, or send `fix <number> <issue>`, which reopens the same branch. Every worker sees only its card (the request brief plus the parent card's result), never the chat, so each session stays small.
 
 Every plan, the implementer's own or a reviewed one, has a **COMPLETE FEATURE** line: what a careful senior ships with the change without being asked (errors that tell the user why, choices that cannot be combined, sibling UI that stays consistent, existing records, production data volume, side effects like SMS or email that fail without breaking the main flow, new env vars in the example file). These count as part of the request, not as extras, and the reviewer checks them by using the change as a user would. Re-reviews converge: from round two the reviewer raises no new minor findings, must say why a new serious one was missed before, and the implementer disputes a wrong finding with evidence instead of patching around it.
 
@@ -102,7 +104,7 @@ This isn't a pile of prompts — it's several established engineering paradigms 
 | **Loop engineering (closed feedback loops)** | Four nested loops: the RED→GREEN TDD loop inside a card; the implement→review→rework loop bounded by gates across cards; the supervisor's sense→act loop every 15 minutes; and the weekly learning loop that turns repeated findings into standards. |
 | **Autonomic operation** | A deterministic supervisor keeps the board healthy on its own schedule — reclaims dead claims, refreshes queues, and routes cards that need a decision to the coordinator. |
 | **Evidence-based gating (fail-closed)** | Nothing passes without machine-verifiable evidence: criteria re-run independently, frozen-SHA review, hash-locked plans, mutation checks. Missing evidence is a blocker, never a pass. |
-| **Risk-tiered adaptive ceremony** | Process weight scales with blast radius — LOW/MED/HIGH tiers decided at intake from the brief's own fields, so small changes move fast and dangerous ones earn full scrutiny. |
+| **Sized adaptive ceremony** | Process weight scales with blast radius — content/small/large sizes decided at intake, so small changes move fast and dangerous ones earn full scrutiny. |
 | **Pull system with WIP limits (Kanban)** | Per-profile concurrency caps and queue signals from the live engine — never from wishful policy numbers. |
 | **Deterministic-first / policy as code** | Anything expressible as a script runs without an LLM (validators, metrics, mutation checks, housekeeping); config assertions fail loudly on drift; declarative policy mirrors are validated against engine reality. |
 | **Role-based least authority** | Authority ceilings attach to roles and cards; no skill, card, or model can expand them. Human approval gates (merge, deploy, credentials...) are structural, not conventional. |
@@ -361,7 +363,7 @@ The weekly digest reports per-stage wall-clock, queue waits, gate rejection rate
 
 **Will `hermes update` remove it?** No. Everything installs into the Hermes user-state layer; the updater only touches the engine checkout. Run `./install.sh` after an update to re-assert everything.
 
-**Does it cost more tokens?** Less, usually: tiering skips the plan session for low-risk work, the verify card runs commands instead of re-reading code, reviews batch multiple commits per session, and every check expressible as a script runs without an LLM.
+**Does it cost more tokens?** Less, usually: sizing skips the plan session for small and content work, the verify card runs commands instead of re-reading code, reviews batch multiple commits per session, and every check expressible as a script runs without an LLM.
 
 **Can I use it on multiple machines?** Clone, `./install.sh`, done — same workflow everywhere.
 
