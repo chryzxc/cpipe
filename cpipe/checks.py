@@ -72,7 +72,7 @@ def build_of(conn, verify_id: str, body: Optional[str] = None):
     """(id, status, workspace_path, title, body) of the card a verify checks: its parent while linked, else
     its `BUILD CARD:` line."""
     row = conn.execute("SELECT t.id FROM task_links l JOIN tasks t ON t.id = l.parent_id WHERE l.child_id = ? "
-                       "AND t.title NOT LIKE 'Verify:%' LIMIT 1", (verify_id,)).fetchone()
+                       f"AND {submit.step_sql('t')} != 'verify' LIMIT 1", (verify_id,)).fetchone()
     if not row:
         if body is None:
             found = conn.execute("SELECT body FROM tasks WHERE id = ?", (verify_id,)).fetchone()
@@ -88,7 +88,7 @@ def release(conn, board, root: Path, state: dict) -> list[str]:
     """Start every verify whose build card is in review. Returns the released verify ids."""
     rows = conn.execute(
         "SELECT v.id, b.id, b.workspace_path, b.project_id FROM tasks v JOIN task_links l ON l.child_id = v.id "
-        "JOIN tasks b ON b.id = l.parent_id WHERE v.title LIKE 'Verify:%' AND v.status = 'todo' "
+        f"JOIN tasks b ON b.id = l.parent_id WHERE {submit.step_sql('v')} = 'verify' AND v.status = 'todo' "
         "AND b.status = 'review' AND instr(b.body, ?) > 0 "
         "AND (SELECT count(*) FROM task_links x WHERE x.child_id = v.id) = 1",
         (review_gate.MARKER,)).fetchall()
@@ -133,7 +133,8 @@ def _delta(build_row, verify: str, verify_body: str, verdict: str, sha: str) -> 
     live_qa = submit.LIVE_QA_RE.search(verify_body or "")
     argv = submit._add_body(argv, extra + ("\n" + live_qa.group(0) if live_qa else ""))
     # ponytail: the CLI create can stall on a plugin rebuild; a thread keeps the tick moving.
-    threading.Thread(target=submit._create, args=(argv,), daemon=True).start()
+    threading.Thread(target=lambda: (tid := submit._create(argv)[0]) and submit._tag(tid, "delta", "verify"),
+                     daemon=True).start()
     submit._journal("verify.delta", build, earlier=verify, sha=sha)
 
 
@@ -143,7 +144,7 @@ def join(conn, root: Path, state: dict, *, ready=None, delta=None) -> list[tuple
     delta = delta or _delta
     joined = state.setdefault("joined", [])
     rows = conn.execute(
-        "SELECT id, body, result FROM tasks WHERE title LIKE 'Verify:%' AND status = 'done' "
+        f"SELECT id, body, result FROM tasks WHERE {submit.step_sql()} = 'verify' AND status = 'done' "
         "AND created_by = 'delivery_submit' AND completed_at >= ?", (int(state["since"]),)).fetchall()
     done = []
     for verify, body, result in rows:
@@ -159,7 +160,7 @@ def join(conn, root: Path, state: dict, *, ready=None, delta=None) -> list[tuple
             sha = sha or state.get("released", {}).get(verify) or head
             same = head.startswith(sha) or sha.startswith(head)
             fixed = conn.execute("SELECT 1 FROM task_links l JOIN tasks t ON t.id = l.child_id WHERE l.parent_id = ? "
-                                 "AND t.title LIKE 'Fix %'", (verify,)).fetchone()
+                                 f"AND {submit.step_sql('t')} = 'fix'", (verify,)).fetchone()
             if verdict == "PASS" and same:
                 ready(build[2])
                 action = "ready"

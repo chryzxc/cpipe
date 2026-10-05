@@ -21,7 +21,7 @@ SOURCE = "cpipe"
 KINDS = ("created", "claimed", "review_requested", "changes_requested", "completed", "blocked",
          "unblocked", "timed_out", "crashed", "gave_up", "rate_limited", "block_loop_detected")
 BACKFILL_SECONDS = 12 * 3600  # first run: show deliveries active in the last 12h, not the whole board
-STAGE_RE = re.compile(r"^(map|plan|verify|fix \d+)\s*:\s*", re.I)
+STAGE_RE = re.compile(r"^(map|plan|verify|fix \d+|design [a-z])\s*:\s*", re.I)
 URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
 ICON = {"Map": "🗺", "Plan": "📐", "Build": "🔨", "Review": "🔍", "Verify": "🧪"}
 

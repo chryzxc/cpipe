@@ -182,7 +182,7 @@ def pr_ready_gate(tid: str):
         conn = sqlite3.connect(f"file:{submit._db()}?mode=ro", uri=True)
         try:
             checked = conn.execute(
-                "SELECT 1 FROM tasks WHERE title LIKE 'Verify:%' AND (instr(body, ?) > 0 OR id IN "
+                f"SELECT 1 FROM tasks WHERE {submit.step_sql()} = 'verify' AND (instr(body, ?) > 0 OR id IN "
                 "(SELECT child_id FROM task_links WHERE parent_id = ?)) LIMIT 1",
                 (f"BUILD CARD: {tid}", tid)).fetchone()
         finally:
@@ -221,7 +221,7 @@ def route_verify(tid: str, worktree: str | None, project: str | None, board=None
     try:
         child = conn.execute(
             "SELECT t.id FROM task_links l JOIN tasks t ON t.id = l.child_id WHERE l.parent_id = ? "
-            "AND t.title LIKE 'Verify:%' AND t.status IN ('todo', 'ready') AND t.assignee != ?",
+            f"AND {submit.step_sql('t')} = 'verify' AND t.status IN ('todo', 'ready') AND t.assignee != ?",
             (tid, engineer)).fetchone()
     finally:
         conn.close()

@@ -28,6 +28,7 @@ import secrets
 import shutil
 import sqlite3
 import subprocess
+from dataclasses import dataclass, replace
 from pathlib import Path
 from .home import root as _root_home
 
@@ -36,7 +37,6 @@ HERMES_HOME = _root_home()
 PRIORITY = {"content": 30, "small": 20, "large": 10}
 # a whole feature is one session: a timeout kills it mid-build and the retry starts cold
 LIVE = ("todo", "ready", "running", "review", "scheduled")  # blocked/triage wait on the user: not live
-MAX_RUNTIME = {"content": "25m", "small": "60m", "large": "60m", "map": "20m", "plan": "20m", "build": "60m", "design": "25m"}
 MAX_FIX_ROUNDS = 2
 MAX_REQUEST_CHARS = 3000
 DUPLICATE_TITLE_RATIO = 0.85
@@ -515,6 +515,102 @@ Never plan removing an existing condition without its HISTORY.
 """
 
 
+@dataclass(frozen=True)
+class Step:
+    """One card of a flow. `key` goes on the card as current_step_key: the tick, the gates and fix/verify
+    lookups match on it, never on the title. `brief` is formatted with the flow's context."""
+    key: str
+    role: str
+    brief: str
+    runtime: str
+    prefix: str = ""  # title prefix, formatted with the context ("Fix {round}: ")
+    workspace: str = "worktree"  # worktree (in the project) | scratch (no project) | dir (the PR worktree)
+    parallel: bool = False  # starts beside the previous step (same parent) instead of after it
+    variant: str = ""  # design letter
+    fallback: str = ""  # role used when the roster has none for `role`
+
+
+BUILD = Step("build", "implementer", BUILD_BRIEF, "60m")
+# scratch with no project: Hermes turns a project's scratch card into its own fresh worktree off the base branch,
+# where 1 in 30 verifies checked the wrong code. workspace_prep sends it to the build worktree.
+VERIFY = Step("verify", "verifier", VERIFY_BRIEF + "BUILD CARD: {parent}\n", "60m", "Verify: ", "scratch")
+FIX = Step("fix", "implementer", FIX_BRIEF, "60m", "Fix {round}: ", "dir")
+FLOWS = {
+    "content": (Step("build", "implementer", CONTENT_BRIEF, "25m"),),  # same-card review, no plan or verify
+    "small": (BUILD, VERIFY),  # the implementer plans inline (IMPLEMENTER step 1)
+    "large": (Step("map", "investigator", MAP_BRIEF, "20m", "Map: "),  # cheap map, frontier plan
+              Step("plan", "planner", PLAN_BRIEF, "20m", "Plan: "), BUILD, VERIFY),
+    "fix": (FIX, replace(VERIFY, prefix="Verify: Fix {round}: ")),
+    # three directions at once; scratch with no project keeps the files they name (a worktree would not)
+    "design": tuple(Step("design", "designer", DESIGN_BRIEF, "25m", f"Design {v}: ", "scratch", True, v, "implementer")
+                    for v in DESIGN_DIRECTIONS),
+}
+STEP_TITLES = {"verify": "Verify:%", "fix": "Fix %", "plan": "Plan:%", "map": "Map:%", "design": "Design %"}
+
+
+def step_sql(t: str = "tasks") -> str:
+    """SQL for a card's step: its tag, else (cards made before tagging) its title."""
+    whens = " ".join(f"WHEN {t}.title LIKE '{like}' THEN '{key}'" for key, like in STEP_TITLES.items())
+    return f"coalesce({t}.current_step_key, CASE {whens} ELSE 'build' END)"
+
+
+def _step_role(step: Step) -> str:
+    try:
+        return _role(step.role)
+    except KeyError:
+        if not step.fallback:
+            raise
+        return _role(step.fallback)
+
+
+def card_argv(step: Step, title: str, request: str, project: str, parent: str | None = None,
+              priority: int = PRIORITY["small"], worktree: str | None = None, **ctx) -> tuple[list[str], str]:
+    """(`hermes kanban create` argv, assignee) for one step. Pure, for testing."""
+    assignee = _step_role(step)
+    ctx = {"round": 1, **ctx}
+    body = step.brief.format(request=request.strip(), reviewer=_role("reviewer"), lookups=PLAN_LOOKUPS,
+                             parent=parent, letter=step.variant, direction=DESIGN_DIRECTIONS.get(step.variant), **ctx)
+    workspace = f"dir:{worktree}" if step.workspace == "dir" else step.workspace
+    scope = ["--project", project] if project and step.workspace != "scratch" else []
+    return ["kanban", "create", step.prefix.format(**ctx) + title, "--assignee", assignee, "--body", body,
+            *scope, "--workspace", workspace, *(["--parent", parent] if parent else []),
+            "--priority", str(priority), "--max-runtime", step.runtime,
+            "--created-by", "delivery_submit", "--json"], assignee
+
+
+def run_flow(flow: str, title: str, request: str, project: str, *, parent: str | None = None, skip=(),
+             edit=lambda step, argv, chain: argv, after=lambda step, tid: None, **kw) -> tuple[dict, str | None]:
+    """Create a flow's cards in order: each waits on the one before (a parallel step on the same parent as
+    its siblings), tagged with the flow and step. (chain {step or variant: id}, error JSON or None)."""
+    chain, prev = {}, parent
+    for step in FLOWS[flow]:
+        if step.key in skip:
+            continue
+        argv, _ = card_argv(step, title, request, project, parent if step.parallel else prev, **kw)
+        tid, error = _create(edit(step, argv, chain))
+        if error:
+            return chain, (json.dumps({**json.loads(error), "created_so_far": chain}) if chain else error)
+        chain[step.variant or step.key] = tid
+        prev = prev if step.parallel else tid
+        _tag(tid, flow, step.key)
+        after(step, tid)
+    return chain, None
+
+
+def _tag(task_id: str, flow: str, step: str) -> None:
+    """`hermes kanban create` cannot set the step columns; Hermes copies current_step_key onto each run."""
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=rw", uri=True, timeout=10)
+        try:
+            with conn:
+                conn.execute("UPDATE tasks SET workflow_template_id = ?, current_step_key = ? WHERE id = ?",
+                             (flow, step, task_id))
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass  # untagged cards still match on their title
+
+
 def _roster_gaps():
     path = Path(__file__).resolve().parents[1] / "workflow" / "scripts" / "roster_gaps.py"
     spec = importlib.util.spec_from_file_location("roster_gaps", path)
@@ -560,44 +656,15 @@ def _subscribe_calling_chat(task_id: str) -> bool:
 
 
 def build_card(title: str, request: str, project: str, size: str) -> tuple[list[str], str]:
-    """(`hermes kanban create` argv, assignee) for a submission. Pure, for testing."""
-    if size == "content":  # straight to the implementer; same-card review, no plan or verify
-        assignee = _role("implementer")
-        body = CONTENT_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
-    elif size == "small":  # straight to the implementer, who plans inline (IMPLEMENTER step 1)
-        assignee = _role("implementer")
-        body = BUILD_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
-    else:  # map first on the cheap investigator; submit() chains plan + build on it
-        assignee = _role("investigator")
-        title = f"Map: {title}"
-        body = MAP_BRIEF.format(request=request.strip())  # chained_card() adds plan + build
-    argv = ["kanban", "create", title, "--assignee", assignee, "--body", body,
-            "--project", project, "--workspace", "worktree",
-            "--priority", str(PRIORITY[size]), "--max-runtime", MAX_RUNTIME[size],
-            "--created-by", "delivery_submit", "--json"]
-    return argv, assignee
+    """The first card of a submission's flow."""
+    return card_argv(FLOWS[size][0], title, request, project, priority=PRIORITY[size])
 
 
 def chained_card(stage: str, title: str, request: str, project: str, parent: str,
                  size: str = "large") -> tuple[list[str], str]:
-    """Card that starts only after `parent` is done: 'plan' (planner), 'build' (implementer), or
-    'verify' (verifier, scratch workspace; the workspace_prep hook sends it to the parent worktree)."""
-    workspace, scope = "worktree", ["--project", project]
-    if stage == "plan":
-        assignee, title = _role("planner"), f"Plan: {title}"
-        body = PLAN_BRIEF.format(request=request.strip(), lookups=PLAN_LOOKUPS)
-    elif stage == "verify":
-        # no --project: Hermes turns a project's scratch card into its own fresh worktree off the base branch,
-        # where 1 in 30 verifies checked the wrong code. Its project comes from the build card when needed.
-        assignee, title, workspace, scope = _role("verifier"), f"Verify: {title}", "scratch", []
-        body = VERIFY_BRIEF.format(request=request.strip()) + f"BUILD CARD: {parent}\n"
-    else:
-        assignee = _role("implementer")
-        body = BUILD_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
-    return ["kanban", "create", title, "--assignee", assignee, "--body", body,
-            *scope, "--workspace", workspace, "--parent", parent,
-            "--priority", str(PRIORITY[size]), "--max-runtime", MAX_RUNTIME.get(stage, MAX_RUNTIME["large"]),
-            "--created-by", "delivery_submit", "--json"], assignee
+    """A 'plan', 'build' or 'verify' card that starts only after `parent` is done."""
+    step = next(s for s in FLOWS["large"] if s.key == stage)
+    return card_argv(step, title, request, project, parent, PRIORITY[size])
 
 
 def _bare(title: str) -> str:
@@ -698,40 +765,33 @@ def submit(args: dict, **_kw) -> str:
                            "missing_roles": {r: f"{why} — fix: {rg.fix_hint(r)}" for r, why in gaps.items()}})
     if args.get("design") and not args.get("picked_design"):
         return design(args, title, request, _project_repo(project))
-    try:
-        argv, assignee = build_card(title, request, project, size)
-    except (OSError, KeyError) as exc:
-        return json.dumps({"ok": False, "error": str(exc)})
     bug = args.get("kind") == "bug" and size != "content"
-    if bug:
-        argv = _as_bug(argv, "map" if size == "large" else "build")
+    live_qa = args.get("live_qa")
     conventions = "\n\n".join(filter(None, [_conventions(project, args.get("base") or ""), args.get("picked_design")]))
     branch = branch_name(project, args.get("branch") or "")
-    with_branch = (lambda a: [*a, "--branch", branch]) if branch else (lambda a: a)
-    if size != "large":  # the implementer works on this first card
-        argv = with_branch(argv)
-    task_id, error = _create(_stamp(argv, conventions))
+
+    def edit(step, argv, chain):
+        if bug and step.key != "verify":
+            argv = _as_bug(argv, step.key)
+        if step.key == "verify" and live_qa:
+            argv = _add_body(argv, live_qa_section(chain["build"], args.get("qa_login")))
+        if step.key == "build" and branch:  # the implementer works on the build card
+            argv = [*argv, "--branch", branch]
+        return _stamp(argv, conventions)
+
+    def after(step, tid):
+        if step.key == "verify" and size == "small" and not live_qa:
+            _set_effort(tid, "low")
+
+    try:
+        chain, error = run_flow(size, title, request, project, priority=PRIORITY[size], edit=edit, after=after,
+                                skip=() if args.get("verify", True) else ("verify",))
+    except (OSError, KeyError) as exc:
+        return json.dumps({"ok": False, "error": str(exc)})
     if error:
         return error
-    result = {"ok": True, "task_id": task_id, "assignee": assignee, "size": size}
-    # each stage waits on the previous card; content is one card; verify unless verify=false
-    chain = {"large": {"map": task_id}, "small": {"build": task_id}, "content": {"build": task_id}}[size]
-    stages = {"large": ("plan", "build"), "small": (), "content": ()}[size]
-    if args.get("verify", True) and size != "content":
-        stages += ("verify",)
-    for stage in stages:
-        argv, _ = chained_card(stage, title, request, project, task_id, size)
-        if bug and stage != "verify":
-            argv = _as_bug(argv, stage)
-        if stage == "verify" and args.get("live_qa"):
-            argv = _add_body(argv, live_qa_section(chain["build"], args.get("qa_login")))
-        task_id, error = _create(_stamp(with_branch(argv) if stage == "build" else argv, conventions))
-        if error:
-            return json.dumps({**json.loads(error), "created_so_far": chain})
-        chain[stage] = task_id
-        if stage == "verify" and size == "small" and not args.get("live_qa"):
-            _set_effort(task_id, "low")
-    result.update(task_id=chain["build"], cards=chain)
+    result = {"ok": True, "task_id": chain["build"], "assignee": _step_role(FLOWS[size][0]), "size": size,
+              "cards": chain}
     result.update(
         chat_subscribed=all([_subscribe_calling_chat(tid) for tid in chain.values()]),
         next=("implementer edits, reviewer checks the wording on the same card" if size == "content" else
@@ -821,27 +881,22 @@ def verify_failed(args: dict, **_kw) -> str:
         return json.dumps({"ok": False, "error": "no parent worktree found; block your card with the failures"})
     request = _request_of(task["body"])
     project = task["project_id"] or ((build and _task_row(build["id"])) or {"project_id": ""})["project_id"] or ""
-    fix_title = f"Fix {rounds + 1}: {base_title}"
     state = _branch_state(worktree)
-    fix_argv = ["kanban", "create", fix_title, "--assignee", _role("implementer"),
-                "--body", FIX_BRIEF.format(round=rounds + 1, source="the verifier ran the reviewed change and it failed",
-                                           reporter="from the verifier", request=request, failures=failures,
-                                           reviewer=_role("reviewer"), **state),
-                *(["--project", project] if project else []), "--workspace", f"dir:{worktree}",
-                "--parent", verify_id, "--priority", str(PRIORITY["small"]),
-                "--max-runtime", MAX_RUNTIME["build"], "--created-by", "delivery_submit", "--json"]
-    fix_id, error = _create(_stamp(fix_argv, _conventions(project, state["pr_base"])))
+    conventions = _conventions(project, state["pr_base"])
+    live_qa = LIVE_QA_RE.search(task["body"] or "")
+
+    def edit(step, argv, chain):
+        if step.key == "fix":
+            return _stamp(argv, conventions)
+        return _add_body(argv, live_qa.group(0)) if live_qa else argv  # the re-verify tests the fixed screens again
+
+    chain, error = run_flow("fix", base_title, request, project, parent=verify_id, worktree=worktree, edit=edit,
+                            after=lambda step, tid: step.key == "verify" and not live_qa and _set_effort(tid, "low"),
+                            round=rounds + 1, source="the verifier ran the reviewed change and it failed",
+                            reporter="from the verifier", failures=failures, **state)
     if error:
         return error
-    argv, _ = chained_card("verify", fix_title, request, project, fix_id)
-    live_qa = LIVE_QA_RE.search(task["body"] or "")
-    if live_qa:  # the re-verify tests the fixed screens again, same account
-        argv = _add_body(argv, live_qa.group(0))
-    reverify_id, error = _create(argv)
-    if error:
-        return json.dumps({**json.loads(error), "created_so_far": {"fix": fix_id}})
-    if not live_qa:  # browser work needs the normal effort
-        _set_effort(reverify_id, "low")
+    fix_id, reverify_id = chain["fix"], chain["verify"]
     for tid in (fix_id, reverify_id):
         _copy_subscriptions(verify_id, tid)
     return json.dumps({"ok": True, "fix": fix_id, "verify": reverify_id, "round": rounds + 1,
@@ -873,25 +928,28 @@ def fix(args: dict) -> str:
             _journal("fix.merged", waiting, source=source_id)
             return json.dumps({"ok": True, "task_id": waiting, "merged_into": waiting, "fix_of": source_id,
                                "next": "added to the fix card that has not started yet; it handles both in one round"})
-    argv = ["kanban", "create", f"Fix {rounds + 1}: {base_title}", "--assignee", _role("implementer"),
-            "--body", FIX_BRIEF.format(round=rounds + 1, source="the user tested the PR and found a problem",
-                                       reporter="from the user's testing", request=request,
-                                       failures=failures, reviewer=_role("reviewer"), **state),
-            *(["--project", task["project_id"]] if task["project_id"] else []),
-            "--workspace", f"dir:{worktree}", "--priority", str(PRIORITY["small"]),
-            "--max-runtime", MAX_RUNTIME["build"], "--created-by", "delivery_submit", "--json"]
     picked = args.get("picked_design")
-    argv = _add_body(argv, picked) if picked else argv
-    fix_id, error = _create(_stamp(argv, _conventions(task["project_id"] or "", state["pr_base"])))
-    if error:
+    project = task["project_id"] or ""
+    conventions = _conventions(project, state["pr_base"])
+
+    def edit(step, argv, chain):
+        argv = _add_body(argv, picked) if picked else argv
+        return _stamp(argv, conventions) if step.key == "fix" else argv
+
+    def after(step, tid):
+        if step.key == "fix":  # before the verify is created: it copies the fix card's followers
+            _copy_subscriptions(source_id, tid)
+        else:
+            _set_effort(tid, "low")
+
+    # the user is the tester of their own feedback; a verifier only when asked
+    chain, error = run_flow("fix", base_title, request, project, worktree=worktree, edit=edit, after=after,
+                            skip=() if args.get("verify") else ("verify",), round=rounds + 1,
+                            source="the user tested the PR and found a problem", reporter="from the user's testing",
+                            failures=failures, **state)
+    if "fix" not in chain:
         return error
-    _copy_subscriptions(source_id, fix_id)
-    verify_id = None
-    if args.get("verify"):  # the user is the tester of their own feedback; a verifier only when asked
-        verify_argv, _ = chained_card("verify", f"Fix {rounds + 1}: {base_title}", request,
-                                      task["project_id"] or "", fix_id)
-        verify_id, _error = _create(_add_body(verify_argv, picked) if picked else verify_argv)
-        _set_effort(verify_id, "low")
+    fix_id, verify_id = chain["fix"], chain.get("verify")
     subscribed = all([_subscribe_calling_chat(t) for t in (fix_id, verify_id) if t])
     return json.dumps({"ok": True, "task_id": fix_id, "verify": verify_id, "fix_of": source_id,
                        "worktree": worktree, "chat_subscribed": subscribed,
@@ -904,23 +962,13 @@ def fix(args: dict) -> str:
 def design(args: dict, title: str, request: str, code) -> str:
     """Three designers mock up directions A/B/C in parallel; nothing is built until delivery_design_pick."""
     key = "d_" + secrets.token_hex(4)
-    try:
-        assignee = _role("designer")
-    except KeyError:
-        assignee = _role("implementer")
+    assignee = _step_role(FLOWS["design"][0])
     refs = (args.get("design_refs") or "").strip() or "none"
     code = (f"{code} (look, never change: the build happens after the pick)" if code else
             "no repository found: design from the REQUEST and REFERENCES")
-    cards = {}
-    for letter, direction in DESIGN_DIRECTIONS.items():
-        body = DESIGN_BRIEF.format(letter=letter, request=request, direction=direction, refs=refs, code=code, key=key)
-        # scratch with no --project: Hermes would make it a worktree, and keeps the named files only from scratch
-        tid, error = _create(["kanban", "create", f"Design {letter}: {title}", "--assignee", assignee, "--body", body,
-                              "--workspace", "scratch", "--priority", str(PRIORITY["small"]),
-                              "--max-runtime", MAX_RUNTIME["design"], "--created-by", "delivery_submit", "--json"])
-        if error:
-            return json.dumps({**json.loads(error), "created_so_far": cards})
-        cards[letter] = tid
+    cards, error = run_flow("design", title, request, "", refs=refs, code=code, key=key)
+    if error:
+        return error
     path = HERMES_HOME / "delivery" / "designs" / f"{key}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # the args may hold the QA test account
@@ -994,7 +1042,7 @@ def _waiting_fix(base_title: str, project) -> str | None:
     try:
         conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
         rows = conn.execute("SELECT id, title FROM tasks WHERE status IN ('todo','ready') AND created_by = "
-                            "'delivery_submit' AND title LIKE 'Fix %' AND coalesce(project_id,'') = ? "
+                            f"'delivery_submit' AND {step_sql()} = 'fix' AND coalesce(project_id,'') = ? "
                             "ORDER BY created_at", (project or "",)).fetchall()
         conn.close()
     except sqlite3.Error:
@@ -1075,7 +1123,8 @@ def _task_row(task_id: str):
     try:
         conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT title, body, project_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute(f"SELECT title, body, project_id, {step_sql()} AS step FROM tasks WHERE id = ?",
+                           (task_id,)).fetchone()
         conn.close()
         return row
     except sqlite3.Error:
@@ -1122,7 +1171,7 @@ def _worktree_users(worktree: str) -> list[str]:
         conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
         rows = conn.execute(
             f"SELECT id FROM tasks t WHERE status IN ({','.join('?' * len(LIVE))}) AND (workspace_path = ? "
-            "OR (title LIKE 'Verify:%' AND id IN (SELECT l.child_id FROM task_links l JOIN tasks p "
+            f"OR ({step_sql('t')} = 'verify' AND id IN (SELECT l.child_id FROM task_links l JOIN tasks p "
             "ON p.id = l.parent_id WHERE p.workspace_path = ?))) AND NOT EXISTS (SELECT 1 FROM task_links l "
             "JOIN tasks p ON p.id = l.parent_id WHERE l.child_id = t.id AND p.status IN ('blocked', 'triage')) "
             "ORDER BY created_at", (*LIVE, worktree, worktree)).fetchall()

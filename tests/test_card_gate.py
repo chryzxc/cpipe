@@ -55,8 +55,8 @@ def test_planner_plans_from_the_map_within_its_lookup_budget(tmp_path, monkeypat
     monkeypatch.setattr(card_gate, "_lookups", {})
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "archon"))
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_plan")
-    titles = {"t_plan": "Plan: add reminders", "t_spec": "Decide OTP architecture"}
-    monkeypatch.setattr(submit, "_task_row", lambda tid: {"title": titles[tid]})
+    steps = {"t_plan": "plan", "t_spec": "build"}  # submit._task_row's step: the card's tag, else its title
+    monkeypatch.setattr(submit, "_task_row", lambda tid: {"step": steps[tid]})
     for _ in range(submit.PLAN_LOOKUPS):
         assert card_gate.gate("read_file", {"path": "/repo/a.js"}) is None
     assert card_gate.gate("terminal", {"command": "hermes kanban complete t_plan"}) is None

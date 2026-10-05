@@ -5,3 +5,4 @@ import pytest
 def _isolated_hermes_home(tmp_path_factory, monkeypatch):
     """Nothing under test may write the operator's live ~/.hermes (journal, notices, state)."""
     monkeypatch.setenv("HERMES_HOME", str(tmp_path_factory.mktemp("hermes_home")))
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path_factory.mktemp("board") / "kanban.db"))  # never the live board
