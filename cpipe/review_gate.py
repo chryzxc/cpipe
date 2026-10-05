@@ -11,7 +11,9 @@
    branch needs none, and each such block cost a whole extra run.
 5. A kanban worker cannot start another agent (`hermes chat`, `codex exec`, `claude -p`): a nested
    consult cold-starts a whole agent and stalled one fix round about 15 minutes.
-6. The implementer's review request runs the operator's quality checks first (``quality.py``); a failure
+6. A fix round's review request with nothing committed since FIX BASE is refused: an approved but
+   uncommitted diff cost whole extra rounds just to commit and push it.
+   The implementer's review request runs the operator's quality checks first (``quality.py``); a failure
    refuses it with the output, so the reviewer never spends a round on what a command finds.
 7. A verify card completes only with a `VERDICT: PASS|FAIL <sha>` line: cpipe's join (``checks.py``) reads it.
 8. While a card has a verify check, neither its reviewer nor the verifier marks the PR ready: the join does,
@@ -108,6 +110,11 @@ def quality_gate(tid: str | None):
         row = _task(tid)
         if not row or MARKER not in (row["body"] or "") or row["assignee"] != submit._role("implementer"):
             return None
+        if _nothing_to_review(row):
+            return {"action": "block", "message": (
+                f"Review not filed: nothing is committed since FIX BASE, and review checks a commit, never an "
+                f"uncommitted diff. Commit and push your change (step 4), then request review. A round that "
+                f"changes no code completes {tid} itself with its result.")}
         base = workspace_prep.card_profile(tid, submit._db(), submit.HERMES_HOME).get("base_branch")
         return quality.review_request_gate(tid, row, base, submit.HERMES_HOME)
     except Exception:

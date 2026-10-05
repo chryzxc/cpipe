@@ -30,6 +30,19 @@ def test_fix_round_with_no_new_commit_completes_without_review(tmp_path, monkeyp
     assert review_gate.gate(tool_name="kanban_complete", args={"task_id": "t_1"})["action"] == "block"
 
 
+def test_a_fix_round_cannot_hand_review_an_uncommitted_diff(tmp_path, monkeypatch):
+    import subprocess
+    setup(tmp_path, monkeypatch, "forge", body=f"FIX BASE: abc1234 (HEAD before this round)\n{review_gate.MARKER}")
+    head = {"sha": "abc1234def"}
+    monkeypatch.setattr(review_gate.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, head["sha"] + "\n", ""))
+    monkeypatch.setattr(review_gate.quality, "review_request_gate", lambda *a, **k: None)
+    monkeypatch.setattr(review_gate.workspace_prep, "card_profile", lambda *a, **k: {})
+    verdict = review_gate.gate(tool_name="kanban_request_review", args={"task_id": "t_1"})
+    assert verdict["action"] == "block" and "Commit and push" in verdict["message"]
+    head["sha"] = "fff9999aaa"
+    assert review_gate.gate(tool_name="kanban_request_review", args={"task_id": "t_1"}) is None
+
+
 def test_reviewer_approval_passes_and_routes_verify(tmp_path, monkeypatch):
     routed = setup(tmp_path, monkeypatch, "sentry")
     assert review_gate.gate(tool_name="kanban_complete", args={"task_id": "t_1"}) is None

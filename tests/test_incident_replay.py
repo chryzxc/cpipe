@@ -204,3 +204,21 @@ def test_a_lasting_pr_guard_is_stuck_not_progressing(mon, tmp_path):
         event(conn, "t_v", "respawn_guarded", m, reason="active_pr")
     verdicts, _, _, _ = tick(mon, conn, tmp_path, mode="observe")
     assert (verdicts["t_v"].state, verdicts["t_v"].cause) == ("STUCK", "PR_GUARD")
+
+
+def test_a_reviewed_branch_nobody_pushed_is_stuck_unpublished(mon, tmp_path):
+    """Approved commits sat on the local branch; four fix rounds were spent only to push them."""
+    import subprocess
+    git = lambda *a, cwd=tmp_path / "wt": subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True)
+    subprocess.run(["git", "init", "-q", "--bare", str(tmp_path / "remote.git")], check=True)
+    subprocess.run(["git", "init", "-q", str(tmp_path / "wt")], check=True)
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a")
+    git("remote", "add", "origin", str(tmp_path / "remote.git"))
+    git("push", "-q", "-u", "origin", "HEAD:main")
+    conn = board(tmp_path / "kanban.db")
+    card(conn, "t_f", "review", minutes_ago=20, workspace_path=str(tmp_path / "wt"))
+    verdicts, _, _, _ = tick(mon, conn, tmp_path, mode="observe")
+    assert verdicts["t_f"].cause != "UNPUBLISHED"  # everything pushed
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "b")
+    verdicts, _, _, _ = tick(mon, conn, tmp_path, mode="observe")
+    assert (verdicts["t_f"].state, verdicts["t_f"].cause) == ("STUCK", "UNPUBLISHED")

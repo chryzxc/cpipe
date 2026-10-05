@@ -85,6 +85,7 @@ WHY = {
     "transient": "waiting on quota/retry, should resume by itself",
 }
 NEXT = {
+    "UNPUBLISHED": "the branch has commits nobody pushed; have the implementer push (or say it stays local), never a new fix round just to publish",
     "PR_GUARD": "the worker that opened the PR would start again; reassign the card if a second run is right",
     "DEAD_WORKER": "the claim is released so the card respawns; restart the gateway if it recurs",
     "STALE_GUARD": "a stale quota error holds the card; clear it (`hermes kanban show` → last error)",
@@ -232,9 +233,25 @@ def load_board(conn, now, home: Path = HERMES_HOME) -> dict:
             "WHERE e.kind='rate_limited' AND e.created_at>=?", (since,)):
         rate_limited[assignee] = rate_limited.get(assignee, 0) + 1
     health = _load(home / "logs" / "dispatch-health.json")
+    ahead: dict = {}
+    for t in tasks.values():
+        path = t.get("workspace_path")
+        if path and t["status"] in ("ready", "review", "blocked", "triage") and path not in ahead:
+            ahead[path] = _unpushed(path)
+    unpushed = {tid: ahead.get(t.get("workspace_path"), 0) for tid, t in tasks.items()}
     return {"tasks": tasks, "runs": runs, "events": events, "parents": parents, "children": children,
             "status_of": status_of, "subs": subs, "rate_limited": rate_limited,
-            "holds": health.get("holds") or {}, "health": health}
+            "holds": health.get("holds") or {}, "health": health, "unpushed": unpushed}
+
+
+def _unpushed(path) -> int:
+    """Commits on the worktree's branch that its upstream lacks; 0 without a branch upstream."""
+    try:
+        out = subprocess.run(["git", "-C", path, "rev-list", "--count", "@{u}..HEAD"],
+                             capture_output=True, text=True, timeout=10)
+        return int(out.stdout.strip()) if out.returncode == 0 else 0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0
 
 
 def _moved_at(tid, b) -> float:
@@ -344,6 +361,11 @@ def classify(tid, b, now, st=None, watches=None) -> Verdict:
         if waste:
             waste.chain = chain
             return waste
+
+    ahead = (b.get("unpushed") or {}).get(tid)
+    if ahead and status != "running" and idle >= CLAIM_GRACE_MINUTES * 60:
+        return v("STUCK", "UNPUBLISHED", f"{status} {_age(idle)}: {ahead} commit(s) on its branch were never pushed",
+                 escalate=True)
 
     if status == "running":
         pid, beat = t.get("worker_pid"), t.get("last_heartbeat_at") or t.get("started_at") or t["created_at"]
