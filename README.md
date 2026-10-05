@@ -44,6 +44,20 @@ The flows are data in `cpipe/submit.py`:
 
 A test (`tests/test_flows.py`) fails if any step has no edge out.
 
+## The ideas behind it
+
+| Concept | Where it shows up |
+|---|---|
+| **Agentic graph** | Steps are nodes and outcomes are edges (`FLOWS`, `EDGES`). Code picks the next step from each card's result; the LLM only does the work inside a node |
+| **Loop engineering** | Closed loops, each bounded: RED → GREEN inside a build; review → rework (2 rounds); verify → fix → verify (2 rounds); the monitor's sense → repair every 5 minutes. When a loop hits its limit, it stops and asks you |
+| **Orchestrator–worker** | The coordinator routes and reports, never implements. Workers are short-lived sessions of your profiles, one per card |
+| **Evidence-based gating** | `pre_tool_call` gates refuse a step without its proof (RED line, `CALLERS CHECKED`, `VERDICT`). Missing evidence blocks; it never passes |
+| **Deterministic first** | Routing, monitoring, retries, triage and the delivery chat are scripts and hooks that cost no tokens. The LLM wakes only for judgment |
+| **Sized ceremony** | Process scales with blast radius: content skips plan and tests, large gets a mapped, reviewed plan |
+| **Context isolation** | Each card sees its brief and its parent's result, never the chat, in its own worktree |
+| **Kanban pull** | The Hermes dispatcher pulls ready cards within per-profile caps. Children start when their parents finish |
+| **Human in the loop** | You decide at round limits, on design picks, and on merge, deploy and credentials. Bots never do |
+
 ## What each step must prove
 
 | Step | Evidence checked by code |
