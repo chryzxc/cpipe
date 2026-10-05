@@ -316,6 +316,10 @@ def register(ctx):
         schema=submit.VERIFY_FAILED_SCHEMA["function"], handler=_live(submit, "verify_failed"),
     )
     ctx.register_tool(
+        name="delivery_design_pick", toolset="cpipe",
+        schema=submit.DESIGN_PICK_SCHEMA["function"], handler=_live(submit, "design_pick"),
+    )
+    ctx.register_tool(
         name="delivery_test_env", toolset="cpipe",
         schema=test_env.SCHEMA["function"], handler=_live(test_env, "run"),
     )

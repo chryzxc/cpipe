@@ -28,6 +28,7 @@ def test_registers_delivery_tools():
     assert sorted(context.tools) == [
         'delivery_board_intelligence',
         'delivery_check_policy',
+        'delivery_design_pick',
         'delivery_mutation_check',
         'delivery_status',
         'delivery_submit',
