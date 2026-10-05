@@ -56,7 +56,7 @@ A test (`tests/test_flows.py`) fails if any step has no edge out.
 | **Sized ceremony** | Process scales with blast radius: content skips plan and tests, large gets a mapped, reviewed plan |
 | **Context isolation** | Each card sees its brief and its parent's result, never the chat, in its own worktree |
 | **Kanban pull** | The Hermes dispatcher pulls ready cards within per-profile caps. Children start when their parents finish |
-| **Learning loop** | Weekly, `board_intelligence.py` counts review finding classes; any class seen 3+ times in 28 days becomes a drafted standards amendment for you to approve. `python3 -m cpipe.brief_replay` re-runs past map/plan cards with today's briefs to show whether a change made them cheaper |
+| **Learning loop** | Weekly, `board_intelligence.py` counts review finding classes; any class seen 3+ times in 28 days becomes a drafted standards amendment for you to approve. `python3 -m cpipe.outcomes` reads how each delivery went (review rounds, fix rounds, verify fails, fixes you had to send); a failure repeated across deliveries of one project becomes a drafted lesson, and the lessons you approve in `~/.hermes/delivery/lessons.yaml` are stamped into that project's next cards. `python3 -m cpipe.brief_replay` re-runs past map/plan cards with today's briefs to show whether a change made them cheaper |
 | **Human in the loop** | You decide at round limits, on design picks, and on merge, deploy and credentials. Bots never do |
 
 ## What each step must prove
@@ -109,6 +109,10 @@ checks:
   - { name: lint, files: "*.ts *.vue", run: "npx eslint --max-warnings=0 {files}" }
 guidance:
   reviewer: "Also check loading, empty and error states."
+
+# lessons.yaml: approved lessons, the newest 10 go on every card of the project ("*": all projects)
+my-app:
+  - { text: "Run `prisma generate` before the tests", added: 2026-10-05 }
 ```
 
 ## Tools and commands
@@ -135,6 +139,7 @@ cpipe/review_gate.py   review, verdict and round-limit gates
 cpipe/card_gate.py     card creation, public-text and plan-budget gates
 cpipe/flow.py          per-delivery chat
 cpipe/status.py        verdicts, watches, chat hooks
+cpipe/outcomes.py      how each delivery went, lesson candidates
 workflow/bots/         example personas and role skills
 workflow/scripts/      monitor, triage, supervisor, housekeeping, audits
 workflow/cron.jobs.json, config.assertions.yaml, roster.example.yaml

@@ -875,9 +875,29 @@ def _conventions(project: str, base: str = "") -> str:
     profile = workspace_prep.project_profile(project, HERMES_HOME)
     base = (base or "").strip()
     if not base or base == profile.get("base_branch"):
-        return workspace_prep.profile_brief(profile)
-    return (f"PR BASE: `{base}` (start from origin/{base} and open the PR against it; this overrides the "
-            "project's base branch below)\n" + workspace_prep.profile_brief({**profile, "base_branch": base}))
+        text = workspace_prep.profile_brief(profile)
+    else:
+        text = (f"PR BASE: `{base}` (start from origin/{base} and open the PR against it; this overrides the "
+                "project's base branch below)\n" + workspace_prep.profile_brief({**profile, "base_branch": base}))
+    return "\n\n".join(filter(None, [text, lessons_brief(project)]))
+
+
+MAX_LESSONS = 10  # per card: the newest win, so the brief never grows without bound
+
+
+def lessons_brief(project: str) -> str:
+    """The operator's approved lessons for this project (and "*" for every project), from
+    $HERMES_HOME/delivery/lessons.yaml: `<project>: [text, or {text: ..., added: ...}]`."""
+    try:
+        import yaml
+        data = yaml.safe_load((HERMES_HOME / "delivery" / "lessons.yaml").read_text()) or {}
+    except Exception:
+        return ""
+    items = [*(data.get("*") or []), *((data.get(project) or []) if project else [])]
+    texts = [str(i.get("text") if isinstance(i, dict) else i).strip() for i in items]
+    texts = [t for t in texts if t and t != "None"][-MAX_LESSONS:]
+    return ("LESSONS (learned from past deliveries; follow them):\n" + "\n".join(f"- {t}" for t in texts)
+            if texts else "")
 
 
 def _stamp(argv: list[str], conventions: str) -> list[str]:
