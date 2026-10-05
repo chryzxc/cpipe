@@ -24,6 +24,7 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import shutil
 import sqlite3
 import subprocess
@@ -35,7 +36,7 @@ HERMES_HOME = _root_home()
 PRIORITY = {"content": 30, "small": 20, "large": 10}
 # a whole feature is one session: a timeout kills it mid-build and the retry starts cold
 LIVE = ("todo", "ready", "running", "review", "scheduled")  # blocked/triage wait on the user: not live
-MAX_RUNTIME = {"content": "25m", "small": "60m", "large": "60m", "map": "20m", "plan": "20m", "build": "60m"}
+MAX_RUNTIME = {"content": "25m", "small": "60m", "large": "60m", "map": "20m", "plan": "20m", "build": "60m", "design": "25m"}
 MAX_FIX_ROUNDS = 2
 MAX_REQUEST_CHARS = 3000
 DUPLICATE_TITLE_RATIO = 0.85
@@ -413,6 +414,49 @@ QA_NO_LOGIN = "the user gave no test account: test what works without one and li
 LIVE_QA_RE = re.compile(r"LIVE QA \(the user asked for it.*?END LIVE QA\n", re.S)
 
 
+DESIGN_BRIEF = """DESIGN {letter} of 3: mock up how this could look. Do not build it. Three designers work at the
+same time, each in a different direction, and the user picks one before any code is written. Never edit, commit,
+install or push in the repository; no PR.
+
+REQUEST (from the user):
+{request}
+
+DIRECTION {letter}: {direction}
+REFERENCES from the user: {refs}
+
+CODE (read-only): {code}
+Read the screens this request touches and the styles they use (theme tokens, component library, fonts, spacing,
+icons) so the mockup looks like this app, unless your direction says otherwise.
+
+DELIVER in your workspace (the current directory), loading the `frontend-design` skill if you have it:
+1. `design-{letter}.html`: one self-contained file (inline CSS and JS, no build step; web fonts are the only external
+   assets) that opens in a browser. Desktop (1440px) and mobile (390px) layouts behind a toggle, realistic data, and
+   the loading, empty and error states the screen has. Interactions the request names work in plain JS.
+2. With a browser tool: `design-{letter}-desktop.png` and `design-{letter}-mobile.png` screenshots of it.
+RESULT: first line `DESIGN {letter}: <the idea in one line>`, then 3-5 bullets on what sets this direction apart and
+what it costs to build (new components, data the app does not have yet). Name each file by its absolute path: that
+keeps it after the card ends and sends it to the user.
+DESIGN SET: {key}
+"""
+DESIGN_DIRECTIONS = {
+    "A": "closest to the app as it is: its existing components, tokens and patterns; the smallest visual change "
+         "that fully meets the request.",
+    "B": "follow the user's REFERENCES as closely as this app allows. With none, follow the best-known product that "
+         "solves this problem well, and name it.",
+    "C": "a fresh take: a layout or interaction A (the app as it is) and B (the references) would not choose, still "
+         "usable by the app's current users.",
+}
+DESIGN_SET_RE = re.compile(r"^DESIGN SET: (d_[0-9a-f]+)$", re.M)
+PICKED_DESIGN = """PICKED DESIGN {letter} (the user chose it from three mockups before this card was made): build the
+REQUEST to look and behave like it. The mockup is the target for layout, hierarchy, spacing, copy and states; build it
+with the app's real components, tokens and data, not the mockup's code. Open the file in a browser to see it.
+{files}
+The designer's summary:
+{summary}
+USER NOTES on the pick (they override the mockup): {notes}
+END PICKED DESIGN
+"""
+
 FIX_BRIEF = """FIX ROUND {round}: {source}.
 token_budget: low.
 
@@ -602,15 +646,20 @@ def branch_name(project: str, branch: str, exists=None) -> str | None:
     return candidate
 
 
-def _branch_exists(project: str):
-    """Checker for local or origin branches in the project's primary repo (never true when unknown)."""
+def _project_repo(project: str):
+    """The project's primary repo path, or None when unknown."""
     try:
         from hermes_cli import projects_db
         with projects_db.connect_closing() as conn:
             proj = projects_db.get_project(conn, project)
-        repo = proj and (proj.primary_path or (proj.folders[0].path if proj.folders else None))
+        return (proj and (proj.primary_path or (proj.folders[0].path if proj.folders else None))) or None
     except Exception:
-        repo = None
+        return None
+
+
+def _branch_exists(project: str):
+    """Checker for local or origin branches in the project's primary repo (never true when unknown)."""
+    repo = _project_repo(project)
     if not repo:
         return lambda name: False
     return lambda name: any(subprocess.run(["git", "-C", repo, "show-ref", "--verify", "--quiet", ref]).returncode == 0
@@ -645,6 +694,8 @@ def submit(args: dict, **_kw) -> str:
         return json.dumps({"ok": False, "error": "Can't start: required roles have no working bot. "
                            "Tell the user exactly which ones and how to fix them; no card was created.",
                            "missing_roles": {r: f"{why} — fix: {rg.fix_hint(r)}" for r, why in gaps.items()}})
+    if args.get("design") and not args.get("picked_design"):
+        return design(args, title, request, _project_repo(project))
     try:
         argv, assignee = build_card(title, request, project, size)
     except (OSError, KeyError) as exc:
@@ -652,7 +703,7 @@ def submit(args: dict, **_kw) -> str:
     bug = args.get("kind") == "bug" and size != "content"
     if bug:
         argv = _as_bug(argv, "map" if size == "large" else "build")
-    conventions = _conventions(project, args.get("base") or "")
+    conventions = "\n\n".join(filter(None, [_conventions(project, args.get("base") or ""), args.get("picked_design")]))
     branch = branch_name(project, args.get("branch") or "")
     with_branch = (lambda a: [*a, "--branch", branch]) if branch else (lambda a: a)
     if size != "large":  # the implementer works on this first card
@@ -808,9 +859,11 @@ def fix(args: dict) -> str:
         return json.dumps({"ok": False, "error": f"no card with a live worktree found for {ref}; "
                            "submit it as new work (size=small) naming the PR branch"})
     request = _request_of(task["body"])
+    base_title = re.sub(r"^(Fix \d+: )+", "", task["title"] or "")
+    if args.get("design") and not args.get("picked_design"):
+        return design(args, base_title, f"{request}\n\nTHE USER TESTED THE PR AND WANTS:\n{failures}", worktree)
     state = _branch_state(worktree)
     rounds = len(re.findall(r"^Fix \d+:", task["title"] or ""))
-    base_title = re.sub(r"^(Fix \d+: )+", "", task["title"] or "")
     waiting = _waiting_fix(base_title, task["project_id"])
     if waiting:  # one round takes every correction sent before it starts: no second fix + verify chain
         added = _hermes("kanban", "comment", waiting, f"ADDED REQUEST from the user's testing (handle it in this round):\n{failures}")
@@ -825,6 +878,8 @@ def fix(args: dict) -> str:
             *(["--project", task["project_id"]] if task["project_id"] else []),
             "--workspace", f"dir:{worktree}", "--priority", str(PRIORITY["small"]),
             "--max-runtime", MAX_RUNTIME["build"], "--created-by", "delivery_submit", "--json"]
+    picked = args.get("picked_design")
+    argv = _add_body(argv, picked) if picked else argv
     fix_id, error = _create(_stamp(argv, _conventions(task["project_id"] or "", state["pr_base"])))
     if error:
         return error
@@ -833,7 +888,7 @@ def fix(args: dict) -> str:
     if args.get("verify"):  # the user is the tester of their own feedback; a verifier only when asked
         verify_argv, _ = chained_card("verify", f"Fix {rounds + 1}: {base_title}", request,
                                       task["project_id"] or "", fix_id)
-        verify_id, _error = _create(verify_argv)
+        verify_id, _error = _create(_add_body(verify_argv, picked) if picked else verify_argv)
         _set_effort(verify_id, "low")
     subscribed = all([_subscribe_calling_chat(t) for t in (fix_id, verify_id) if t])
     return json.dumps({"ok": True, "task_id": fix_id, "verify": verify_id, "fix_of": source_id,
@@ -842,6 +897,94 @@ def fix(args: dict) -> str:
                                "re-checks the new change" + (", then the verifier runs the tests" if verify_id else "")
                                + "; you get a message when it is ready to test again. Send further corrections "
                                "with fix_of while it waits: they join this round"})
+
+
+def design(args: dict, title: str, request: str, code) -> str:
+    """Three designers mock up directions A/B/C in parallel; nothing is built until delivery_design_pick."""
+    key = "d_" + secrets.token_hex(4)
+    try:
+        assignee = _role("designer")
+    except KeyError:
+        assignee = _role("implementer")
+    refs = (args.get("design_refs") or "").strip() or "none"
+    code = (f"{code} (look, never change: the build happens after the pick)" if code else
+            "no repository found: design from the REQUEST and REFERENCES")
+    cards = {}
+    for letter, direction in DESIGN_DIRECTIONS.items():
+        body = DESIGN_BRIEF.format(letter=letter, request=request, direction=direction, refs=refs, code=code, key=key)
+        # scratch with no --project: Hermes would make it a worktree, and keeps the named files only from scratch
+        tid, error = _create(["kanban", "create", f"Design {letter}: {title}", "--assignee", assignee, "--body", body,
+                              "--workspace", "scratch", "--priority", str(PRIORITY["small"]),
+                              "--max-runtime", MAX_RUNTIME["design"], "--created-by", "delivery_submit", "--json"])
+        if error:
+            return json.dumps({**json.loads(error), "created_so_far": cards})
+        cards[letter] = tid
+    path = HERMES_HOME / "delivery" / "designs" / f"{key}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # the args may hold the QA test account
+    with os.fdopen(fd, "w") as fh:
+        json.dump({"args": {k: v for k, v in args.items() if k not in ("design", "design_refs")}, "cards": cards}, fh)
+    _journal("design.started", cards["A"], key=key)
+    return json.dumps({"ok": True, "design": key, "cards": cards, "assignee": assignee,
+                       "chat_subscribed": all([_subscribe_calling_chat(t) for t in cards.values()]),
+                       "next": "three designers mock it up in parallel (A: closest to the app, B: the user's "
+                               "references, C: a fresh take); each sends its HTML file and screenshots when done. "
+                               "Show the user all three, ask which one and any mix (\"A with B's header\"), then call "
+                               f"delivery_design_pick with design={key}. Nothing is built before that."})
+
+
+def design_pick(args: dict, **_kw) -> str:
+    """The user picked a mockup: submit the build (or fix) with the picked design on every card."""
+    ref, letter = str(args.get("design") or "").strip(), str(args.get("choice") or "").strip().upper()[:1]
+    if re.fullmatch(r"t_[0-9a-f]+", ref):
+        m = DESIGN_SET_RE.search((_task_row(ref) or {"body": ""})["body"] or "")
+        ref = m[1] if m else ref
+    path = HERMES_HOME / "delivery" / "designs" / f"{ref}.json"
+    if not re.fullmatch(r"d_[0-9a-f]+", ref) or not path.exists():
+        return json.dumps({"ok": False, "error": f"no design set {ref}: pass the design key or a Design card id"})
+    pending = json.loads(path.read_text())
+    if pending.get("picked"):
+        return json.dumps({"ok": False, "error": f"already picked {pending['picked']}: send changes with fix_of"})
+    card = pending["cards"].get(letter)
+    if not card:
+        return json.dumps({"ok": False, "error": "choice is A, B or C"})
+    files, summary, status = _design_output(card)
+    if status != "done":
+        return json.dumps({"ok": False, "error": f"Design {letter} ({card}) is {status}, not done: wait for it"})
+    others = {k: _design_output(t)[0] for k, t in pending["cards"].items() if k != letter}
+    notes = (args.get("notes") or "").strip()
+    listing = "\n".join(f"- {f}" for f in files) or f"- (no file kept: see kanban_show {card})"
+    if notes:  # "A with B's header": the builder can open the mockups the notes mention
+        listing += "".join(f"\nDesign {k} (for the notes): " + (", ".join(fs) or f"kanban_show {pending['cards'][k]}")
+                           for k, fs in others.items())
+    section = PICKED_DESIGN.format(letter=letter, files=listing, summary=summary.strip()[:1500] or "(none)",
+                                   notes=notes or "none")
+    # force: the duplicate check ran before the designs, and an unfinished one would match now
+    result = json.loads(submit({**pending["args"], "picked_design": section, "force": True}))
+    if result.get("ok"):
+        pending["picked"] = letter
+        path.write_text(json.dumps(pending))
+        _journal("design.picked", card, key=ref, choice=letter, notes=bool(notes))
+    return json.dumps({**result, "picked": letter})
+
+
+def _design_output(task_id: str) -> tuple[list[str], str, str]:
+    """(kept files, result text, status) of a design card: Hermes copies the files it named to attachments."""
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        try:
+            status, result = conn.execute("SELECT status, coalesce(result, '') FROM tasks WHERE id = ?",
+                                          (task_id,)).fetchone() or ("missing", "")
+            try:
+                files = [r[0] for r in conn.execute("SELECT stored_path FROM task_attachments WHERE task_id = ? "
+                                                    "ORDER BY id", (task_id,))]
+            except sqlite3.Error:
+                files = []
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return [], "", "missing"
+    return files, result, status
 
 
 def _waiting_fix(base_title: str, project) -> str | None:
@@ -1032,6 +1175,25 @@ VERIFY_FAILED_SCHEMA = {
     },
 }
 
+DESIGN_PICK_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "delivery_design_pick",
+        "description": ("The user picked one of the three design mockups from delivery_submit(design=true): "
+                        "starts the build (or fix) with the picked design on every card. Show the user all three "
+                        "files first and pass their choice and any mix in their words."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "design": {"type": "string", "description": "The design key delivery_submit returned (d_...) or any Design card id"},
+                "choice": {"type": "string", "enum": ["A", "B", "C"], "description": "The mockup the user picked"},
+                "notes": {"type": "string", "description": "Changes the user wants on top of it, e.g. \"with B's header, no dark mode\""},
+            },
+            "required": ["design", "choice"],
+        },
+    },
+}
+
 SCHEMA = {
     "type": "function",
     "function": {
@@ -1049,6 +1211,8 @@ SCHEMA = {
             "fix_of=<card id or PR URL> when the user tested a PR and found a problem: the request says "
             "what is wrong; one fix card on the same branch updates the PR (reviewed, no verify card unless "
             "verify=true). Corrections sent before that fix card starts join it, so pass each one as it comes. "
+            "design=true first has three designers mock up different looks in parallel; the build starts "
+            "only after the user picks one (delivery_design_pick). "
             "Returns the card id; progress and the result come back to this chat."),
         "parameters": {
             "type": "object",
@@ -1063,6 +1227,8 @@ SCHEMA = {
                 "live_qa": {"type": "boolean", "description": "UI changes only. Before submitting one, ask the user once (clarify): should the verifier test it live in the browser, and if the app needs a login, which test account? true only when they say yes. The verifier starts the app, logs in, checks the changed screens at desktop and mobile width, and reports breaks as failures and design issues as notes."},
                 "qa_login": {"type": "object", "description": "With live_qa: the test account the user gave (never a real person's account, never guessed). Stored in a private file, not on the card.", "properties": {"username": {"type": "string"}, "password": {"type": "string"}, "notes": {"type": "string", "description": "Login URL, 2FA or role notes the user gave"}}},
                 "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},
+                "design": {"type": "boolean", "description": "UI work where the look is the open question (a new screen, a redesign, a layout the user describes loosely, or a fix_of saying it looks wrong): three designers first mock up directions A (closest to the app), B (the user's references), C (a fresh take) as HTML files, and nothing is built until the user picks one with delivery_design_pick. Not for copy, a small style tweak, or a UI the user already specified exactly."},
+                "design_refs": {"type": "string", "description": "With design: what the user wants it to look like, in their words: products or sites to resemble, screenshot or image paths they sent, colors, things they dislike now"},
                 "branch": {"type": "string", "description": "New work: the branch to create, named by your project conventions (memory). Omit for Hermes's default. Not for fix_of."},
                 "base": {"type": "string", "description": "New work: the branch to start from and open the PR against when the user names one (\"branch out from X\"), e.g. web-develop. Omit for the project's base branch. Not for fix_of: a fix follows its PR's base."},
             },
