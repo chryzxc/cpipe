@@ -105,5 +105,10 @@ def test_worker_cannot_start_a_nested_agent(monkeypatch):
     blocked = review_gate.gate("terminal", {"command": "hermes -p cypher chat -q 'judge this diff'"})
     assert blocked and blocked["action"] == "block"
     assert review_gate.gate("terminal", {"command": "git log --oneline | grep chat"}) is None
+    assert review_gate.gate("terminal", {"command": "cd /x && hermes chat -q hi"})["action"] == "block"
+    # incident t_fe644e4d: a hermes path plus a chat component path blocked every lint and gh pr create
+    for ok in ("python3 ~/.hermes/scripts/quality/diff_lint.py origin/dev client/src/components/chat/ChatMessage.vue",
+               "gh pr create --draft --title 'fix(chat): x' --body-file /Users/u/.hermes/profiles/forge/pr.md"):
+        assert review_gate.gate("terminal", {"command": ok}) is None
     monkeypatch.delenv("HERMES_KANBAN_TASK")
     assert review_gate.gate("terminal", {"command": "hermes -p cypher chat -q hi"}) is None

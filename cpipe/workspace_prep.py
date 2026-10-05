@@ -207,6 +207,12 @@ def card_profile(task_id: Optional[str], db: Path, home: Optional[Path] = None) 
     try:
         conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
         row = conn.execute("SELECT project_id, body FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row and not row[0]:  # a verify card carries no project: use the card it checks
+            build = re.search(r"^BUILD CARD: (t_[0-9a-f]+)", row[1] or "", re.M)
+            found = conn.execute("SELECT project_id FROM tasks WHERE id = ? OR id IN (SELECT parent_id FROM "
+                                 "task_links WHERE child_id = ?) ORDER BY project_id IS NULL LIMIT 1",
+                                 (build[1] if build else "", task_id)).fetchone()
+            row = ((found and found[0]), row[1])
         conn.close()
     except sqlite3.Error:
         row = None

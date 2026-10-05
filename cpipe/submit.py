@@ -582,18 +582,20 @@ def chained_card(stage: str, title: str, request: str, project: str, parent: str
                  size: str = "large") -> tuple[list[str], str]:
     """Card that starts only after `parent` is done: 'plan' (planner), 'build' (implementer), or
     'verify' (verifier, scratch workspace; the workspace_prep hook sends it to the parent worktree)."""
-    workspace = "worktree"
+    workspace, scope = "worktree", ["--project", project]
     if stage == "plan":
         assignee, title = _role("planner"), f"Plan: {title}"
         body = PLAN_BRIEF.format(request=request.strip(), lookups=PLAN_LOOKUPS)
     elif stage == "verify":
-        assignee, title, workspace = _role("verifier"), f"Verify: {title}", "scratch"
+        # no --project: Hermes turns a project's scratch card into its own fresh worktree off the base branch,
+        # where 1 in 30 verifies checked the wrong code. Its project comes from the build card when needed.
+        assignee, title, workspace, scope = _role("verifier"), f"Verify: {title}", "scratch", []
         body = VERIFY_BRIEF.format(request=request.strip()) + f"BUILD CARD: {parent}\n"
     else:
         assignee = _role("implementer")
         body = BUILD_BRIEF.format(request=request.strip(), reviewer=_role("reviewer"))
     return ["kanban", "create", title, "--assignee", assignee, "--body", body,
-            "--project", project, "--workspace", workspace, "--parent", parent,
+            *scope, "--workspace", workspace, "--parent", parent,
             "--priority", str(PRIORITY[size]), "--max-runtime", MAX_RUNTIME.get(stage, MAX_RUNTIME["large"]),
             "--created-by", "delivery_submit", "--json"], assignee
 
@@ -818,7 +820,7 @@ def verify_failed(args: dict, **_kw) -> str:
     if not worktree:
         return json.dumps({"ok": False, "error": "no parent worktree found; block your card with the failures"})
     request = _request_of(task["body"])
-    project = task["project_id"] or ""
+    project = task["project_id"] or ((build and _task_row(build["id"])) or {"project_id": ""})["project_id"] or ""
     fix_title = f"Fix {rounds + 1}: {base_title}"
     state = _branch_state(worktree)
     fix_argv = ["kanban", "create", fix_title, "--assignee", _role("implementer"),

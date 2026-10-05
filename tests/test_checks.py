@@ -129,3 +129,14 @@ def test_verify_failure_during_review_joins_the_review_round(tmp_path, monkeypat
     result = json.loads(submit.verify_failed({"task_id": "t_v", "failures": "jest: a.test.js fails"}))
     assert result["ok"] and result["routed_to"] == "t_b"
     assert calls[0][:3] == ("kanban", "comment", "t_b") and "jest: a.test.js fails" in calls[0][3]
+
+
+def test_a_verify_card_takes_its_project_from_the_card_it_checks(tmp_path, monkeypatch):
+    from cpipe import workspace_prep
+    conn, *_ = delivery(tmp_path, monkeypatch)
+    conn.commit()
+    monkeypatch.setattr(workspace_prep, "project_profile", lambda project, home=None: {"base_branch": "dev"} if project == "app" else {})
+    assert workspace_prep.card_profile("t_v", tmp_path / "kanban.db") == {"base_branch": "dev", "project": "app"}
+    conn.execute("DELETE FROM task_links")  # released: only the BUILD CARD line is left
+    conn.commit()
+    assert workspace_prep.card_profile("t_v", tmp_path / "kanban.db")["project"] == "app"

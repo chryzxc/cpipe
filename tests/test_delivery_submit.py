@@ -78,6 +78,8 @@ def test_verify_card_by_default(tmp_path, monkeypatch):
     assert arg(calls[1], "--assignee") == "sentinel" and arg(calls[1], "--parent") == "t_1"
     assert "PLATFORM" in arg(calls[1], "--body") and "VERDICT: PASS" in arg(calls[1], "--body")
     assert arg(calls[1], "--body").endswith("BUILD CARD: t_1\n")
+    # a project would make Hermes give the verify its own fresh worktree off the base branch
+    assert "--project" not in calls[1] and arg(calls[1], "--workspace") == "scratch" and arg(calls[0], "--project") == "p"
     assert "PRE-EXISTING" in arg(calls[1], "--body") and "NO BROWSER OR LIVE QA" in arg(calls[1], "--body")
     content = json.loads(submit.submit({"title": "Copy", "request": "r", "project": "p", "size": "content"}))
     assert "verify" not in content["cards"]
