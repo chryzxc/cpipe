@@ -38,7 +38,8 @@ COMPLETE_CMD = re.compile(r"\bkanban\s+complete\s+(t_[0-9a-f]+)")
 BLOCK_CMD = re.compile(r"\bkanban\s+block\b(.*?)\b(t_[0-9a-f]+)\b(.*)", re.S)
 COMMIT_ASK = re.compile(r"COMMIT_READY|\b(authori[sz]|approv|validat|permission|sign.?off)\w*\b[^.\n]{0,80}\bcommit"
                         r"|\bcommit\w*\b[^.\n]{0,80}\b(authori[sz]|approv|validat|permission|sign.?off)", re.I)
-NESTED_AGENT = re.compile(r"\bhermes\b[^|;&\n]*\bchat\b|\bcodex\s+exec\b|\bclaude\s+(-p|--print)\b")
+# `hermes [-p X] chat` as a command: a path like ~/.hermes/... next to components/chat/ is not one.
+NESTED_AGENT = re.compile(r"(?<![\w./~-])hermes\s+(?:(?:-p|--profile)\s+\S+\s+)?chat\b|\bcodex\s+exec\b|\bclaude\s+(-p|--print)\b")
 PLATFORM_PATH = re.compile(
     r"(^|/)(\.github/|\.gitlab-ci|\.circleci/|Dockerfile|docker-compose|compose\.ya?ml$|Procfile$|"
     r"nginx|helm/|k8s/|terraform/|infra/|deploy/|migrations?/|\.env\.example$|\.nvmrc$|"
