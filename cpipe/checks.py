@@ -8,10 +8,10 @@ after approval cost a fix card, a second review and a second verify. On each dis
   scratch dir), so PROOF's BASE checkout never touches the worktree the reviewer reads. Hermes
   starts a child only when every parent is done, so the link is dropped; the verify body's
   `BUILD CARD:` line keeps the relation.
-* join: once the build card is approved (done) and its verify is done, PASS on the approved commit
-  marks the PR ready. PASS on an older commit (review asked for changes after it), or a FAIL that
-  went back into the open review round, gets a delta verify of what changed since. A FAIL after
-  approval already opened a fix card (``delivery_verify_failed``).
+* join: a finished verify's outcome (``outcome``) picks the next step from ``submit.EDGES``: PASS on
+  the approved commit marks the PR ready, a FAIL while review is open joins that round, PASS or FAIL
+  on an older commit gets a delta verify of what changed since, a FAIL on the approved commit opens
+  the fix flow.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional
 
 from . import review_gate, submit
@@ -133,48 +134,89 @@ def _delta(build_row, verify: str, verify_body: str, verdict: str, sha: str) -> 
     live_qa = submit.LIVE_QA_RE.search(verify_body or "")
     argv = submit._add_body(argv, extra + ("\n" + live_qa.group(0) if live_qa else ""))
     # ponytail: the CLI create can stall on a plugin rebuild; a thread keeps the tick moving.
+    argv = submit._add_body(argv, f"DELIVERY: {submit.delivery_of(build, body)}")
     threading.Thread(target=lambda: (tid := submit._create(argv)[0]) and submit._tag(tid, "delta", "verify"),
                      daemon=True).start()
     submit._journal("verify.delta", build, earlier=verify, sha=sha)
 
 
-def join(conn, root: Path, state: dict, *, ready=None, delta=None) -> list[tuple[str, str]]:
-    """Act on every verify done since cpipe started joining. Returns (verify id, action) pairs."""
+def outcome(conn, verify: str, body: Optional[str], result: Optional[str], state: dict):
+    """(submit.EDGES outcome, the card it checks, verdict, sha) of a finished verify."""
+    build = build_of(conn, verify, body)
+    verdict, sha = _verdict(conn, verify, result)
+    if build and build[1] not in ("done", "archived"):
+        return ("fail_review" if verdict == "FAIL" else "wait"), build, verdict, sha
+    head = build and build[1] == "done" and _git(build[2], "rev-parse", "HEAD")
+    if not head:
+        return "orphan", build, verdict, sha
+    sha = sha or state.get("released", {}).get(verify) or head
+    same = head.startswith(sha) or sha.startswith(head)
+    if verdict is None:
+        return "no_verdict", build, verdict, sha
+    if verdict == "PASS":
+        return ("pass" if same else "pass_old"), build, verdict, sha
+    fixing = conn.execute("SELECT 1 FROM task_links l JOIN tasks t ON t.id = l.child_id WHERE l.parent_id = ? "
+                          f"AND {submit.step_sql('t')} = 'fix'", (verify,)).fetchone()
+    return ("fixing" if fixing else "fail" if same else "fail_old"), build, verdict, sha
+
+
+def _fix(verify: str, result: str) -> None:
+    """The fix flow for a verify that failed on the approved commit (what the verifier's tool call did)."""
+    def run():
+        out = json.loads(submit.verify_failed({"task_id": verify, "failures": result}))
+        submit._journal("verify.fix" if out.get("ok") else "verify.fix_failed", verify, error=out.get("error"))
+    threading.Thread(target=run, daemon=True).start()  # CLI creates: see _delta
+
+
+def _to_review(conn, board, build: str, verify: str, result: str) -> None:
+    """Failures found while review is open go to that round, once (a verifier's tool call may have sent them)."""
+    head = f"VERIFY FAILED ({verify}"
+    if conn.execute("SELECT 1 FROM task_comments WHERE task_id = ? AND instr(body, ?) > 0", (build, head)).fetchone():
+        return
+    board.comment(build, f"{head}, run beside this review):\n{result}\nReviewer: a High finding unless its failing "
+                         "command passes at HEAD. Implementer: fix it with the review findings.")
+
+
+# what the tick does for each submit.EDGES action of a finished verify
+ACTIONS = {
+    "ready": lambda c, v, b, body, verdict, sha, result: c.ready(b[2]),
+    "delta": lambda c, v, b, body, verdict, sha, result: c.delta(b, v, body, verdict, sha),
+    "fix": lambda c, v, b, body, verdict, sha, result: c.fix(v, result),
+    "to_review": lambda c, v, b, body, verdict, sha, result: c.board and _to_review(c.conn, c.board, b[0], v, result),
+    "none": lambda *a: None,
+}
+
+
+def join(conn, root: Path, state: dict, *, ready=None, delta=None, fix=None, board=None) -> list[tuple[str, str]]:
+    """Follow submit.EDGES for every verify done since cpipe started joining. Returns (verify id, action) pairs."""
     ready = ready or (lambda wt: subprocess.run(["gh", "pr", "ready"], cwd=wt, capture_output=True, timeout=60))
-    delta = delta or _delta
+    ctx = SimpleNamespace(conn=conn, board=board, ready=ready, delta=delta or _delta, fix=fix or _fix)
     joined = state.setdefault("joined", [])
+    routed = state.setdefault("routed", [])
     rows = conn.execute(
-        f"SELECT id, body, result FROM tasks WHERE {submit.step_sql()} = 'verify' AND status = 'done' "
+        f"SELECT id, body, coalesce(result, '') FROM tasks WHERE {submit.step_sql()} = 'verify' AND status = 'done' "
         "AND created_by = 'delivery_submit' AND completed_at >= ?", (int(state["since"]),)).fetchall()
     done = []
     for verify, body, result in rows:
         if verify in joined:
             continue
-        build = build_of(conn, verify, body)
-        if build and build[1] not in ("done", "archived"):
-            continue  # review still open: wait for its verdict
+        name, build, verdict, sha = outcome(conn, verify, body, result, state)
+        result = result.strip() or f"see the result of {verify} (kanban_show {verify})"
+        action = submit.EDGES[("verify", name)]
+        if name in ("wait", "fail_review"):  # review still open: join once it is approved
+            if action != "none" and verify not in routed:
+                routed.append(verify)
+                ACTIONS[action](ctx, verify, build, body, verdict, sha, result)
+                done.append((verify, action))
+            continue
         joined.append(verify)
-        action = "none"
-        if build and build[1] == "done" and (head := _git(build[2], "rev-parse", "HEAD")):
-            verdict, sha = _verdict(conn, verify, result)
-            sha = sha or state.get("released", {}).get(verify) or head
-            same = head.startswith(sha) or sha.startswith(head)
-            fixed = conn.execute("SELECT 1 FROM task_links l JOIN tasks t ON t.id = l.child_id WHERE l.parent_id = ? "
-                                 f"AND {submit.step_sql('t')} = 'fix'", (verify,)).fetchone()
-            if verdict == "PASS" and same:
-                ready(build[2])
-                action = "ready"
-            elif verdict == "PASS" or (verdict == "FAIL" and not fixed):
-                delta(build, verify, body, verdict, sha)
-                action = "delta"
-            elif verdict is None:
-                action = "no_verdict"
-            if verify in state.get("released", {}):
-                _git(build[2], "worktree", "remove", "--force", str(root / verify))
-                _git(build[2], "worktree", "prune")
-        submit._journal(f"verify.join.{action}", verify, build=build and build[0])
+        ACTIONS[action](ctx, verify, build, body, verdict, sha, result)
+        if build and verify in state.get("released", {}):
+            _git(build[2], "worktree", "remove", "--force", str(root / verify))
+            _git(build[2], "worktree", "prune")
+        submit._journal(f"verify.join.{name}", verify, build=build and build[0], action=action)
         done.append((verify, action))
-    del joined[:-500]
+    del joined[:-500], routed[:-500]
     return done
 
 
@@ -202,7 +244,7 @@ def run_checks(*, dry_run: bool = False, board: Optional[str] = None, home: Opti
             root = kanban_db.workspaces_root()
             with connect_closing() as conn:
                 release(conn, Board(conn), root, state)
-                join(conn, root, state)
+                join(conn, root, state, board=Board(conn))
             state_path.write_text(json.dumps(state))
     except Exception:
         pass

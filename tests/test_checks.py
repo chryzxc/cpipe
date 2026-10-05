@@ -140,3 +140,43 @@ def test_a_verify_card_takes_its_project_from_the_card_it_checks(tmp_path, monke
     conn.execute("DELETE FROM task_links")  # released: only the BUILD CARD line is left
     conn.commit()
     assert workspace_prep.card_profile("t_v", tmp_path / "kanban.db")["project"] == "app"
+
+
+def test_failure_on_the_approved_commit_opens_the_fix_flow(tmp_path, monkeypatch):
+    conn, wt, git = delivery(tmp_path, monkeypatch)
+    conn.execute("DELETE FROM task_links")
+    finish(conn, "t_v", "done", f"VERDICT: FAIL {git('rev-parse', 'HEAD')}\njest: a.test.js fails")
+    finish(conn, "t_b", "done")
+    fixes = []
+    acts = checks.join(conn, tmp_path / "ws", {"since": 0}, fix=lambda *a: fixes.append(a))
+    assert acts == [("t_v", "fix")] and fixes[0][0] == "t_v" and "a.test.js fails" in fixes[0][1]
+
+
+def test_failure_during_review_joins_that_round_once(tmp_path, monkeypatch):
+    conn, wt, git = delivery(tmp_path, monkeypatch)
+    conn.execute("DELETE FROM task_links")
+    finish(conn, "t_v", "done", "VERDICT: FAIL 0123456789abc\njest: a.test.js fails")
+    fake, state = FakeBoard(conn), {"since": 0}
+    assert checks.join(conn, tmp_path / "ws", state, board=fake) == [("t_v", "to_review")]
+    assert fake.comments[0][0] == "t_b" and "a.test.js fails" in fake.comments[0][1]
+    assert checks.join(conn, tmp_path / "ws", state, board=fake) == [] and len(fake.comments) == 1
+    finish(conn, "t_b", "done")  # approved after the implementer fixed it: re-verify what changed
+    deltas = []
+    assert checks.join(conn, tmp_path / "ws", state, delta=lambda *a: deltas.append(a)) == [("t_v", "delta")]
+
+
+def test_a_failure_past_the_round_limit_waits_for_the_user(tmp_path, monkeypatch):
+    conn, *_ = delivery(tmp_path, monkeypatch)
+    conn.execute("UPDATE tasks SET body = body || 'DELIVERY: t_b' WHERE id = 't_v'")
+    for n, parent in ((1, "t_v0"), (2, "t_v1")):  # two fix rounds a failed verify opened
+        card(conn, parent, "done", title="Verify: Add export", current_step_key="verify")
+        card(conn, f"t_f{n}", "done", title=f"Fix {n}: Add export", body="DELIVERY: t_b", current_step_key="fix")
+        link(conn, parent, f"t_f{n}")
+    finish(conn, "t_b", "done")
+    conn.commit()
+    monkeypatch.setattr(submit, "_db", lambda: tmp_path / "kanban.db")
+    monkeypatch.setattr(review_gate, "_task", lambda tid: conn.execute(
+        "SELECT assignee, body, workspace_path, project_id FROM tasks WHERE id = ?", (tid,)).fetchone())
+    blocked = review_gate.gate("kanban_complete", {"task_id": "t_v", "result": "VERDICT: FAIL abc1234\nx"})
+    assert blocked["action"] == "block" and "round limit" in blocked["message"]
+    assert review_gate.gate("kanban_complete", {"task_id": "t_v", "result": "VERDICT: PASS abc1234\nok"}) is None

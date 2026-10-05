@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from cpipe import submit
+from cpipe import checks, submit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kanban_board import board, card  # noqa: E402
@@ -52,3 +52,19 @@ def test_steps_match_the_tag_and_fall_back_to_the_title(tmp_path):
     card(conn, "t_spec", "todo", title="Decide the OTP design")
     steps = dict(conn.execute(f"SELECT id, {submit.step_sql()} FROM tasks").fetchall())
     assert steps == {"t_old": "verify", "t_new": "verify", "t_spec": "build"}
+
+
+def test_the_graph_has_no_dead_ends():
+    steps = {step.key for flow in submit.FLOWS.values() for step in flow}
+    assert steps == {step for step, _ in submit.EDGES}  # every step has edges, every edge a step
+    assert all((step, "done") in submit.EDGES for step in steps - {"verify"})
+    elsewhere = {"next", "user_pick", "ask_user", "start_verify"}  # Hermes, the pick tool, the gate, release
+    assert set(submit.EDGES.values()) <= elsewhere | set(checks.ACTIONS)
+    assert submit.EDGES[("verify", "fail_limit")] == "ask_user"  # the fix loop is bounded
+
+
+def test_later_cards_name_their_delivery(tmp_path, monkeypatch):
+    calls, conn = tagged_board(tmp_path, monkeypatch)
+    submit.submit({"title": "Add export", "request": "CSV export", "project": "p", "size": "large"})
+    bodies = [arg(c, "--body") for c in calls]
+    assert "DELIVERY:" not in bodies[0] and all(b.rstrip().endswith("DELIVERY: t_1") for b in bodies[1:])

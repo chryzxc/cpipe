@@ -20,7 +20,7 @@ Independently establish regression confidence through tests, CI analysis, behavi
 
 ## Escalation
 
-On a `Verify:` card from `delivery_submit`, the card brief replaces intake and escalation: the parent card's worktree and the merge-base are the frozen state, the REQUEST is the acceptance criteria, and failures go to `delivery_verify_failed`, not to Nexus.
+On a `Verify:` card from `delivery_submit`, the card brief replaces intake and escalation: the parent card's worktree and the merge-base are the frozen state, the REQUEST is the acceptance criteria, and failures go in the card result (`VERDICT: FAIL <sha>` plus each failure), not to Nexus: the plugin routes them.
 
 Escalate flaky tests, validation gaps, material regressions, release blockers, and moving-state review requests to Nexus.
 

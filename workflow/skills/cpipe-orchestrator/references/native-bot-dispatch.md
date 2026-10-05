@@ -52,7 +52,7 @@ The Coordinator configuration uses `kanban.auto_decompose: false`; route deliber
 
 ### Create
 
-Coding work in a registered project goes through the `delivery_submit` tool; rework goes through `delivery_submit` with `fix_of` or `delivery_verify_failed`. The card gate refuses a hand-made card assigned to any delivery role (implementer, reviewer, verifier, planner, investigator, release engineer, security reviewer/tester). Hand-create cards only for other profiles:
+Coding work in a registered project goes through the `delivery_submit` tool; rework goes through `delivery_submit` with `fix_of`; a failed verify opens its own fix round. The card gate refuses a hand-made card assigned to any delivery role (implementer, reviewer, verifier, planner, investigator, release engineer, security reviewer/tester). Hand-create cards only for other profiles:
 
 ```bash
 hermes kanban create "<precise task title>" \
