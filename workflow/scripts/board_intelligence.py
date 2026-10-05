@@ -67,6 +67,19 @@ def _flat_roles(path):
     return roles
 
 
+def _outcomes():
+    """cpipe/outcomes.py from the installed plugin (this script runs from ~/.hermes/scripts) or the repo."""
+    import importlib.util
+    for path in (H / 'plugins' / 'cpipe' / 'cpipe' / 'outcomes.py',
+                 Path(__file__).resolve().parents[2] / 'cpipe' / 'outcomes.py'):
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location('cpipe_outcomes', path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+    return None
+
+
 def main():
     now = time.time()
     lines = ['# Board intelligence', '']
@@ -169,6 +182,16 @@ def main():
     if recurrent:
         lines.append('## Finding-class recurrence (28d)')
         lines.extend(f'- {cls}: {n} (e.g. {tid})' for cls, n, tid in recurrent)
+
+    outcomes = _outcomes()
+    if outcomes:
+        try:
+            rows = outcomes.deliveries(sqlite3.connect(f'file:{DB}?mode=ro', uri=True), now - 28 * 86400)
+        except sqlite3.Error:
+            rows = []
+        if rows:
+            lines.append('## Deliveries (28d)')
+            lines.append(outcomes.report(rows).replace('## ', '### '))
 
     metrics_log = H / 'logs' / 'delivery-metrics.jsonl'
     if metrics_log.is_file():
