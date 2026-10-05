@@ -140,7 +140,9 @@ def test_fix_of_a_pr_reopens_the_same_worktree(tmp_path, monkeypatch):
     assert fix[2] == "Fix 1: Gate SMS" and arg(fix, "--assignee") == "forge"
     assert arg(fix, "--workspace") == "dir:/repo/.worktrees/t1"
     body = arg(fix, "--body")
-    assert "toggle does not save" in body and "Gate SMS on consent\n\nFAILURES" in body
+    assert body.index("toggle does not save") < body.index("Gate SMS on consent")  # newest instructions first
+    assert "these win" in body and "only the FAILURES can hold the push" in body
+    assert submit._request_of(body).strip() == "Gate SMS on consent"  # the next round copies the original only
     assert "--reviewer sentry" in body and "{" not in body and "FIX BASE: unknown" in body
 
 

@@ -459,11 +459,11 @@ END PICKED DESIGN
 FIX_BRIEF = """FIX ROUND {round}: {source}.
 token_budget: low.
 
-REQUEST (from the user):
-{request}
-
-FAILURES ({reporter}):
+FAILURES ({reporter}; the newest instructions: where they conflict with the REQUEST below, these win):
 {failures}
+
+REQUEST (from the user; the original request, background for the FAILURES above):
+{request}
 
 You are in the same worktree and branch as the original change; its PR updates when you push.
 FIX BASE: {fix_base} (HEAD before this round). Files this branch already changes:
@@ -478,6 +478,8 @@ A request that needs no code change (run something locally, reproduce, set up da
 test): do only that, and the moment it works complete this card with `hermes kanban complete <this
 card id> --summary "<URLs / how to use it / what you verified>"` with no new commit, so the user gets it
 now. No extra hardening, receipts, or review for it.
+A round that changes code ends committed and pushed (step 4) before review, even if the REQUEST said
+not to push; only the FAILURES can hold the push. Review checks a commit, never an uncommitted diff.
 Fix these failures only, then follow steps 3-7 (PINNED tests must still pass):
 """ + SCOPE + "\n" + IMPLEMENTER
 
@@ -1195,7 +1197,8 @@ def _set_effort(task_id, effort: str) -> None:
 
 def _request_of(body) -> str:
     """The user's REQUEST out of a card body this module wrote."""
-    return re.split(r"\n\n(?:CONTEXT:|FAILURES \(|FIND CODE:|Work in)", (body or "").split("REQUEST (from the user):\n", 1)[-1], maxsplit=1)[0]
+    request = re.split(r"REQUEST \(from the user[^)]*\):\n", body or "", maxsplit=1)[-1]
+    return re.split(r"\n\n(?:CONTEXT:|FAILURES \(|FIND CODE:|Work in|You are in the same worktree)", request, maxsplit=1)[0]
 
 
 def _card_worktree(task_id: str):
