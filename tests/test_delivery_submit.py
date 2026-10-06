@@ -146,6 +146,22 @@ def test_fix_of_a_pr_reopens_the_same_worktree(tmp_path, monkeypatch):
     assert review_gate.MARKER not in body and "{" not in body and "FIX BASE: unknown" in body
 
 
+def test_fix_of_a_verify_card_fixes_the_card_it_checked(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    _built_card(monkeypatch)
+    rows = {"t_v": {"title": "Verify: Fix 1: Gate SMS", "project_id": "", "body": "", "step": "verify"},
+            "t_f": {"title": "Fix 1: Gate SMS", "project_id": "my-app", "body": submit.BUILD_BRIEF.format(
+                request="Gate SMS on consent", reviewer="sentry"), "step": "fix", "status": "done"}}
+    monkeypatch.setattr(submit, "_task_row", rows.get)
+    monkeypatch.setattr(submit, "_verify_build", lambda tid: {"id": "t_f"} if tid == "t_v" else None)
+    monkeypatch.setattr(submit, "_card_worktree", lambda tid: {"t_v": "/scratch/t_v", "t_f": "/repo/.worktrees/t1"}[tid])
+    monkeypatch.setattr(submit, "_card_for_pr", lambda url: "t_v")  # the newest card naming the PR is the verify
+    result = json.loads(submit.submit({"fix_of": "https://github.com/o/r/pull/7", "request": "still broken"}))
+    [fix] = calls
+    assert result["fix_of"] == "t_f" and fix[2] == "Fix 2: Gate SMS"
+    assert arg(fix, "--workspace") == "dir:/repo/.worktrees/t1"
+
+
 def test_fix_of_with_review_keeps_the_review_lane(tmp_path, monkeypatch):
     calls = fake_board(tmp_path, monkeypatch)
     _built_card(monkeypatch)
