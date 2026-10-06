@@ -41,13 +41,16 @@ def test_plugin_registers_cli_command_and_tools():
 
     class Ctx:
         def __init__(self):
-            self.calls, self.tools = [], {}
+            self.calls, self.tools, self.commands = [], {}, {}
 
         def register_cli_command(self, **kw):
             self.calls.append(kw)
 
         def register_tool(self, **kw):
             self.tools[kw["name"]] = kw
+
+        def register_command(self, name, handler, **kw):
+            self.commands[name] = handler
 
     ctx = Ctx()
     pkg.register(ctx)
@@ -56,6 +59,10 @@ def test_plugin_registers_cli_command_and_tools():
     assert {t["toolset"] for t in ctx.tools.values()} == {"cpipe"}
     # a tool error is returned to the chat, never raised
     assert "error" in json.loads(ctx.tools["cpipe_ship"]["handler"]({"request": "x", "project": "nope"}))
+    # the same, as slash commands
+    assert set(ctx.commands) == {"cp-ship", "cp-feedback", "cp-ready", "cp-status", "cp-stop"}
+    assert ctx.commands["cp-ship"]("") == "usage: /cp-ship [project:] <request>"
+    assert ctx.commands["cp-ship"]("nope: x").startswith("cpipe: unknown project")
 
 
 def test_daemon_logs_reach_stderr_when_host_configured_logging(hermes_home, capsys):

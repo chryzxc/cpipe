@@ -157,6 +157,13 @@ Deliveries are started and steered from Hermes chat through the `cpipe` toolset:
 | `cpipe_status` | Reports where one delivery, or every open delivery, stands |
 | `cpipe_stop` | Stops a delivery and archives its card |
 
+The same actions are slash commands, typed directly into a Hermes chat. They answer at once, without a model turn:
+
+```text
+/cp-ship [project:] <request>      /cp-feedback <card> <changes>      /cp-ready <card> [last changes]
+/cp-status [card]                  /cp-stop <card>
+```
+
 The chat that starts a delivery is notified when the pull request is ready to test, when a decision is needed, and
 when the delivery completes. GitHub access uses the `gh` CLI; without it, the branch is pushed and no pull request
 is opened.
