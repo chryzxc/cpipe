@@ -1,4 +1,4 @@
-"""``hermes cpipe <run|tick|lanes|doctor>`` (also ``python -m cpipe.runtime``)."""
+"""``hermes cpipe <run|tick|lanes|doctor|status|report>`` (also ``python -m cpipe.runtime``)."""
 
 from __future__ import annotations
 
@@ -21,6 +21,10 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     sub.add_parser("tick", help="run a single discovery/claim pass and exit")
     sub.add_parser("lanes", help="print the validated lane registry")
     sub.add_parser("doctor", help="check config, Hermes compatibility and executor availability")
+    for name, what in (("status", "open deliveries"), ("report", "time, runs and tokens per delivery and node")):
+        p = sub.add_parser(name, help=what)
+        p.add_argument("--json", action="store_true")
+        p.add_argument("--board", default=None)
 
 
 class _StderrHandler(logging.StreamHandler):
@@ -51,6 +55,14 @@ def _setup_logging() -> None:
 def handle(args: argparse.Namespace) -> int:
     _setup_logging()
     cmd = getattr(args, "wr_command", None) or "doctor"
+    if cmd in ("status", "report"):
+        from contextlib import closing
+        from ... import report
+        from . import hermes_api
+        with closing(hermes_api.connect(args.board)) as conn:
+            items = report.rows(conn, open_only=cmd == "status")
+        print(json.dumps(items, indent=2) if args.json else report.render(items))
+        return 0
     try:
         config = load_config(args.config)
     except ConfigError as exc:
