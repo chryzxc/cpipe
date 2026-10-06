@@ -90,7 +90,9 @@ def changed_files(ws: Path, base: str) -> list[str]:
 
 
 def _run(cmd: str, ws: Path) -> Optional[subprocess.CompletedProcess]:
-    proc = subprocess.Popen(cmd, shell=True, cwd=ws, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    # Hermes's own Python path would shadow the packages of Python-based checks (semgrep crashed on its mcp)
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME")}
+    proc = subprocess.Popen(cmd, shell=True, cwd=ws, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, errors="replace", start_new_session=True)
     try:
         out, _ = proc.communicate(timeout=CHECK_TIMEOUT)

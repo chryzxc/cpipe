@@ -63,3 +63,10 @@ def test_guidance_goes_to_the_profiles_role(tmp_path, monkeypatch):
     assert quality.first_turn_notes("sentry", "app", home) == ["Check UI states."]
     assert quality.first_turn_notes("nobody", "app", home) == []
     assert quality.first_turn_notes("forge", "app", tmp_path / "unset") == []
+
+
+def test_checks_run_without_hermes_python_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", "/hermes/venv/site-packages")
+    monkeypatch.setenv("PYTHONHOME", "/hermes/python")
+    done = quality._run('test -z "$PYTHONPATH$PYTHONHOME"', tmp_path)
+    assert done.returncode == 0
