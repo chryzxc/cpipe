@@ -29,6 +29,7 @@ DEFAULTS: dict[str, Any] = {
     "engines": {"codex": {"bin": CODEX_APP if os.path.exists(CODEX_APP) else "codex", "concurrency": 3}},
     "limits": {"checks": 3, "qa": 2, "review": 2, "ci": 2, "round_minutes": 90},
     "env_pass": [],
+    "projects_root": "~/Projects",  # where a new project's repo is started
 }
 # What a round needs besides the runtime's base allowlist: the Hermes home, and engine / gh auth.
 ENV_PASS = ("HERMES_HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",

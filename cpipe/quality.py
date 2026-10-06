@@ -55,7 +55,7 @@ def _checks(cfg: dict, project: Optional[str]) -> list[dict]:
 
 def diff_base(ws: Path, base_branch: Optional[str]) -> Optional[str]:
     """The whole branch, from where it left its base: the checks run once, on the final check before merge."""
-    for ref in ([f"origin/{base_branch}"] if base_branch else []) + ["origin/HEAD"]:
+    for ref in ([f"origin/{base_branch}"] if base_branch else []) + ["origin/HEAD"] + ([base_branch] if base_branch else []):
         out = subprocess.run(["git", "-C", str(ws), "merge-base", ref, "HEAD"], capture_output=True, text=True)
         if out.returncode == 0:
             return out.stdout.strip()

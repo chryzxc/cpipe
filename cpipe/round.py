@@ -54,7 +54,7 @@ def save_state(ws: Path, state: dict) -> None:
 def new_state(ws: Path, task, engine: str) -> dict:
     project = workspace_prep.project_of(ws)
     profile = workspace_prep.project_profile(project)
-    return {"v": 1, "project": project, "base": profile.get("base_branch") or "main", "engine": engine,
+    return {"v": 1, "project": project, "base": profile.get("base_branch") or workspace_prep.default_branch(ws), "engine": engine,
             "model": task.model_override, "node": "setup", "session": None, "last_comment_id": 0,
             "assumptions": [], "usage": {}, "by_node": {}, "timeline": [], "request": task.title}
 
@@ -216,7 +216,7 @@ class Round:
         return ("ok" if r.status == "done" else r.status), prompt
 
     def base_sha(self) -> str:
-        return quality.diff_base(self.ws, self.state["base"]) or f"origin/{self.state['base']}"
+        return quality.diff_base(self.ws, self.state["base"]) or pr.base_ref(self.ws, self.state["base"])
 
     def checks(self, prompt: str, said: str):
         failures = quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id)

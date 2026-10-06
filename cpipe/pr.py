@@ -6,6 +6,7 @@ and added lines they go back to the engine (``fix``); in the PR title and body (
 summary) they are redacted.
 
 Without ``gh`` or a GitHub remote the branch is still pushed and the delivery hands off without a pull request.
+Without any remote (a new local project) the branch stays local.
 """
 
 from __future__ import annotations
@@ -38,6 +39,11 @@ def github(ws: Path) -> bool:
     return bool(shutil.which("gh")) and _gh(ws, "repo", "view", "--json", "url").returncode == 0
 
 
+def base_ref(ws: Path, base: str) -> str:
+    """``origin/<base>``, or the local ``<base>`` in a repo without that remote branch."""
+    return f"origin/{base}" if _git(ws, "rev-parse", "--verify", "-q", f"origin/{base}").returncode == 0 else base
+
+
 def redact(text: str, ws: Path) -> str:
     return LEAK.sub("[redacted]", (text or "").replace(str(ws), "."))
 
@@ -63,13 +69,16 @@ def body(state: dict, ws: Path) -> str:
 
 def publish(ws: Path, state: dict, branch: str) -> tuple[str, str]:
     """``(outcome, detail)``: ok, fix (leaks or no commits: back to the engine) or blocked (push failed)."""
-    base = f"origin/{state['base']}"
+    base = base_ref(ws, state["base"])
     if not _git(ws, "rev-list", f"{base}..HEAD").stdout.strip():
         return "fix", "There are no commits on the branch. Commit the change."
     found = leaks(ws, base)
     if found:
         return "fix", ("The branch's commit messages or added lines contain local paths or internal ids, which must "
                        "not be published: " + ", ".join(found[:10]) + ". Remove them (reword the commits too) and commit.")
+    if _git(ws, "remote", "get-url", "origin").returncode != 0:
+        state.setdefault("notes", {})["pr"] = f"No remote: the change is on the local branch {branch}."
+        return "ok", state["notes"]["pr"]
     push = _git(ws, "push", "--force-with-lease", "origin", f"HEAD:refs/heads/{branch}")
     if push.returncode != 0:
         return "blocked", f"git push failed: {(push.stderr or push.stdout).strip()[-1500:]}"
