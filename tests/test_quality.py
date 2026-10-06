@@ -89,3 +89,30 @@ def test_a_broken_check_tool_is_skipped_and_reported_until_it_runs(tmp_path, mon
     notes = quality.first_turn_notes("forge", "app", home)
     assert any("cannot run on this machine" in n and "gone" in n for n in notes)
     assert "no-such-tool" not in notes[-1]  # not listed as a check to run
+
+
+def test_a_check_dies_with_the_worker_that_started_it(tmp_path):
+    import os
+    import sys
+    import time
+    pidfile = tmp_path / "pid"
+    code = ("import sys; from pathlib import Path; from cpipe import quality; "
+            f"quality._run('echo $$ > {pidfile}; sleep 60', Path(sys.argv[1]))")
+    worker = subprocess.Popen([sys.executable, "-c", code, str(tmp_path)])
+    for _ in range(50):
+        if pidfile.exists() and pidfile.read_text().strip():
+            break
+        time.sleep(0.1)
+    check = int(pidfile.read_text())
+    worker.kill()  # the worker dies mid-check, so its own timeout never fires
+    worker.wait()
+    for _ in range(50):
+        try:
+            os.kill(check, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        os.killpg(check, 9)
+        raise AssertionError("the check outlived its worker")
+    assert quality._run("exit 3", tmp_path).returncode == 3  # a check's own exit code still comes through
