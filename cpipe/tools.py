@@ -71,7 +71,10 @@ def ship(args: dict) -> dict:
     projects = {k: v for k, v in workspace_prep.projects().items() if v.get("repo")}
     name = args.get("project") or (next(iter(projects)) if len(projects) == 1 else None)
     if name not in projects:
-        return {"error": f"unknown project {name!r}; one of: {', '.join(projects) or 'none configured'}"}
+        if not projects:
+            return {"error": "no project has a repo yet: add `repo: <path to the git checkout>` to a project in "
+                             "~/.hermes/delivery/projects.yaml"}
+        return {"error": f"which project? one of: {', '.join(projects)} (/cp-ship <project>: <request>)"}
     engine = args.get("engine") or projects[name].get("engine") or cfg["default_engine"]
     if engine not in cfg["engines"]:
         return {"error": f"unknown engine {engine!r}; one of: {', '.join(cfg['engines'])}"}
