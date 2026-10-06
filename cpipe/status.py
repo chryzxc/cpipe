@@ -303,11 +303,17 @@ def compact_show(*, tool_name: str = "", result: Any = None, **_: Any) -> Option
         return None
     if not isinstance(data, dict) or "worker_context" not in data:
         return None
+    # worker_context already carries the comment thread, prior attempts (run summaries) and the events that matter:
+    # the raw arrays repeated them (a 97K view was 21K comments, 13K runs, 10K heartbeat-heavy events)
+    data.pop("comments", None)
+    data["runs"] = [{k: r.get(k) for k in ("id", "profile", "status", "outcome")} for r in (data.get("runs") or [])[-3:]]
+    data["events"] = [{**e, "payload": str(e.get("payload"))[:200]}
+                      for e in [e for e in data.get("events") or [] if e.get("kind") != "heartbeat"][-5:]]
     worker = bool(os.environ.get("HERMES_KANBAN_TASK"))
     card = (data.get("task") or {}).get("id")
     if worker and card not in _SHOWN:
         _SHOWN.add(card)
-        return None
+        return json.dumps(data)
     task = data.get("task") or {}
     for k in ("result", "last_failure_error"):
         if isinstance(task.get(k), str) and len(task[k]) > SHOW_KEEP:
@@ -315,7 +321,6 @@ def compact_show(*, tool_name: str = "", result: Any = None, **_: Any) -> Option
     ctx = data.pop("worker_context") or ""
     _, sep, thread = ctx.rpartition("## Comment thread")
     data["comments_tail"] = (thread[-SHOW_KEEP:] if sep else "")
-    data["events"] = [{**e, "payload": str(e.get("payload"))[:200]} for e in (data.get("events") or [])[-5:]]
     data["note"] = ("Repeat view: the brief and parent handoffs were in your first kanban_show of this card."
                     if worker else "Chat view: brief and parent handoffs omitted.") + \
         " `hermes kanban show <id>` has everything."
