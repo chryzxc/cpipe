@@ -18,6 +18,8 @@ Project profiles, ``$HERMES_HOME/delivery/projects.yaml``::
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -134,6 +136,34 @@ def default_branch(ws: Path) -> str:
     common = _git(ws, "rev-parse", "--path-format=absolute", "--git-common-dir")
     head = _git(Path(common).parent, "rev-parse", "--abbrev-ref", "HEAD") if common else None
     return head if head and head != "HEAD" else "main"
+
+
+def save_repo(name: str, repo: str, home: Optional[Path] = None) -> None:
+    """Set ``projects.<name>.repo`` in projects.yaml as a text edit, so the operator's comments, anchors and
+    layout stay; written atomically (other readers never see half a file)."""
+    import yaml
+    path = (home or _root_home()) / "delivery" / "projects.yaml"
+    lines = path.read_text().splitlines() if path.exists() else []
+    if not any(ln.rstrip() == "projects:" for ln in lines):
+        lines += ["projects:"]
+    start = next(i for i, ln in enumerate(lines) if ln.rstrip() == "projects:")
+    end = next((i for i in range(start + 1, len(lines)) if lines[i][:1] not in ("", " ", "#")), len(lines))
+    entry = json.dumps(repo)
+    at = next((i for i in range(start + 1, end) if re.match(rf"  {re.escape(name)}:(\s|$)", lines[i])), None)
+    if at is None:
+        lines[end:end] = [f"  {name}:", f"    repo: {entry}"]
+    else:
+        stop = next((i for i in range(at + 1, end) if not lines[i].startswith("   ")), end)
+        lines[at + 1:stop] = [ln for ln in lines[at + 1:stop] if not re.match(r"    repo:", ln)]
+        alias = re.match(rf"  {re.escape(name)}:\s*(\*\S+)\s*$", lines[at])
+        lines[at:at + 1] = ([f"  {name}:", f"    <<: {alias.group(1)}"] if alias else [lines[at]]) + [f"    repo: {entry}"]
+    text = "\n".join(lines) + "\n"
+    if (yaml.safe_load(text)["projects"][name] or {}).get("repo") != repo:
+        raise ValueError(f"could not save the repo of {name} in {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".yaml.tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
 
 
 def project_of(ws: Path, home: Optional[Path] = None) -> Optional[str]:
