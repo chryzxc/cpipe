@@ -7,6 +7,10 @@ Runs as a no_agent cron job (stdout is delivered verbatim, empty stdout sends no
     never while the provider is still rate limiting, and never twice on the same error signature: a retry
     that failed the same way goes to the operator instead);
   * blocked cards with no reason whose parent is still open are unblocked so they wait in todo;
+  * blocked/triage cards whose work is over are archived: the coordinator moved it to a successor, called it
+    superseded or stopped, or every PR of the delivery is merged/closed; cards nobody touched for
+    IGNORED_DAYS are announced in the digest and archived a day later. Never a card with open children
+    (archiving releases them) unless the delivery's PRs are finished, and never a running one;
   * once a day it sends a digest of what needs the operator, grouped, with reply hints.
 Mission Control (the dashboard tab) imports ``classify`` from here, so both show the same groups.
 """
@@ -37,6 +41,10 @@ QUOTA_EVENTS = 3              # this many rate_limited events in the window = pr
 REMIND_HOURS = 24
 PER_GROUP = 3
 MESSAGE_BUDGET = 1600         # stay under chat limits (Discord: 2000 chars)
+IGNORED_DAYS = 7              # untouched this long: announced in the digest, archived a day later
+DECIDED = re.compile(r"^CONTINUATION:\s*(?:successor (t_[0-9a-f]+)|(stop)\b|.*\b(superseded)\b)", re.I)
+DELIVERY_RE = re.compile(r"^DELIVERY: (t_[0-9a-f]+)$", re.M)
+PR_URL = re.compile(r"https?://github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)", re.I)
 DASHBOARD_URL = os.environ.get("HERMES_DASHBOARD_URL", "http://127.0.0.1:9119/mission-control")
 
 # First match wins; order matters ("already merged" can also mention a timeout).
@@ -166,20 +174,101 @@ def auto_fix(cards, state, walled, run=hermes):
     return retried, waiting
 
 
-def build_digest(cards, retried, waiting, state, now):
+def pr_state(owner, repo, number):
+    exe = shutil.which("gh")
+    if not exe:
+        return ""
+    try:
+        out = subprocess.run([exe, "pr", "view", number, "-R", f"{owner}/{repo}", "--json", "state", "-q", ".state"],
+                             capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def _open_tree(conn, tid):
+    """The card's open descendants with their statuses."""
+    seen, todo = {}, [tid]
+    while todo:
+        for kid, status in conn.execute("SELECT t.id, t.status FROM task_links l JOIN tasks t ON t.id=l.child_id "
+                                        "WHERE l.parent_id=? AND t.status NOT IN ('done','archived')", (todo.pop(),)):
+            if kid not in seen:
+                seen[kid] = status
+                todo.append(kid)
+    return seen
+
+
+def _delivery_prs(conn, tid):
+    (body,) = conn.execute("SELECT body FROM tasks WHERE id=?", (tid,)).fetchone() or ("",)
+    d = (m := DELIVERY_RE.search(body or "")) and m[1] or tid
+    texts = conn.execute("SELECT c.body FROM task_comments c JOIN tasks t ON t.id=c.task_id "
+                         "WHERE t.id=? OR instr(t.body, ?) > 0", (d, f"DELIVERY: {d}")).fetchall()
+    return {m.groups() for (text,) in texts for m in PR_URL.finditer(text or "")}
+
+
+def finished(conn, cards, now, state, prs=pr_state):
+    """{card id: (why, [ids to archive])} for stuck cards whose work is over."""
+    out, ignored, cache = {}, state.setdefault("ignored", {}), {}
+    for c in cards:
+        if c["status"] not in ("blocked", "triage"):
+            continue
+        tid, tree = c["id"], _open_tree(conn, c["id"])
+        row = conn.execute("SELECT body FROM task_comments WHERE task_id=? AND body LIKE 'CONTINUATION:%' "
+                           "ORDER BY id DESC LIMIT 1", (tid,)).fetchone()
+        m = row and DECIDED.search(row[0] or "")
+        if m and not tree:
+            succ = m[1] and m[1] != tid and conn.execute("SELECT 1 FROM tasks WHERE id=?", (m[1],)).fetchone()
+            why = f"moved to {m[1]}" if succ else "stopped" if m[2] else "superseded" if m[3] else None
+            if why:
+                out[tid] = (why, [tid])
+                continue
+        if "running" in tree.values():
+            continue
+        found = _delivery_prs(conn, tid)
+        states = {cache.setdefault(k, prs(*k)) for k in found}
+        if found and states <= {"MERGED", "CLOSED"}:
+            out[tid] = ("PR " + "/".join(sorted(states)).lower(), [tid, *tree])
+            continue
+        if now - c["since"] < IGNORED_DAYS * 86400 or tree:
+            ignored.pop(tid, None)
+        elif ignored.get(tid, 0) < c["since"]:
+            ignored[tid] = now  # announced now (or again after new activity); archived a day later
+        elif now - ignored[tid] >= 86400:
+            out[tid] = (f"ignored {_age(now - c['since'])}", [tid])
+    return out
+
+
+def auto_archive(done, state, run=hermes):
+    """Archive what ``finished`` found. Returns the archived ids."""
+    archived = []
+    for tid, (why, ids) in done.items():
+        for x in ids:
+            if x not in archived and run("kanban", "archive", x)[0]:
+                archived.append(x)
+                state.get("ignored", {}).pop(x, None)
+                journal.record("triage.archive", x, why=why, source="board_triage")
+    return archived
+
+
+def build_digest(cards, retried, waiting, state, now, archived=()):
     """Return (message, new_state). Daily, or sooner when a new decision is needed."""
     decide = {c["id"] for c in cards if c["group"] == "decide"}
     new_decide = decide - set(state.get("decide", []))
     due = now - state.get("reminded_at", 0) >= REMIND_HOURS * 3600
     new_state = {**state, "decide": sorted(decide)}
-    if not (due or new_decide) or not cards:
+    announced = any(at == now for at in state.get("ignored", {}).values())  # the 24h warning must go out
+    if not (due or new_decide or archived or announced) or not cards:
         return "", new_state
     new_state["reminded_at"] = now
     lines = [f"📋 **Board check — {len(cards)} card(s) not moving** · Mission Control: {DASHBOARD_URL}",
              "_Operator digest: relay it as-is. Do not open these cards; the operator replies with a decision._"]
-    moved = [f"retried {len(retried)}" if retried else "", f"{len(waiting)} back to wait on parents" if waiting else ""]
+    moved = [f"retried {len(retried)}" if retried else "", f"{len(waiting)} back to wait on parents" if waiting else "",
+             f"archived {len(archived)} finished ({', '.join(archived[:6])})" if archived else ""]
     if any(moved):
         lines.append("Auto: " + ", ".join(m for m in moved if m))
+    warned = [c["id"] for c in cards if c["id"] in state.get("ignored", {})]
+    if warned:
+        lines.append(f"⏳ Untouched {IGNORED_DAYS}d+, archived in 24h unless you reply: " + ", ".join(warned[:8]))
     footer = "\nReply: `continue t_x <what to do>` · `archive t_x` · `resubmit t_x`"
     budget = MESSAGE_BUDGET - len(footer)
     for key, (heading, hint) in GROUPS.items():
@@ -212,15 +301,19 @@ def main():
         return
     now = time.time()
     conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
-    cards, walled = classify(conn, now), provider_walled(conn, now)
-    conn.close()
     try:
         state = json.loads(STATE.read_text())
     except (OSError, json.JSONDecodeError):
         state = {}
+    cards, walled = classify(conn, now), provider_walled(conn, now)
+    done = finished(conn, cards, now, state)
+    conn.close()
+    archived = auto_archive(done, state)
+    cards = [c for c in cards if c["id"] not in archived]
     retried, waiting = auto_fix(cards, state, walled)
     moved = set(retried) | set(waiting)
-    message, new_state = build_digest([c for c in cards if c["id"] not in moved], retried, waiting, state, now)
+    message, new_state = build_digest([c for c in cards if c["id"] not in moved], retried, waiting, state, now,
+                                      archived)
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps(new_state))
     if message:
