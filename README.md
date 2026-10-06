@@ -110,9 +110,14 @@ engines:
   opencode: {model: <provider/model>, concurrency: 1}
 limits: {checks: 3, qa: 2, review: 2, ci: 2, round_minutes: 90}
 env_pass: [GH_TOKEN]   # additional environment variables exposed to rounds and engines
+projects_root: ~/Projects   # where the repository of a new project is started
 ```
 
-Per-project settings live in `~/.hermes/delivery/`:
+A delivery's project is a name from `projects.yaml`, a path to a repository, or a new name. A new name starts a
+new repository under `projects_root` (shipping to the same name again reuses it). A repository without a remote
+keeps the delivery on a local branch: no push, no pull request.
+
+Optional per-project settings live in `~/.hermes/delivery/`:
 
 ```yaml
 # projects.yaml
@@ -163,6 +168,9 @@ The same actions are slash commands, typed directly into a Hermes chat. They ans
 /cp-ship [project:] <request>      /cp-feedback <card> <changes>      /cp-ready <card> [last changes]
 /cp-status [card]                  /cp-stop <card>
 ```
+
+For example `/cp-ship my-app: add a dark mode toggle`, `/cp-ship ~/code/tool: fix the CLI help`, or
+`/cp-ship recipe-site: a static site that lists recipes` for a project that has no repository yet.
 
 The chat that starts a delivery is notified when the pull request is ready to test, when a decision is needed, and
 when the delivery completes. GitHub access uses the `gh` CLI; without it, the branch is pushed and no pull request

@@ -36,7 +36,8 @@ def emit(**ev):
 def commit(code: str, msg: str):
     (cwd / "calc.py").write_text(code)
     git = ["git", "-c", "user.email=fake@codex", "-c", "user.name=fake"]
-    subprocess.run([*git, "commit", "-qam", msg], cwd=cwd, check=True)
+    subprocess.run([*git, "add", "calc.py"], cwd=cwd, check=True)
+    subprocess.run([*git, "commit", "-qm", msg], cwd=cwd, check=True)
 
 
 def result(**data):

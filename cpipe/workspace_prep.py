@@ -126,6 +126,16 @@ def projects(home: Optional[Path] = None) -> dict:
         return {}
 
 
+def default_branch(ws: Path) -> str:
+    """origin's default branch, else the main checkout's current branch, else main."""
+    ref = _git(ws, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD")
+    if ref:
+        return ref.split("/", 1)[1]
+    common = _git(ws, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    head = _git(Path(common).parent, "rev-parse", "--abbrev-ref", "HEAD") if common else None
+    return head if head and head != "HEAD" else "main"
+
+
 def project_of(ws: Path, home: Optional[Path] = None) -> Optional[str]:
     """The projects.yaml entry whose ``repo`` is this worktree's main checkout."""
     common = _git(ws, "rev-parse", "--path-format=absolute", "--git-common-dir")

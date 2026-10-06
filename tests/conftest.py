@@ -26,6 +26,8 @@ def hermes_home(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(home))
     monkeypatch.setenv("HERMES_KANBAN_HOME", str(home))
+    from cpipe import settings  # new projects never land in the real ~/Projects
+    monkeypatch.setitem(settings.DEFAULTS, "projects_root", str(tmp_path / "projects"))
     monkeypatch.setenv("HERMES_KANBAN_CRASH_GRACE_SECONDS", "0")
     monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
     monkeypatch.delenv("HERMES_KANBAN_DB", raising=False)

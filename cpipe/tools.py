@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+import subprocess
 from contextlib import closing
 from pathlib import Path
 
@@ -39,8 +40,9 @@ SCHEMAS = {
         "something in one of their projects. Returns at once; the user is notified when the pull request is ready "
         "to test.",
         {"request": {"type": "string", "description": "The full task, in the user's words plus any context"},
-         "project": {"type": "string", "description": "Project name from the delivery projects (optional when "
-                                                      "there is only one)"},
+         "project": {"type": "string", "description": "A project name from the delivery projects, a path to a "
+                                                      "repo, or a new name: a new repo is started for it. Optional "
+                                                      "when exactly one project is configured"},
          "title": {"type": "string", "description": "A short title (optional)"},
          "engine": {"type": "string", "description": "Coding engine, only when the user names one (e.g. codex, "
                                                      "claude, or a configured Hermes profile engine)"},
@@ -66,16 +68,44 @@ def _slug(text: str) -> str:
     return "-".join(re.findall(r"[a-z0-9]+", text.lower())[:5])[:40] or "change"
 
 
+def _git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], capture_output=True, text=True)
+
+
+def resolve_project(project: str | None, cfg: dict) -> tuple[str, Path, bool] | dict:
+    """``(name, repo, created)``. ``project`` is a projects.yaml name, a path to a folder, or a new name (a folder
+    under ``projects_root``). A folder that does not exist yet becomes a new git repo with one empty commit."""
+    known = {k: v for k, v in workspace_prep.projects().items() if v.get("repo")}
+    if not project:
+        if len(known) == 1:
+            project = next(iter(known))
+        else:
+            return {"error": "which project? a name from projects.yaml (" + (", ".join(known) or "none yet") +
+                             "), a path to a repo, or a new name to start a new repo"}
+    if project in known:
+        return project, Path(known[project]["repo"]).expanduser(), False
+    repo = (Path(project).expanduser() if project.startswith(("/", "~", "."))
+            else Path(cfg["projects_root"]).expanduser() / _slug(project))
+    if repo.is_dir() and any(repo.iterdir()):
+        if _git("-C", str(repo), "rev-parse", "--show-toplevel").stdout.strip() != str(repo.resolve()):
+            return {"error": f"{repo} exists and is not a git repo: run `git init` there first, or pick another name"}
+        if _git("-C", str(repo), "rev-parse", "--verify", "-q", "HEAD").returncode != 0:
+            return {"error": f"{repo} has no commits yet: commit once, then ship"}
+        return repo.name, repo, False
+    repo.mkdir(parents=True, exist_ok=True)
+    _git("-C", str(repo), "init", "-q", "-b", "main")
+    _git("-C", str(repo), "commit", "-q", "--allow-empty", "-m", "chore: start")
+    return repo.name, repo, True
+
+
 def ship(args: dict) -> dict:
     cfg = settings.load()
-    projects = {k: v for k, v in workspace_prep.projects().items() if v.get("repo")}
-    name = args.get("project") or (next(iter(projects)) if len(projects) == 1 else None)
-    if name not in projects:
-        if not projects:
-            return {"error": "no project has a repo yet: add `repo: <path to the git checkout>` to a project in "
-                             "~/.hermes/delivery/projects.yaml"}
-        return {"error": f"which project? one of: {', '.join(projects)} (/cp-ship <project>: <request>)"}
-    engine = args.get("engine") or projects[name].get("engine") or cfg["default_engine"]
+    found = resolve_project(args.get("project"), cfg)
+    if isinstance(found, dict):
+        return found
+    name, repo, created = found
+    known = workspace_prep.projects().get(name) or {}
+    engine = args.get("engine") or known.get("engine") or cfg["default_engine"]
     if engine not in cfg["engines"]:
         return {"error": f"unknown engine {engine!r}; one of: {', '.join(cfg['engines'])}"}
     request = args["request"].strip()
@@ -83,11 +113,12 @@ def ship(args: dict) -> dict:
     branch = f"cp/{_slug(title)}-{secrets.token_hex(2)}"
     with closing(hermes_api.connect(None)) as conn:
         tid = hermes_api.create_card(conn, title=title, body=request, assignee=f"cp:{engine}",
-                                     repo=str(Path(projects[name]["repo"]).expanduser()), branch=branch,
+                                     repo=str(repo), branch=branch,
                                      model=args.get("model"))
         if args.get("size") == "large":
             hermes_api.comment(conn, tid, "plan first", author="cpipe:large")
-    return {"task_id": tid, "project": name, "engine": engine, "branch": branch}
+    return {"task_id": tid, "project": name, "engine": engine, "branch": branch,
+            **({"note": f"new repo at {repo}"} if created else {})}
 
 
 def _steer(task_id: str, text: str, directive: str = "") -> dict:
@@ -166,9 +197,9 @@ def _split(raw: str) -> tuple[str, str]:
 
 
 def _ship_args(raw: str) -> dict:
-    """``[project:] request``: a leading ``name:`` picks the project when it is one."""
+    """``[project:] request``: a leading ``name:`` (or ``path:``) picks the project, new or not."""
     head, rest = _split(raw)
-    if head.endswith(":") and head[:-1] in workspace_prep.projects():
+    if head.endswith(":") and len(head) > 1 and rest:
         return {"project": head[:-1], "request": rest}
     return {"request": raw}
 

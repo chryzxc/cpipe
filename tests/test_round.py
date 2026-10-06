@@ -222,3 +222,23 @@ def test_large_task_splits(board, repo, monkeypatch):
     for t in children:
         state = json.loads((Path(h.get_task(board, t.id).workspace_path) / ".cpipe" / "state.json").read_text())
         assert state["pr_url"] and "a + b" in (Path(h.get_task(board, t.id).workspace_path) / "calc.py").read_text()
+
+
+def test_new_project_without_a_repo(board, repo, tmp_path):
+    """A project that has no repo yet: a new local repo is started, and the delivery hands off on a local branch."""
+    from cpipe import tools
+    from cpipe.runtime import hermes_api as h
+    root = tmp_path / "projects"
+    sched = lanes(projects_root=str(root))
+    shipped = tools.ship({"request": "a calculator", "project": "Calc App"})
+    assert shipped["project"] == "calc-app" and shipped["note"] == f"new repo at {root / 'calc-app'}"
+    settle(board, sched, [shipped["task_id"]])
+    task = h.get_task(board, shipped["task_id"])
+    state = json.loads((Path(task.workspace_path) / ".cpipe" / "state.json").read_text())
+    assert state["base"] == "main" and state["notes"]["pr"].startswith("No remote")
+    assert "calc.py" in tools._git("-C", str(root / "calc-app"), "show", "--stat", task.branch_name).stdout
+    # the same name again is the same repo
+    assert tools.resolve_project("calc app", {"projects_root": str(root)}) == ("calc-app", root / "calc-app", False)
+    (tmp_path / "plain").mkdir()
+    (tmp_path / "plain" / "f").write_text("x")
+    assert "not a git repo" in tools.resolve_project(str(tmp_path / "plain"), {})["error"]
