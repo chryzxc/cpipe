@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-8957e5)](LICENSE)
 [![Requires: Hermes Agent](https://img.shields.io/badge/requires-Hermes%20Agent-1f6feb)](https://github.com/NousResearch/hermes-agent)
 
-**A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin for developers: ask for a change in chat
+**A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin: ask for a change in chat
 and get back a deliverable, a tested, QA'd and reviewed PR ready to merge.** You ask in Hermes, and cpipe puts one card on the Kanban board. A coding agent (Codex, Claude
 Code, a Hermes bot or opencode) then works the whole task in **one session**. It is built on
 **[graph engineering](#graph-engineering)**: code, not the agent, decides what happens next. It is also built on
@@ -136,7 +136,7 @@ docs/runtime/            the runtime's own docs
 - [ ] Parallel deliveries; large tasks split into child deliveries
 - [ ] Report: time, tokens and rounds per node
 
-## Develop
+## Contributing
 
 Tests use throwaway repos built from templates (`tests/fixtures/make_repo.py`, Node and Python) and a temp Hermes
 board. They never touch your `~/.hermes`. The engines are scripted fakes (`tests/fake_codex.py`).

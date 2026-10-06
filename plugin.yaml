@@ -2,7 +2,7 @@ name: cpipe
 version: 0.5.0
 manifest_version: 2
 api_version: 1
-description: "cpipe: a dev plugin that turns a request in Hermes chat into a deliverable: a tested, QA'd, reviewed PR ready to merge. One card per delivery, one engine session (Codex, Claude Code, a Hermes bot or opencode), graph engineering (a fixed graph in code) and loop engineering (bounded loops back into the same session)."
+description: "cpipe: a Hermes plugin that turns a request in Hermes chat into a deliverable: a tested, QA'd, reviewed PR ready to merge. One card per delivery, one engine session (Codex, Claude Code, a Hermes bot or opencode), graph engineering (a fixed graph in code) and loop engineering (bounded loops back into the same session)."
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
 tags: [delivery, workflow, kanban, codex, claude-code, code-review, qa]
