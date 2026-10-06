@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "cpipe"
 version = "0.5.0"
-description = "cpipe: ship from Hermes chat to a checked, QA'd, reviewed draft PR through one engine session."
+description = "cpipe: a dev plugin that turns a request in Hermes chat into a deliverable: a tested, QA'd, reviewed PR ready to merge."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
   {name = "Christian Rey Villablanca"},
 ]
-keywords = ["hermes-agent", "codex", "claude-code", "kanban", "delivery", "code-review", "agentic-workflow"]
+keywords = ["hermes-agent", "codex", "claude-code", "kanban", "delivery", "code-review", "agentic-workflow", "graph-engineering", "loop-engineering"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "License :: OSI Approved :: MIT License",
