@@ -32,6 +32,7 @@ from . import quality, submit, workspace_prep
 MARKER = "REVIEWER (same worktree)"  # every build, fix, and content brief carries it
 PLAN_MARKER = "Produce the implementation plan in the PLAN FORMAT"  # both plan briefs, never the build brief
 VERIFY_MARKER = "VERIFY the reviewed change by running it."
+FINAL_MARKER = "FINAL CHECK BEFORE MERGE"  # submit.FINAL_CHECK: the only card the quality checks run on
 PR_READY_CMD = re.compile(r"\bgh\s+pr\s+ready\b(?!.*--undo)")
 MAX_REWORK = 2  # request-changes rounds per card before the reviewer must block for the user
 REVIEW_CMD = re.compile(r"\bkanban\s+request-review\s+(t_[0-9a-f]+)")
@@ -99,6 +100,8 @@ def gate(tool_name: str = "", args: dict | None = None, **_kw):
 def _nothing_to_review(row) -> bool:
     """A fix round that committed nothing (it ran, reproduced, or set something up for the user): the PR
     is unchanged, so a review would re-check the same code. The implementer completes it with its result."""
+    if FINAL_MARKER in (row["body"] or ""):
+        return False  # the final review is of the whole branch, new commit or not
     m = re.search(r"^FIX BASE: ([0-9a-f]{7,40}) ", row["body"] or "", re.M)
     head = m and subprocess.run(["git", "-C", row["workspace_path"] or ".", "rev-parse", "HEAD"],
                                 capture_output=True, text=True, timeout=10).stdout.strip()
@@ -131,6 +134,8 @@ def quality_gate(tid: str | None):
             return {"action": "block", "message": (
                 f"Review not filed: {unpushed}. The reviewer and verifier check the pushed commit, so an approved "
                 "but uncommitted change cost a whole run just to commit it. Commit and push, then request review.")}
+        if FINAL_MARKER not in (row["body"] or ""):
+            return None  # the quality checks run once, when the user calls the PR ready to merge
         base = workspace_prep.card_profile(tid, submit._db(), submit.HERMES_HOME).get("base_branch")
         return quality.review_request_gate(tid, row, base, submit.HERMES_HOME)
     except Exception:

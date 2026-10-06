@@ -456,7 +456,7 @@ USER NOTES on the pick (they override the mockup): {notes}
 END PICKED DESIGN
 """
 
-FIX_BRIEF = """FIX ROUND {round}: {source}.
+FIX_HEAD = """FIX ROUND {round}: {source}.
 token_budget: low.
 
 FAILURES ({reporter}; the newest instructions: where they conflict with the REQUEST below, these win):
@@ -471,17 +471,36 @@ FIX BASE: {fix_base} (HEAD before this round). Files this branch already changes
 Start from these files and the FAILURES' file:line; do not re-explore the repo or re-plan.
 REPRODUCE each failure on FIX BASE first (a test or command that goes RED for the reported reason)
 and trace it to its cause; before removing an existing condition, read its history (`git log -S`).
-One that does not reproduce: list it in the review handoff with what you ran, fix the rest. One
+One that does not reproduce: list it in your handoff summary with what you ran, fix the rest. One
 that needs a product decision: block with the question (2-4 options, recommended first).
 New requests the user adds while this card waits arrive as comments: handle each in this round.
 A request that needs no code change (run something locally, reproduce, set up data for the user to
 test): do only that, and the moment it works complete this card with `hermes kanban complete <this
 card id> --summary "<URLs / how to use it / what you verified>"` with no new commit, so the user gets it
 now. No extra hardening, receipts, or review for it.
-A round that changes code ends committed and pushed (step 4) before review, even if the REQUEST said
+"""
+FIX_BRIEF = FIX_HEAD + """A round that changes code ends committed and pushed (step 4) before review, even if the REQUEST said
 not to push; only the FAILURES can hold the push. Review checks a commit, never an uncommitted diff.
 Fix these failures only, then follow steps 3-7 (PINNED tests must still pass):
 """ + SCOPE + "\n" + IMPLEMENTER
+# the user's own testing loop: they re-test each round, so review and the quality checks wait for FINAL_CHECK
+QUICK_FIX_BRIEF = FIX_HEAD + """NO REVIEW THIS ROUND: the user tests your fix on the PR, as they found these failures. The reviewer and
+the quality checks run once, when the user calls the PR ready to merge.
+1. Fix these failures only. Each one a test can show gets that test (RED on FIX BASE, GREEN after);
+   then run the tests related to every file you changed, in every package it reaches.
+2. Commit on this branch (Conventional Commit) and push (`git push`), even if the REQUEST said not to
+   push. Never create, switch, or rename the branch. Rewrite the PR title and body to cover the whole
+   branch (`gh pr edit`; the `creating-pr-content` skill when installed): public text, no card ids,
+   bots, local paths, or history.
+3. Complete this card: `hermes kanban complete <this card id> --summary "<PR url; what changed; commands
+   run and results; commit sha; any READY_WITH_RISK gaps>"`. Do not request review.
+""" + SCOPE
+FINAL_CHECK = ("FINAL CHECK BEFORE MERGE: the user is done testing and wants this PR ready to merge. Nothing to "
+               "reproduce. If the PR shows merge conflicts, bring the branch up to date first. Then request review "
+               "(step 6) with HEAD as it is: cpipe runs the quality checks on the whole branch and refuses the request "
+               "with what they find; fix those, push, and request again. REVIEWER: this is the one review of the "
+               "whole branch, since the fix rounds after the last review were not reviewed: review `git diff "
+               "<base>...HEAD`, not FIX BASE.")
 
 
 BUG_DIAGNOSE = """BUG REPORT: DIAGNOSE BEFORE YOU FIX. This replaces IMPLEMENTER step 1's planning, even with a
@@ -536,12 +555,16 @@ BUILD = Step("build", "implementer", BUILD_BRIEF, "60m")
 # where 1 in 30 verifies checked the wrong code. workspace_prep sends it to the build worktree.
 VERIFY = Step("verify", "verifier", VERIFY_BRIEF + "BUILD CARD: {parent}\n", "60m", "Verify: ", "scratch")
 FIX = Step("fix", "implementer", FIX_BRIEF, "60m", "Fix {round}: ", "dir")
+QUICK_FIX = replace(FIX, brief=QUICK_FIX_BRIEF, runtime="45m")
+FINAL = replace(FIX, prefix="Final check: ")
 FLOWS = {
     "content": (Step("build", "implementer", CONTENT_BRIEF, "25m"),),  # same-card review, no plan or verify
     "small": (BUILD, VERIFY),  # the implementer plans inline (IMPLEMENTER step 1)
     "large": (Step("map", "investigator", MAP_BRIEF, "20m", "Map: "),  # cheap map, frontier plan
               Step("plan", "planner", PLAN_BRIEF, "20m", "Plan: "), BUILD, VERIFY),
     "fix": (FIX, replace(VERIFY, prefix="Verify: Fix {round}: ")),
+    "quickfix": (QUICK_FIX,),  # the user's testing loop: implementer only, the user re-tests
+    "final": (FINAL, replace(VERIFY, prefix="Verify: Final check: ")),  # ready to merge: checks + one review
     # three directions at once; scratch with no project keeps the files they name (a worktree would not)
     "design": tuple(Step("design", "designer", DESIGN_BRIEF, "25m", f"Design {v}: ", "scratch", True, v, "implementer")
                     for v in DESIGN_DIRECTIONS),
@@ -1027,9 +1050,14 @@ def retarget(args: dict, **_kw) -> str:
 
 
 def fix(args: dict) -> str:
-    """The user tested a card's PR and found a problem: one fix card in that card's worktree, same
-    branch, same-card review, then a verify card, so the open PR updates. No plan."""
+    """The user tested a card's PR and found a problem: one fix card in that card's worktree and branch, so
+    the open PR updates. No plan, and no review: the user re-tests (review=true asks for one). final=true is
+    the user calling it ready to merge: the quality checks and one review of the whole branch, once."""
     ref, failures = str(args.get("fix_of") or "").strip(), (args.get("request") or "").strip()
+    final = bool(args.get("final"))
+    flow = "final" if final else "fix" if args.get("review") or args.get("verify") else "quickfix"
+    if final:
+        failures = FINAL_CHECK + (f"\nALSO FROM THE USER:\n{failures}" if failures else "")
     if not failures:
         return json.dumps({"ok": False, "error": "request is required: what the user found while testing"})
     source_id = ref if re.fullmatch(r"t_[0-9a-f]+", ref) else _card_for_pr(ref)
@@ -1044,13 +1072,13 @@ def fix(args: dict) -> str:
                            "fix card would wait behind it. Add the correction as a kanban_comment on it; if it is "
                            "blocked, unblock it and it resumes with the comment"})
     request = _request_of(task["body"])
-    base_title = re.sub(r"^(Fix \d+: )+", "", task["title"] or "")
-    if args.get("design") and not args.get("picked_design"):
+    base_title = re.sub(r"^(Fix \d+: |Final check: )+", "", task["title"] or "")
+    if args.get("design") and not args.get("picked_design") and not final:
         return design(args, base_title, f"{request}\n\nTHE USER TESTED THE PR AND WANTS:\n{failures}", worktree)
     state = _branch_state(worktree)
     delivery = delivery_of(source_id, task["body"])
     rounds = max(_fix_rounds(delivery)[0], len(re.findall(r"^Fix \d+:", task["title"] or "")))
-    waiting = _waiting_fix(base_title, task["project_id"], delivery)
+    waiting = not final and _waiting_fix(base_title, task["project_id"], delivery)
     if waiting:  # one round takes every correction sent before it starts: no second fix + verify chain
         added = _hermes("kanban", "comment", waiting, f"ADDED REQUEST from the user's testing (handle it in this round):\n{failures}")
         if added.returncode == 0:
@@ -1072,7 +1100,7 @@ def fix(args: dict) -> str:
             _set_effort(tid, "low")
 
     # the user is the tester of their own feedback; a verifier only when asked
-    chain, error = run_flow("fix", base_title, request, project, worktree=worktree, edit=edit, after=after,
+    chain, error = run_flow(flow, base_title, request, project, worktree=worktree, edit=edit, after=after,
                             delivery=delivery,
                             skip=() if args.get("verify") else ("verify",), round=rounds + 1,
                             source="the user tested the PR and found a problem", reporter="from the user's testing",
@@ -1083,10 +1111,14 @@ def fix(args: dict) -> str:
     subscribed = all([_subscribe_calling_chat(t) for t in (fix_id, verify_id) if t])
     return json.dumps({"ok": True, "task_id": fix_id, "verify": verify_id, "fix_of": source_id,
                        "worktree": worktree, "chat_subscribed": subscribed,
-                       "next": "implementer fixes on the same branch and pushes (the PR updates); reviewer "
-                               "re-checks the new change" + (", then the verifier runs the tests" if verify_id else "")
-                               + "; you get a message when it is ready to test again. Send further corrections "
-                               "with fix_of while it waits: they join this round"})
+                       "next": ("quality checks run on the whole branch, then one review of it"
+                                + (" and the verifier" if verify_id else "") + "; the PR is marked ready to merge"
+                                if final else "implementer fixes on the same branch and pushes (the PR updates)"
+                                + ("; reviewer re-checks the new change" if flow == "fix" else "; no review round")
+                                + (", then the verifier runs the tests" if verify_id else "")
+                                + "; you get a message when it is ready to test again. Send further corrections "
+                                "with fix_of while it waits: they join this round. When the user is done "
+                                "testing, fix_of=<PR> with final=true runs the checks and one review before merge")})
 
 
 def design(args: dict, title: str, request: str, code) -> str:
@@ -1462,8 +1494,9 @@ SCHEMA = {
             "separate owners, or needing a design decision first: a cheap mapper reads the repo, then a "
             "frontier planner plans from that map. Never split one feature into phase cards. "
             "fix_of=<card id or PR URL> when the user tested a PR and found a problem: the request says "
-            "what is wrong; one fix card on the same branch updates the PR (reviewed, no verify card unless "
-            "verify=true). Corrections sent before that fix card starts join it, so pass each one as it comes. "
+            "what is wrong; one fix card on the same branch updates the PR (no review or verify: the user re-tests). "
+            "When the user calls it ready to merge, fix_of=<PR> with final=true runs the quality checks and one "
+            "review of the whole branch, once. Corrections sent before that fix card starts join it, so pass each one as it comes. "
             "design=true first has three designers mock up different looks in parallel; the build starts "
             "only after the user picks one (delivery_design_pick). "
             "Returns the card id; progress and the result come back to this chat."),
@@ -1480,6 +1513,8 @@ SCHEMA = {
                 "live_qa": {"type": "boolean", "description": "UI changes only. Before submitting one, ask the user once (clarify): should the verifier test it live in the browser, and if the app needs a login, which test account? true only when they say yes. The verifier starts the app, logs in, checks the changed screens at desktop and mobile width, and reports breaks as failures and design issues as notes."},
                 "qa_login": {"type": "object", "description": "With live_qa: the test account the user gave (never a real person's account, never guessed). Stored in a private file, not on the card.", "properties": {"username": {"type": "string"}, "password": {"type": "string"}, "notes": {"type": "string", "description": "Login URL, 2FA or role notes the user gave"}}},
                 "fix_of": {"type": "string", "description": "Card id or PR URL the user tested and found broken; request = what is wrong"},
+                "final": {"type": "boolean", "description": "With fix_of: the user is done testing and calls the PR ready to merge (\"ready to merge\", \"finalize\", \"good to go\"). Runs the quality checks and one review of the whole branch, then marks the PR ready; request is optional. Fix rounds skip both until then"},
+                "review": {"type": "boolean", "description": "With fix_of: true only when the user asks a reviewer to check this fix round. Default false: the implementer pushes and the user re-tests"},
                 "design": {"type": "boolean", "description": "UI work where the look is the open question (a new screen, a redesign, a layout the user describes loosely, or a fix_of saying it looks wrong): three designers first mock up directions A (closest to the app), B (the user's references), C (a fresh take) as HTML files, and nothing is built until the user picks one with delivery_design_pick. Not for copy, a small style tweak, or a UI the user already specified exactly."},
                 "design_refs": {"type": "string", "description": "With design: what the user wants it to look like, in their words: products or sites to resemble, screenshot or image paths they sent, colors, things they dislike now"},
                 "branch": {"type": "string", "description": "New work: the branch to create, named by your project conventions (memory). Omit for Hermes's default. Not for fix_of."},

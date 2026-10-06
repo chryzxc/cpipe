@@ -13,7 +13,8 @@ Every Hermes setup differs (skills, linters, design system), so the checks and t
       reviewer: "..."
 
 A failing check (non-zero exit) blocks the review request with its output, so the reviewer never spends a round
-on what a command can find. A check that hangs past CHECK_TIMEOUT is skipped, never blocking. A check whose tool
+on what a command can find. They run once per PR, on the final check before merge (delivery_submit final=true):
+not on every build and fix round, which the user re-tests anyway. A check that hangs past CHECK_TIMEOUT is skipped, never blocking. A check whose tool
 cannot start or crashes (not on PATH, exit 126/127, a traceback) is the machine's problem, not the change's: it is
 skipped and written to ``state/setup-problems.json``, which board triage sends the operator.
 """
@@ -37,7 +38,6 @@ CHECK_TIMEOUT = 180
 ORPHAN_POLL = 5  # seconds a check outlives the worker that started it
 OUTPUT_KEEP = 2500  # chars of a failing check's output shown to the implementer
 MAX_BLOCKS = 3  # blocked review requests per card per run; then it goes to the reviewer with the failures
-FIX_BASE = re.compile(r"^FIX BASE: ([0-9a-f]{7,40}) ", re.M)
 _blocked: dict = {}
 # the tool, not the checked code, failed: semgrep crashed on an import and refused every review request
 CRASH = re.compile(r"Traceback \(most recent call last\)|ModuleNotFoundError|ImportError:|command not found", re.I)
@@ -67,7 +67,8 @@ def _checks(cfg: dict, project: Optional[str]) -> list[dict]:
             and (not c.get("projects") or project in c["projects"])]
 
 
-def first_turn_notes(profile: str, project: Optional[str], home: Optional[Path] = None) -> list[str]:
+def first_turn_notes(profile: str, project: Optional[str], home: Optional[Path] = None,
+                     final: bool = True) -> list[str]:
     cfg = load(home)
     roles = roles_of(profile, home)
     notes = [str(text).strip() for r, text in (cfg.get("guidance") or {}).items() if r in roles and text]
@@ -78,10 +79,10 @@ def first_turn_notes(profile: str, project: Optional[str], home: Optional[Path] 
         report_setup(name, MISSING if name in missing else None, os.environ.get("HERMES_KANBAN_TASK"), home,
                      only=MISSING)
     checks = [c for c in checks if str(c.get("name", "check")) not in missing]
-    if missing:
+    if missing and final:
         notes.append(f"These quality checks cannot run on this machine and are skipped (the operator is told): "
                      f"{', '.join(sorted(missing))}. Do not block for them.")
-    if "implementer" in roles and checks:
+    if "implementer" in roles and checks and final:  # they gate only the final check before merge
         notes.append("Before your review request is filed these run on your changed files and refuse it on "
                      "failure; run them yourself first: "
                      + "; ".join(f"{c.get('name', 'check')}: `{c['run']}`" for c in checks) + ".")
@@ -89,9 +90,7 @@ def first_turn_notes(profile: str, project: Optional[str], home: Optional[Path] 
 
 
 def diff_base(ws: Path, body: str, base_branch: Optional[str]) -> Optional[str]:
-    """A fix round is checked from its FIX BASE; a build from where it left the project's base branch."""
-    if m := FIX_BASE.search(body or ""):
-        return m[1]
+    """The whole branch, from where it left its base: the checks run once, on the final check before merge."""
     for ref in ([f"origin/{base_branch}"] if base_branch else []) + ["origin/HEAD"]:
         out = subprocess.run(["git", "-C", str(ws), "merge-base", ref, "HEAD"], capture_output=True, text=True)
         if out.returncode == 0:
