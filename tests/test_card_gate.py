@@ -119,3 +119,14 @@ def test_pushed_commits_carry_no_internal_data(tmp_path, monkeypatch):
     assert card_gate.gate("terminal", {"command": f"git -C {repo} push"})["action"] == "block"
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))  # the user's own pushes are untouched
     assert card_gate.gate("terminal", push) is None
+
+
+def test_first_unblock_of_a_setup_block_asks_for_the_users_fix(monkeypatch):
+    monkeypatch.setattr(card_gate, "_setup_warned", set())
+    monkeypatch.setattr(card_gate, "_block_kind", lambda card: None)
+    reasons = {"t_aa11": "semgrep: ModuleNotFoundError: No module named 'x'", "t_bb22": "needs a decision"}
+    monkeypatch.setattr(card_gate, "last_block_reason", lambda card: reasons.get(card, ""))
+    first = card_gate.gate("terminal", {"command": "hermes kanban unblock t_aa11"})
+    assert first["action"] == "block" and "Tell the user" in first["message"]
+    assert card_gate.gate("kanban_unblock", {"task_id": "t_aa11"}) is None  # repeated: the user fixed it
+    assert card_gate.gate("kanban_unblock", {"task_id": "t_bb22"}) is None

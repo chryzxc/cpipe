@@ -15,7 +15,7 @@ import sqlite3
 import subprocess
 from pathlib import Path
 
-from . import home, submit
+from . import block_reasons, home, submit
 
 ROLES = ("implementer", "reviewer", "verifier", "planner", "investigator", "release_engineer",
          "security_reviewer", "security_tester")
@@ -26,6 +26,7 @@ OPERATOR_DIRS = ("delivery", "memories", "skills", "plugins", "scripts", "cron")
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$", re.M)
 LOOKUP_TOOLS = ("read_file", "search_files", "terminal")
 _lookups: dict[str, int] = {}  # Plan: card -> lookups so far (per worker process)
+_setup_warned: set = set()  # (card, block reason) the coordinator was already told about
 GH_WRITE = re.compile(r"\bgh\s+(?:(?:pr|issue)\s+(create|edit|comment|review)|api\b.*/(comments|reviews)\b)", re.S)
 BODY_FLAGS = ("--body", "-b", "--title", "-t")
 FILE_FLAGS = ("--body-file", "-F")
@@ -45,7 +46,7 @@ CD = re.compile(r"^\s*cd\s+(\S+)\s*&&")
 
 def gate(tool_name: str = "", args: dict | None = None, **_kw):
     args = args or {}
-    blocked = (round_limit_unblock(tool_name, args) or operator_config_write(tool_name, args)
+    blocked = (round_limit_unblock(tool_name, args) or setup_unblock(tool_name, args) or operator_config_write(tool_name, args)
                or plan_lookup_budget(tool_name, args) or public_github_text(tool_name, args)
                or pushed_commits(tool_name, args))
     if blocked:
@@ -78,18 +79,47 @@ def guarded() -> set[str]:
 def round_limit_unblock(tool_name: str, args: dict):
     """A card blocked at the fix-round limit waits for the user: a chat unblocking it re-runs the loop
     the limit stopped. The coordinator passes their answer to delivery_decide."""
-    if tool_name == "kanban_unblock":
-        card = str(args.get("task_id") or "")
-    elif tool_name == "terminal" and (m := UNBLOCK_CMD.search(str(args.get("command") or ""))):
-        card = m[1]
-    else:
-        return None
-    if not ROUND_LIMIT.search(last_block_reason(card)):
+    card = _unblock_card(tool_name, args)
+    if not card or not ROUND_LIMIT.search(last_block_reason(card)):
         return None
     return {"action": "block", "message": (
         f"{card} stopped at the fix-round limit, so the decision is the user's. Do not unblock it: give them the "
         f"remaining failures and ask: one more fix round, or stop and leave the PR to them. Then call "
         f"delivery_decide(card={card}, choice=fix|stop) with their answer.")}
+
+
+def setup_unblock(tool_name: str, args: dict):
+    """An unblock cannot fix a setup block (a crashed tool, a missing dependency): the worker hits it again and
+    the card loops until someone asks. The first unblock per block asks the coordinator to get the user's fix;
+    repeating the call goes through (the user fixed it, or said to retry)."""
+    card = _unblock_card(tool_name, args)
+    if not card:
+        return None
+    reason = last_block_reason(card)
+    if not block_reasons.setup_block(reason, _block_kind(card)) or (card, reason) in _setup_warned:
+        return None
+    _setup_warned.add((card, reason))
+    return {"action": "block", "message": (
+        f"{card} is blocked on its setup, which no same-card correction fixes: \"{reason[:300]}\". Tell the user "
+        "exactly what to fix on this machine (tool, dependency, service, credential) and wait. Once they say it "
+        f"is fixed or to retry anyway, repeat this unblock.")}
+
+
+def _unblock_card(tool_name: str, args: dict) -> str:
+    if tool_name == "kanban_unblock":
+        return str(args.get("task_id") or "")
+    m = tool_name == "terminal" and UNBLOCK_CMD.search(str(args.get("command") or ""))
+    return m[1] if m else ""
+
+
+def _block_kind(card: str):
+    try:
+        conn = sqlite3.connect(f"file:{submit._db()}?mode=ro", uri=True)
+        row = conn.execute("SELECT block_kind FROM tasks WHERE id = ?", (card,)).fetchone()
+        conn.close()
+        return row and row[0]
+    except sqlite3.Error:
+        return None
 
 
 def last_block_reason(card: str) -> str:

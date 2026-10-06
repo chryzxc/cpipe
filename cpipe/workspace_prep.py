@@ -37,6 +37,7 @@ from .home import root as _root_home
 
 PACKAGE_DEPTH = 2  # package.json at the root and one or two levels down (client/, server/, apps/x/)
 SKIP_DIRS = {"node_modules", ".git", ".worktrees", "dist", "build"}
+NODE_CLIS = {"npm", "npx", "node", "yarn", "pnpm", "bun", "cross-env", "echo", "exit"}
 PR_BASE = re.compile(r"^PR BASE: `([^`]+)`", re.M)  # submit stamps it when a card's base is not the project's
 
 
@@ -236,6 +237,32 @@ def inline_scripts_refused(home: Optional[Path] = None) -> bool:
             and not {"script execution via -e/-c flag", "script execution via heredoc"} <= allowed)
 
 
+def test_runner_notes(ws: Path, project: Optional[str]) -> list[str]:
+    """A package whose `npm test` program is missing from its node_modules (a main checkout installed without
+    dev dependencies): verify skipped all 19 related suites for it. Said at the start, and the operator is told."""
+    notes = []
+    for rel in _package_dirs(ws):
+        try:
+            script = (json.loads((ws / rel / "package.json").read_text()).get("scripts") or {}).get("test") or ""
+        except (OSError, ValueError, AttributeError):
+            continue
+        tool = quality._tool(script)
+        bins = ws / rel / "node_modules" / ".bin"
+        if (not tool or "/" in tool or tool in quality.SHELL_WORDS or tool in NODE_CLIS or shutil.which(tool)
+                or not bins.parent.exists()):
+            continue
+        key = f"{project or ws.name}:{rel}:{tool}"
+        if (bins / tool).exists():
+            quality.report_setup(key, None)
+            continue
+        quality.report_setup(key, f"`{tool}` (npm test) is missing from {rel}/node_modules",
+                             os.environ.get("HERMES_KANBAN_TASK"))
+        notes.append(f"`{tool}` (the `npm test` runner of {rel}) is missing from its node_modules: install this "
+                     f"package's dependencies in this worktree from its lockfile (`npm ci` in {rel}, replacing any "
+                     "node_modules symlink) before testing; do not block for it.")
+    return notes
+
+
 def testscope_note(profile: dict) -> list[str]:
     """Verify runs that hand-rolled the BASE/HEAD comparison and waited out hung jest files took 15-20 min."""
     if not shutil.which("testscope"):
@@ -275,6 +302,7 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
             if missing:
                 notes.append(f"No node_modules for: {', '.join(missing)}. Install them with the project's "
                              "package manager (lockfile install) before testing; do not block for it.")
+            notes += test_runner_notes(ws, profile.get("project"))
             notes += testscope_note(profile)
             if inline_scripts_refused():
                 notes.append("This run refuses inline interpreter code (`python -c`, `node -e`, `python3 - <<EOF`) "

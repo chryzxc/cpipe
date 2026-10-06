@@ -22,6 +22,18 @@ AUTHOR = "why-blocked"
 REASON_KINDS = ("blocked", "gave_up", "block_loop_detected")
 LOG_SIGNAL = re.compile(r"auth failed|Unknown provider|Traceback|Error:|Killed|SIGTERM|rate.?limit|quota", re.I)
 LOG_NOISE = re.compile(r"MCP server|Tool terminal returned error", re.I)
+# The worker's machine or tools, not the code: no same-card correction fixes these. One loop: semgrep crashed
+# inside the review gate, the coordinator unblocked with "run it clean", and the card blocked again.
+SETUP = re.compile(r"ModuleNotFoundError|ImportError|command not found|not installed|FileNotFoundError|No such file"
+                   r"|node_modules|lacks? (an )?executable|no valid LLM endpoint|endpoint (is )?not configured"
+                   r"|cannot (run|start|launch|execute)|no vision|ERR_SSL|Invalid Host header|operator-owned"
+                   r"|missing (dependenc|tool|binar|credential|test account)", re.I)
+SETUP_NOTE = ("SETUP BLOCK: the bots cannot fix this from the card (a tool, dependency or service on this machine). "
+              "Coordinator: tell the user exactly what to fix; unblock only after they say it is fixed.")
+
+
+def setup_block(reason: str, kind: Optional[str] = None) -> bool:
+    return kind == "capability" or bool(SETUP.search(reason or ""))
 
 
 def _home() -> Path:
@@ -60,6 +72,8 @@ def explain(conn: sqlite3.Connection, card: dict, home: Path) -> str:
         payload = {}
     reason = payload.get("reason") or payload.get("error") or "no reason was recorded"
     lines = [f"Why blocked ({card['kind']}{', ' + card['block_kind'] if card['block_kind'] else ''}): {_short(reason, 600)}"]
+    if setup_block(str(reason), card["block_kind"]):
+        lines.append(SETUP_NOTE)
     run = conn.execute("SELECT profile, started_at, ended_at, outcome, error FROM task_runs WHERE task_id=? "
                        "ORDER BY id DESC LIMIT 1", (card["id"],)).fetchone()
     if run and run[4] and _short(run[4], 80) not in lines[0]:

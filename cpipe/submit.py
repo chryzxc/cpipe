@@ -879,8 +879,9 @@ def _conventions(project: str, base: str = "") -> str:
     if not base or base == profile.get("base_branch"):
         text = workspace_prep.profile_brief(profile)
     else:
-        text = (f"PR BASE: `{base}` (start from origin/{base} and open the PR against it; this overrides the "
-                "project's base branch below)\n" + workspace_prep.profile_brief({**profile, "base_branch": base}))
+        text = (f"PR BASE: `{base}` (start from origin/{base} and open the PR against it; this overrides every "
+                "other base or PR target named on this card, the project conventions below included: never block "
+                "to ask which one wins)\n" + workspace_prep.profile_brief({**profile, "base_branch": base}))
     return "\n\n".join(filter(None, [text, lessons_brief(project)]))
 
 

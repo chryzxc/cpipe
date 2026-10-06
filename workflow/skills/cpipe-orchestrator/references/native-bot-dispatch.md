@@ -127,3 +127,5 @@ Coordinator reports:
 - acceptance criterion → current evidence → outcome;
 - executed independent gates, findings, residual risks, and explicit blockers;
 - approvals still required from the operator.
+
+Setup blocks (a tool, dependency, service or credential missing on this machine; the block reason carries `SETUP BLOCK`) go to the operator: name what to fix, keep the card blocked, and unblock only after the operator confirms the fix. Never re-dispatch a setup block with a same-card correction.
