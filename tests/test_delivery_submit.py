@@ -2,7 +2,7 @@
 card, then a verifier runs the tests. Large work is mapped and planned first. Missing input never reaches the board."""
 import json
 
-from cpipe import submit
+from cpipe import review_gate, submit
 
 
 def roster(tmp_path, monkeypatch):
@@ -141,9 +141,27 @@ def test_fix_of_a_pr_reopens_the_same_worktree(tmp_path, monkeypatch):
     assert arg(fix, "--workspace") == "dir:/repo/.worktrees/t1"
     body = arg(fix, "--body")
     assert body.index("toggle does not save") < body.index("Gate SMS on consent")  # newest instructions first
-    assert "these win" in body and "only the FAILURES can hold the push" in body
+    assert "these win" in body and "Do not request review" in body  # the user re-tests: no review round
     assert submit._request_of(body).strip() == "Gate SMS on consent"  # the next round copies the original only
-    assert "--reviewer sentry" in body and "{" not in body and "FIX BASE: unknown" in body
+    assert review_gate.MARKER not in body and "{" not in body and "FIX BASE: unknown" in body
+
+
+def test_fix_of_with_review_keeps_the_review_lane(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    _built_card(monkeypatch)
+    json.loads(submit.submit({"fix_of": "t_b", "request": "broken", "review": True}))
+    [fix] = calls
+    assert "--reviewer sentry" in arg(fix, "--body") and "only the FAILURES can hold the push" in arg(fix, "--body")
+
+
+def test_ready_to_merge_runs_the_checks_and_one_review_of_the_whole_branch(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    _built_card(monkeypatch)
+    result = json.loads(submit.submit({"fix_of": "t_b", "final": True}))
+    [final] = calls  # no request needed, no verify unless asked
+    assert result["ok"] and final[2] == "Final check: Gate SMS" and "ready to merge" in result["next"]
+    body = arg(final, "--body")
+    assert review_gate.FINAL_MARKER in body and review_gate.MARKER in body and "--reviewer sentry" in body
 
 
 def test_fix_of_with_verify_adds_a_verify_card(tmp_path, monkeypatch):

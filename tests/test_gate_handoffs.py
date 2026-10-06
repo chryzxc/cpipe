@@ -45,3 +45,13 @@ def test_every_normal_handoff_passes_every_gate(tmp_path, monkeypatch):
     assert passes("kanban_complete", {"task_id": "t_1", "result": "VERDICT: PASS abc1234\nnpm test: ok"}) == []
     board(tmp_path, monkeypatch, "archon", review_gate.PLAN_MARKER)
     assert passes("kanban_complete", {"task_id": "t_1", "result": PLAN}) == []
+
+
+def test_a_quick_fix_completes_and_a_final_check_always_goes_to_review(tmp_path, monkeypatch):
+    ws = board(tmp_path, monkeypatch, "forge", submit.QUICK_FIX_BRIEF)  # the user's testing loop: no review lane
+    assert passes("kanban_complete", {"task_id": "t_1", "summary": "PR updated; tests green"}) == []
+    head = subprocess.run(["git", "-C", str(ws), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+    board(tmp_path, monkeypatch, "forge", f"{review_gate.FINAL_MARKER}\nFIX BASE: {head[:12]} (HEAD)\n{review_gate.MARKER}")
+    assert passes("kanban_request_review", {"task_id": "t_1"}) == []  # nothing new committed, still reviewed
+    [refused] = passes("kanban_complete", {"task_id": "t_1"})
+    assert "request-review" in refused["message"]

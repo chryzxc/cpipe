@@ -220,6 +220,8 @@ def card_profile(task_id: Optional[str], db: Path, home: Optional[Path] = None) 
     if not row:
         return {}
     profile = {**project_profile(row[0], home), "project": row[0]}
+    if "FINAL CHECK BEFORE MERGE" in (row[1] or ""):  # review_gate.FINAL_MARKER
+        profile["final"] = True
     base = PR_BASE.search(row[1] or "")
     return {**profile, "base_branch": base[1]} if base else profile
 
@@ -317,7 +319,7 @@ def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict
                 notes += testscope_note(profile)
         home = Path(os.environ.get("HERMES_HOME", ""))
         notes += quality.first_turn_notes(home.name if home.parent.name == "profiles" else "default",
-                                          profile.get("project"))
+                                          profile.get("project"), final=profile.get("final", False))
         return {"context": "[cpipe workspace] " + " ".join(notes)} if notes else None
     except Exception:
         return None

@@ -30,7 +30,8 @@ def setup(tmp_path, monkeypatch, checks):
     monkeypatch.setattr(submit, "HERMES_HOME", home)
     monkeypatch.setattr(quality, "_blocked", {})
     monkeypatch.setattr(workspace_prep, "card_profile", lambda *a, **k: {"base_branch": "main"})
-    row = {"assignee": "forge", "body": review_gate.MARKER, "workspace_path": str(ws), "project_id": "app"}
+    row = {"assignee": "forge", "body": f"{review_gate.FINAL_MARKER}\n{review_gate.MARKER}", "workspace_path": str(ws),
+           "project_id": "app"}
     monkeypatch.setattr(review_gate, "_task", lambda tid: row)
     return home, row
 
@@ -116,3 +117,11 @@ def test_a_check_dies_with_the_worker_that_started_it(tmp_path):
         os.killpg(check, 9)
         raise AssertionError("the check outlived its worker")
     assert quality._run("exit 3", tmp_path).returncode == 3  # a check's own exit code still comes through
+
+
+def test_checks_wait_for_the_final_check_before_merge(tmp_path, monkeypatch):
+    _, row = setup(tmp_path, monkeypatch, '  - name: no\n    run: "false"\n')
+    row["body"] = review_gate.MARKER  # a build or reviewed fix round: the checks run once, at the end
+    assert review_gate.gate(tool_name="kanban_request_review", args={"task_id": "t_1"}) is None
+    home = submit.HERMES_HOME
+    assert not any("refuse it" in n for n in quality.first_turn_notes("forge", "app", home, final=False))
