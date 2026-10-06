@@ -113,9 +113,10 @@ env_pass: [GH_TOKEN]   # additional environment variables exposed to rounds and 
 projects_root: ~/Projects   # where the repository of a new project is started
 ```
 
-A delivery's project is a name from `projects.yaml`, a path to a repository, or a new name. A new name starts a
-new repository under `projects_root` (shipping to the same name again reuses it). A repository without a remote
-keeps the delivery on a local branch: no push, no pull request.
+A delivery's project is a name from `projects.yaml`. For a project cpipe does not know yet it asks where the
+repository is (in chat through Hermes' clarify): the path to a git checkout, or `new` to start a repository under
+`projects_root`. The answer is saved to `projects.yaml`, so later deliveries need only the name. A repository
+without a remote keeps the delivery on a local branch: no push, no pull request.
 
 Optional per-project settings live in `~/.hermes/delivery/`:
 
@@ -166,11 +167,11 @@ The same actions are slash commands, typed directly into a Hermes chat. They ans
 
 ```text
 /cp-ship [project:] <request>      /cp-feedback <card> <changes>      /cp-ready <card> [last changes]
-/cp-status [card]                  /cp-stop <card>
+/cp-status [card]                  /cp-stop <card>                    /cp-project <name> <path|new>
 ```
 
-For example `/cp-ship my-app: add a dark mode toggle`, `/cp-ship ~/code/tool: fix the CLI help`, or
-`/cp-ship recipe-site: a static site that lists recipes` for a project that has no repository yet.
+For example `/cp-ship my-app: add a dark mode toggle`. For a project without a saved repository, cpipe replies with
+the question; answer with `/cp-project recipe-site ~/code/recipes` (or `new`) and ship again.
 
 The chat that starts a delivery is notified when the pull request is ready to test, when a decision is needed, and
 when the delivery completes. GitHub access uses the `gh` CLI; without it, the branch is pushed and no pull request

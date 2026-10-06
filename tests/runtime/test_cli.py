@@ -58,11 +58,11 @@ def test_plugin_registers_cli_command_and_tools():
     assert set(ctx.tools) == {"cpipe_ship", "cpipe_feedback", "cpipe_ready", "cpipe_status", "cpipe_stop"}
     assert {t["toolset"] for t in ctx.tools.values()} == {"cpipe"}
     # a tool error is returned to the chat, never raised
-    assert "error" in json.loads(ctx.tools["cpipe_ship"]["handler"]({"request": "x", "project": "/dev/null"}))
+    assert "error" in json.loads(ctx.tools["cpipe_ship"]["handler"]({"request": "x", "project": "p", "repo": "/dev/null"}))
     # the same, as slash commands
-    assert set(ctx.commands) == {"cp-ship", "cp-feedback", "cp-ready", "cp-status", "cp-stop"}
+    assert set(ctx.commands) == {"cp-ship", "cp-project", "cp-feedback", "cp-ready", "cp-status", "cp-stop"}
     assert ctx.commands["cp-ship"]("") == "usage: /cp-ship [project:] <request>"
-    assert ctx.commands["cp-ship"]("x").startswith("cpipe: which project?")
+    assert ctx.commands["cp-ship"]("x").startswith("cpipe: Which project is this for?")
 
 
 def test_daemon_logs_reach_stderr_when_host_configured_logging(hermes_home, capsys):

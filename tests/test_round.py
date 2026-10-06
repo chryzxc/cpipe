@@ -224,21 +224,36 @@ def test_large_task_splits(board, repo, monkeypatch):
         assert state["pr_url"] and "a + b" in (Path(h.get_task(board, t.id).workspace_path) / "calc.py").read_text()
 
 
-def test_new_project_without_a_repo(board, repo, tmp_path):
-    """A project that has no repo yet: a new local repo is started, and the delivery hands off on a local branch."""
-    from cpipe import tools
-    from cpipe.runtime import hermes_api as h
+def test_unknown_project_asks_then_saves(board, repo, tmp_path, hermes_home):
+    """An unknown project is a question; the answer (a path, or new) is saved to projects.yaml for next time."""
+    from cpipe import tools, workspace_prep
     root = tmp_path / "projects"
     sched = lanes(projects_root=str(root))
-    shipped = tools.ship({"request": "a calculator", "project": "Calc App"})
-    assert shipped["project"] == "calc-app" and shipped["note"] == f"new repo at {root / 'calc-app'}"
+    asked = tools.ship({"request": "a calculator", "project": "Calc App"})
+    assert asked["choices"] == ["new"] and "clarify" in asked["next"] and "task_id" not in asked
+    assert "/cp-project Calc App <path> (or new)" in tools.command("cp-ship", "Calc App: a calculator")
+    shipped = tools.ship({"request": "a calculator", "project": "Calc App", "repo": "new"})
+    assert shipped["project"] == "calc-app"
+    assert workspace_prep.projects()["calc-app"]["repo"] == str(root / "calc-app")
     settle(board, sched, [shipped["task_id"]])
+    from cpipe.runtime import hermes_api as h
     task = h.get_task(board, shipped["task_id"])
     state = json.loads((Path(task.workspace_path) / ".cpipe" / "state.json").read_text())
     assert state["base"] == "main" and state["notes"]["pr"].startswith("No remote")
     assert "calc.py" in tools._git("-C", str(root / "calc-app"), "show", "--stat", task.branch_name).stdout
-    # the same name again is the same repo
-    assert tools.resolve_project("calc app", {"projects_root": str(root)}) == ("calc-app", root / "calc-app", False)
+    assert tools.resolve_project("Calc App", {"projects_root": str(root)}) == ("calc-app", root / "calc-app")
     (tmp_path / "plain").mkdir()
-    (tmp_path / "plain" / "f").write_text("x")
-    assert "not a git repo" in tools.resolve_project(str(tmp_path / "plain"), {})["error"]
+    assert "not the top of a git repo" in tools.ship({"request": "x", "project": "p", "repo": str(tmp_path / "plain")})["error"]
+
+
+def test_save_repo_keeps_the_file(hermes_home):
+    from cpipe import workspace_prep
+    f = hermes_home / "delivery" / "projects.yaml"
+    f.parent.mkdir()
+    f.write_text("# mine\nprojects:\n  a: &conv\n    base_branch: dev\n  b: *conv\nother: 1\n")
+    workspace_prep.save_repo("b", "/r/b")
+    workspace_prep.save_repo("c", "/r/c")
+    workspace_prep.save_repo("b", "/r/b2")
+    got = workspace_prep.projects()
+    assert got["a"] == {"base_branch": "dev"} and got["b"] == {"base_branch": "dev", "repo": "/r/b2"}
+    assert got["c"] == {"repo": "/r/c"} and f.read_text().startswith("# mine\n") and "other: 1" in f.read_text()
