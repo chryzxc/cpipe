@@ -11,16 +11,18 @@ SCRIPT = Path(__file__).resolve().parents[1] / "workflow" / "scripts" / "board_t
 def board(tmp_path):
     conn = sqlite3.connect(tmp_path / "kanban.db")
     conn.executescript("""
-        CREATE TABLE tasks (id TEXT, title TEXT, status TEXT, assignee TEXT, block_kind TEXT, created_at REAL);
+        CREATE TABLE tasks (id TEXT, title TEXT, status TEXT, assignee TEXT, block_kind TEXT, created_at REAL,
+                            body TEXT);
         CREATE TABLE task_events (id INTEGER PRIMARY KEY, task_id TEXT, kind TEXT, payload TEXT, created_at REAL);
         CREATE TABLE task_links (parent_id TEXT, child_id TEXT);
+        CREATE TABLE task_comments (id INTEGER PRIMARY KEY, task_id TEXT, body TEXT);
     """)
     return conn
 
 
-def card(conn, tid, status, kind=None, reason=None, parent=None, event="blocked"):
-    at = time.time() - 3600
-    conn.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?)", (tid, f"Card {tid}", status, "forge", kind, at))
+def card(conn, tid, status, kind=None, reason=None, parent=None, event="blocked", body="", age=3600):
+    at = time.time() - age
+    conn.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)", (tid, f"Card {tid}", status, "forge", kind, at, body))
     if reason is not None:
         conn.execute("INSERT INTO task_events (task_id, kind, payload, created_at) VALUES (?,?,?,?)",
                      (tid, event, json.dumps({"reason": reason}), at))
@@ -87,3 +89,52 @@ def test_queue_lists_non_empty_groups_in_order(tmp_path):
     assert [g["key"] for g in q["groups"]] == ["decide", "stale"]
     assert q["total"] == 2 and q["provider_walled"] is False
     assert q["groups"][0]["cards"][0]["reason"] == "Pick option A or B"
+
+
+def note(conn, tid, body):
+    conn.execute("INSERT INTO task_comments (task_id, body) VALUES (?,?)", (tid, body))
+    conn.commit()
+
+
+def test_finished_cards_are_archived_and_ignored_ones_warned_first(tmp_path):
+    mod = runpy.run_path(str(SCRIPT))
+    conn = board(tmp_path)
+    card(conn, "t_a1", "blocked", "needs_input", "wait")
+    card(conn, "t_5cc", "todo")
+    note(conn, "t_a1", "CONTINUATION: successor t_5cc (owner forge) took over")
+    card(conn, "t_a2", "triage", None, "wait")
+    note(conn, "t_a2", "CONTINUATION: stop — Christian dropped it")
+    card(conn, "t_a3", "blocked", "needs_input", "wait")                 # moved on, but its child still waits
+    note(conn, "t_a3", "CONTINUATION: superseded by t_5cc")
+    card(conn, "t_a3c", "todo", parent="t_a3")
+    card(conn, "t_b1", "blocked", "needs_input", "check iOS")            # the delivery's PR is merged
+    note(conn, "t_b1", "draft PR https://github.com/o/r/pull/7")
+    card(conn, "t_b2", "blocked", "needs_input", "retest", body="DELIVERY: t_b1")
+    card(conn, "t_b2c", "todo", parent="t_b2", body="DELIVERY: t_b1")
+    card(conn, "t_c1", "blocked", "needs_input", "check", body="DELIVERY: t_c0")  # merged, child running
+    card(conn, "t_c0", "done")
+    note(conn, "t_c0", "https://github.com/o/r/pull/8")
+    card(conn, "t_c1c", "running", parent="t_c1")
+    card(conn, "t_d1", "blocked", "needs_input", "PR still open")
+    note(conn, "t_d1", "https://github.com/o/r/pull/9")
+    card(conn, "t_old", "triage", None, "pick A or B", age=8 * 86400)
+    card(conn, "t_new", "triage", None, "pick A or B")
+
+    prs = {"7": "MERGED", "8": "MERGED", "9": "OPEN"}
+    gh = lambda o, r, n: prs[n]
+    now, state = time.time(), {}
+    done = mod["finished"](conn, mod["classify"](conn, now), now, state, prs=gh)
+    assert done == {"t_a1": ("moved to t_5cc", ["t_a1"]), "t_a2": ("stopped", ["t_a2"]),
+                    "t_b1": ("PR merged", ["t_b1"]), "t_b2": ("PR merged", ["t_b2", "t_b2c"])}
+    assert state["ignored"] == {"t_old": now}                            # warned, not archived yet
+
+    calls = []
+    archived = mod["auto_archive"](done, state, run=lambda *a: (calls.append(a), (True, ""))[1])
+    assert archived == ["t_a1", "t_a2", "t_b1", "t_b2", "t_b2c"] and all(c[:2] == ("kanban", "archive") for c in calls)
+    left = [c for c in mod["classify"](conn, now) if c["id"] not in archived]
+    message, state = mod["build_digest"](left, [], [], state, now, archived)
+    assert "archived 5 finished" in message and "archived in 24h unless you reply: t_old" in message
+
+    later = now + 3600
+    assert "t_old" not in mod["finished"](conn, left, later, state, prs=gh)   # still inside the 24h warning
+    assert mod["finished"](conn, left, now + 86400, state, prs=gh)["t_old"][1] == ["t_old"]
