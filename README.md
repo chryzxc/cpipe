@@ -176,7 +176,7 @@ Deliveries are started and steered from Hermes chat through the `cpipe` toolset:
 |---|---|
 | `cpipe_plan` | Starts a delivery: one card with its own worktree and branch; the plan comes back for approval. The engine and model can be named in the request |
 | `cpipe_feedback` | Answers the plan's questions or requests changes; the same session takes another round |
-| `cpipe_build` | Approves the plan: tests first, build, verification, review, then a draft pull request to test |
+| `cpipe_build` | Approves the plan: tests first, build, verification, review, then a pull request to test |
 | `cpipe_ship` | Accepts the change: final checks, then the pull request is marked ready for review |
 | `cpipe_status` | Reports where one delivery, or every open delivery, stands |
 | `cpipe_stop` | Stops a delivery and archives its card |
@@ -194,15 +194,15 @@ For example:
 ```text
 /cp-plan my-app: add a dark mode toggle      → the plan and its questions
 /cp-feedback t_1a2b3c4d keep the system theme as the default
-/cp-build t_1a2b3c4d                         → tests first, build, verify, review: a draft pull request to test
+/cp-build t_1a2b3c4d                         → tests first, build, verify, review: a pull request to test
 /cp-ship t_1a2b3c4d                          → the pull request is ready for review
 ```
 
 For a project without a saved repository, cpipe replies with the question; answer with
 `/cp-project recipe-site ~/code/recipes` (or `new`) and run `/cp-plan` again.
 
-The chat that starts a delivery is notified when the plan is ready, when the pull request is ready to test, when a decision is needed, and
-when the delivery completes. GitHub access uses the `gh` CLI; without it, the branch is pushed and no pull request
+The chat that starts a delivery is notified when the plan is ready, when the pull request is ready to test, when
+a decision is needed, and when the delivery completes. GitHub access uses the `gh` CLI; without it, the branch is pushed and no pull request
 is opened.
 
 ## Project layout
@@ -212,7 +212,7 @@ cpipe/graph.py           workflow graph, transition function and loop limits
 cpipe/round.py           round driver (python -m cpipe.round <task>): every node
 cpipe/engines/           engine integrations: Codex, Claude Code, Hermes profile, opencode
 cpipe/pr.py              push, pull request, CI monitoring, public-text scan
-cpipe/tools.py           Hermes chat tools
+cpipe/tools.py           Hermes chat tools and slash commands: plan, feedback, build, ship
 cpipe/report.py          status and report
 cpipe/settings.py        cpipe.yaml loader; one runtime lane per engine
 cpipe/quality.py         checks and security nodes (quality.yaml)
@@ -235,8 +235,8 @@ docs/runtime/            runtime documentation
 
 ## Safety
 
-cpipe never merges, deploys or handles credentials. Engines work only inside the delivery's own git worktree. Pushing and opening pull
-requests are done by cpipe's own code, not by the agent. Before anything is pushed, commit messages and added lines
+cpipe never merges, deploys or handles credentials. Engines work only inside the delivery's own git worktree.
+Pushing and opening pull requests are done by cpipe's own code, not by the agent. Before anything is pushed, commit messages and added lines
 are scanned for local paths and internal ids, and the pull request text is redacted. Computer-use QA runs one
 delivery at a time.
 

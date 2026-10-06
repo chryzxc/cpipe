@@ -12,7 +12,7 @@ license = {text = "MIT"}
 authors = [
   {name = "Christian Rey Villablanca"},
 ]
-keywords = ["hermes-agent", "codex", "claude-code", "kanban", "delivery", "code-review", "agentic-workflow", "graph-engineering", "loop-engineering"]
+keywords = ["hermes-agent", "codex", "claude-code", "kanban", "delivery", "planning", "tdd", "code-review", "agentic-workflow", "graph-engineering", "loop-engineering"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "License :: OSI Approved :: MIT License",
