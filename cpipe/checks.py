@@ -122,19 +122,25 @@ def release(conn, board, root: Path, state: dict) -> list[str]:
 
 def lift_pr_guards(conn, board, now: Optional[float] = None) -> list[str]:
     """Start ready cards the active_pr guard holds over a PR url someone else posted (an implementer's
-    handoff on its verify, a coordinator note). The guard exists so the worker that opened a PR is not
-    re-spawned into a duplicate; it lifts on a handoff, which is what an unassign/reassign records."""
+    handoff on its verify, a coordinator note), or over the worker's own PR when the card was unblocked
+    or re-specified after it (a draft PR opened early, then a block mid-build: the resume is deliberate).
+    The guard exists so the worker that opened a PR is not re-spawned into a duplicate; it lifts on a
+    handoff, which is what an unassign/reassign records."""
     now = now or time.time()
     lifted = []
     for tid, who in conn.execute(
             "SELECT t.id, t.assignee FROM tasks t WHERE t.status = 'ready' AND t.assignee IS NOT NULL AND EXISTS "
             "(SELECT 1 FROM task_events e WHERE e.task_id = t.id AND e.kind = 'respawn_guarded' "
             "AND e.payload LIKE '%active_pr%' AND e.created_at > ?)", (now - 300,)).fetchall():
-        url_by = next((a for a, body in conn.execute(
-            "SELECT author, body FROM task_comments WHERE task_id = ? AND created_at >= ? ORDER BY id DESC",
-            (tid, now - PR_GUARD_WINDOW)) if PR_URL.search(body or "")), None)
-        if not url_by or url_by == who:
-            continue  # its own worker opened that PR: the guard is right
+        url_by, url_at = next(((a, at) for a, body, at in conn.execute(
+            "SELECT author, body, created_at FROM task_comments WHERE task_id = ? AND created_at >= ? "
+            "ORDER BY id DESC", (tid, now - PR_GUARD_WINDOW)) if PR_URL.search(body or "")), (None, None))
+        if not url_by:
+            continue
+        if url_by == who and not conn.execute(
+                "SELECT 1 FROM task_events WHERE task_id = ? AND kind IN ('unblocked', 'specified') "
+                "AND created_at >= ?", (tid, url_at)).fetchone():
+            continue  # its own worker opened that PR and nobody resumed the card since: the guard is right
         board.assign(tid, None)
         board.assign(tid, who)
         submit._journal("pr_guard.lifted", tid, url_by=url_by, assignee=who)

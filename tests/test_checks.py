@@ -226,3 +226,16 @@ def test_a_pr_url_someone_else_posted_never_parks_a_ready_card(tmp_path, monkeyp
         event(conn, tid, "respawn_guarded", reason="active_pr")
     assert checks.lift_pr_guards(conn, FakeBoard(conn)) == ["t_v"]  # its own PR: the guard stays
     assert conn.execute("SELECT assignee FROM tasks WHERE id = 't_v'").fetchone()[0] == "sentinel"
+
+
+def test_a_build_resumed_after_opening_its_own_draft_pr_starts_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(submit, "_journal", lambda *a, **k: None)
+    conn = board(tmp_path / "kanban.db")
+    for tid, resume in (("t_resumed", "specified"), ("t_unblocked", "unblocked"), ("t_idle", None)):
+        card(conn, tid, "ready", assignee="forge")
+        conn.execute("INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?,?,?,?)",
+                     (tid, "forge", "draft https://github.com/o/r/pull/9, partial", int(time.time()) - 120))
+        if resume:
+            event(conn, tid, resume)  # the coordinator resumed it after the PR comment
+        event(conn, tid, "respawn_guarded", reason="active_pr")
+    assert sorted(checks.lift_pr_guards(conn, FakeBoard(conn))) == ["t_resumed", "t_unblocked"]
