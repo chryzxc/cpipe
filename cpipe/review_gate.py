@@ -105,6 +105,18 @@ def _nothing_to_review(row) -> bool:
     return bool(head) and head.startswith(m[1])
 
 
+def _unpushed(worktree: str | None) -> str:
+    """Why the worktree's work is not all on its pushed branch, or '' (also when it has no upstream yet)."""
+    def git(*args):
+        r = subprocess.run(["git", "-C", worktree or ".", *args], capture_output=True, text=True, timeout=30)
+        return r.stdout.rstrip() if r.returncode == 0 else None
+    dirty = git("status", "--porcelain", "--untracked-files=no")
+    if dirty:
+        return f"tracked files are uncommitted ({', '.join(line[3:] for line in dirty.splitlines()[:5])})"
+    ahead = git("rev-list", "--count", "@{u}..HEAD")
+    return f"{ahead} commit(s) are not pushed" if ahead and ahead != "0" else ""
+
+
 def quality_gate(tid: str | None):
     try:
         row = _task(tid)
@@ -115,6 +127,10 @@ def quality_gate(tid: str | None):
                 f"Review not filed: nothing is committed since FIX BASE, and review checks a commit, never an "
                 f"uncommitted diff. Commit and push your change (step 4), then request review. A round that "
                 f"changes no code completes {tid} itself with its result.")}
+        if unpushed := _unpushed(row["workspace_path"]):
+            return {"action": "block", "message": (
+                f"Review not filed: {unpushed}. The reviewer and verifier check the pushed commit, so an approved "
+                "but uncommitted change cost a whole run just to commit it. Commit and push, then request review.")}
         base = workspace_prep.card_profile(tid, submit._db(), submit.HERMES_HOME).get("base_branch")
         return quality.review_request_gate(tid, row, base, submit.HERMES_HOME)
     except Exception:

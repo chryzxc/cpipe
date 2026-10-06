@@ -34,6 +34,7 @@ from delivery_monitor import signature  # noqa: E402
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 DB = HERMES_HOME / "kanban.db"
 STATE = HERMES_HOME / "state" / "board-triage.json"
+SETUP = HERMES_HOME / "state" / "setup-problems.json"  # written by cpipe when a tool on this machine is broken
 STUCK = ("blocked", "triage", "scheduled")
 MAX_RETRIES = 2
 QUOTA_WINDOW_MINUTES = 30
@@ -59,7 +60,7 @@ RULES = [
 GROUPS = {  # key -> (heading, what the operator does)
     "decide": ("Needs your decision", "reply `continue <id> <decision>`"),
     "done": ("Looks done or superseded", "confirm with `archive <id>`"),
-    "stale": ("Blocked by old rules or environment", "`resubmit <id>` starts it fresh under the new flow"),
+    "stale": ("Blocked by old rules or environment", "fix the setup, then `continue <id>`; `resubmit <id>` if the rules changed"),
     "parked": ("Parked with no reason", "`continue <id>` or `archive <id>`"),
     "retry": ("Hit a rate limit or timeout", "blocked ones retry by themselves; `continue <id>` the ones listed"),
     "waiting": ("Waiting on a parent card", ""),
@@ -250,18 +251,24 @@ def auto_archive(done, state, run=hermes):
     return archived
 
 
-def build_digest(cards, retried, waiting, state, now, archived=()):
-    """Return (message, new_state). Daily, or sooner when a new decision is needed."""
+def build_digest(cards, retried, waiting, state, now, archived=(), setup=None):
+    """Return (message, new_state). Daily, or sooner when a new decision or setup problem appears."""
+    setup = setup or {}
     decide = {c["id"] for c in cards if c["group"] == "decide"}
     new_decide = decide - set(state.get("decide", []))
+    new_setup = set(setup) - set(state.get("setup", []))
     due = now - state.get("reminded_at", 0) >= REMIND_HOURS * 3600
-    new_state = {**state, "decide": sorted(decide)}
+    new_state = {**state, "decide": sorted(decide), "setup": sorted(setup)}
     announced = any(at == now for at in state.get("ignored", {}).values())  # the 24h warning must go out
-    if not (due or new_decide or archived or announced) or not cards:
+    if not (due or new_decide or new_setup or archived or announced) or not (cards or setup):
         return "", new_state
     new_state["reminded_at"] = now
     lines = [f"📋 **Board check — {len(cards)} card(s) not moving** · Mission Control: {DASHBOARD_URL}",
              "_Operator digest: relay it as-is. Do not open these cards; the operator replies with a decision._"]
+    if setup:
+        lines.append("🔧 **Setup broken on this machine — the bots cannot fix it, you can:** " + "; ".join(
+            f"{name} ({_short(p.get('detail', ''), 80)})" + (f" · {p['card']}" if p.get("card") else "")
+            for name, p in list(setup.items())[:5]))
     moved = [f"retried {len(retried)}" if retried else "", f"{len(waiting)} back to wait on parents" if waiting else "",
              f"archived {len(archived)} finished ({', '.join(archived[:6])})" if archived else ""]
     if any(moved):
@@ -312,8 +319,12 @@ def main():
     cards = [c for c in cards if c["id"] not in archived]
     retried, waiting = auto_fix(cards, state, walled)
     moved = set(retried) | set(waiting)
+    try:
+        setup = json.loads(SETUP.read_text())
+    except (OSError, json.JSONDecodeError):
+        setup = {}
     message, new_state = build_digest([c for c in cards if c["id"] not in moved], retried, waiting, state, now,
-                                      archived)
+                                      archived, setup)
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps(new_state))
     if message:

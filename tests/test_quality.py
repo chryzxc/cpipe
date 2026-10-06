@@ -1,4 +1,5 @@
 """The operator's quality.yaml: checks refuse the implementer's review request; guidance reaches each role's first turn."""
+import json
 import subprocess
 from pathlib import Path
 
@@ -57,9 +58,9 @@ def test_passing_unmatched_or_other_roles_never_block(tmp_path, monkeypatch):
 
 
 def test_guidance_goes_to_the_profiles_role(tmp_path, monkeypatch):
-    home, _ = setup(tmp_path, monkeypatch, '  - name: lint\n    run: "eslint {files}"\n')
+    home, _ = setup(tmp_path, monkeypatch, '  - name: lint\n    run: "git diff --check {files}"\n')
     forge = quality.first_turn_notes("forge", "app", home)
-    assert forge[0] == "Reuse the component library." and "lint: `eslint {files}`" in forge[1]
+    assert forge[0] == "Reuse the component library." and "lint: `git diff --check {files}`" in forge[1]
     assert quality.first_turn_notes("sentry", "app", home) == ["Check UI states."]
     assert quality.first_turn_notes("nobody", "app", home) == []
     assert quality.first_turn_notes("forge", "app", tmp_path / "unset") == []
@@ -70,3 +71,21 @@ def test_checks_run_without_hermes_python_path(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONHOME", "/hermes/python")
     done = quality._run('test -z "$PYTHONPATH$PYTHONHOME"', tmp_path)
     assert done.returncode == 0
+
+
+def test_a_broken_check_tool_is_skipped_and_reported_until_it_runs(tmp_path, monkeypatch):
+    home, _ = setup(tmp_path, monkeypatch, '  - name: sec\n    files: "*.js"\n    run: "sh x.sh"\n'
+                                           '  - name: gone\n    run: "no-such-tool-xyz {files}"\n')
+    ws = tmp_path / "ws"
+    (ws / "x.sh").write_text("echo 'Traceback (most recent call last):'; exit 2\n")
+    problems = home / "state" / "setup-problems.json"
+    assert review_gate.gate(tool_name="kanban_request_review", args={"task_id": "t_1"}) is None
+    assert set(json.loads(problems.read_text())) == {"sec", "gone"}
+    assert json.loads(problems.read_text())["sec"]["card"] == "t_1"
+    (ws / "x.sh").write_text("exit 0\n")
+    assert review_gate.gate(tool_name="kanban_request_review", args={"task_id": "t_1"}) is None
+    assert set(json.loads(problems.read_text())) == {"gone"}
+    assert quality.missing_tools("app", home) == ["gone"]
+    notes = quality.first_turn_notes("forge", "app", home)
+    assert any("cannot run on this machine" in n and "gone" in n for n in notes)
+    assert "no-such-tool" not in notes[-1]  # not listed as a check to run

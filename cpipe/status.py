@@ -320,3 +320,26 @@ def compact_show(*, tool_name: str = "", result: Any = None, **_: Any) -> Option
                     if worker else "Chat view: brief and parent handoffs omitted.") + \
         " `hermes kanban show <id>` has everything."
     return json.dumps(data)
+
+
+TURN_CALLS = 60  # tool calls in one chat turn before the coordinator is asked whether it is doing a worker's job
+_turn_calls: dict = {}
+
+
+def turn_budget(tool_name: str = "", session_id: str = "", turn_id: str = "", **_: Any) -> Optional[dict]:
+    """``pre_tool_call`` in chats: one coordinator turn made 996 calls (83M tokens) doing the work itself. Every
+    TURN_CALLS calls in a turn, one call is refused with a reminder; repeating it goes through."""
+    if os.environ.get("HERMES_KANBAN_TASK") or not (session_id and turn_id):
+        return None
+    key = (session_id, turn_id)
+    if key not in _turn_calls and len(_turn_calls) > 200:
+        _turn_calls.clear()
+    _turn_calls[key] = n = _turn_calls.get(key, 0) + 1
+    if n % (TURN_CALLS + 1):
+        return None
+    _journal("turn.budget", None, session=session_id, calls=n - 1, tool=tool_name)
+    return {"action": "block", "message": (
+        f"{n - 1} tool calls in this turn. If this is coding, testing or digging through a repo, it is a worker's "
+        "job: hand it to delivery_submit (or comment on the running card) and tell the user. If it truly belongs "
+        "in this chat, repeat this call and carry on.")}
+

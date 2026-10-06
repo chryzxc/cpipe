@@ -359,3 +359,4 @@ def register(ctx):
     ctx.register_hook("pre_tool_call", _live(review_gate, "gate"))
     ctx.register_hook("pre_tool_call", _live(headless_clarify, "gate"))
     ctx.register_hook("pre_tool_call", _live(card_gate, "gate"))
+    ctx.register_hook("pre_tool_call", _live(status, "turn_budget"))

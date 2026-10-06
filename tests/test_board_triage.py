@@ -138,3 +138,12 @@ def test_finished_cards_are_archived_and_ignored_ones_warned_first(tmp_path):
     later = now + 3600
     assert "t_old" not in mod["finished"](conn, left, later, state, prs=gh)   # still inside the 24h warning
     assert mod["finished"](conn, left, now + 86400, state, prs=gh)["t_old"][1] == ["t_old"]
+
+
+def test_a_new_setup_problem_reaches_the_operator_once():
+    mod = runpy.run_path(str(SCRIPT))
+    now, setup = time.time(), {"sec": {"detail": "semgrep exit 2: Traceback", "card": "t_1"}}
+    message, state = mod["build_digest"]([], [], [], {"reminded_at": now}, now, (), setup)
+    assert "Setup broken" in message and "sec (semgrep" in message and "t_1" in message
+    assert mod["build_digest"]([], [], [], state, now + 60, (), setup)[0] == ""  # told already
+    assert mod["build_digest"]([], [], [], state, now + 60, (), {})[0] == ""    # fixed: nothing to say

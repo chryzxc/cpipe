@@ -34,7 +34,11 @@ def test_a_fix_round_cannot_hand_review_an_uncommitted_diff(tmp_path, monkeypatc
     import subprocess
     setup(tmp_path, monkeypatch, "forge", body=f"FIX BASE: abc1234 (HEAD before this round)\n{review_gate.MARKER}")
     head = {"sha": "abc1234def"}
-    monkeypatch.setattr(review_gate.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, head["sha"] + "\n", ""))
+
+    def git(cmd, **_):  # clean, pushed tree; only HEAD moves
+        out = {"status": "", "rev-list": "0"}.get(cmd[3], head["sha"])
+        return subprocess.CompletedProcess(cmd, 0, out + "\n", "")
+    monkeypatch.setattr(review_gate.subprocess, "run", git)
     monkeypatch.setattr(review_gate.quality, "review_request_gate", lambda *a, **k: None)
     monkeypatch.setattr(review_gate.workspace_prep, "card_profile", lambda *a, **k: {})
     verdict = review_gate.gate(tool_name="kanban_request_review", args={"task_id": "t_1"})
@@ -125,3 +129,23 @@ def test_worker_cannot_start_a_nested_agent(monkeypatch):
         assert review_gate.gate("terminal", {"command": ok}) is None
     monkeypatch.delenv("HERMES_KANBAN_TASK")
     assert review_gate.gate("terminal", {"command": "hermes -p cypher chat -q hi"}) is None
+
+
+def test_review_waits_for_a_committed_and_pushed_tree(tmp_path):
+    import subprocess
+
+    def git(*args, cwd=tmp_path):
+        subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+    remote, wt = tmp_path / "remote.git", tmp_path / "wt"
+    git("init", "--bare", "-q", str(remote))
+    git("clone", "-q", str(remote), str(wt))
+    (wt / "a.txt").write_text("1")
+    git("add", "a.txt", cwd=wt)
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a", cwd=wt)
+    assert review_gate._unpushed(str(wt)) == ""  # no upstream yet: nothing to compare against
+    git("push", "-q", "-u", "origin", "HEAD", cwd=wt)
+    assert review_gate._unpushed(str(wt)) == ""
+    (wt / "a.txt").write_text("2")
+    assert "uncommitted (a.txt)" in review_gate._unpushed(str(wt))
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "b", cwd=wt)
+    assert review_gate._unpushed(str(wt)) == "1 commit(s) are not pushed"

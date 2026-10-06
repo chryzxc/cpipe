@@ -35,3 +35,9 @@ def test_explains_each_block_once_with_run_errors(tmp_path):
     assert "pid 1 not alive" in text and "Unknown provider 'x'" in text
     assert "MCP server" not in text and "(old)" not in text
     assert block_reasons.pending(conn, {"t_a": todo[0]["event_id"]}) == []  # explained once
+
+
+def test_setup_blocks_go_to_the_operator():
+    assert block_reasons.setup_block("vitest: command not found in client/")
+    assert block_reasons.setup_block("anything", "capability")
+    assert not block_reasons.setup_block("Should exports cap at 200 rows?")

@@ -136,3 +136,19 @@ def test_inline_scripts_note_follows_the_approval_config(tmp_path):
     assert workspace_prep.inline_scripts_refused(tmp_path)  # no config: Hermes defaults to deny
     (tmp_path / "config.yaml").write_text("approvals:\n  single_query_mode: allow\n")
     assert not workspace_prep.inline_scripts_refused(tmp_path)
+
+
+def test_missing_test_runner_is_said_up_front_and_reported(tmp_path, monkeypatch):
+    import json
+    from cpipe import home as hermes_home
+    monkeypatch.setattr(workspace_prep.shutil, "which", lambda tool: None)
+    (tmp_path / "client" / "node_modules" / ".bin").mkdir(parents=True)
+    (tmp_path / "client" / "package.json").write_text('{"scripts": {"test": "CI=1 vitest run"}}')
+    (tmp_path / "package.json").write_text('{"scripts": {"test": "npm --prefix client test"}}')
+    notes = workspace_prep.test_runner_notes(tmp_path, "app")
+    assert len(notes) == 1 and "`vitest`" in notes[0] and "npm ci" in notes[0]
+    problems = hermes_home.root() / "state" / "setup-problems.json"
+    assert list(json.loads(problems.read_text())) == ["app:client:vitest"]
+    (tmp_path / "client" / "node_modules" / ".bin" / "vitest").write_text("")
+    assert workspace_prep.test_runner_notes(tmp_path, "app") == []
+    assert json.loads(problems.read_text()) == {}
