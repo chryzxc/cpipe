@@ -170,6 +170,43 @@ def test_fix_of_unknown_pr_creates_nothing(tmp_path, monkeypatch):
     assert result["ok"] is False and calls == []
 
 
+def test_fix_of_an_unfinished_build_creates_nothing(tmp_path, monkeypatch):
+    calls = fake_board(tmp_path, monkeypatch)
+    _built_card(monkeypatch)
+    row = submit._task_row("t_b")
+    for status in ("ready", "blocked", "running"):  # incident t_f2551dd4: the fix waited behind its own build
+        monkeypatch.setattr(submit, "_task_row", lambda tid, s=status: {**row, "status": s, "step": "build"})
+        result = json.loads(submit.submit({"fix_of": "t_b", "request": "finish it"}))
+        assert result["ok"] is False and "kanban_comment" in result["error"]
+    assert calls == []
+
+
+def test_retarget_moves_every_open_card_of_the_delivery(tmp_path, monkeypatch):
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from kanban_board import board, card
+    calls = fake_board(tmp_path, monkeypatch)
+    monkeypatch.setattr(submit, "_journal", lambda *a, **k: None)
+    monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+    conn = board(tmp_path / "kanban.db")
+    card(conn, "t_aa0", "done", body="map")
+    card(conn, "t_b1d", "running", body="BUILD\nPR BASE: `team-production` (start from origin/team-production)",
+         current_step_key="build")
+    card(conn, "t_7e1", "todo", assignee="sentinel", body="verify\nDELIVERY: t_b1d", current_step_key="verify")
+    card(conn, "t_0d1", "done", body="old\nDELIVERY: t_b1d")
+    card(conn, "t_0e2", "todo", body="another delivery")
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "kanban.db"))
+    result = json.loads(submit.retarget({"card": "t_7e1", "base": "team-develop"}))
+    assert result["ok"] and sorted(result["updated"]) == ["t_7e1", "t_b1d"]
+    edits = {c[2]: c[4] for c in calls if c[1] == "edit"}
+    assert "team-production" not in edits["t_b1d"] and "PR BASE: `team-develop`" in edits["t_b1d"]
+    assert edits["t_7e1"].startswith("verify\nDELIVERY: t_b1d") and "PR BASE: `team-develop`" in edits["t_7e1"]
+    [note] = [c for c in calls if c[1] == "comment"]  # only the build is told to move its branch and PR
+    assert note[2] == "t_b1d" and "gh pr edit --base team-develop" in note[3]
+    assert json.loads(submit.retarget({"card": "t_b1d", "base": "bad base; rm"}))["ok"] is False
+
+
 def test_long_request_is_refused_as_not_a_brief(tmp_path, monkeypatch):
     result = json.loads(submit.submit({"title": "T", "request": "x" * 3001, "project": "p", "size": "small"}))
     assert not result["ok"] and "brief" in result["error"]

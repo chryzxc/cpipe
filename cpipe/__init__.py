@@ -324,6 +324,10 @@ def register(ctx):
         schema=submit.DECIDE_SCHEMA["function"], handler=_live(submit, "decide"),
     )
     ctx.register_tool(
+        name="delivery_retarget", toolset="cpipe",
+        schema=submit.RETARGET_SCHEMA["function"], handler=_live(submit, "retarget"),
+    )
+    ctx.register_tool(
         name="delivery_test_env", toolset="cpipe",
         schema=test_env.SCHEMA["function"], handler=_live(test_env, "run"),
     )

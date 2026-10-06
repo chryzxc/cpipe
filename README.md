@@ -135,6 +135,7 @@ my-app:
 | `delivery_submit` | Turns a request into its flow's cards and subscribes the chat |
 | `delivery_design_pick` | Starts the build from a chosen design |
 | `delivery_decide` | Your answer when a delivery stops at the fix-round limit: one more round, or stop and finish the PR yourself |
+| `delivery_retarget` | You changed the base branch of a delivery that is already open: its cards move to the new base on the same branch and PR, nothing restarts |
 | `delivery_status` | Each open card's verdict, from the database |
 | `delivery_watch` | Waits on a PR or CI run; required before anyone says a card "will resume" |
 | `delivery_test_env` | Runs a branch with the project's saved test recipe and returns the URLs |

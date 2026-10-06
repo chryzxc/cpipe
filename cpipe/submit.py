@@ -982,6 +982,49 @@ def verify_failed(args: dict, **_kw) -> str:
                        "next": "complete your verify card with the failure evidence"})
 
 
+UNFINISHED = ("todo", "ready", "running", "blocked", "triage")  # a build that has not reached review
+PR_BASE_LINE = re.compile(r"^PR BASE: .*$", re.M)
+RETARGET_NOTE = ("BASE CHANGED by the user to `{base}`. Keep this branch and its PR: rebase only this delivery's "
+                 "commits onto origin/{base}, push with --force-with-lease, and retarget the same PR with "
+                 "`gh pr edit --base {base}`. Never open a second branch or PR. Then carry on where you were.")
+
+
+def retarget(args: dict, **_kw) -> str:
+    """The user changed the branch a delivery starts from and opens its PR against while it is open: every
+    open card of the delivery gets the new PR BASE line, and its build and fix cards a note to move the same
+    branch and PR. Running cards are not stopped: the note reaches the worker as a comment."""
+    if os.environ.get("HERMES_KANBAN_TASK"):
+        return json.dumps({"ok": False, "error": "the user decides this, not a worker"})
+    card, base = str(args.get("card") or "").strip(), str(args.get("base") or "").strip()
+    if not re.fullmatch(r"[\w./-]+", base):
+        return json.dumps({"ok": False, "error": "base is a branch name, e.g. team-develop"})
+    task = _task_row(card)
+    if not task:
+        return json.dumps({"ok": False, "error": f"unknown card {card}"})
+    delivery = delivery_of(card, task["body"])
+    try:
+        conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
+        cards = conn.execute(
+            f"SELECT id, body, {step_sql()} FROM tasks WHERE (id = ? OR instr(body, ?) > 0) "
+            "AND status NOT IN ('done', 'archived')", (delivery, f"DELIVERY: {delivery}")).fetchall()
+        conn.close()
+    except sqlite3.Error as e:
+        return json.dumps({"ok": False, "error": f"board unreadable: {e}"})
+    line = (f"PR BASE: `{base}` (changed by the user mid-delivery: start from origin/{base} and open the PR "
+            "against it; this overrides any other base on this card)")
+    updated, failed = [], []
+    for tid, body, step in cards:
+        body = body or ""
+        new = PR_BASE_LINE.sub(line, body) if PR_BASE_LINE.search(body) else f"{body}\n\n{line}"
+        ok = _hermes("kanban", "edit", tid, "--body", new).returncode == 0
+        if ok and step in ("build", "fix"):
+            ok = _hermes("kanban", "comment", tid, RETARGET_NOTE.format(base=base)).returncode == 0
+        (updated if ok else failed).append(tid)
+    _journal("delivery.retarget", delivery, base=base, cards=updated)
+    return json.dumps({"ok": not failed, "delivery": delivery, "base": base, "updated": updated, "failed": failed,
+                       "next": "the implementer moves the same branch and PR to the new base; nothing restarts"})
+
+
 def fix(args: dict) -> str:
     """The user tested a card's PR and found a problem: one fix card in that card's worktree, same
     branch, same-card review, then a verify card, so the open PR updates. No plan."""
@@ -995,6 +1038,10 @@ def fix(args: dict) -> str:
         return json.dumps({"ok": False, "error": f"no card with a live worktree found for {ref}; "
                            "to only run it for testing use delivery_test_env(target, project); to change its code, "
                            "submit it as new work (size=small) naming the PR branch"})
+    if "status" in task.keys() and task["status"] in UNFINISHED and task["step"] in ("build", "fix"):
+        return json.dumps({"ok": False, "error": f"{source_id} is not finished yet (status {task['status']}): a "
+                           "fix card would wait behind it. Add the correction as a kanban_comment on it; if it is "
+                           "blocked, unblock it and it resumes with the comment"})
     request = _request_of(task["body"])
     base_title = re.sub(r"^(Fix \d+: )+", "", task["title"] or "")
     if args.get("design") and not args.get("picked_design"):
@@ -1239,7 +1286,7 @@ def _task_row(task_id: str):
     try:
         conn = sqlite3.connect(f"file:{_db()}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
-        row = conn.execute(f"SELECT title, body, project_id, {step_sql()} AS step FROM tasks WHERE id = ?",
+        row = conn.execute(f"SELECT title, body, project_id, status, {step_sql()} AS step FROM tasks WHERE id = ?",
                            (task_id,)).fetchone()
         conn.close()
         return row
@@ -1324,6 +1371,24 @@ def _create(argv: list[str]) -> tuple[str | None, str | None]:
         _copy_subscriptions(parent, task_id)  # hears this card too, even when no chat called the tool
     return task_id, None
 
+
+RETARGET_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "delivery_retarget",
+        "description": ("The user changed the base branch of a delivery that is already open (\"branch out from X "
+                        "instead\"). Moves its open cards to the new base: same branch, same PR retargeted, no "
+                        "second PR, nothing restarted. Not for new work (delivery_submit base=) or a finished PR."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "card": {"type": "string", "description": "Any card id of the delivery"},
+                "base": {"type": "string", "description": "The new base branch, e.g. team-develop"},
+            },
+            "required": ["card", "base"],
+        },
+    },
+}
 
 DECIDE_SCHEMA = {
     "type": "function",
@@ -1417,7 +1482,7 @@ SCHEMA = {
                 "design": {"type": "boolean", "description": "UI work where the look is the open question (a new screen, a redesign, a layout the user describes loosely, or a fix_of saying it looks wrong): three designers first mock up directions A (closest to the app), B (the user's references), C (a fresh take) as HTML files, and nothing is built until the user picks one with delivery_design_pick. Not for copy, a small style tweak, or a UI the user already specified exactly."},
                 "design_refs": {"type": "string", "description": "With design: what the user wants it to look like, in their words: products or sites to resemble, screenshot or image paths they sent, colors, things they dislike now"},
                 "branch": {"type": "string", "description": "New work: the branch to create, named by your project conventions (memory). Omit for Hermes's default. Not for fix_of."},
-                "base": {"type": "string", "description": "New work: the branch to start from and open the PR against when the user names one (\"branch out from X\"), e.g. web-develop. Omit for the project's base branch. Not for fix_of: a fix follows its PR's base."},
+                "base": {"type": "string", "description": "New work: the branch to start from and open the PR against when the user names one (\"branch out from X\"), e.g. web-develop. Omit for the project's base branch. Not for fix_of: a fix follows its PR's base. Changing the base of an open delivery: delivery_retarget."},
             },
             "required": ["request"],
         },
