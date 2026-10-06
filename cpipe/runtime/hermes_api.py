@@ -208,5 +208,10 @@ def latest_metadata(conn, task_id: str) -> dict:
     return dict(run.metadata or {}) if run else {}
 
 
+def latest_summary(conn, task_id: str) -> str:
+    run = kb.latest_run(conn, task_id)
+    return (run.summary or "") if run else ""
+
+
 def run_count(conn, task_id: str) -> int:
     return len(kb.list_runs(conn, task_id))

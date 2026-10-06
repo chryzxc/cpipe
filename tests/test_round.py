@@ -21,10 +21,13 @@ LIMITS = settings.DEFAULTS["limits"]
 
 
 @pytest.mark.parametrize("node,outcome,ready,want", [
-    ("setup", "ok", False, "build"),
-    ("setup", "large", False, "plan"),
-    ("plan", "split", False, "split"),
-    ("plan", "ok", False, "build"),
+    ("setup", "ok", False, "plan"),
+    ("setup", "approved", False, "tests"),
+    ("tests", "ok", False, "build"),
+    ("tests", "fix", False, "tests"),
+    ("tests", "limit", False, "stuck"),
+    ("plan", "ok", False, "proposal"),
+    ("plan", "needs_user", False, "ask"),
     ("split", "ok", False, "done"),
     ("build", "ok", False, "checks"),
     ("build", "needs_user", False, "ask"),
@@ -99,7 +102,7 @@ def lanes(extra: dict | None = None, **cfg):
     from cpipe.runtime.config import parse_config
     from cpipe.runtime.scheduler import Scheduler
     raw = {"engines": {"codex": {"bin": FAKE, "concurrency": 2}, **(extra or {})}, "review_engine": "codex",
-           "env_pass": ["FAKE_CODEX_LOG", "FAKE_CODEX", "FAKE_PLAN", "FAKE_GH_LOG", "FAKE_GH_CHECKS"], **cfg}
+           "env_pass": ["FAKE_CODEX_LOG", "FAKE_CODEX", "FAKE_PLAN", "FAKE_TDD", "FAKE_GH_LOG", "FAKE_GH_CHECKS"], **cfg}
     settings.path().write_text(json.dumps(raw))
     return Scheduler(parse_config({**settings.runtime_raw(settings.load()), "heartbeat_interval_seconds": 0.5,
                                    "worker_heartbeat_interval_seconds": 1, "poll_interval_seconds": 0.2}))
@@ -134,31 +137,55 @@ def calls(fx, name="codex.jsonl"):
     return [json.loads(ln) for ln in path.read_text().splitlines()] if path.exists() else []
 
 
+def plan_and_approve(board, sched, tid):
+    from cpipe import tools
+    settle(board, sched, [tid])
+    tools.build({"task_id": tid})
+    settle(board, sched, [tid])
+
+
 def test_delivery_end_to_end(board, repo):
-    """ship → PR ready to test → feedback → same PR, same session → ready → PR marked ready, card done."""
+    """plan → questions → answers → revised plan → approve → build … draft PR → feedback → same PR, same session →
+    ship → PR marked ready, card done."""
     from cpipe import report, tools
     from cpipe.runtime import hermes_api as h
     sched = lanes()
-    shipped = tools.ship({"request": TASK})
-    tid = shipped["task_id"]
-    assert shipped["engine"] == "codex" and shipped["branch"].startswith("cp/the-calculator")
+    started = tools.plan({"request": TASK})
+    tid = started["task_id"]
+    assert started["engine"] == "codex" and started["branch"].startswith("cp/the-calculator")
 
+    settle(board, sched, [tid])                                 # the plan, for approval: nothing built yet
+    brief = tools.status({"task_id": tid})
+    assert brief["stage"].startswith("plan ready") and brief["questions"] and "Make add add" in brief["plan"]
+    assert "Questions:" in tools.command("cp-status", tid)
+    assert "a - b" in (repo.repo / "calc.py").read_text() and len(calls(repo)) == 1
+    assert "approve with /cp-build" in h.latest_summary(board, tid)
+
+    tools.command("cp-feedback", f"{tid} floats: no, ints only")  # answers revise the plan, same session
+    settle(board, sched, [tid])
+    revise = calls(repo)[-1]
+    assert revise["resumed"] and "ints only" in revise["prompt"] and "(revised)" in tools.status({"task_id": tid})["plan"]
+
+    tools.command("cp-build", tid)
     settle(board, sched, [tid])
     builds = [c for c in calls(repo) if not c["readonly"]]
-    assert [c["resumed"] for c in builds] == [False, True]     # wrong fix, then the check failure fed back
+    assert [c["resumed"] for c in builds] == [False, True, True, True, True]  # plan, revise, tests, wrong fix, fix
     assert len({c["thread"] for c in builds}) == 1
+    assert "approved the plan" in builds[2]["prompt"] and "Tests first" in builds[2]["prompt"]
+    assert "until the new tests and the whole suite pass" in builds[3]["prompt"]
     assert any(c["readonly"] and "You review a change" in c["prompt"] for c in calls(repo))
     ws = Path(h.get_task(board, tid).workspace_path)
     state = json.loads((ws / ".cpipe" / "state.json").read_text())
     assert state["pr_url"] == "https://github.com/acme/app/pull/7" and state["verified_head"]
     assert "Review (codex): approved" in state["verification"]
+    assert state["verification"][0] == "Tests first (fix): test_add_ones, failing before the change, passing after"
+    assert tools.status({"task_id": tid})["stage"].startswith("ready to test")
     gh = calls(repo, "gh.jsonl")
     create = next(c for c in gh if c[:2] == ["pr", "create"])
     assert "--draft" in create and "## How to test" in create[create.index("--body") + 1]
     assert str(ws) not in create[create.index("--body") + 1]
 
-    assert tools.command("cp-status", "").startswith(f"{tid}  ")              # the slash commands, too
-    assert f"{tid}  ready" in tools.command("cp-feedback", f"{tid} also leave a note in calc.py")
+    assert f"{tid}  " in tools.command("cp-feedback", f"{tid} also leave a note in calc.py")
     settle(board, sched, [tid])
     last = [c for c in calls(repo) if not c["readonly"]][-1]
     assert last["resumed"] and last["thread"] == builds[0]["thread"] and "also leave a note" in last["prompt"]
@@ -167,13 +194,13 @@ def test_delivery_end_to_end(board, repo):
     reviews = [c for c in calls(repo) if c["readonly"]]
     assert reviews[-1]["resumed"] and "Review it again" in reviews[-1]["prompt"]
 
-    tools.ready({"task_id": tid})
+    tools.command("cp-ship", tid)
     settle(board, sched, [tid], want="done")
     assert calls(repo, "gh.jsonl")[-1][:2] == ["pr", "ready"]
     assert len(h.list_cards(board)) == 1
-    assert len({c["thread"] for c in calls(repo) if not c["readonly"]}) == 1   # one build session throughout
+    assert len({c["thread"] for c in calls(repo) if not c["readonly"]}) == 1   # one session throughout
     row = report.row(board, h.get_task(board, tid))
-    assert row["runs"] == 3 and row["tokens"] > 0 and {"build", "checks", "verify", "pr"} <= set(row["nodes"])
+    assert row["runs"] == 5 and row["tokens"] > 0 and {"plan", "tests", "build", "checks", "verify", "pr"} <= set(row["nodes"])
     assert "total" in report.render([row])
 
 
@@ -182,7 +209,7 @@ def test_rate_limit_requeues(board, repo, monkeypatch):
     from cpipe.runtime import hermes_api as h
     monkeypatch.setenv("FAKE_CODEX", "rate_limit")
     sched = lanes()   # fallback_engine (claude) is not configured: nothing to fall back to
-    tid = tools.ship({"request": TASK})["task_id"]
+    tid = tools.plan({"request": TASK})["task_id"]
     sched.tick()
     log = h.worker_log_path(tid, board=None)
     wait_for(lambda: "[kanban-worker-exit] rc=" in log.read_text(), 60)
@@ -198,8 +225,8 @@ def test_fallback_engine_takes_over(board, repo, monkeypatch, tmp_path):
     backup = tmp_path / "fake_backup"
     backup.symlink_to(FAKE)
     sched = lanes({"backup": {"kind": "codex", "bin": str(backup)}}, fallback_engine="backup")
-    tid = tools.ship({"request": TASK})["task_id"]
-    settle(board, sched, [tid])
+    tid = tools.plan({"request": TASK})["task_id"]
+    plan_and_approve(board, sched, tid)
     state = json.loads((Path(h.get_task(board, tid).workspace_path) / ".cpipe" / "state.json").read_text())
     assert state["engine"] == "backup" and calls(repo)[0]["bin"] == "fake_codex.py"
     assert {c["bin"] for c in calls(repo)[1:] if not c["readonly"]} == {"fake_backup"}
@@ -207,18 +234,22 @@ def test_fallback_engine_takes_over(board, repo, monkeypatch, tmp_path):
 
 
 def test_large_task_splits(board, repo, monkeypatch):
-    """A large task is planned in the build session and split into two child deliveries that run in parallel."""
+    """A plan with independent parts, once approved, becomes child deliveries that build in parallel, unplanned."""
     from cpipe import tools
     from cpipe.runtime import hermes_api as h
     monkeypatch.setenv("FAKE_PLAN", "split")
     sched = lanes()
-    tid = tools.ship({"request": TASK, "size": "large"})["task_id"]
+    tid = tools.plan({"request": TASK})["task_id"]
+    settle(board, sched, [tid])
+    assert "Split into separate pull requests" in h.latest_summary(board, tid)
+    tools.build({"task_id": tid})
     settle(board, sched, [tid], want="done")
     children = [t for t in h.list_cards(board) if t.id != tid]
     assert sorted(t.title for t in children) == ["Part 1", "Part 2"]
     assert all(t.branch_name.startswith(h.get_task(board, tid).branch_name + "-") for t in children)
     monkeypatch.delenv("FAKE_PLAN")
     settle(board, sched, [t.id for t in children])
+    assert not any("Before building, plan" in c["prompt"] for c in calls(repo)[3:])
     for t in children:
         state = json.loads((Path(h.get_task(board, t.id).workspace_path) / ".cpipe" / "state.json").read_text())
         assert state["pr_url"] and "a + b" in (Path(h.get_task(board, t.id).workspace_path) / "calc.py").read_text()
@@ -229,13 +260,13 @@ def test_unknown_project_asks_then_saves(board, repo, tmp_path, hermes_home):
     from cpipe import tools, workspace_prep
     root = tmp_path / "projects"
     sched = lanes(projects_root=str(root))
-    asked = tools.ship({"request": "a calculator", "project": "Calc App"})
+    asked = tools.plan({"request": "a calculator", "project": "Calc App"})
     assert asked["choices"] == ["new"] and "clarify" in asked["next"] and "task_id" not in asked
-    assert "/cp-project Calc App <path> (or new)" in tools.command("cp-ship", "Calc App: a calculator")
-    shipped = tools.ship({"request": "a calculator", "project": "Calc App", "repo": "new"})
+    assert "/cp-project Calc App <path> (or new)" in tools.command("cp-plan", "Calc App: a calculator")
+    shipped = tools.plan({"request": "a calculator", "project": "Calc App", "repo": "new"})
     assert shipped["project"] == "calc-app"
     assert workspace_prep.projects()["calc-app"]["repo"] == str(root / "calc-app")
-    settle(board, sched, [shipped["task_id"]])
+    plan_and_approve(board, sched, shipped["task_id"])
     from cpipe.runtime import hermes_api as h
     task = h.get_task(board, shipped["task_id"])
     state = json.loads((Path(task.workspace_path) / ".cpipe" / "state.json").read_text())
@@ -243,7 +274,7 @@ def test_unknown_project_asks_then_saves(board, repo, tmp_path, hermes_home):
     assert "calc.py" in tools._git("-C", str(root / "calc-app"), "show", "--stat", task.branch_name).stdout
     assert tools.resolve_project("Calc App", {"projects_root": str(root)}) == ("calc-app", root / "calc-app")
     (tmp_path / "plain").mkdir()
-    assert "not the top of a git repo" in tools.ship({"request": "x", "project": "p", "repo": str(tmp_path / "plain")})["error"]
+    assert "not the top of a git repo" in tools.plan({"request": "x", "project": "p", "repo": str(tmp_path / "plain")})["error"]
 
 
 def test_save_repo_keeps_the_file(hermes_home):
@@ -257,3 +288,14 @@ def test_save_repo_keeps_the_file(hermes_home):
     got = workspace_prep.projects()
     assert got["a"] == {"base_branch": "dev"} and got["b"] == {"base_branch": "dev", "repo": "/r/b2"}
     assert got["c"] == {"repo": "/r/c"} and f.read_text().startswith("# mine\n") and "other: 1" in f.read_text()
+
+
+def test_tests_that_already_pass_go_back(board, repo, monkeypatch):
+    """Tests first is checked by running them: new tests that pass before the change are sent back."""
+    from cpipe import tools
+    monkeypatch.setenv("FAKE_TDD", "weak")
+    sched = lanes()
+    tid = tools.plan({"request": TASK})["task_id"]
+    plan_and_approve(board, sched, tid)
+    firsts = [c for c in calls(repo) if "Tests first, before any code change" in c["prompt"]]
+    assert len(firsts) == 2 and "already pass" in firsts[1]["prompt"]

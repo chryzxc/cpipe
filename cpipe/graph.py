@@ -1,8 +1,9 @@
 """The delivery graph. Nodes are run by ``round.py``; where to go next is decided here, in code, never by a model.
 
-    setup ─large→ plan ─split→ split → done                 (independent parts become child deliveries)
-      │             │
-      └──────→ build → checks → verify → pr → ci → handoff  (card → review: the PR is ready to test)
+    setup → plan → proposal                                 (card → review: the plan, for the user to approve)
+    feedback on the plan: plan again; approved: tests, or split → done (independent parts: child deliveries)
+    tests → build → checks → verify → pr → ci → handoff     (card → review: the PR is ready to test)
+    tests first: guard tests pass and the new tests fail (red) before the change; build makes them pass (green)
                  ↑       │        │       │     │
                  └───────┴─fix────┴───────┴─────┘           a loop at its limit → stuck (card → blocked)
     build ─needs_user→ ask                                  (card → blocked with the engine's question)
@@ -15,15 +16,16 @@ unavailable / failed) ends the round with that status; so does the round's wall 
 from __future__ import annotations
 
 # Where a round stops, and the runtime status it reports.
-TERMINAL = {"handoff": "needs_review", "ask": "blocked", "stuck": "blocked", "paused": "blocked",
+TERMINAL = {"proposal": "needs_review", "handoff": "needs_review", "ask": "blocked", "stuck": "blocked", "paused": "blocked",
             "done": "success", "rate_limited": "rate_limited", "unavailable": "unavailable", "failed": "failed"}
 ENGINE_DOWN = ("rate_limited", "unavailable", "failed")
-ENGINE_NODES = ("plan", "build")  # nodes the wall clock is checked before
+ENGINE_NODES = ("plan", "tests", "build")  # nodes the wall clock is checked before
 
 EDGES = {
-    "setup": {"ok": "build", "large": "plan"},
-    "plan": {"ok": "build", "split": "split", "needs_user": "ask"},
+    "setup": {"ok": "plan", "approved": "tests"},
+    "plan": {"ok": "proposal", "needs_user": "ask"},
     "split": {"ok": "done"},
+    "tests": {"ok": "build", "fix": "tests", "limit": "stuck", "needs_user": "ask"},
     "build": {"ok": "checks", "needs_user": "ask"},
     "checks": {"ok": "verify", "fix": "build", "limit": "stuck"},
     "verify": {"ok": "pr", "fix": "build", "limit": "stuck"},

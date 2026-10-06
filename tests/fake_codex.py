@@ -5,7 +5,8 @@
     "checks failed"       -> the right fix, committed
     "New input"           -> a commit that addresses the feedback
     a review prompt       -> approve
-    a plan prompt         -> no parts, or two independent parts with FAKE_PLAN=split
+    "Tests first"         -> a failing test committed (FAKE_TDD=weak: one that passes, the first time)
+    a plan prompt         -> a plan and a question (none once revised); two parts with FAKE_PLAN=split
     FAKE_CODEX=rate_limit -> an error event and no result (only when run as fake_codex.py: a symlink to this
                              file under another name is a healthy fallback engine)
 
@@ -57,7 +58,20 @@ if "You review a change" in prompt or "Review it again" in prompt:
     result(status="approve", summary="Looks right.", findings=[])
 if "Before building, plan" in prompt:
     parts = [{"title": f"Part {i}", "request": f"{prompt.splitlines()[0]} (part {i})", "after": []} for i in (1, 2)]
-    result(status="done", summary="Planned.", question="", parts=parts if os.environ.get("FAKE_PLAN") == "split" else [])
+    revised = "answers and changes to the plan" in prompt
+    result(status="done", summary="Planned.", question="", plan="1. Make add add.\n2. Test it." + (" (revised)" if revised else ""),
+           questions=[] if revised else ["Should add accept floats? Recommended: yes."],
+           parts=parts if os.environ.get("FAKE_PLAN") == "split" else [])
+if "Tests first, before any code change" in prompt:
+    weak = os.environ.get("FAKE_TDD") == "weak" and "already pass" not in prompt
+    (cwd / "test_more.py").write_text("import unittest\n\nfrom calc import add\n\n\nclass MoreTest(unittest.TestCase):\n"
+                                      "    def test_add_ones(self):\n        self.assertEqual(add(1, 1), 2)\n")
+    git = ["git", "-c", "user.email=fake@codex", "-c", "user.name=fake"]
+    subprocess.run([*git, "add", "test_more.py"], cwd=cwd, check=True)
+    subprocess.run([*git, "commit", "-qm", "test: add adds", "--allow-empty"], cwd=cwd, check=True)
+    result(status="done", summary="Tests first.", question="", kind="fix", tests=["test_add_ones"],
+           guard_command="python3 -m unittest test_calc.CalcTest.test_mul" if (cwd / "test_calc.py").exists() else "",
+           red_command="true" if weak else "python3 -m unittest test_more")
 if "New input" in prompt:
     commit((cwd / "calc.py").read_text() + "\n\n# feedback addressed\n", "chore: address feedback")
 elif "checks failed" in prompt:

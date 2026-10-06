@@ -1,16 +1,19 @@
-"""Hermes chat tools (toolset ``cpipe``): the only way a delivery is started or steered.
+"""Hermes chat tools (toolset ``cpipe``): the only way a delivery is started or steered. One delivery goes
+plan → build → ship, and the user decides at each step:
 
-    cpipe_ship      a new delivery: one card, its own worktree and branch, claimed by lane cp:<engine>
-    cpipe_feedback  changes for a delivery: the same card and engine session take another round
-    cpipe_ready     accept: final checks, then the pull request is marked ready to merge
+    cpipe_plan      a new delivery: one card, its own worktree and branch; the engine plans, and the plan (with
+                    its questions) comes back for the user's approval
+    cpipe_feedback  answers and changes, for the plan or for the built change: the same session takes another round
+    cpipe_build     approve the plan: build, checks, QA, security, review, a draft pull request to test
+    cpipe_ship      accept the change: final checks, then the pull request is marked ready for review
     cpipe_status    where a delivery stands (or all of them)
     cpipe_stop      archive a delivery
 
-The same five are slash commands too, typed straight into a Hermes chat (``/cp-ship <request>``, ...): no model
-turn, the answer comes back at once.
+They are slash commands too, typed straight into a Hermes chat (``/cp-plan <idea>``, ...): no model turn, the
+answer comes back at once. ``/cp-project`` saves where a project's repository is.
 
-The chat that ships a delivery is subscribed to it: Hermes notifies it when the pull request is ready to test,
-when the delivery needs a decision, and when it completes.
+The chat that starts a delivery is subscribed to it: Hermes notifies it when the plan is ready, when the pull
+request is ready to test, when a decision is needed, and when it completes.
 """
 
 from __future__ import annotations
@@ -34,11 +37,11 @@ def _schema(name: str, description: str, props: dict, required: list[str]) -> di
 
 
 SCHEMAS = {
-    "cpipe_ship": _schema(
-        "cpipe_ship",
-        "Deliver a code change as a tested, reviewed pull request. Use when the user asks to build, fix or ship "
-        "something in one of their projects. Returns at once; the user is notified when the pull request is ready "
-        "to test.",
+    "cpipe_plan": _schema(
+        "cpipe_plan",
+        "Start a development task in one of the user's projects: the coding engine studies the repo and writes a "
+        "plan, with questions, for the user to approve before anything is built. Use when the user asks to build, "
+        "fix or change something. Returns at once; the user is notified when the plan is ready.",
         {"request": {"type": "string", "description": "The full task, in the user's words plus any context"},
          "project": {"type": "string", "description": "The project's name (optional when exactly one project is "
                                                       "configured). An unknown project returns a question for the "
@@ -50,16 +53,19 @@ SCHEMAS = {
          "engine": {"type": "string", "description": "Coding engine, only when the user names one (e.g. codex, "
                                                      "claude, or a configured Hermes profile engine)"},
          "model": {"type": "string", "description": "Model, only when the user names one"},
-         "size": {"type": "string", "enum": ["small", "large"],
-                  "description": "large: plan first, and split into several pull requests when parts are "
-                                 "independent"}},
+         },
         ["request"]),
     "cpipe_feedback": _schema(
-        "cpipe_feedback", "Send the user's requested changes to a delivery; it takes another round in the same "
-                          "session and updates its pull request.",
+        "cpipe_feedback", "Send the user's answers or requested changes to a delivery: before approval they revise "
+                          "the plan, after it they change the code and update the pull request. Same session.",
         {**_ID, "text": {"type": "string", "description": "The requested changes"}}, ["task_id", "text"]),
-    "cpipe_ready": _schema(
-        "cpipe_ready", "The user accepts a delivery: final checks run and its pull request is marked ready to merge.",
+    "cpipe_build": _schema(
+        "cpipe_build", "The user approves a delivery's plan: it is built, tested, QA'd, reviewed, and opened as a "
+                       "draft pull request to test.",
+        {**_ID, "text": {"type": "string", "description": "Notes to build with (optional)"}}, ["task_id"]),
+    "cpipe_ship": _schema(
+        "cpipe_ship", "The user accepts the built change: final checks run and its pull request is marked ready "
+                      "for review.",
         {**_ID, "text": {"type": "string", "description": "Last changes to make first (optional)"}}, ["task_id"]),
     "cpipe_status": _schema("cpipe_status", "Where a delivery stands; without task_id, all open deliveries.",
                             dict(_ID), []),
@@ -128,14 +134,14 @@ def resolve_project(project: str | None, cfg: dict) -> tuple[str, Path] | dict:
                         f"{guess}. It is saved for next time."}
 
 
-def ship(args: dict) -> dict:
+def plan(args: dict) -> dict:
     cfg = settings.load()
     if args.get("repo"):
         found = save_project(args.get("project") or Path(args["repo"]).expanduser().name, args["repo"], cfg)
     else:
         found = resolve_project(args.get("project"), cfg)
     if isinstance(found, dict):
-        return found if "error" in found else {**found, "next": "Ask the user (clarify), then call cpipe_ship "
+        return found if "error" in found else {**found, "next": "Ask the user (clarify), then call cpipe_plan "
                                                                "again with project and repo set from the answer."}
     name, repo = found
     known = workspace_prep.projects().get(name) or {}
@@ -149,8 +155,6 @@ def ship(args: dict) -> dict:
         tid = hermes_api.create_card(conn, title=title, body=request, assignee=f"cp:{engine}",
                                      repo=str(repo), branch=branch,
                                      model=args.get("model"))
-        if args.get("size") == "large":
-            hermes_api.comment(conn, tid, "plan first", author="cpipe:large")
     return {"task_id": tid, "project": name, "engine": engine, "branch": branch}
 
 
@@ -172,15 +176,29 @@ def feedback(args: dict) -> dict:
     return _steer(args["task_id"], args["text"])
 
 
-def ready(args: dict) -> dict:
+def build(args: dict) -> dict:
+    return _steer(args["task_id"], args.get("text") or "", "approved")
+
+
+def ship(args: dict) -> dict:
     return _steer(args["task_id"], args.get("text") or "", "ready")
+
+
+STAGES = {"setup": "planning", "plan": "planning", "proposal": "plan ready: approve with /cp-build",
+          "ask": "needs your answer", "handoff": "ready to test: accept with /cp-ship", "final": "shipping",
+          "done": "shipped", "stuck": "stuck", "paused": "paused"}
 
 
 def _brief(conn, task) -> dict:
     st = report.state_of(conn, task)
-    return {"task_id": task.id, "title": task.title, "status": task.status, "node": st.get("node"),
-            "engine": st.get("engine") or task.assignee[3:], "pr": st.get("pr_url"),
-            "verification": st.get("verification")}
+    node = st.get("node") or "setup"
+    out = {"task_id": task.id, "title": task.title, "status": task.status,
+           "stage": STAGES.get(node, "planning" if not st.get("approved") else "building"),
+           "engine": st.get("engine") or task.assignee[3:], "pr": st.get("pr_url"),
+           "verification": st.get("verification")}
+    if node == "proposal":
+        out.update(plan=st.get("plan"), questions=st.get("questions"))
+    return out
 
 
 def status(args: dict) -> dict:
@@ -197,8 +215,8 @@ def stop(args: dict) -> dict:
         return {"task_id": args["task_id"], "archived": hermes_api.archive(conn, args["task_id"])}
 
 
-HANDLERS = {"cpipe_ship": ship, "cpipe_feedback": feedback, "cpipe_ready": ready, "cpipe_status": status,
-            "cpipe_stop": stop}
+HANDLERS = {"cpipe_plan": plan, "cpipe_feedback": feedback, "cpipe_build": build, "cpipe_ship": ship,
+            "cpipe_status": status, "cpipe_stop": stop}
 
 
 def call(name: str, args: dict) -> str:
@@ -218,15 +236,20 @@ def _text(out: dict) -> str:
     if out.get("question"):
         name = out.get("project") or "<name>"
         return (f"cpipe: {out['question']}\nAnswer with /cp-project {name} <path>"
-                + (" (or new)" if "new" in out["choices"] else "") + ", then ship again."
+                + (" (or new)" if "new" in out["choices"] else "") + ", then /cp-plan again."
                 + ("\nChoices: " + ", ".join(out["choices"]) if out["choices"] else ""))
     if "deliveries" in out:
         return "\n".join(_text(d) for d in out["deliveries"]) or "cpipe: no open deliveries"
-    parts = [out.get("task_id", ""), out.get("title") or out.get("project") or "", out.get("status") or "",
-             out.get("node") and f"at {out['node']}", out.get("engine") and f"on {out['engine']}",
+    parts = [out.get("task_id", ""), out.get("title") or out.get("project") or "",
+             out.get("stage") or out.get("status") or "", out.get("engine") and f"on {out['engine']}",
              out.get("branch") or "", out.get("pr") or "", out.get("note") or "",
              "archived" if out.get("archived") else ""]
-    return "  ".join(p for p in parts if p)
+    line = "  ".join(p for p in parts if p)
+    if out.get("plan"):
+        line += "\n\n" + out["plan"]
+        if out.get("questions"):
+            line += "\n\nQuestions:" + "".join(f"\n- {q}" for q in out["questions"])
+    return line
 
 
 def _split(raw: str) -> tuple[str, str]:
@@ -234,7 +257,7 @@ def _split(raw: str) -> tuple[str, str]:
     return head, rest.strip()
 
 
-def _ship_args(raw: str) -> dict:
+def _plan_args(raw: str) -> dict:
     """``[project:] request``: a leading ``name:`` (or ``path:``) picks the project."""
     head, sep, rest = raw.strip().partition(": ")
     if sep and rest.strip() and 0 < len(head) <= 60 and "\n" not in head:
@@ -251,12 +274,15 @@ def _project(raw: str) -> dict:
 
 
 COMMANDS = {
-    "cp-ship": ("Start a delivery", "[project:] <request>", lambda raw: ship(_ship_args(raw))),
+    "cp-plan": ("Start a task: the plan comes back for your approval", "[project:] <idea>",
+                lambda raw: plan(_plan_args(raw))),
     "cp-project": ("Save where a project's repo is (new starts one)", "<name> <path|new>", lambda raw: _project(raw)),
-    "cp-feedback": ("Send changes to a delivery", "<card> <changes>",
+    "cp-feedback": ("Answer the plan's questions, or send changes", "<card> <text>",
                     lambda raw: feedback(dict(zip(("task_id", "text"), _split(raw))))),
-    "cp-ready": ("Accept a delivery: final checks, PR ready to merge", "<card> [last changes]",
-                 lambda raw: ready(dict(zip(("task_id", "text"), _split(raw))))),
+    "cp-build": ("Approve the plan: build, test, review, draft PR", "<card> [notes]",
+                 lambda raw: build(dict(zip(("task_id", "text"), _split(raw))))),
+    "cp-ship": ("Accept the change: final checks, PR ready for review", "<card> [last changes]",
+                lambda raw: ship(dict(zip(("task_id", "text"), _split(raw))))),
     "cp-status": ("Where deliveries stand", "[card]", lambda raw: status({"task_id": raw.strip()})),
     "cp-stop": ("Stop a delivery and archive its card", "<card>", lambda raw: stop({"task_id": raw.strip()})),
 }
