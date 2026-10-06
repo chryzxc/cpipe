@@ -76,7 +76,10 @@ def test_approval_prompt_in_a_worker_blocks_the_card(monkeypatch):
 def test_chat_kanban_show_drops_the_worker_brief(monkeypatch):
     from cpipe import status as st
     full = json.dumps({"task": {"id": "t_1", "result": "r" * 9000}, "parents": [], "children": [],
-                       "events": [{"kind": "k", "payload": "p" * 900}] * 8,
+                       "events": [{"kind": "k", "payload": "p" * 900}] * 8 + [{"kind": "heartbeat"}] * 9,
+                       "comments": [{"body": "c" * 900}] * 9,
+                       "runs": [{"id": i, "profile": "forge", "status": "done", "outcome": "completed",
+                                 "summary": "s" * 900} for i in range(10)],
                        "worker_context": "BRIEF" * 5000 + "## Comment thread\nlatest note"})
     monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
     out = json.loads(st.compact_show(tool_name="kanban_show", result=full))
@@ -84,7 +87,10 @@ def test_chat_kanban_show_drops_the_worker_brief(monkeypatch):
     assert len(json.dumps(out)) < 6000 and len(out["events"]) == 5
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_1")
     monkeypatch.setattr(st, "_SHOWN", set())
-    assert st.compact_show(tool_name="kanban_show", result=full) is None  # a worker sees each card in full once
+    first = json.loads(st.compact_show(tool_name="kanban_show", result=full))  # a worker sees each brief in full once
+    assert first["worker_context"].startswith("BRIEF") and "comments" not in first and len(first["runs"]) == 3
+    assert first["runs"][-1] == {"id": 9, "profile": "forge", "status": "done", "outcome": "completed"}
+    assert [e["kind"] for e in first["events"]] == ["k"] * 5
     again = json.loads(st.compact_show(tool_name="kanban_show", result=full))
     assert "worker_context" not in again and again["note"].startswith("Repeat view")
     assert st.compact_show(tool_name="terminal", result=full) is None
