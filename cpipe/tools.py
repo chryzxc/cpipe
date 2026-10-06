@@ -6,6 +6,9 @@
     cpipe_status    where a delivery stands (or all of them)
     cpipe_stop      archive a delivery
 
+The same five are slash commands too, typed straight into a Hermes chat (``/cp-ship <request>``, ...): no model
+turn, the answer comes back at once.
+
 The chat that ships a delivery is subscribed to it: Hermes notifies it when the pull request is ready to test,
 when the delivery needs a decision, and when it completes.
 """
@@ -138,7 +141,60 @@ def call(name: str, args: dict) -> str:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
 
+
+
+# --- slash commands: /cp-ship, /cp-feedback, /cp-ready, /cp-status, /cp-stop ---
+
+def _text(out: dict) -> str:
+    if out.get("error"):
+        return f"cpipe: {out['error']}"
+    if "deliveries" in out:
+        return "\n".join(_text(d) for d in out["deliveries"]) or "cpipe: no open deliveries"
+    parts = [out.get("task_id", ""), out.get("title") or out.get("project") or "", out.get("status") or "",
+             out.get("node") and f"at {out['node']}", out.get("engine") and f"on {out['engine']}",
+             out.get("branch") or "", out.get("pr") or "", out.get("note") or "",
+             "archived" if out.get("archived") else ""]
+    return "  ".join(p for p in parts if p)
+
+
+def _split(raw: str) -> tuple[str, str]:
+    head, _, rest = raw.strip().partition(" ")
+    return head, rest.strip()
+
+
+def _ship_args(raw: str) -> dict:
+    """``[project:] request``: a leading ``name:`` picks the project when it is one."""
+    head, rest = _split(raw)
+    if head.endswith(":") and head[:-1] in workspace_prep.projects():
+        return {"project": head[:-1], "request": rest}
+    return {"request": raw}
+
+
+COMMANDS = {
+    "cp-ship": ("Start a delivery", "[project:] <request>", lambda raw: ship(_ship_args(raw))),
+    "cp-feedback": ("Send changes to a delivery", "<card> <changes>",
+                    lambda raw: feedback(dict(zip(("task_id", "text"), _split(raw))))),
+    "cp-ready": ("Accept a delivery: final checks, PR ready to merge", "<card> [last changes]",
+                 lambda raw: ready(dict(zip(("task_id", "text"), _split(raw))))),
+    "cp-status": ("Where deliveries stand", "[card]", lambda raw: status({"task_id": raw.strip()})),
+    "cp-stop": ("Stop a delivery and archive its card", "<card>", lambda raw: stop({"task_id": raw.strip()})),
+}
+
+
+def command(name: str, raw: str) -> str:
+    desc, hint, fn = COMMANDS[name]
+    if "<" in hint and not (raw or "").strip():
+        return f"usage: /{name} {hint}"
+    try:
+        return _text(fn(raw or ""))
+    except Exception as e:  # never crash the chat
+        return f"cpipe: {type(e).__name__}: {e}"
+
+
 def register(ctx) -> None:
     for name, schema in SCHEMAS.items():
         ctx.register_tool(name=name, toolset="cpipe", schema=schema,
                           handler=lambda args, _n=name, **kw: call(_n, args))
+    if hasattr(ctx, "register_command"):
+        for name, (desc, hint, _) in COMMANDS.items():
+            ctx.register_command(name, lambda raw="", _n=name: command(_n, raw), description=desc, args_hint=hint)

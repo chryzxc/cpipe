@@ -157,7 +157,8 @@ def test_delivery_end_to_end(board, repo):
     assert "--draft" in create and "## How to test" in create[create.index("--body") + 1]
     assert str(ws) not in create[create.index("--body") + 1]
 
-    assert tools.feedback({"task_id": tid, "text": "also leave a note in calc.py"})["status"] == "ready"
+    assert tools.command("cp-status", "").startswith(f"{tid}  ")              # the slash commands, too
+    assert f"{tid}  ready" in tools.command("cp-feedback", f"{tid} also leave a note in calc.py")
     settle(board, sched, [tid])
     last = [c for c in calls(repo) if not c["readonly"]][-1]
     assert last["resumed"] and last["thread"] == builds[0]["thread"] and "also leave a note" in last["prompt"]
