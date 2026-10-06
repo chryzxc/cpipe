@@ -62,7 +62,7 @@ def test_plugin_registers_cli_command_and_tools():
     # the same, as slash commands
     assert set(ctx.commands) == {"cp-ship", "cp-feedback", "cp-ready", "cp-status", "cp-stop"}
     assert ctx.commands["cp-ship"]("") == "usage: /cp-ship [project:] <request>"
-    assert ctx.commands["cp-ship"]("nope: x").startswith("cpipe: unknown project")
+    assert ctx.commands["cp-ship"]("nope: x").startswith("cpipe: no project has a repo")
 
 
 def test_daemon_logs_reach_stderr_when_host_configured_logging(hermes_home, capsys):
