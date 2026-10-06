@@ -12,7 +12,7 @@ def register(ctx) -> None:
 
     ctx.register_cli_command(
         name="cpipe",
-        help="Delivery runner: claims cp:* cards and drives them to a reviewed draft PR",
+        help="Delivery runner: claims cp:* cards and drives them to a tested, reviewed PR",
         setup_fn=setup_parser,
         handler_fn=handle,
         description="Run, inspect and check the cpipe daemon.",

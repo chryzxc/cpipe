@@ -4,10 +4,11 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-8957e5)](LICENSE)
 [![Requires: Hermes Agent](https://img.shields.io/badge/requires-Hermes%20Agent-1f6feb)](https://github.com/NousResearch/hermes-agent)
 
-**A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that ships a change from chat to a checked,
-reviewed draft PR.** You ask in Hermes, and cpipe puts one card on the Kanban board. A coding agent (Codex, Claude
-Code, a Hermes bot or opencode) then works the whole task in **one session**. Code, not the agent, decides what
-happens next: run the checks, send failures back to the same session, open the PR, ask you.
+**A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin for developers: ask for a change in chat
+and get back a deliverable, a tested, QA'd and reviewed PR ready to merge.** You ask in Hermes, and cpipe puts one card on the Kanban board. A coding agent (Codex, Claude
+Code, a Hermes bot or opencode) then works the whole task in **one session**. It is built on
+**[graph engineering](#graph-engineering)**: code, not the agent, decides what happens next. It is also built on
+**[loop engineering](#loop-engineering)**: every failure goes back into the same session, with a limit.
 
 > **Status: v2, in progress.** v2 replaces the v1 multi-bot flow, which was too slow and too expensive (a cold
 > session per step, an LLM choosing the next step). The last v1 release is the `v1-final` tag. Done so far:
@@ -25,23 +26,44 @@ you ── Hermes chat ── ship · feedback · ready · status · stop
                  ▼
   cpipe daemon → supervisor → round
                  │
-  setup → build ⇄ checks → QA → security → review → push + draft PR → CI
+  setup → build ⇄ checks → QA → security → review → push + PR → CI
    code   engine   code    engine  code    other engine    code        code
                  │
                  ▼
-  card → review: "PR ready to test"      card → blocked: one question
+  card → review: "ready to test"      card → blocked: one question
   your comment → same card, SAME engine session → next round
-  "ready" → final checks → PR ready → card done
+  "ready" → final checks → ready to merge → card done
 ```
 
-- **Graph in code.** `cpipe/graph.py` holds every edge as a pure function; no model picks the next step.
-- **Bounded loops.** A failure goes back into the same session with only the new information: checks up to 3 times,
-  QA 2, review 2, CI 2. At the limit the card stops and asks you.
-- **One session per delivery.** The engine keeps its context across fixes and across your feedback rounds
-  (`codex exec resume`, `claude --resume`).
-- **The card status is the interrupt.** `review` means the PR is ready to test, `blocked` means one question, and
-  `done` means the PR is marked ready. Feedback is a comment on the card.
-- **The engine is chosen per task.** Each engine is a lane (`cp:codex`, `cp:claude`, …) with its own concurrency.
+## Graph engineering
+
+The delivery is a **graph written in code**, not a conversation between bots. Nodes are steps, edges are
+outcomes, and `cpipe/graph.py` decides every transition with a pure function,
+`next_node(node, outcome, rounds, limits)`. The model never chooses where the work goes next.
+
+- **Two kinds of node.** *Engine* nodes (build, QA, review) are where an LLM does the work. *Code* nodes (setup,
+  checks, security, push, PR, CI) are deterministic and cost no tokens.
+- **The card is the state.** One Kanban card per delivery. Its status is the only interrupt: `review` means the
+  deliverable is ready for you to test, `blocked` means one question, and `done` means it is ready to merge.
+- **Tested like code.** Every edge and limit has a table test (`tests/test_round.py`). The whole graph also runs end
+  to end against a scripted fake engine on throwaway repos.
+
+## Loop engineering
+
+Each loop feeds a failure **back into the same engine session**, has a fixed limit, and stops to ask you at that
+limit.
+
+| Loop | Feeds back | Limit |
+|---|---|---|
+| build ⇄ checks | the failing checks' output on the changed files | 3 |
+| build ⇄ QA | what failed in the running app | 2 |
+| build ⇄ review | the independent reviewer's findings | 2 |
+| build ⇄ CI | the failing CI job | 2 |
+| you ⇄ delivery | your comment on the card | you decide |
+
+- **One session per delivery.** The engine keeps its context across every fix and every feedback round
+  (`codex exec resume`, `claude --resume`), so each turn only sends the new information.
+- **Pick the engine per task.** Each engine is a lane (`cp:codex`, `cp:claude`, …) with its own concurrency.
 
 ## Configure
 
@@ -108,7 +130,7 @@ docs/runtime/            the runtime's own docs
 
 - [x] Bundled worker runtime, `cpipe.yaml` lanes, template fixture repos
 - [x] Codex engine; setup → build ⇄ checks; feedback rounds resume the same session
-- [ ] Push, draft PR, CI watch, security checks, public-text scan
+- [ ] Push, PR, CI watch, security checks, public-text scan
 - [ ] Independent review by a second engine; final checks; Hermes chat tools
 - [ ] Claude Code, Hermes-bot and opencode engines; fallback on a quota wall; browser and computer-use QA
 - [ ] Parallel deliveries; large tasks split into child deliveries
