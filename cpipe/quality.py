@@ -34,6 +34,7 @@ from typing import Optional
 from .home import root as _root_home
 
 CHECK_TIMEOUT = 180
+ORPHAN_POLL = 5  # seconds a check outlives the worker that started it
 OUTPUT_KEEP = 2500  # chars of a failing check's output shown to the implementer
 MAX_BLOCKS = 3  # blocked review requests per card per run; then it goes to the reviewer with the failures
 FIX_BASE = re.compile(r"^FIX BASE: ([0-9a-f]{7,40}) ", re.M)
@@ -107,6 +108,10 @@ def changed_files(ws: Path, base: str) -> list[str]:
 def _run(cmd: str, ws: Path) -> Optional[subprocess.CompletedProcess]:
     # Hermes's own Python path would shadow the packages of Python-based checks (semgrep crashed on its mcp)
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME")}
+    # Its own session lets the timeout kill the whole group, but a worker that dies first never runs the timeout:
+    # the watcher kills the group once this process is gone (orphaned eslint runs piled up for an hour).
+    cmd = (f"( while kill -0 {os.getpid()} 2>/dev/null; do sleep {ORPHAN_POLL}; done; kill -9 0 ) "
+           f">/dev/null 2>&1 & w=$!\n{{ {cmd}\n}}\nrc=$?; kill $w 2>/dev/null; exit $rc")
     proc = subprocess.Popen(cmd, shell=True, cwd=ws, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, errors="replace", start_new_session=True)
     try:
