@@ -31,6 +31,7 @@ def test_registers_delivery_tools():
         'delivery_decide',
         'delivery_design_pick',
         'delivery_mutation_check',
+        'delivery_retarget',
         'delivery_status',
         'delivery_submit',
         'delivery_test_env',
