@@ -1,6 +1,4 @@
-"""A worker's first turn gets a usable workspace: deps linked from the main checkout, or the
-parent's worktree when it was handed an empty scratch dir. Never a reason to block."""
-import sqlite3
+"""The setup node: a fresh worktree on the PR base, deps and the code index linked from the main checkout."""
 import subprocess
 
 from cpipe import workspace_prep
@@ -23,96 +21,49 @@ def repo_with_worktree(tmp_path):
     return main, wt
 
 
-def test_first_turn_links_missing_node_modules_once(tmp_path, monkeypatch):
+def head(d):
+    return subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+
+
+def test_setup_links_missing_node_modules_once(tmp_path, monkeypatch):
     main, wt = repo_with_worktree(tmp_path)
-    monkeypatch.setenv("HERMES_KANBAN_WORKSPACE", str(wt))
-    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_1")
-    monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: None)  # no codegraph, no testscope
-    monkeypatch.setattr(workspace_prep, "inline_scripts_refused", lambda: False)
-    note = workspace_prep.prepare_workspace(is_first_turn=True)
-    assert "symlinked" in note["context"] and "client" in note["context"]
-    assert (wt / "client" / "node_modules" / "vitest").is_dir()
+    monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: None)  # no codegraph
+    notes = workspace_prep.prepare(wt, None)
+    assert any("symlinked" in n and "client" in n for n in notes)
     assert (wt / "node_modules").resolve() == (main / "node_modules").resolve()
     status = subprocess.run(["git", "-C", str(wt), "status", "--porcelain"], capture_output=True, text=True)
-    assert "node_modules" not in status.stdout                              # never committable
-    assert workspace_prep.prepare_workspace(is_first_turn=True) is None     # nothing left to do
-    assert workspace_prep.prepare_workspace(is_first_turn=False) is None
-    monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: cmd in ("testscope", "ast-grep") and "/bin/x")
-    context = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
-    assert "`testscope`" in context and "`ast-grep run" in context
+    assert "node_modules" not in status.stdout
+    assert workspace_prep.prepare(wt, None) == []  # nothing left to do
+    assert workspace_prep.prepare(main, None) == []  # the main checkout keeps its own
 
 
-def test_empty_scratch_workspace_points_at_parent_worktree(tmp_path, monkeypatch):
-    _, wt = repo_with_worktree(tmp_path)
-    scratch = tmp_path / "scratch"; scratch.mkdir()
-    db = tmp_path / "kanban.db"
-    conn = sqlite3.connect(db)
-    conn.executescript("CREATE TABLE tasks (id TEXT, workspace_path TEXT, completed_at REAL, created_at REAL);"
-                       "CREATE TABLE task_links (parent_id TEXT, child_id TEXT);")
-    conn.execute("INSERT INTO tasks VALUES ('t_parent', ?, 1, 1)", (str(wt),))
-    conn.execute("INSERT INTO task_links VALUES ('t_parent', 't_child')")
-    conn.commit(); conn.close()
-    monkeypatch.setenv("HERMES_KANBAN_WORKSPACE", str(scratch))
-    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_child")
-    monkeypatch.setenv("HERMES_KANBAN_DB", str(db))
-    monkeypatch.setattr(workspace_prep.shutil, "which", lambda cmd: cmd == "testscope" and "/bin/testscope")
-    note = workspace_prep.prepare_workspace(is_first_turn=True)
-    assert str(wt) in note["context"] and "Do not block" in note["context"]
-    assert "`testscope`" in note["context"]  # verify cards start in scratch and need it most
-
-
-def test_outside_kanban_workers_it_does_nothing(monkeypatch):
-    monkeypatch.delenv("HERMES_KANBAN_WORKSPACE", raising=False)
-    assert workspace_prep.prepare_workspace(is_first_turn=True) is None
-
-
-def profile_on_develop(tmp_path, monkeypatch, body=""):
+def on_develop(tmp_path):
     main, wt = repo_with_worktree(tmp_path)
-    git(main, "branch", "develop")
     git(main, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "on develop only")
     git(main, "update-ref", "refs/remotes/origin/develop", "HEAD")  # origin/develop is ahead of wt's base
-    (tmp_path / "delivery").mkdir()
-    (tmp_path / "delivery" / "projects.yaml").write_text(
-        "projects:\n  my-app:\n    base_branch: develop\n    branch_prefix: feat/\n    env: cp .env.example .env\n")
-    db = tmp_path / "kanban.db"
-    conn = sqlite3.connect(db)
-    conn.execute("CREATE TABLE tasks (id TEXT, project_id TEXT, body TEXT)")
-    conn.execute("INSERT INTO tasks VALUES ('t_1', 'my-app', ?)", (body,))
-    conn.commit(); conn.close()
-    for k, v in (("HERMES_HOME", tmp_path), ("HERMES_KANBAN_DB", db), ("HERMES_KANBAN_WORKSPACE", wt),
-                 ("HERMES_KANBAN_TASK", "t_1")):
-        monkeypatch.setenv(k, str(v))
     return main, wt
 
 
-def test_fresh_worktree_is_reset_onto_the_pr_base(tmp_path, monkeypatch):
-    main, wt = profile_on_develop(tmp_path, monkeypatch)
-    note = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
-    assert "reset onto origin/develop" in note and "not based on" not in note
-    assert "should start with `feat/`" in note and "cp .env.example .env" in note
-    head = lambda d: subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+def test_fresh_worktree_is_reset_onto_the_pr_base(tmp_path):
+    main, wt = on_develop(tmp_path)
+    assert any("reset onto origin/develop" in n for n in workspace_prep.prepare(wt, "develop"))
     assert head(wt) == head(main)
-    assert workspace_prep.project_profile("other-app", tmp_path) == {}
 
 
-def test_a_cards_own_pr_base_wins_over_the_projects(tmp_path, monkeypatch):
-    # the user said "branch out from IC-develop" on a project whose base is develop: no reset onto develop
-    main, wt = profile_on_develop(tmp_path, monkeypatch, body="REQUEST...\n\nPR BASE: `ic` (start from origin/ic)")
-    git(main, "update-ref", "refs/remotes/origin/ic", "HEAD~1")
-    head = lambda d: subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
-    before = head(wt)
-    note = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
-    assert "origin/develop" not in note and "PRs target `ic`" in note
-    assert head(wt) == before  # already on origin/ic
-
-
-def test_worktree_with_work_in_it_is_never_reset(tmp_path, monkeypatch):
-    main, wt = profile_on_develop(tmp_path, monkeypatch)
+def test_worktree_with_work_in_it_is_never_reset(tmp_path):
+    main, wt = on_develop(tmp_path)
     (wt / "draft.txt").write_text("uncommitted")
     git(wt, "add", "draft.txt")
-    note = workspace_prep.prepare_workspace(is_first_turn=True)["context"]
-    assert "not based on origin/develop" in note and "reset" not in note
+    assert not any("reset" in n for n in workspace_prep.prepare(wt, "develop"))
     assert (wt / "draft.txt").read_text() == "uncommitted"
+
+
+def test_project_profile_reads_projects_yaml(tmp_path):
+    (tmp_path / "delivery").mkdir()
+    (tmp_path / "delivery" / "projects.yaml").write_text("projects:\n  app:\n    base_branch: develop\n")
+    assert workspace_prep.project_profile("app", tmp_path) == {"base_branch": "develop"}
+    assert workspace_prep.project_profile("other", tmp_path) == {}
+    assert workspace_prep.project_profile("app", tmp_path / "unset") == {}
 
 
 def test_worktree_gets_a_clone_of_the_code_index(tmp_path, monkeypatch):
@@ -130,25 +81,3 @@ def test_worktree_gets_a_clone_of_the_code_index(tmp_path, monkeypatch):
     assert ".codegraph" not in status.stdout
     assert not workspace_prep.link_codegraph(wt)      # already there
     assert not workspace_prep.link_codegraph(main)    # the main checkout keeps its own
-
-
-def test_inline_scripts_note_follows_the_approval_config(tmp_path):
-    assert workspace_prep.inline_scripts_refused(tmp_path)  # no config: Hermes defaults to deny
-    (tmp_path / "config.yaml").write_text("approvals:\n  single_query_mode: allow\n")
-    assert not workspace_prep.inline_scripts_refused(tmp_path)
-
-
-def test_missing_test_runner_is_said_up_front_and_reported(tmp_path, monkeypatch):
-    import json
-    from cpipe import home as hermes_home
-    monkeypatch.setattr(workspace_prep.shutil, "which", lambda tool: None)
-    (tmp_path / "client" / "node_modules" / ".bin").mkdir(parents=True)
-    (tmp_path / "client" / "package.json").write_text('{"scripts": {"test": "CI=1 vitest run"}}')
-    (tmp_path / "package.json").write_text('{"scripts": {"test": "npm --prefix client test"}}')
-    notes = workspace_prep.test_runner_notes(tmp_path, "app")
-    assert len(notes) == 1 and "`vitest`" in notes[0] and "npm ci" in notes[0]
-    problems = hermes_home.root() / "state" / "setup-problems.json"
-    assert list(json.loads(problems.read_text())) == ["app:client:vitest"]
-    (tmp_path / "client" / "node_modules" / ".bin" / "vitest").write_text("")
-    assert workspace_prep.test_runner_notes(tmp_path, "app") == []
-    assert json.loads(problems.read_text()) == {}

@@ -1,44 +1,33 @@
-"""Make a kanban worker's workspace usable before the model's first turn. Deterministic, no LLM.
+"""The setup node: make a delivery's worktree usable before the engine's first turn. Deterministic, no LLM.
 
-Two causes blocked most cards: a fresh git worktree has no ``node_modules`` (tests and lint
-cannot run, and briefs forbid installs), and follow-up cards created without a workspace land
-in an empty scratch dir. On the first turn of a kanban worker session this hook
-  * symlinks each missing ``node_modules`` from the repo's main checkout,
-  * clones the main checkout's code index (``.codegraph/``, git-ignored so a worktree lacks it) with a
-    copy-on-write copy and syncs it in the background, so workers query it instead of grepping,
-  * when the workspace is not a git repo, points the worker at its parent card's worktree, and
-  * applies the card's project profile (``$HERMES_HOME/delivery/projects.yaml``): a fresh worktree
-    (clean, nothing committed or pushed) is reset onto ``origin/<base_branch>``, so a PR never starts
-    on the wrong base; otherwise CONVENTION_MISMATCH notes, plus env setup and conventions.
+  * a fresh worktree (clean, nothing committed or pushed) is reset onto ``origin/<base_branch>``,
+  * each missing ``node_modules`` is symlinked from the repo's main checkout,
+  * the main checkout's code index (``.codegraph/``) is cloned copy-on-write and synced in the background.
 
-projects.yaml::
+Project profiles, ``$HERMES_HOME/delivery/projects.yaml``::
 
     projects:
       my-app:
         base_branch: develop        # PRs target this; worktrees must be based on origin/<it>
         branch_prefix: feat/        # optional
-        env: "cp .env.example .env; tests need a local Postgres"   # optional, told to workers
-        conventions: "squash-merge; conventional commits"            # optional, told to workers
+        conventions: "squash-merge; conventional commits"   # optional, ≤10 lines, put in the build prompt
+        qa: browser                 # browser | computer-use | off
+        test_env: {...}             # see test_env.py
 """
 
 from __future__ import annotations
 
 import json
-import os
-import re
 import shutil
-import sqlite3
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Optional
-from . import quality
+from typing import Optional
+
 from .home import root as _root_home
 
 PACKAGE_DEPTH = 2  # package.json at the root and one or two levels down (client/, server/, apps/x/)
 SKIP_DIRS = {"node_modules", ".git", ".worktrees", "dist", "build"}
-NODE_CLIS = {"npm", "npx", "node", "yarn", "pnpm", "bun", "cross-env", "echo", "exit"}
-PR_BASE = re.compile(r"^PR BASE: `([^`]+)`", re.M)  # submit stamps it when a card's base is not the project's
 
 
 def _git(ws: Path, *args: str, timeout: int = 10) -> Optional[str]:
@@ -123,48 +112,38 @@ def _sync_codegraph(ws: Path) -> None:
                      start_new_session=True)
 
 
-def parent_worktree(task_id: str, db: Path) -> Optional[str]:
-    """Most recent parent card workspace that is a git checkout."""
-    try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        rows = conn.execute(
-            "SELECT t.workspace_path FROM task_links l JOIN tasks t ON t.id = l.parent_id "
-            "WHERE l.child_id = ? AND t.workspace_path IS NOT NULL "
-            "ORDER BY coalesce(t.completed_at, t.created_at) DESC", (task_id,)).fetchall()
-        conn.close()
-    except sqlite3.Error:
-        return None
-    for (path,) in rows:
-        if path and _git(Path(path), "rev-parse", "--is-inside-work-tree") == "true":
-            return path
-    return None
-
-
-def _home() -> Path:
-    return _root_home()
-
-
 def project_profile(project: Optional[str], home: Optional[Path] = None) -> dict:
     """The operator's saved conventions for a project, {} when none. Never raises."""
-    if not project:
-        return {}
+    return projects(home).get(project) or {} if project else {}
+
+
+def projects(home: Optional[Path] = None) -> dict:
     try:
         import yaml
-        data = yaml.safe_load(((home or _home()) / "delivery" / "projects.yaml").read_text()) or {}
-        profile = (data.get("projects") or {}).get(project) or {}
-        return profile if isinstance(profile, dict) else {}
+        data = yaml.safe_load(((home or _root_home()) / "delivery" / "projects.yaml").read_text()) or {}
+        return {k: v for k, v in (data.get("projects") or {}).items() if isinstance(v, dict)}
     except Exception:
         return {}
 
 
-def profile_brief(profile: dict) -> str:
-    """One paragraph for a card body or a worker's first turn."""
-    parts = [f"PRs target `{profile['base_branch']}`" if profile.get("base_branch") else "",
-             f"branch names start with `{profile['branch_prefix']}`" if profile.get("branch_prefix") else "",
-             f"environment: {profile['env']}" if profile.get("env") else "",
-             f"conventions: {profile['conventions']}" if profile.get("conventions") else ""]
-    parts = [p for p in parts if p]
-    return ("PROJECT CONVENTIONS (saved by the operator): " + "; ".join(parts) + ".") if parts else ""
+def project_of(ws: Path, home: Optional[Path] = None) -> Optional[str]:
+    """The projects.yaml entry whose ``repo`` is this worktree's main checkout."""
+    common = _git(ws, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    root = Path(common).parent.resolve() if common else None
+    return next((name for name, p in projects(home).items()
+                 if root and p.get("repo") and Path(p["repo"]).expanduser().resolve() == root), None)
+
+
+def lessons(project: Optional[str], home: Optional[Path] = None, keep: int = 10) -> list[str]:
+    """The operator's lessons for this project and for "*": ``delivery/lessons.yaml`` ``<project>: [text | {text}]``."""
+    try:
+        import yaml
+        data = yaml.safe_load(((home or _root_home()) / "delivery" / "lessons.yaml").read_text()) or {}
+    except Exception:
+        return []
+    items = [*(data.get("*") or []), *((data.get(project) or []) if project else [])]
+    texts = [str(i.get("text") if isinstance(i, dict) else i).strip() for i in items]
+    return [t for t in texts if t and t != "None"][-keep:]
 
 
 def rebase_fresh_worktree(ws: Path, base: Optional[str]) -> Optional[str]:
@@ -185,141 +164,22 @@ def rebase_fresh_worktree(ws: Path, base: Optional[str]) -> Optional[str]:
     return f"This worktree was reset onto origin/{base} (the project's PR base) before you started."
 
 
-def convention_notes(ws: Path, profile: dict) -> list[str]:
+def prepare(ws: Path, base: Optional[str]) -> list[str]:
+    """The setup node: a fresh worktree on origin/<base>, node_modules and the code index linked from the main
+    checkout. Returns notes for the engine's first prompt."""
     notes = []
-    base = profile.get("base_branch")
-    if base and _git(ws, "rev-parse", "--verify", "-q", f"origin/{base}") is not None:
-        if _git(ws, "merge-base", "--is-ancestor", f"origin/{base}", "HEAD") is None:
-            notes.append(f"CONVENTION_MISMATCH: this worktree is not based on origin/{base}, the project's PR "
-                         f"base. Before coding: `git fetch origin {base} && git rebase origin/{base}` (or "
-                         "recreate the branch from it). Open the PR against it.")
-    prefix = profile.get("branch_prefix")
-    branch = _git(ws, "rev-parse", "--abbrev-ref", "HEAD")
-    if prefix and branch and branch != "HEAD" and not branch.startswith(prefix):
-        notes.append(f"CONVENTION_MISMATCH: branch `{branch}` should start with `{prefix}`; "
-                     f"`git branch -m {prefix}{branch.rsplit('/', 1)[-1]}` before pushing.")
-    brief = profile_brief(profile)
-    return notes + ([brief] if brief else [])
-
-
-def card_profile(task_id: Optional[str], db: Path, home: Optional[Path] = None) -> dict:
-    """The card's project profile, its base_branch replaced by the card's own `PR BASE:` line (the
-    user picked a different base for this task, or a fix card follows its open PR's base)."""
-    try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        row = conn.execute("SELECT project_id, body FROM tasks WHERE id = ?", (task_id,)).fetchone()
-        if row and not row[0]:  # a verify card carries no project: use the card it checks
-            build = re.search(r"^BUILD CARD: (t_[0-9a-f]+)", row[1] or "", re.M)
-            found = conn.execute("SELECT project_id FROM tasks WHERE id = ? OR id IN (SELECT parent_id FROM "
-                                 "task_links WHERE child_id = ?) ORDER BY project_id IS NULL LIMIT 1",
-                                 (build[1] if build else "", task_id)).fetchone()
-            row = ((found and found[0]), row[1])
-        conn.close()
-    except sqlite3.Error:
-        row = None
-    if not row:
-        return {}
-    profile = {**project_profile(row[0], home), "project": row[0]}
-    if "FINAL CHECK BEFORE MERGE" in (row[1] or ""):  # review_gate.FINAL_MARKER
-        profile["final"] = True
-    base = PR_BASE.search(row[1] or "")
-    return {**profile, "base_branch": base[1]} if base else profile
-
-
-def inline_scripts_refused(home: Optional[Path] = None) -> bool:
-    """Workers run one-shot turns, where Hermes' ``approvals.single_query_mode`` (default deny) refuses
-    flagged commands. 158 `-c`/`-e` and 288 execute_code calls in 3 days were refused that way."""
-    try:
-        import yaml
-        cfg = yaml.safe_load(((home or Path(os.environ.get("HERMES_HOME", ""))) / "config.yaml").read_text()) or {}
-    except Exception:
-        cfg = {}
-    allowed = set(cfg.get("command_allowlist") or [])
-    return ((cfg.get("approvals") or {}).get("single_query_mode", "deny") == "deny"
-            and not {"script execution via -e/-c flag", "script execution via heredoc"} <= allowed)
-
-
-def test_runner_notes(ws: Path, project: Optional[str]) -> list[str]:
-    """A package whose `npm test` program is missing from its node_modules (a main checkout installed without
-    dev dependencies): verify skipped all 19 related suites for it. Said at the start, and the operator is told."""
-    notes = []
-    for rel in _package_dirs(ws):
-        try:
-            script = (json.loads((ws / rel / "package.json").read_text()).get("scripts") or {}).get("test") or ""
-        except (OSError, ValueError, AttributeError):
-            continue
-        tool = quality._tool(script)
-        bins = ws / rel / "node_modules" / ".bin"
-        if (not tool or "/" in tool or tool in quality.SHELL_WORDS or tool in NODE_CLIS or shutil.which(tool)
-                or not bins.parent.exists()):
-            continue
-        key = f"{project or ws.name}:{rel}:{tool}"
-        if (bins / tool).exists():
-            quality.report_setup(key, None)
-            continue
-        quality.report_setup(key, f"`{tool}` (npm test) is missing from {rel}/node_modules",
-                             os.environ.get("HERMES_KANBAN_TASK"))
-        notes.append(f"`{tool}` (the `npm test` runner of {rel}) is missing from its node_modules: install this "
-                     f"package's dependencies in this worktree from its lockfile (`npm ci` in {rel}, replacing any "
-                     "node_modules symlink) before testing; do not block for it.")
+    common = _git(ws, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common:
+        _exclude(Path(common), [".cpipe/"])
+    reset = rebase_fresh_worktree(ws, base)
+    notes += [reset] if reset else []
+    linked = link_node_modules(ws)
+    if linked:
+        notes.append(f"node_modules is symlinked from the main checkout for: {', '.join(linked)}. If this change "
+                     "touches dependencies, replace the symlink with a real install.")
+    if link_codegraph(ws):
+        notes.append("`.codegraph/` (the repo's code index) is here: find code with `codegraph explore` first.")
+    missing = [str(r) for r in _package_dirs(ws) if not (ws / r / "node_modules").exists()]
+    if missing:
+        notes.append(f"No node_modules for: {', '.join(missing)}. Install from the lockfile before testing.")
     return notes
-
-
-def testscope_note(profile: dict) -> list[str]:
-    """Verify runs that hand-rolled the BASE/HEAD comparison and waited out hung jest files took 15-20 min."""
-    if not shutil.which("testscope"):
-        return []
-    base = f" --base origin/{profile['base_branch']}" if profile.get("base_branch") else ""
-    return [f"`testscope{base}` (in the worktree) runs only the tests the change touches, in parallel, kills and "
-            "names hung files, and reruns failures at the base to mark them new or pre-existing: use it for related "
-            "tests and pre-existing checks instead of running files one by one or writing a comparison script."]
-
-
-def prepare_workspace(*, is_first_turn: bool = False, **_: Any) -> Optional[dict]:
-    """``pre_llm_call`` hook for kanban workers; silent everywhere else."""
-    ws_env, task_id = os.environ.get("HERMES_KANBAN_WORKSPACE"), os.environ.get("HERMES_KANBAN_TASK")
-    if not (is_first_turn and ws_env and task_id):
-        return None
-    try:
-        ws = Path(ws_env)
-        notes = []
-        db = Path(os.environ.get("HERMES_KANBAN_DB") or _home() / "kanban.db")
-        profile = card_profile(task_id, db)
-        if _git(ws, "rev-parse", "--is-inside-work-tree") == "true":
-            reset = rebase_fresh_worktree(ws, profile.get("base_branch"))
-            notes += [reset] if reset else []
-            linked = link_node_modules(ws)
-            if linked:
-                notes.append("node_modules was missing in this worktree and is now symlinked from the main "
-                             f"checkout for: {', '.join(linked)}. Run tests/lint normally. If this branch "
-                             "changes dependencies, replace the symlink with a real install.")
-            if link_codegraph(ws):
-                notes.append("This worktree has the repo's code index (`.codegraph/`, syncing to this branch "
-                             "in the background): find code with `codegraph explore` first.")
-            if shutil.which("ast-grep"):
-                notes.append("`ast-grep run -p '<code pattern>' -l <lang>` matches code by syntax (calls, imports, "
-                             "JSX, arguments), not text: use it over grep to find a code shape or make a mechanical "
-                             "rewrite.")
-            missing = [str(r) for r in _package_dirs(ws) if not (ws / r / "node_modules").exists()]
-            if missing:
-                notes.append(f"No node_modules for: {', '.join(missing)}. Install them with the project's "
-                             "package manager (lockfile install) before testing; do not block for it.")
-            notes += test_runner_notes(ws, profile.get("project"))
-            notes += testscope_note(profile)
-            if inline_scripts_refused():
-                notes.append("This run refuses inline interpreter code (`python -c`, `node -e`, `python3 - <<EOF`) "
-                             "and execute_code; write the script to a file under $TMPDIR and run that file.")
-            notes += convention_notes(ws, profile)
-        else:
-            parent = parent_worktree(task_id, db)
-            if parent:
-                notes.append(f"Your assigned workspace {ws} is empty scratch, not the repo. The parent card "
-                             f"worked in {parent}; cd there and work on its current branch. Do not block "
-                             "for a missing repository.")
-                notes += testscope_note(profile)
-        home = Path(os.environ.get("HERMES_HOME", ""))
-        notes += quality.first_turn_notes(home.name if home.parent.name == "profiles" else "default",
-                                          profile.get("project"), final=profile.get("final", False))
-        return {"context": "[cpipe workspace] " + " ".join(notes)} if notes else None
-    except Exception:
-        return None
