@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cpipe"
 version = "0.5.0"
-description = "cpipe: a dev plugin that turns a request in Hermes chat into a deliverable: a tested, QA'd, reviewed PR ready to merge."
+description = "cpipe: a Hermes plugin that turns a request in Hermes chat into a deliverable: a tested, QA'd, reviewed PR ready to merge."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
