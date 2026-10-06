@@ -1062,6 +1062,9 @@ def fix(args: dict) -> str:
         return json.dumps({"ok": False, "error": "request is required: what the user found while testing"})
     source_id = ref if re.fullmatch(r"t_[0-9a-f]+", ref) else _card_for_pr(ref)
     task = _task_row(source_id) if source_id else None
+    build = task and dict(task).get("step") == "verify" and _verify_build(source_id)
+    if build:  # a verify card mentions the PR too, but its workspace is a detached copy: fix the card it checked
+        source_id, task = build["id"], _task_row(build["id"])
     worktree = _card_worktree(source_id) if task else None
     if not worktree:
         return json.dumps({"ok": False, "error": f"no card with a live worktree found for {ref}; "
