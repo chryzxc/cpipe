@@ -156,3 +156,57 @@ def describe() -> dict[str, Any]:
         "exit_codes": {"failed": EXIT_FAILED, "rate_limited": EXIT_RATE_LIMITED,
                        "terminal": EXIT_TERMINAL},
     }
+
+
+# --- cpipe deliveries (chat tools, split, report) ---
+
+def create_card(conn, *, title: str, body: str, assignee: str, repo: str, branch: str,
+                model: Optional[str] = None, parents: Iterable[str] = (), creator_task_id: Optional[str] = None) -> str:
+    """A delivery card, linked to the calling chat session when there is one: Hermes then notifies that chat when
+    the card needs review, blocks or completes (its own kanban_create provenance and auto-subscribe)."""
+    session_id, kt = None, None
+    try:
+        from gateway.session_context import get_session_env
+        from tools import kanban_tools as kt
+        from tools.async_delegation import _current_origin_session_id
+        session_id = (kt._persisted_session_id(_current_origin_session_id())
+                      or kt._persisted_session_id(get_session_env("HERMES_SESSION_ID", "")))
+    except Exception:
+        pass
+    tid = kb.create_task(conn, title=title, body=body, assignee=assignee, created_by="cpipe",
+                         workspace_kind="worktree", workspace_path=repo, branch_name=branch,
+                         model_override=model, parents=tuple(parents), creator_task_id=creator_task_id,
+                         session_id=session_id)
+    if kt is not None:
+        try:
+            kt._maybe_auto_subscribe(conn, tid)
+        except Exception:
+            pass
+    return tid
+
+
+def resume(conn, task_id: str) -> bool:
+    """Back to ready for another round, from review or blocked."""
+    task = kb.get_task(conn, task_id)
+    if task and task.status == "review":
+        return bool(kb.reopen_review_task(conn, task_id))
+    if task and task.status == "blocked":
+        return bool(kb.unblock_task(conn, task_id))
+    return False
+
+
+def archive(conn, task_id: str) -> bool:
+    return bool(kb.archive_task(conn, task_id))
+
+
+def list_cards(conn, prefix: str = "cp:") -> list[Task]:
+    return [t for t in kb.list_tasks(conn, include_archived=True) if (t.assignee or "").startswith(prefix)]
+
+
+def latest_metadata(conn, task_id: str) -> dict:
+    run = kb.latest_run(conn, task_id)
+    return dict(run.metadata or {}) if run else {}
+
+
+def run_count(conn, task_id: str) -> int:
+    return len(kb.list_runs(conn, task_id))

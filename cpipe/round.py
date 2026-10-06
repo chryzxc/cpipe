@@ -1,24 +1,34 @@
 """``python -m cpipe.round <task> --result <file>``: one round of a delivery, launched by the runtime's ``round``
-adapter in the card's worktree. Walks ``graph`` from the card's current node to an interrupt, then writes
-``{status, summary, metadata}`` for the supervisor to apply (review / block / requeue).
+adapter in the card's worktree. Walks ``graph`` from where the delivery stands to an interrupt, then writes
+``{status, summary, metadata}`` for the supervisor to apply (review / block / complete / requeue).
 
 State lives in ``.cpipe/state.json`` in the worktree (git-excluded), so it survives across rounds; a copy goes
-into the card's metadata at every handoff. New input arrives as card comments (from anyone but cpipe).
+into the card's metadata at every interrupt. New input arrives as card comments: from anyone but cpipe it is
+feedback for the engine; ``cpipe:ready`` and ``cpipe:large`` (from the chat tools) are directives.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import json
 import os
+import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from . import engines, graph, quality, settings, workspace_prep
+from . import engines, graph, pr, quality, settings, test_env, workspace_prep
+from .home import root as hermes_home
 from .runtime import hermes_api
 
 ME = "cpipe"
+DIRECTIVES = {"cpipe:ready": ("ready", True), "cpipe:large": ("size", "large")}
+CONTINUE = "Continue from the last commit and finish the task."
+_spend_lock = threading.Lock()
 
 
 def log(msg: str) -> None:
@@ -41,12 +51,12 @@ def save_state(ws: Path, state: dict) -> None:
     state_path(ws).write_text(json.dumps(state, indent=1))
 
 
-def new_state(ws: Path, task, engine: str, cfg: dict) -> dict:
+def new_state(ws: Path, task, engine: str) -> dict:
     project = workspace_prep.project_of(ws)
     profile = workspace_prep.project_profile(project)
     return {"v": 1, "project": project, "base": profile.get("base_branch") or "main", "engine": engine,
-            "model": (cfg["engines"].get(engine) or {}).get("model"), "node": "setup", "session": None,
-            "last_comment_id": 0, "assumptions": [], "usage": {}, "timeline": [], "request": task.title}
+            "model": task.model_override, "node": "setup", "session": None, "last_comment_id": 0,
+            "assumptions": [], "usage": {}, "by_node": {}, "timeline": [], "request": task.title}
 
 
 def build_prompt(task, ws: Path, state: dict, notes: list[str]) -> str:
@@ -61,66 +71,322 @@ def build_prompt(task, ws: Path, state: dict, notes: list[str]) -> str:
         "- Don't push, open PRs, merge, deploy, or touch production/credentials: the runner does that.\n"
         "- Don't stop to ask. Ambiguity → choose what a careful senior would and list it in `assumptions`. "
         "`needs_user` only for destructive, external, security or credential decisions.\n"
-        "- Minimal change matching surrounding code; reuse existing helpers. Follow AGENTS.md.",
+        "- Minimal change matching surrounding code; reuse existing helpers. Follow AGENTS.md.\n"
+        "- No local paths or internal ids in code or commit messages.\n"
+        "- `how_to_test`: the steps a reviewer follows to see the change work.",
         conventions,
         "Lessons from past deliveries:\n" + "\n".join(f"- {t}" for t in lessons) if lessons else "",
         "\n".join(f"Note: {n}" for n in notes),
     ]))
 
 
+PLAN = ("Before building, plan. Write the plan and a checklist to .cpipe/progress.md; don't change code yet. If "
+        "the task is really several independent changes that would each make a reviewable pull request on its "
+        "own, list them in `parts` (title; request: a self-contained task description; after: the indexes of "
+        "parts that must land first). Otherwise leave `parts` empty.")
+
+
 def feedback(conn, task_id: str, state: dict) -> str:
-    """New comments since the last round, from anyone but cpipe; advances ``last_comment_id``."""
+    """New comments since the last read: directives update ``state``, the rest (from anyone but cpipe) is
+    returned as feedback. Advances ``last_comment_id``."""
     new = hermes_api.comments_after(conn, task_id, state["last_comment_id"])
     if new:
         state["last_comment_id"] = new[-1].id
-    return "\n\n".join(f"{c.author}: {c.body.strip()}" for c in new if c.author != ME)
+    said = []
+    for c in new:
+        if c.author in DIRECTIVES:
+            key, value = DIRECTIVES[c.author]
+            state[key] = value
+        elif c.author != ME:
+            said.append(f"{c.author}: {c.body.strip()}")
+    return "\n\n".join(said)
+
+
+def said_prompt(said: str) -> str:
+    return f"New input from the user on this delivery:\n{said}\n\nAddress it, test, commit."
+
+
+def spend(state: dict, node: str, result: engines.EngineResult) -> None:
+    with _spend_lock:
+        per = state.setdefault("by_node", {}).setdefault(node, {})
+        for k, v in result.tokens.items():
+            state["usage"][k] = state["usage"].get(k, 0) + v
+            per[k] = per.get(k, 0) + v
+
+
+def head(ws: Path) -> str:
+    return subprocess.run(["git", "-C", str(ws), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+
+def main_checkout(ws: Path) -> str:
+    common = subprocess.run(["git", "-C", str(ws), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            capture_output=True, text=True).stdout.strip()
+    return str(Path(common).parent)
+
+
+@contextlib.contextmanager
+def screen_lock():
+    """Computer-use QA drives the one real screen: one at a time across all deliveries."""
+    path = hermes_home() / "state" / "cpipe-computer-use.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+
+
+class Round:
+    def __init__(self, task_id: str, ws: Path, conn, engine: str, cfg: dict):
+        self.task_id, self.ws, self.conn, self.cfg = task_id, ws, conn, cfg
+        self.task = hermes_api.get_task(conn, task_id)
+        self.state = load_state(ws) or new_state(ws, self.task, engine)
+        self.limits, self.rounds = cfg["limits"], {}
+        self.fell_back = False
+        self.last: Optional[engines.EngineResult] = None
+
+    # --- engines ---
+
+    def engine(self, name: Optional[str] = None) -> tuple[str, object, dict]:
+        name = name or self.state["engine"]
+        ec = dict(self.cfg["engines"].get(name) or {})
+        if name == self.state["engine"] and self.state.get("model"):
+            ec["model"] = self.state["model"]
+        return name, engines.get(name, ec), ec
+
+    def turn(self, node: str, prompt: str, schema: dict = engines.RESULT_SCHEMA, reasoning: Optional[str] = None,
+             fallback: bool = True, profile: Optional[str] = None) -> engines.EngineResult:
+        """One turn of the delivery's build session; at a usage limit, once per round, the fallback engine takes
+        over from the commits."""
+        name, eng, ec = self.engine()
+        r = eng.run(ec, prompt, self.ws, session=self.state["session"], schema=schema, log=log,
+                    reasoning=reasoning, profile=profile)
+        spend(self.state, node, r)
+        fb = self.cfg.get("fallback_engine")
+        if (r.status == "rate_limited" and fallback and not self.fell_back and fb and fb != name
+                and fb in self.cfg["engines"] and engines.available(fb, self.cfg["engines"][fb])[0]):
+            self.fell_back = True
+            log(f"{name} hit its usage limit: {fb} takes over")
+            had_session = bool(self.state["session"])
+            self.state.update(engine=fb, model=None, session=None)
+            if had_session:
+                prompt = (build_prompt(self.task, self.ws, self.state, []) + "\n\nAnother engine started this "
+                          f"delivery and hit its usage limit. Its work is committed: see `git log "
+                          f"origin/{self.state['base']}..HEAD` and .cpipe/progress.md. Continue from there.\n\n"
+                          + prompt)
+            return self.turn(node, prompt, schema, reasoning, fallback, None)
+        if r.session:
+            self.state["session"] = r.session
+        return r
+
+    # --- nodes: each returns (outcome, the next build prompt or "") ---
+
+    def setup(self, prompt: str, said: str):
+        notes = workspace_prep.prepare(self.ws, self.state["base"])
+        prompt = build_prompt(self.task, self.ws, self.state, notes) + (f"\n\nAlso from the user:\n{said}" if said else "")
+        return ("large" if self.state.get("size") == "large" else "ok"), prompt
+
+    def plan(self, prompt: str, said: str):
+        _, _, ec = self.engine()
+        r = self.last = self.turn("plan", f"{prompt}\n\n{PLAN}", engines.PLAN_SCHEMA,
+                                  reasoning=ec.get("plan_reasoning", "high"))
+        if r.status in graph.ENGINE_DOWN or r.status == "needs_user":
+            return r.status, prompt
+        parts = r.data.get("parts") or []
+        if len(parts) >= 2:
+            self.state["parts"] = parts
+            return "split", ""
+        return "ok", "Now implement the plan, test, commit."
+
+    def split(self, prompt: str, said: str):
+        ids: list[str] = []
+        for i, part in enumerate(self.state["parts"]):
+            after = [ids[j] for j in part.get("after") or [] if isinstance(j, int) and 0 <= j < len(ids)]
+            ids.append(hermes_api.create_card(
+                self.conn, title=part["title"], body=part["request"], assignee=self.task.assignee,
+                repo=main_checkout(self.ws), branch=f"{self.task.branch_name}-{i + 1}",
+                model=self.task.model_override, parents=after, creator_task_id=self.task_id))
+        self.state["children"] = ids
+        return "ok", ""
+
+    def build(self, prompt: str, said: str):
+        r = self.last = self.turn("build", prompt)
+        self.state["assumptions"] += r.data.get("assumptions") or []
+        for k in ("summary", "how_to_test"):
+            if r.data.get(k):
+                self.state[k] = r.data[k]
+        return ("ok" if r.status == "done" else r.status), prompt
+
+    def base_sha(self) -> str:
+        return quality.diff_base(self.ws, self.state["base"]) or f"origin/{self.state['base']}"
+
+    def checks(self, prompt: str, said: str):
+        failures = quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id)
+        out = graph.loop_outcome(["checks"] if failures else [], self.rounds, self.limits)
+        if failures:
+            return out, "The checks failed on your branch:\n\n" + "\n\n".join(failures) + "\n\nFix it and commit."
+        return out, prompt
+
+    def qa(self) -> tuple[Optional[bool], str]:
+        mode = workspace_prep.project_profile(self.state["project"]).get("qa") or "browser"
+        if mode == "off":
+            return None, "QA: off for this project"
+        app = test_env.start(str(self.ws), self.state["project"])
+        if not app["ok"]:
+            if "recipe" in app["error"] or "wtg" in app["error"]:
+                return None, f"QA: skipped ({app['error']})"
+            tails = "\n".join(f"{n}:\n{t}" for n, t in (app.get("log_tail") or {}).items())
+            return False, f"The app did not start for QA: {app['error']}\n{app.get('output') or tails}".strip()
+        how = "computer use (the real screen)" if mode == "computer-use" else "the browser"
+        prompt = (f"QA: verify this delivery in the running app ({', '.join(app['urls'].values())}) using {how}, "
+                  "the way a user would: the changed behavior and what is next to it. Save screenshots to "
+                  ".cpipe/qa/. Don't edit code. Report pass, or fail with each problem.")
+        _, _, ec = self.engine()
+        with screen_lock() if mode == "computer-use" else contextlib.nullcontext():
+            r = self.turn("qa", prompt, engines.QA_SCHEMA, fallback=False, profile=ec.get("qa_profile"))
+        if r.status == "pass":
+            return True, f"QA ({mode}): passed. {r.summary}".strip()
+        if r.status == "fail":
+            return False, "QA found problems in the running app:\n" + "\n".join(f"- {p}" for p in r.data.get("problems") or [r.summary])
+        return None, f"QA: skipped (engine {r.status})"
+
+    def review(self, name: Optional[str] = None) -> tuple[Optional[bool], str]:
+        name = name or self.cfg.get("review_engine")
+        if not (name in self.cfg["engines"] and engines.available(name, self.cfg["engines"][name])[0]):
+            name = self.state["engine"]
+        eng_name, eng, ec = self.engine(name)
+        diff = f"`git diff {self.base_sha()}...HEAD`"
+        if self.state.get("review_session") and self.state.get("review_engine") == name:
+            session, prompt = self.state["review_session"], f"The branch changed since your last review. Review it again: {diff}."
+        else:
+            session = None
+            prompt = (f"You review a change before a human sees it. The request:\n\n{self.task.title}\n\n"
+                      f"{(self.task.body or '').strip()}\n\nReview the branch: {diff} in {self.ws}. Don't edit files. "
+                      "Report only what must change before merge: bugs, the request not met, missing or wrong tests, "
+                      "security problems, clear breaks of the repo's conventions. Approve when nothing blocks; "
+                      "style preferences are not findings.")
+        r = eng.run(ec, prompt, self.ws, session=session, schema=engines.REVIEW_SCHEMA, log=log, readonly=True)
+        spend(self.state, "review", r)
+        if r.status in graph.ENGINE_DOWN and name != self.state["engine"]:
+            log(f"review on {name}: {r.status}; the delivery's engine reviews instead")
+            return self.review(self.state["engine"])
+        self.state.update(review_session=r.session or session, review_engine=name)
+        if r.status == "approve":
+            return True, f"Review ({eng_name}): approved"
+        if r.status == "changes":
+            self.state["findings"] = r.data.get("findings") or [r.summary]
+            return False, "The independent review asks for changes:\n" + "\n".join(f"- {f}" for f in self.state["findings"])
+        return None, f"Review: skipped ({eng_name} {r.status})"
+
+    def security(self) -> tuple[Optional[bool], str]:
+        failures = quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id,
+                                      stage="security")
+        return (False, "The security checks failed:\n\n" + "\n\n".join(failures)) if failures else (True, "Security checks: passed")
+
+    def verify(self, prompt: str, said: str):
+        """QA, security checks and the independent review, in parallel."""
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            jobs = {"qa": pool.submit(self.qa), "checks": pool.submit(self.security), "review": pool.submit(self.review)}
+            done = {k: f.result() for k, f in jobs.items()}
+        failed = [k for k, (ok, _) in done.items() if ok is False]
+        out = graph.loop_outcome(failed, self.rounds, self.limits)
+        self.state["verification"] = ["Checks: passed"] + [text.splitlines()[0] for ok, text in done.values()]
+        if out == "ok":
+            self.state["verified_head"] = head(self.ws)
+            if "review" in failed:  # out of review budget: the open findings go into the PR
+                self.state["verification"] += [f"Open review finding: {f}" for f in self.state.get("findings", [])]
+            return out, prompt
+        return out, "\n\n".join(done[k][1] for k in failed) + "\n\nFix it, test, commit."
+
+    def pr(self, prompt: str, said: str):
+        out, detail = pr.publish(self.ws, self.state, self.task.branch_name)
+        if out == "fix":
+            return graph.loop_outcome(["checks"], self.rounds, self.limits), detail
+        return out, detail if out == "blocked" else prompt
+
+    def ci(self, prompt: str, said: str):
+        out, detail = pr.ci(self.ws, self.state, settings.PR_MINUTES)
+        self.state["ci"] = detail
+        if out == "fail":
+            return graph.loop_outcome(["ci"], self.rounds, self.limits), detail + "\n\nFix it and commit."
+        return "ok", prompt
+
+    def final(self, prompt: str, said: str):
+        if head(self.ws) != self.state.get("verified_head"):
+            failures = (quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id)
+                        + quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id,
+                                             stage="security"))
+            if failures:
+                return (graph.loop_outcome(["checks"], self.rounds, self.limits),
+                        "The final checks failed:\n\n" + "\n\n".join(failures) + "\n\nFix it and commit.")
+        err = pr.ready(self.ws, self.state)
+        return ("blocked", f"Marking the pull request ready failed: {err}") if err else ("ok", "")
+
+    # --- the round ---
+
+    def start(self, said: str) -> tuple[str, str]:
+        st, node = self.state, self.state["node"]
+        if node not in graph.TERMINAL:  # a new delivery, or a round that died mid-way
+            prompt = st.get("prompt") or ""
+            return node, prompt + (f"\n\n{said_prompt(said)}" if said and node != "setup" else "")
+        if said:
+            return "build", said_prompt(said)
+        if st.get("ready"):
+            return "final", ""
+        if node in graph.ENGINE_DOWN or node == "paused":
+            return st.get("at") or "build", st.get("prompt") or CONTINUE
+        return "build", CONTINUE
+
+    def run(self) -> dict:
+        st, t0 = self.state, time.time()
+        said = feedback(self.conn, self.task_id, st)
+        st["node"], prompt = self.start(said)
+        while st["node"] not in graph.TERMINAL:
+            node, start = st["node"], time.time()
+            if node in graph.ENGINE_NODES and time.time() - t0 > self.limits["round_minutes"] * 60:
+                st.update(at=node, prompt=prompt, node="paused")
+                break
+            log(f"node {node} ({st['engine']})")
+            outcome, prompt = getattr(self, node)(prompt, said)
+            said = ""
+            st["timeline"].append({"node": node, "start": int(start), "end": int(time.time()), "outcome": outcome,
+                                   "engine": st["engine"]})
+            if outcome == "limit" or outcome == "blocked":
+                st["why"] = prompt
+            to = graph.next_node(node, outcome, bool(st.get("ready")))
+            if to in graph.ENGINE_DOWN:
+                st["at"] = node
+            if to in ("handoff", "final"):  # input that arrived during the round comes first
+                late = feedback(self.conn, self.task_id, st)
+                if late:
+                    to, prompt = "build", said_prompt(late)
+                elif st.get("ready"):
+                    to = "final"
+            st.update(node=to, prompt=prompt)
+            save_state(self.ws, st)
+        save_state(self.ws, st)
+        return {"status": graph.TERMINAL[st["node"]], "summary": self.summary(), "metadata": {"cpipe": st}}
+
+    def summary(self) -> str:
+        st, end, r = self.state, self.state["node"], self.last
+        if end == "handoff":
+            where = st.get("pr_url") or (st.get("notes") or {}).get("pr") or ""
+            return "\n\n".join(filter(None, [st.get("summary") or "Built, checked and reviewed.", where,
+                                             "\n".join(st.get("verification") or [])]))
+        if end == "ask":
+            return (r.data.get("question") if r else "") or "The engine needs a decision."
+        if end == "stuck":
+            return st.get("why", "")[:4000] or "A loop reached its limit."
+        if end == "paused":
+            return (f"Paused after {self.limits['round_minutes']} minutes (at {st['at']}). Unblock the card to "
+                    "continue from the last commit.")
+        if end == "done":
+            if st.get("children"):
+                return f"Split into {len(st['children'])} deliveries: {', '.join(st['children'])}."
+            return f"Accepted. The pull request is ready to merge: {st['pr_url']}" if st.get("pr_url") else "Accepted."
+        return (r.summary if r else "") or end
 
 
 def run_round(task_id: str, ws: Path, conn, engine: str, cfg: dict) -> dict:
-    task = hermes_api.get_task(conn, task_id)
-    state = load_state(ws) or new_state(ws, task, engine, cfg)
-    limits, rounds = cfg["limits"], {}
-    eng, eng_cfg = engines.get(engine), cfg["engines"].get(engine) or {}
-    said = feedback(conn, task_id, state)
-    if state["session"]:
-        state["node"] = "build"
-        prompt = (f"New input from the user on this delivery:\n{said}\n\nAddress it, test, commit." if said
-                  else "Continue from the last commit and finish the task.")
-    else:
-        state["node"], prompt = "setup", ""
-    result: Optional[engines.EngineResult] = None
-    while state["node"] not in graph.TERMINAL:
-        node, start = state["node"], time.time()
-        log(f"node {node}")
-        if node == "setup":
-            notes = workspace_prep.prepare(ws, state["base"])
-            prompt, outcome = build_prompt(task, ws, state, notes) + (f"\n\nAlso from the user:\n{said}" if said else ""), "ok"
-        elif node == "build":
-            result = eng.run(eng_cfg, prompt, ws, session=state["session"], log=log)
-            state["session"] = result.session or state["session"]
-            state["assumptions"] += result.data.get("assumptions") or []
-            for k, v in result.tokens.items():
-                state["usage"][k] = state["usage"].get(k, 0) + v
-            outcome = "needs_user" if result.status == "needs_user" else "ok" if result.status == "done" else result.status
-        else:  # checks
-            failures = quality.run_checks(ws, quality.diff_base(ws, state["base"]) or f"origin/{state['base']}",
-                                          state["project"], card=task_id)
-            outcome = "fail" if failures else "ok"
-            if failures:
-                rounds["checks"] = rounds.get("checks", 0) + 1
-                prompt = "The checks failed on your branch:\n\n" + "\n\n".join(failures) + "\n\nFix it and commit."
-                log(f"checks failed ({rounds['checks']}/{limits['checks']})")
-        state["timeline"].append({"node": node, "start": int(start), "end": int(time.time()), "outcome": outcome})
-        state["node"] = graph.next_node(node, outcome, rounds, limits)
-        save_state(ws, state)
-    end = state["node"]
-    status = graph.TERMINAL[end]
-    summary = {
-        "handoff": (result.summary if result else "") or "Built and checked.",
-        "ask": (result.data.get("question") if result else "") or "The engine needs a decision.",
-        "stuck": f"The checks still fail after {limits['checks']} fixes:\n{prompt[:3000]}",
-    }.get(end, result.summary if result else end)
-    return {"status": status, "summary": summary, "metadata": {"cpipe": state}}
+    return Round(task_id, ws, conn, engine, cfg).run()
 
 
 def main(argv: Optional[list[str]] = None) -> int:

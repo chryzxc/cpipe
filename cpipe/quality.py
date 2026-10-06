@@ -7,6 +7,9 @@ The checks live in ``$HERMES_HOME/delivery/quality.yaml``; cpipe only decides wh
         files: "*.js *.ts *.vue"              # fnmatch globs on the path; skipped when no changed file matches
         run: "~/.hermes/scripts/lint.sh {base} {files}"   # {files}: the matches, shell-quoted; {base}: diff base sha
         projects: [my-app]                    # optional: only deliveries of these projects
+        stage: security                       # optional: run with QA and review (verify), not after each build
+
+Checks of a stage run in parallel.
 
 A failing check (non-zero exit) goes back to the build session with its output. A check that hangs past
 CHECK_TIMEOUT is skipped, never blocking. A check whose tool cannot start or crashes (not on PATH, exit 126/127, a
@@ -23,6 +26,7 @@ import shlex
 import signal
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -130,24 +134,27 @@ def _names_any(output: str, files: list[str]) -> bool:
 
 
 def run_checks(ws: Path, base: str, project: Optional[str], home: Optional[Path] = None,
-               card: Optional[str] = None) -> list[str]:
+               card: Optional[str] = None, stage: str = "checks") -> list[str]:
     """Failures as ``name: output`` blocks; [] when everything passed, nothing matched, or nothing is set up."""
-    checks = _checks(load(home), project)
+    checks = [c for c in _checks(load(home), project) if (c.get("stage") or "checks") == stage]
     files = changed_files(ws, base) if checks else []
-    failures = []
-    for c in checks:
+
+    def one(c: dict) -> Optional[str]:
         globs = str(c.get("files") or "*").split()
         hits = [f for f in files if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(Path(f).name, g) for g in globs)]
         if not hits:
-            continue
+            return None
         cmd = str(c["run"]).replace("{base}", shlex.quote(base)).replace("{files}", " ".join(map(shlex.quote, hits)))
         done = _run(os.path.expanduser(cmd) if cmd.startswith("~") else cmd, ws)
         if done and (done.returncode in (126, 127) or (CRASH.search(done.stdout or "") and not _names_any(done.stdout, files))):
             report_setup(str(c.get("name", "check")), f"`{c['run']}` exit {done.returncode}: {done.stdout or ''}",
                          card, home)
-            continue
+            return None
         if done:
             report_setup(str(c.get("name", "check")), None, home=home)  # it ran: any old setup problem is fixed
         if done and done.returncode != 0:
-            failures.append(f"{c.get('name', 'check')}: `{c['run']}`\n{(done.stdout or '').strip()[-OUTPUT_KEEP:]}")
-    return failures
+            return f"{c.get('name', 'check')}: `{c['run']}`\n{(done.stdout or '').strip()[-OUTPUT_KEEP:]}"
+        return None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return [f for f in pool.map(one, checks) if f]

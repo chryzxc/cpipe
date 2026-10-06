@@ -6,6 +6,7 @@
     engines:
       codex:  {bin: <path>, model: gpt-6.1-sol, reasoning: medium, concurrency: 3}
       claude: {bin: claude, model: claude-opus-5-5, concurrency: 2}
+      coder:  {kind: hermes, profile: coder, concurrency: 2}      # kind: codex | claude | hermes | opencode
     limits: {checks: 3, qa: 2, review: 2, ci: 2, round_minutes: 90}
     env_pass: [GH_TOKEN]        # extra variables the round (and its engine) may see
 

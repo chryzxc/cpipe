@@ -34,19 +34,28 @@ def test_lanes_and_doctor(hermes_home, capsys):
     assert "pid-tracked" in out and "UNAVAILABLE: executable not found" in out
 
 
-def test_plugin_registers_cli_command():
+def test_plugin_registers_cli_command_and_tools():
+    import json
+
     import cpipe as pkg
 
     class Ctx:
         def __init__(self):
-            self.calls = []
+            self.calls, self.tools = [], {}
 
         def register_cli_command(self, **kw):
             self.calls.append(kw)
 
+        def register_tool(self, **kw):
+            self.tools[kw["name"]] = kw
+
     ctx = Ctx()
     pkg.register(ctx)
     assert ctx.calls[0]["name"] == "cpipe"
+    assert set(ctx.tools) == {"cpipe_ship", "cpipe_feedback", "cpipe_ready", "cpipe_status", "cpipe_stop"}
+    assert {t["toolset"] for t in ctx.tools.values()} == {"cpipe"}
+    # a tool error is returned to the chat, never raised
+    assert "error" in json.loads(ctx.tools["cpipe_ship"]["handler"]({"request": "x", "project": "nope"}))
 
 
 def test_daemon_logs_reach_stderr_when_host_configured_logging(hermes_home, capsys):

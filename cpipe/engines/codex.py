@@ -11,8 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..runtime.result import looks_auth_failure, looks_rate_limited
-from . import RESULT_SCHEMA, EngineResult, child_env
+from . import RESULT_SCHEMA, EngineResult, child_env, outcome
 
 
 def git_dirs(cwd: Path) -> list[str]:
@@ -22,12 +21,18 @@ def git_dirs(cwd: Path) -> list[str]:
 
 
 def command(cfg: dict, prompt: str, cwd: Path, session: Optional[str], schema_file: Path,
-            out_file: Path, reasoning: Optional[str] = None) -> list[str]:
+            out_file: Path, reasoning: Optional[str] = None, readonly: bool = False,
+            profile: Optional[str] = None) -> list[str]:
     argv = [cfg.get("bin") or "codex", "exec", *(["resume", session] if session else []),
-            "--json", "--skip-git-repo-check", "--output-schema", str(schema_file), "-o", str(out_file),
-            "-c", 'sandbox_mode="workspace-write"',
-            "-c", f"sandbox_workspace_write.writable_roots={json.dumps(git_dirs(cwd))}",
-            "-c", f"sandbox_workspace_write.network_access={str(cfg.get('network', True)).lower()}"]
+            "--json", "--skip-git-repo-check", "--output-schema", str(schema_file), "-o", str(out_file)]
+    if readonly:
+        argv += ["-c", 'sandbox_mode="read-only"']
+    else:
+        argv += ["-c", 'sandbox_mode="workspace-write"',
+                 "-c", f"sandbox_workspace_write.writable_roots={json.dumps(git_dirs(cwd))}",
+                 "-c", f"sandbox_workspace_write.network_access={str(cfg.get('network', True)).lower()}"]
+    if profile:
+        argv += ["-c", f'profile="{profile}"']
     if cfg.get("model"):
         argv += ["-m", cfg["model"]]
     if reasoning or cfg.get("reasoning"):
@@ -38,14 +43,16 @@ def command(cfg: dict, prompt: str, cwd: Path, session: Optional[str], schema_fi
 
 
 def run(cfg: dict, prompt: str, cwd: Path, session: Optional[str] = None, schema: dict = RESULT_SCHEMA,
-        log: Callable[[str], None] = print, reasoning: Optional[str] = None) -> EngineResult:
+        log: Callable[[str], None] = print, reasoning: Optional[str] = None, readonly: bool = False,
+        profile: Optional[str] = None) -> EngineResult:
     work = cwd / ".cpipe"
     work.mkdir(exist_ok=True)
-    schema_file, out_file = work / "schema.json", work / "last-message.json"
+    tag = "review" if readonly else "build"  # a review runs beside QA's turn: separate files
+    schema_file, out_file = work / f"schema-{tag}.json", work / f"last-message-{tag}.json"
     schema_file.write_text(json.dumps(schema))
     out_file.unlink(missing_ok=True)
-    proc = subprocess.Popen(command(cfg, prompt, cwd, session, schema_file, out_file, reasoning), cwd=cwd,
-                            env=child_env(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+    proc = subprocess.Popen(command(cfg, prompt, cwd, session, schema_file, out_file, reasoning, readonly, profile),
+                            cwd=cwd, env=child_env(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, errors="replace")
     thread, tokens, errors = session, {}, []
     for line in proc.stdout:
@@ -71,9 +78,4 @@ def run(cfg: dict, prompt: str, cwd: Path, session: Optional[str] = None, schema
         data = json.loads(out_file.read_text())
     except (OSError, ValueError):
         data = None
-    if isinstance(data, dict) and data.get("status"):
-        return EngineResult(data["status"], data.get("summary", ""), thread, data, tokens)
-    why = "\n".join(errors[-5:]) or f"codex exited {proc.returncode} without a result"
-    status = ("rate_limited" if looks_rate_limited(why) else "unavailable" if looks_auth_failure(why)
-              else "failed")
-    return EngineResult(status, why[-1500:], thread, {}, tokens)
+    return outcome(data, "\n".join(errors[-5:]) or f"codex exited {proc.returncode} without a result", thread, tokens)
