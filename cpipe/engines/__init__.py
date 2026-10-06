@@ -35,10 +35,14 @@ _STRINGS = {"type": "array", "items": {"type": "string"}}
 # Every build turn ends with this.
 RESULT_SCHEMA = _schema(["done", "needs_user"], assumptions=_STRINGS, question={"type": "string"},
                         how_to_test={"type": "string"})
-PLAN_SCHEMA = _schema(["done", "needs_user"], question={"type": "string"}, parts={"type": "array", "items": {
+PLAN_SCHEMA = _schema(["done", "needs_user"], question={"type": "string"}, plan={"type": "string"},
+                      questions=_STRINGS, parts={"type": "array", "items": {
     "type": "object", "additionalProperties": False, "required": ["title", "request", "after"],
     "properties": {"title": {"type": "string"}, "request": {"type": "string"},
                    "after": {"type": "array", "items": {"type": "integer"}}}}})
+TESTS_SCHEMA = _schema(["done", "needs_user"], question={"type": "string"},
+                       kind={"type": "string", "enum": ["feature", "fix", "refactor", "none"]},
+                       guard_command={"type": "string"}, red_command={"type": "string"}, tests=_STRINGS)
 QA_SCHEMA = _schema(["pass", "fail"], problems=_STRINGS, screenshots=_STRINGS)
 REVIEW_SCHEMA = _schema(["approve", "changes"], findings=_STRINGS)
 

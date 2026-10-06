@@ -4,7 +4,7 @@ adapter in the card's worktree. Walks ``graph`` from where the delivery stands t
 
 State lives in ``.cpipe/state.json`` in the worktree (git-excluded), so it survives across rounds; a copy goes
 into the card's metadata at every interrupt. New input arrives as card comments: from anyone but cpipe it is
-feedback for the engine; ``cpipe:ready`` and ``cpipe:large`` (from the chat tools) are directives.
+feedback for the engine; ``cpipe:approved`` and ``cpipe:ready`` (from the chat tools) are directives.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from .home import root as hermes_home
 from .runtime import hermes_api
 
 ME = "cpipe"
-DIRECTIVES = {"cpipe:ready": ("ready", True), "cpipe:large": ("size", "large")}
+DIRECTIVES = {"cpipe:approved": ("approved", True), "cpipe:ready": ("ready", True)}
 CONTINUE = "Continue from the last commit and finish the task."
 _spend_lock = threading.Lock()
 
@@ -67,11 +67,13 @@ def build_prompt(task, ws: Path, state: dict, notes: list[str]) -> str:
         f"{task.title}\n\n{(task.body or '').strip()}".strip(),
         f"Worktree {ws}, branch {task.branch_name}, PR base {state['base']}. Project: {state['project']}.",
         "- Do the whole task in this session: read what you need, edit, add/adjust tests that prove it, run them, "
-        "commit (Conventional Commits) on this branch. For large tasks keep .cpipe/progress.md current.\n"
+        "commit (Conventional Commits) on this branch. Keep the checklist in .cpipe/progress.md current.\n"
         "- Don't push, open PRs, merge, deploy, or touch production/credentials: the runner does that.\n"
         "- Don't stop to ask. Ambiguity → choose what a careful senior would and list it in `assumptions`. "
         "`needs_user` only for destructive, external, security or credential decisions.\n"
         "- Minimal change matching surrounding code; reuse existing helpers. Follow AGENTS.md.\n"
+        "- Test first: a test that shows the change (or pins what must not break) comes before the code.\n"
+        "- Independent pieces may go to subagents if your tool has them; you own and check their work.\n"
         "- No local paths or internal ids in code or commit messages.\n"
         "- `how_to_test`: the steps a reviewer follows to see the change work.",
         conventions,
@@ -80,10 +82,24 @@ def build_prompt(task, ws: Path, state: dict, notes: list[str]) -> str:
     ]))
 
 
-PLAN = ("Before building, plan. Write the plan and a checklist to .cpipe/progress.md; don't change code yet. If "
-        "the task is really several independent changes that would each make a reviewable pull request on its "
-        "own, list them in `parts` (title; request: a self-contained task description; after: the indexes of "
-        "parts that must land first). Otherwise leave `parts` empty.")
+PLAN = ("Before building, plan, for the user to approve: don't change code yet. Read what you need in the repo. "
+        "Write the plan to .cpipe/progress.md (what changes and where, the steps as a checklist, how it will be "
+        "tested) and return it in `plan`, short and concrete. Put what only the user can decide in `questions`, "
+        "each with your recommended answer; keep them few. If the task is really several independent changes "
+        "that would each make a reviewable pull request on its own, list them in `parts` (title; request: a "
+        "self-contained task description; after: the indexes of parts that must land first). Otherwise leave "
+        "`parts` empty.")
+APPROVED = "The user approved the plan in .cpipe/progress.md."
+TESTS = ("Tests first, before any code change. If the change touches existing behavior, make sure tests pin what "
+         "must not break: add them where missing; they must pass now. Then write the tests for the new or fixed "
+         "behavior: they must fail now, because the code does not do it yet. Commit the tests only. Return `kind` "
+         "(feature, fix, refactor: no behavior change, so no failing tests; none: nothing testable, e.g. docs), "
+         "`guard_command` (runs the tests that must pass now, or empty), `red_command` (runs only the new tests "
+         "that must fail now, or empty for refactor/none) and `tests` (the test names). The runner runs both "
+         "commands to check.")
+BUILD = ("Now implement the plan until the new tests and the whole suite pass (green). Don't weaken or delete the "
+         "tests written first; if one is wrong, fix it and say why in `assumptions`. Then refactor what you "
+         "touched while the tests stay green, and commit.")
 
 
 def feedback(conn, task_id: str, state: dict) -> str:
@@ -182,7 +198,7 @@ class Round:
     def setup(self, prompt: str, said: str):
         notes = workspace_prep.prepare(self.ws, self.state["base"])
         prompt = build_prompt(self.task, self.ws, self.state, notes) + (f"\n\nAlso from the user:\n{said}" if said else "")
-        return ("large" if self.state.get("size") == "large" else "ok"), prompt
+        return ("approved" if self.state.get("approved") else "ok"), prompt
 
     def plan(self, prompt: str, said: str):
         _, _, ec = self.engine()
@@ -190,11 +206,9 @@ class Round:
                                   reasoning=ec.get("plan_reasoning", "high"))
         if r.status in graph.ENGINE_DOWN or r.status == "needs_user":
             return r.status, prompt
-        parts = r.data.get("parts") or []
-        if len(parts) >= 2:
-            self.state["parts"] = parts
-            return "split", ""
-        return "ok", "Now implement the plan, test, commit."
+        self.state.update(plan=r.data.get("plan") or r.summary, questions=r.data.get("questions") or [],
+                          parts=r.data.get("parts") or [])
+        return "ok", ""
 
     def split(self, prompt: str, said: str):
         ids: list[str] = []
@@ -204,8 +218,35 @@ class Round:
                 self.conn, title=part["title"], body=part["request"], assignee=self.task.assignee,
                 repo=main_checkout(self.ws), branch=f"{self.task.branch_name}-{i + 1}",
                 model=self.task.model_override, parents=after, creator_task_id=self.task_id))
+            hermes_api.comment(self.conn, ids[-1], "part of an approved plan", author="cpipe:approved")
         self.state["children"] = ids
         return "ok", ""
+
+    def tests(self, prompt: str, said: str):
+        """Tests first, checked by running them: guard tests pass, the new tests fail (red), before the change."""
+        r = self.last = self.turn("tests", f"{prompt}\n\n{TESTS}", engines.TESTS_SCHEMA)
+        if r.status in graph.ENGINE_DOWN or r.status == "needs_user":
+            return r.status, prompt
+        d = r.data
+        tdd = self.state["tdd"] = {"kind": d.get("kind") or "none", "tests": d.get("tests") or [],
+                                   "red": (d.get("red_command") or "").strip(), "head": head(self.ws)}
+        problems = []
+        guard = (d.get("guard_command") or "").strip()
+        if guard:
+            g = quality._run(guard, self.ws)
+            if g is None or g.returncode != 0:
+                problems.append(f"The tests that pin current behavior fail before any change (`{guard}`):\n"
+                                f"{(g.stdout if g else 'timed out')[-2000:]}")
+        if tdd["kind"] in ("feature", "fix") and not tdd["red"]:
+            problems.append("A feature or fix needs new tests that fail now: give their command in `red_command`.")
+        elif tdd["red"]:
+            red = quality._run(tdd["red"], self.ws)
+            if red is not None and red.returncode == 0:
+                problems.append(f"The new tests already pass (`{tdd['red']}`), so they don't test the change yet. "
+                                "Write tests that fail until the change is made.")
+        if problems:
+            return graph.loop_outcome(["tests"], self.rounds, self.limits), "\n\n".join(problems) + "\n\nFix the tests and commit."
+        return "ok", BUILD + (f" The new tests: `{tdd['red']}`." if tdd["red"] else "")
 
     def build(self, prompt: str, said: str):
         r = self.last = self.turn("build", prompt)
@@ -248,12 +289,24 @@ class Round:
             return False, "QA found problems in the running app:\n" + "\n".join(f"- {p}" for p in r.data.get("problems") or [r.summary])
         return None, f"QA: skipped (engine {r.status})"
 
+    def tests_changed(self) -> list[str]:
+        """Files the tests-first commit wrote that the build changed afterwards."""
+        tdd = self.state.get("tdd") or {}
+        if not tdd.get("head"):
+            return []
+        names = lambda *a: set(pr._git(self.ws, "diff", "--name-only", *a).stdout.split())
+        return sorted(names(f"{self.base_sha()}..{tdd['head']}") & names(f"{tdd['head']}..HEAD"))
+
     def review(self, name: Optional[str] = None) -> tuple[Optional[bool], str]:
         name = name or self.cfg.get("review_engine")
         if not (name in self.cfg["engines"] and engines.available(name, self.cfg["engines"][name])[0]):
             name = self.state["engine"]
         eng_name, eng, ec = self.engine(name)
         diff = f"`git diff {self.base_sha()}...HEAD`"
+        changed = self.tests_changed()
+        if changed:
+            diff += (f". Tests were written first and then changed during the build: {', '.join(changed)}. "
+                     "Check each change is justified, not a weakened test")
         if self.state.get("review_session") and self.state.get("review_engine") == name:
             session, prompt = self.state["review_session"], f"The branch changed since your last review. Review it again: {diff}."
         else:
@@ -261,8 +314,9 @@ class Round:
             prompt = (f"You review a change before a human sees it. The request:\n\n{self.task.title}\n\n"
                       f"{(self.task.body or '').strip()}\n\nReview the branch: {diff} in {self.ws}. Don't edit files. "
                       "Report only what must change before merge: bugs, the request not met, missing or wrong tests, "
-                      "security problems, clear breaks of the repo's conventions. Approve when nothing blocks; "
-                      "style preferences are not findings.")
+                      "security problems, clear breaks of the repo's conventions, and refactors that clearly pay "
+                      "off in the changed code (duplication, needless complexity, unclear names). Approve when "
+                      "nothing blocks; style preferences are not findings.")
         r = eng.run(ec, prompt, self.ws, session=session, schema=engines.REVIEW_SCHEMA, log=log, readonly=True)
         spend(self.state, "review", r)
         if r.status in graph.ENGINE_DOWN and name != self.state["engine"]:
@@ -288,7 +342,10 @@ class Round:
             done = {k: f.result() for k, f in jobs.items()}
         failed = [k for k, (ok, _) in done.items() if ok is False]
         out = graph.loop_outcome(failed, self.rounds, self.limits)
-        self.state["verification"] = ["Checks: passed"] + [text.splitlines()[0] for ok, text in done.values()]
+        tdd = self.state.get("tdd") or {}
+        first = ([f"Tests first ({tdd['kind']}): {', '.join(tdd['tests'][:5]) or 'none'}"
+                  + (", failing before the change, passing after" if tdd.get("red") else "")] if tdd else [])
+        self.state["verification"] = first + ["Checks: passed"] + [text.splitlines()[0] for ok, text in done.values()]
         if out == "ok":
             self.state["verified_head"] = head(self.ws)
             if "review" in failed:  # out of review budget: the open findings go into the PR
@@ -327,6 +384,12 @@ class Round:
         if node not in graph.TERMINAL:  # a new delivery, or a round that died mid-way
             prompt = st.get("prompt") or ""
             return node, prompt + (f"\n\n{said_prompt(said)}" if said and node != "setup" else "")
+        if node == "proposal" or (node in ("ask", "paused", *graph.ENGINE_DOWN) and not st.get("approved")):
+            if st.get("approved"):
+                also = f"\n\nAlso from the user:\n{said}" if said else ""
+                return ("split" if len(st.get("parts") or []) >= 2 else "tests"), APPROVED + also
+            return "plan", (f"The user's answers and changes to the plan:\n{said}\n\nRevise the plan."
+                            if said else CONTINUE)
         if said:
             return "build", said_prompt(said)
         if st.get("ready"):
@@ -371,6 +434,14 @@ class Round:
             where = st.get("pr_url") or (st.get("notes") or {}).get("pr") or ""
             return "\n\n".join(filter(None, [st.get("summary") or "Built, checked and reviewed.", where,
                                              "\n".join(st.get("verification") or [])]))
+        if end == "proposal":
+            parts = [f"{i + 1}. {p['title']}" for i, p in enumerate(st.get("parts") or [])]
+            return "\n\n".join(filter(None, [
+                "Plan, for your approval:\n\n" + (st.get("plan") or ""),
+                "Questions (each with a recommended answer):\n" + "\n".join(f"- {q}" for q in st["questions"])
+                if st.get("questions") else "",
+                "Split into separate pull requests:\n" + "\n".join(parts) if len(parts) >= 2 else "",
+                f"Answer or change it with /cp-feedback {self.task_id} <text>; approve with /cp-build {self.task_id}."]))
         if end == "ask":
             return (r.data.get("question") if r else "") or "The engine needs a decision."
         if end == "stuck":
