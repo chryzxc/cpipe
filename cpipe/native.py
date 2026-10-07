@@ -1,9 +1,9 @@
-"""Use Hermes-owned project context and clarification, never ordinary-chat opt-in.
+"""Use Hermes-owned project context and clarification, never ordinary-chat starts.
 
-The hooks cannot start a delivery. Only a complete answer to a persisted form for
-an existing, waiting delivery in the *same session* may revise/resume it. Questions
-are bound to the current delivery snapshot; unrelated, stale, replayed, timed-out
-and partial responses are deliberately no-ops. No approvals are inferred.
+Complete answers to persisted, same-session forms can resume waiting deliveries.
+A /cp-build receipt with no existing plan can also start its exact stored request
+as a small delivery after native confirmation. Unrelated, stale, replayed,
+timed-out and partial responses are no-ops. Shipping and merging are not inferred.
 """
 from __future__ import annotations
 
@@ -147,6 +147,10 @@ def before_turn(*, session_id=None, **_):
     sid = _session(session_id)
     if not sid:
         return None
+    from .intents import build_start_context
+    notice = build_start_context(sid)
+    if notice is not None:
+        return notice
     from .runtime import hermes_api as h
     with closing(h.connect(None)) as conn:
         eligible = [(t, snapshot) for t in h.list_cards(conn)
@@ -202,6 +206,11 @@ def after_tool(*, session_id=None, tool_name=None, args=None, result=None, **_):
         if not isinstance(value, str) or not value.strip():
             return None
         values.append(value.strip())
+    from .intents import confirm_build_start
+    started = confirm_build_start(sid, asked, values)
+    if started is not None:
+        return {**started, "context": "[cpipe build confirmation result] " + json.dumps(started)
+                + "\nReport this result or check status. Do not ask the user to repeat /cp-plan; the confirmed request has been handled."}
     from .home import root as hermes_home
     if not (hermes_home() / "cpipe-interactions.db").exists():
         return None

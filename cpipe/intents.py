@@ -17,7 +17,7 @@ from .home import root
 
 POLICIES = {
     "cp-plan": "Plan the requested work using this conversation. Resolve the repository, full request and optional --size/project hints from session context. Use the authorized backend plan operation only for an explicitly requested cpipe delivery; default to large when size is unspecified.",
-    "cp-build": "Approve and build the matching cpipe plan with the configured builder, tests-first, independent review and verification. Use its same-session task_id. If none exists, clarify whether to start /cp-plan --size small or adopt existing work with /cp-review. Never implement this command in the coordinator session.",
+    "cp-build": "Approve and build the matching cpipe plan with the configured builder, tests-first, independent review and verification. Use its same-session task_id. If none exists, resolve the full request and repository, then call the build operation without task_id, supplying request and project or repo. The backend returns an exact native clarify form: call clarify with that form unchanged. Its confirmation starts the small delivery automatically; report the hook result or use status, never ask the user to repeat /cp-plan and never call plan with this receipt. To review already implemented work, use /cp-review instead. Never implement this command in the coordinator session.",
     "cp-review": "Independently review this work using the configured reviewer. Resolve the existing same-session task_id; otherwise adopt the current committed checkout with request/project/base. Stop locally after review; no edits or publishing. Findings return for /cp-fix, then /cp-verify.",
     "cp-fix": "Have the configured builder fix the specified review findings or bounded improvements; reuse its warm session. Then independently review and verify the resulting revision. Use the same-session task_id, or adopt the existing committed work. No publishing.",
     "cp-verify": "Run deterministic checks, independent review and verifier/QA on the final committed revision. Reuse valid exact-revision receipts. Use the same-session task_id or adopt existing work. Stop locally; no publishing. Missing required checks are not passes.",
@@ -48,6 +48,8 @@ def _connect():
     conn.execute("""CREATE TABLE IF NOT EXISTS intents (
         token TEXT PRIMARY KEY, operation TEXT NOT NULL, session_key TEXT NOT NULL,
         expires REAL NOT NULL, state TEXT NOT NULL, result TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS build_notices (
+        token TEXT PRIMARY KEY, session_id TEXT NOT NULL, result TEXT NOT NULL)""")
     conn.commit()
     return conn
 
@@ -87,6 +89,97 @@ def dispatch(ctx, name, message=""):
     return f"cpipe: /{name} queued — resolving this conversation, then handing off to specialists. Results follow here."
 
 
+def _active_delivery(sid):
+    from .runtime import hermes_api as h
+    with closing(h.connect(None)) as board:
+        return any(t.session_id == sid and (t.assignee or "").startswith("cp:")
+                   and t.status not in ("done", "archived") for t in h.list_cards(board))
+
+
+def _build_start_form(conn, receipt, payload):
+    """Persist a scope-bound form; a tool argument cannot approve new work."""
+    from .native import _session
+    sid = _session(None)
+    if not sid or _active_delivery(sid):
+        return {"error": "resolve the existing same-session cpipe delivery before building"}
+    if receipt["result"]:
+        return json.loads(receipt["result"])
+    request = payload.get("request")
+    project = payload.get("project") or payload.get("repo")
+    if not isinstance(request, str) or not request.strip() or not isinstance(project, str) or not project.strip():
+        return {"error": "resolve request and project or repo before confirming a new build"}
+    scope = {k: payload[k] for k in ("request", "project", "repo", "engine", "model", "title") if k in payload}
+    scope["size"] = "small"
+    form = {"questions": [{
+        "question": f"[cpipe-build {secrets.token_hex(12)}] No plan exists. Start a small delivery for {project}?\n\n{request}",
+        "choices": ["Start a small delivery", "Cancel"],
+    }]}
+    result = {"status": "needs_confirmation", "session_id": sid, "arguments": scope, "clarify": form,
+              "next": "Call native clarify with the supplied form unchanged. Confirmation starts this delivery automatically; do not request another slash command."}
+    conn.execute("UPDATE intents SET result=? WHERE token=?", (json.dumps(result), receipt["token"]))
+    return result
+
+
+def _build_notice(conn, token, sid, result):
+    conn.execute("INSERT OR REPLACE INTO build_notices VALUES (?, ?, ?)", (token, sid, json.dumps(result)))
+
+
+def build_start_context(sid):
+    """Post-tool hooks are observers; deliver their outcome through pre-LLM context."""
+    if not (root() / "cpipe-intents.db").exists():
+        return None
+    with closing(_connect()) as conn, conn:
+        rows = conn.execute("SELECT result FROM build_notices WHERE session_id=?", (sid,)).fetchall()
+        if not rows:
+            return None
+        conn.execute("DELETE FROM build_notices WHERE session_id=?", (sid,))
+    return {"context": "[cpipe build confirmation results]\n" + "\n".join(row["result"] for row in rows)
+            + "\nReport the result or check status. Do not request another /cp-plan: the confirmation has been handled. Do not infer shipping or merging permission."}
+
+
+def confirm_build_start(sid, asked, values):
+    """Consume a native confirmation once, using only the previously stored scope."""
+    if not (root() / "cpipe-intents.db").exists() or len(values) != 1:
+        return None
+    from . import tools
+    with closing(_connect()) as conn:
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute("SELECT * FROM intents WHERE operation='build' AND state='pending' AND result IS NOT NULL").fetchall()
+            for receipt in rows:
+                pending = json.loads(receipt["result"])
+                if (pending.get("session_id") != sid or pending.get("clarify", {}).get("questions") != asked
+                        or receipt["expires"] < time.time() or not receipt["session_key"]
+                        or receipt["session_key"] != _session_key()):
+                    continue
+                if values[0] not in ("Start a small delivery", "Cancel"):
+                    return None
+                if values[0] == "Cancel" or _active_delivery(sid):
+                    result = ({"status": "cancelled"} if values[0] == "Cancel" else
+                              {"error": "a same-session delivery appeared; resolve it instead of starting another"})
+                    conn.execute("UPDATE intents SET state='complete', result=? WHERE token=?",
+                                 (json.dumps(result), receipt["token"]))
+                    _build_notice(conn, receipt["token"], sid, result)
+                    return result
+                conn.execute("UPDATE intents SET state='claimed' WHERE token=?", (receipt["token"],))
+                break
+            else:
+                return None
+        try:
+            result = tools.HANDLERS["cpipe_plan"](pending["arguments"])
+        except Exception as exc:
+            # The handler may already have submitted a card. Never replay it.
+            result = {"error": f"{type(exc).__name__}: {exc}; inspect status before reissuing the command"}
+            with conn:
+                _build_notice(conn, receipt["token"], sid, result)
+            return result
+        with conn:
+            conn.execute("UPDATE intents SET state='complete', result=? WHERE token=?",
+                         (json.dumps(result), receipt["token"]))
+            _build_notice(conn, receipt["token"], sid, result)
+        return result
+
+
 def execute(args, **_):
     """Fail closed without a valid receipt; cache a completed mutation on replay."""
     from . import tools
@@ -110,6 +203,8 @@ def execute(args, **_):
                     return receipt["result"]
                 if receipt["state"] != "pending":
                     return json.dumps({"error": "operation already claimed; inspect status before retrying"})
+                if operation == "build" and not payload.get("task_id"):
+                    return json.dumps(_build_start_form(conn, receipt, payload))
                 if operation not in ("plan", "review", "fix", "verify", "ship") or payload.get("task_id"):
                     from .native import _session
                     sid = _session(None)

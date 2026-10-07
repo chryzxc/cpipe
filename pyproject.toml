@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cpipe"
-version = "0.9.0"
-description = "Session-aware collaborative development for Hermes Agent with independent review, revision-bound verification, optional tool-free discovery, bounded code-graph context and repository-scoped outcome learning. Adopt committed work or start explicitly; prepare draft pull requests, never merge or deploy."
+version = "0.9.1"
+description = "A development workflow for Hermes Agent that brings planning, implementation, testing, and independent review together to prepare draft pull requests."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
   {name = "Christian Rey Villablanca"},
 ]
-keywords = ["hermes-agent", "kanban", "delivery", "planning", "tdd", "code-review", "agentic-workflow", "graph-engineering", "loop-engineering", "profiled-agents", "opt-in-workflow", "outcome-learning", "code-graph", "session-aware"]
+keywords = ["hermes-agent", "development-workflow", "ai-agents", "planning", "testing", "code-review", "pull-requests", "workflow-automation"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "License :: OSI Approved :: MIT License",
