@@ -265,7 +265,35 @@ def after_tool(*, session_id=None, tool_name=None, args=None, result=None, **_):
     return None
 
 
+def transform_result(*, session_id=None, tool_name=None, args=None, result=None, **_):
+    """Post-tool observers cannot return the next form to the ongoing agent loop."""
+    if tool_name != "clarify" or not isinstance(args, dict):
+        return None
+    questions = args.get("questions")
+    if not isinstance(questions, list) or not questions or not all(
+            isinstance(q, dict) and isinstance(q.get("question"), str)
+            and q["question"].startswith(("[cpipe-build ", "[cpipe-route ", "[cpipe-engine ",
+                                          "[cpipe-route-confirm ", "[cpipe-owner ")) for q in questions):
+        return None
+    try:
+        data = json.loads(result) if isinstance(result, str) else result
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("error") or data.get("timed_out") or data.get("notice"):
+        return None
+    sid = _session(session_id)
+    if not sid:
+        return None
+    from .intents import take_build_results
+    outcomes = take_build_results(sid)
+    if not outcomes:
+        return None
+    return json.dumps({**data, "cpipe": outcomes[-1],
+        "cpipe_next": "If cpipe supplies a clarify form, call clarify with that exact form. Otherwise report its result. Never repeat the answered form or infer execution consent."})
+
+
 def register(ctx):
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", before_turn)
         ctx.register_hook("post_tool_call", after_tool)
+        ctx.register_hook("transform_tool_result", transform_result)

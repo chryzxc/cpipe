@@ -125,13 +125,14 @@ def test_unavailable_external_route_retains_mode_form(flow, monkeypatch):
     assert answer(out, "Single Hermes profile (default or another)")["phase"] == "engine"
 
 
-def test_missing_specialist_config_and_same_profile_are_not_silent_single_mode(flow):
+@pytest.mark.parametrize("configured", [{}, {role: "builder" for role in routing.ROLES}])
+def test_missing_or_same_owner_mapping_opens_explicit_profile_selection(flow, configured):
     args, cfg, calls = flow
-    cfg["roles"] = {}
+    cfg["roles"] = configured
     pending = json.loads(intents.execute(args))
-    assert "Specialist routing needs" in answer(pending, "Specialist bots/profiles")["error"]
-    cfg["roles"] = {role: "builder" for role in routing.ROLES}
-    assert "different build and review" in answer(pending, "Specialist bots/profiles")["error"]
+    selection = answer(pending, "Specialist bots/profiles")
+    assert selection["phase"] == "roles"
+    assert len(selection["clarify"]["questions"]) == 4
     assert not calls
 
 

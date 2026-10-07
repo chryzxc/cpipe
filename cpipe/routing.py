@@ -47,6 +47,50 @@ def candidates(cfg, mode):
     return result
 
 
+def specialist_candidates(cfg):
+    """Discover installed profiles without changing configuration or their models."""
+    ready = candidates(cfg, "single")
+    from .home import root
+    home = root()
+    base = home.parent.parent if home.parent.name == "profiles" else home
+    profiles = base / "profiles"
+    represented = {ec.get("profile") or "default" for ec in ready.values()}
+    if profiles.is_dir():
+        for file in sorted(profiles.glob("*/config.yaml")):
+            profile = file.parent.name
+            name = "profile:" + profile
+            ec = {"kind": "hermes", "profile": profile, "bin": "hermes"}
+            if profile not in represented and name not in ready and engines.available(name, ec)[0]:
+                ready[name] = ec
+    return ready
+
+
+def selected_specialists(cfg, ready, selected):
+    """Freeze explicit owners onto the existing Hermes builder lane."""
+    if len(selected) != len(ROLES) or any(name not in ready for name in selected):
+        raise ValueError("Select an available Hermes owner for every stage. No work started.")
+    if (ready[selected[1]].get("profile") or "default") == (ready[selected[2]].get("profile") or "default"):
+        raise ValueError("Select different build and review profiles for independent review. No work started.")
+    roles = {role: "hermes" if role == "build" else "route-" + role for role in ROLES}
+    if cfg.get("roles", {}).get("discover"):
+        roles["discover"] = cfg["roles"]["discover"]
+    local = {**cfg, "roles": roles, "engines": {**cfg["engines"],
+             **{roles[role]: {**ready[name], "kind": "hermes"} for role, name in zip(ROLES, selected)}}}
+    return snapshot(local, "specialists", "hermes", roles)
+
+
+def specialist_form(ready, error=None):
+    if len({ec.get("profile") or "default" for ec in ready.values()}) < 2:
+        raise ValueError("Specialist routing needs at least two available Hermes profiles for independent review. Choose single-profile mode or install another profile. No work started.")
+    import secrets
+    descriptions = "; ".join(f"{name}: {ec.get('profile') or 'default'} ({ec.get('model') or configured_model(ec) or 'profile default'})"
+                             for name, ec in ready.items())
+    return {"questions": [{"question": f"[cpipe-owner {secrets.token_hex(12)}] Select the {role} owner. "
+             + (str(error) + " " if error else "")
+             + "Build and review must use different profiles. Available owners: " + descriptions,
+             **({"choices": list(ready)} if len(ready) <= 4 else {})} for role in ROLES]}
+
+
 def specialist_route(cfg):
     roles = cfg.get("roles") or {}
     ready = candidates(cfg, "single")
