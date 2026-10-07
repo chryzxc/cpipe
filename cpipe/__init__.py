@@ -1,8 +1,9 @@
 """cpipe: one card per delivery, driven through a fixed graph by the bundled runtime.
 
 ``hermes cpipe run`` is the daemon (its own process, never inside the gateway). It claims ``cp:<engine>``
-cards and runs one round per claim: build ⇄ checks → QA, security, review → PR → CI, in one engine session.
-The chat tools (``tools.py``) start and steer deliveries.
+cards and runs one round per claim through the selected content/small/large path. Builder sessions persist;
+planning, QA and review can use separate Hermes profiles. Explicit slash commands (``tools.py``) start and steer
+deliveries; model-callable tools are opt-in.
 """
 
 from __future__ import annotations

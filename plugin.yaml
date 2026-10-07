@@ -1,8 +1,8 @@
 name: cpipe
-version: 0.7.0
+version: 0.8.0
 manifest_version: 2
 api_version: 1
-description: "cpipe: a Hermes Agent plugin that runs the development workflow from plan to ship: an approved plan, tests first, implementation, verification, review and refactoring, then a pull request. A fixed graph in code (graph engineering) drives one coding-agent session per delivery through bounded feedback loops (loop engineering)."
+description: "Opt-in development workflows for Hermes Agent: explicit slash commands, content/small/large paths, profiled handoffs, and tested, reviewed pull requests. A fixed graph drives bounded feedback loops; shipping marks a PR ready for human review, never merges."
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
-tags: [delivery, workflow, planning, tdd, kanban, codex, claude-code, opencode, code-review, qa]
+tags: [hermes-agent, delivery, workflow, planning, tdd, kanban, code-review, qa, profiled-agents, opt-in-workflow, graph-engineering, loop-engineering]
