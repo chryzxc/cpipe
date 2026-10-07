@@ -34,10 +34,15 @@ def test_lanes_and_doctor(hermes_home, capsys):
     assert "pid-tracked" in out and "UNAVAILABLE: executable not found" in out
 
 
-def test_plugin_registers_cli_command_and_tools():
+def test_plugin_registers_cli_command_and_tools(monkeypatch):
     import json
 
     import cpipe as pkg
+    from cpipe import settings
+
+    # Compatibility mode explicitly exposes model tools; command-only coverage
+    # lives in test_command_mode.py.
+    monkeypatch.setattr(settings, "load", lambda: {"command_only": False})
 
     class Ctx:
         def __init__(self):
@@ -61,7 +66,7 @@ def test_plugin_registers_cli_command_and_tools():
     assert "error" in json.loads(ctx.tools["cpipe_plan"]["handler"]({"request": "x", "project": "p", "repo": "/dev/null"}))
     # the same, as slash commands
     assert set(ctx.commands) == {"cp-plan", "cp-project", "cp-feedback", "cp-build", "cp-ship", "cp-status", "cp-stop"}
-    assert ctx.commands["cp-plan"]("") == "usage: /cp-plan [project:] <idea>"
+    assert ctx.commands["cp-plan"]("") == "usage: /cp-plan [--size content|small|large] [project:] <idea>"
     assert ctx.commands["cp-plan"]("x").startswith("cpipe: Which project is this for?")
 
 

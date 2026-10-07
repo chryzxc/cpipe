@@ -1,4 +1,4 @@
-"""Hermes chat tools (toolset ``cpipe``): the only way a delivery is started or steered. One delivery goes
+"""Explicit Hermes slash commands, with optional model tools (toolset ``cpipe``). One delivery goes
 plan → build → ship, and the user decides at each step:
 
     cpipe_plan      a new delivery: one card, its own worktree and branch; the engine plans, and the plan (with
@@ -9,8 +9,10 @@ plan → build → ship, and the user decides at each step:
     cpipe_status    where a delivery stands (or all of them)
     cpipe_stop      archive a delivery
 
-They are slash commands too, typed straight into a Hermes chat (``/cp-plan <idea>``, ...): no model turn, the
-answer comes back at once. ``/cp-project`` saves where a project's repository is.
+Slash commands are the default entry point (``/cp-plan [--size small] [project:] <idea>``, ...): no model
+turn, the answer comes back at once. Model tools are exposed only with ``command_only: false``.
+``/cp-project`` saves where a project's repository is. This is an opt-in routing policy, not a sandbox
+against agents deliberately invoking the package through a shell or Python.
 
 The chat that starts a delivery is subscribed to it: Hermes notifies it when the plan is ready, when the pull
 request is ready to test, when a decision is needed, and when it completes.
@@ -228,6 +230,9 @@ HANDLERS = {"cpipe_plan": plan, "cpipe_feedback": feedback, "cpipe_build": build
 
 def call(name: str, args: dict) -> str:
     try:
+        # Recheck at invocation so a cached registration cannot bypass a mode change.
+        if settings.load()["command_only"]:
+            return json.dumps({"error": "cpipe is in command-only mode. Use an explicit /cp- command."})
         return json.dumps(HANDLERS[name](args or {}))
     except Exception as e:  # a tool error is the chat's to report, never a crash
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
@@ -265,11 +270,32 @@ def _split(raw: str) -> tuple[str, str]:
 
 
 def _plan_args(raw: str) -> dict:
-    """``[project:] request``: a leading ``name:`` (or ``path:``) picks the project."""
-    head, sep, rest = raw.strip().partition(": ")
-    if sep and rest.strip() and 0 < len(head) <= 60 and "\n" not in head:
-        return {"project": head, "request": rest.strip()}
-    return {"request": raw}
+    """Leading size option, then the existing optional ``project: request`` syntax."""
+    usage = "usage: /cp-plan [--size content|small|large] [project:] <idea>"
+    raw = raw.strip()
+    size = "large"
+    first = raw.split(None, 1)[0] if raw else ""
+    if first == "--size":
+        parts = raw.split(None, 2)
+        if len(parts) != 3:
+            raise ValueError(usage)
+        _, size, raw = parts
+    elif first.startswith("--size="):
+        parts = raw.split(None, 1)
+        if len(parts) != 2:
+            raise ValueError(usage)
+        option, raw = parts
+        size = option.partition("=")[2]
+    if size not in ("content", "small", "large") or not raw or raw.startswith("-"):
+        raise ValueError(usage)
+    head, sep, rest = raw.partition(": ")
+    if sep and len(head) <= 60 and "\n" not in head:
+        if not head.strip() or not rest.strip():
+            raise ValueError(usage)
+        return {"project": head.strip(), "request": rest.strip(), "size": size}
+    if raw.endswith(":") and " " not in raw:
+        raise ValueError(usage)
+    return {"request": raw, "size": size}
 
 
 def _project(raw: str) -> dict:
@@ -281,7 +307,8 @@ def _project(raw: str) -> dict:
 
 
 COMMANDS = {
-    "cp-plan": ("Start a task: the plan comes back for your approval", "[project:] <idea>",
+    "cp-plan": ("Start an explicit delivery: large plans first; small/content start implementation",
+                "[--size content|small|large] [project:] <idea>",
                 lambda raw: plan(_plan_args(raw))),
     "cp-project": ("Save where a project's repo is (new starts one)", "<name> <path|new>", lambda raw: _project(raw)),
     "cp-feedback": ("Answer the plan's questions, or send changes", "<card> <text>",
@@ -306,9 +333,10 @@ def command(name: str, raw: str) -> str:
 
 
 def register(ctx) -> None:
-    for name, schema in SCHEMAS.items():
-        ctx.register_tool(name=name, toolset="cpipe", schema=schema,
-                          handler=lambda args, _n=name, **kw: call(_n, args))
+    if not settings.load()["command_only"]:
+        for name, schema in SCHEMAS.items():
+            ctx.register_tool(name=name, toolset="cpipe", schema=schema,
+                              handler=lambda args, _n=name, **kw: call(_n, args))
     if hasattr(ctx, "register_command"):
         for name, (desc, hint, _) in COMMANDS.items():
             ctx.register_command(name, lambda raw="", _n=name: command(_n, raw), description=desc, args_hint=hint)

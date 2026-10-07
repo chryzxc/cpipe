@@ -9,6 +9,7 @@
       coder:  {kind: hermes, profile: coder, concurrency: 2}      # kind: codex | claude | hermes | opencode
     limits: {checks: 3, qa: 2, review: 2, ci: 2, round_minutes: 90}
     env_pass: [GH_TOKEN]        # extra variables the round (and its engine) may see
+    command_only: true         # slash commands only; false also exposes model tools
 
 Each engine is a runtime lane ``cp:<engine>`` running ``python -m cpipe.round``.
 """
@@ -22,6 +23,7 @@ from typing import Any
 import yaml
 
 DEFAULTS: dict[str, Any] = {
+    "command_only": True,
     "default_engine": "hermes",
     "fallback_engine": None,
     "review_engine": "hermes",
@@ -48,6 +50,8 @@ def load(raw: Any = None) -> dict:
     if not isinstance(raw, dict):
         raise ValueError("cpipe.yaml must be a mapping")
     cfg = {**DEFAULTS, **raw}
+    if not isinstance(cfg["command_only"], bool):
+        raise ValueError("command_only must be a YAML boolean (true or false)")
     cfg["limits"] = {**DEFAULTS["limits"], **(raw.get("limits") or {})}
     if not cfg["engines"] or not isinstance(cfg["engines"], dict):
         raise ValueError("cpipe.yaml engines must be a non-empty mapping")
