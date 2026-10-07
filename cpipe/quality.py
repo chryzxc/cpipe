@@ -12,8 +12,8 @@ The checks live in ``$HERMES_HOME/delivery/quality.yaml``; cpipe only decides wh
 Checks of a stage run in parallel.
 
 A failing check (non-zero exit) goes back to the build session with its output. A check that hangs past
-CHECK_TIMEOUT is skipped, never blocking. A check whose tool cannot start or crashes (not on PATH, exit 126/127, a
-traceback) is the machine's problem, not the change's: it is skipped and written to ``state/setup-problems.json``.
+CHECK_TIMEOUT, cannot start or crashes is unavailable, never a pass. Required checks block; an explicitly
+optional check (``required: false``) records residual risk. Setup problems go to ``state/setup-problems.json``.
 """
 
 from __future__ import annotations
@@ -134,27 +134,40 @@ def _names_any(output: str, files: list[str]) -> bool:
 
 
 def run_checks(ws: Path, base: str, project: Optional[str], home: Optional[Path] = None,
-               card: Optional[str] = None, stage: str = "checks") -> list[str]:
-    """Failures as ``name: output`` blocks; [] when everything passed, nothing matched, or nothing is set up."""
+               card: Optional[str] = None, stage: str = "checks", evidence: Optional[list] = None) -> list[str]:
+    """Failures and unavailable required checks; optionally retain each check's actual result.
+
+    No matching files is not applicable. Optional unavailable checks remain explicit residual risk.
+    A timeout, crash or missing command is never a pass. Checks are required unless ``required: false``.
+    """
     checks = [c for c in _checks(load(home), project) if (c.get("stage") or "checks") == stage]
     files = changed_files(ws, base) if checks else []
 
-    def one(c: dict) -> Optional[str]:
+    def one(c: dict) -> tuple[Optional[str], dict]:
+        name = str(c.get("name", "check"))
+        record = {"name": name, "stage": stage, "required": c.get("required", True) is not False}
         globs = str(c.get("files") or "*").split()
         hits = [f for f in files if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(Path(f).name, g) for g in globs)]
         if not hits:
-            return None
+            return None, {**record, "status": "not_applicable"}
         cmd = str(c["run"]).replace("{base}", shlex.quote(base)).replace("{files}", " ".join(map(shlex.quote, hits)))
         done = _run(os.path.expanduser(cmd) if cmd.startswith("~") else cmd, ws)
-        if done and (done.returncode in (126, 127) or (CRASH.search(done.stdout or "") and not _names_any(done.stdout, files))):
-            report_setup(str(c.get("name", "check")), f"`{c['run']}` exit {done.returncode}: {done.stdout or ''}",
-                         card, home)
-            return None
-        if done:
-            report_setup(str(c.get("name", "check")), None, home=home)  # it ran: any old setup problem is fixed
-        if done and done.returncode != 0:
-            return f"{c.get('name', 'check')}: `{c['run']}`\n{(done.stdout or '').strip()[-OUTPUT_KEEP:]}"
-        return None
+        unavailable = (done is None or done.returncode in (126, 127)
+                       or (CRASH.search(done.stdout or "") and not _names_any(done.stdout, files)))
+        if unavailable:
+            detail = "timed out" if done is None else f"exit {done.returncode}: {(done.stdout or '').strip()[-OUTPUT_KEEP:]}"
+            report_setup(name, f"`{c['run']}` {detail}", card, home)
+            failure = f"[unavailable] {name}: `{c['run']}` {detail}" if record["required"] else None
+            return failure, {**record, "status": "unavailable", "detail": detail}
+        assert done is not None
+        report_setup(name, None, home=home)
+        if done.returncode != 0:
+            detail = (done.stdout or '').strip()[-OUTPUT_KEEP:]
+            return f"{name}: `{c['run']}`\n{detail}", {**record, "status": "fail", "exit_code": done.returncode}
+        return None, {**record, "status": "pass", "exit_code": 0}
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        return [f for f in pool.map(one, checks) if f]
+        results = list(pool.map(one, checks))
+    if evidence is not None:
+        evidence.extend(record for _, record in results)
+    return [failure for failure, _ in results if failure]

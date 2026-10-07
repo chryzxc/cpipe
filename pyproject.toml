@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cpipe"
-version = "0.8.1"
-description = "Session-aware development commands for Hermes Agent: natural-language planning, building, shipping and status using conversation context. Supports direct changes and draft pull requests, plus opt-in profiled workflows. Never merges."
+version = "0.8.2"
+description = "Session-aware collaborative development for Hermes Agent: planning, building, independent review, fixes, verification and draft shipping. Adopt existing committed work using conversation context. Never merges."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}

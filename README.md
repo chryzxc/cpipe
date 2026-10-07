@@ -5,11 +5,11 @@
 [![Requires: Hermes Agent](https://img.shields.io/badge/requires-Hermes%20Agent-1f6feb)](https://github.com/NousResearch/hermes-agent)
 
 cpipe is an **opt-in development workflow** for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
-Start a delivery explicitly with `/cp-plan --size content|small|large`; ordinary coding requests stay in normal
-chat. Hermes profiles collaborate through a fixed graph and bounded feedback loops, producing a pull request
+Start a delivery explicitly with `/cp-plan --size content|small|large`, or adopt committed work with
+`/cp-review`, `/cp-fix`, `/cp-verify` or `/cp-ship`; ordinary coding requests stay in normal chat. Hermes profiles collaborate through a fixed graph and bounded feedback loops, producing a pull request
 for human review. Content changes skip planning, test-writing and browser QA; small changes start tests and
-implementation immediately; large changes require an approved plan first. Shipping runs final checks and marks
-the pull request ready for review—it never merges or deploys.
+implementation immediately; large changes require an approved plan first. Shipping runs required gates and
+prepares a draft pull request by default. Marking it ready needs an explicit request; it never merges or deploys.
 
 Each delivery is a single card on the Hermes Kanban board. Hermes profiles are the default runner: Planner,
 Forge, Sentry and QA can collaborate in separate sessions, while the builder stays warm through tests, changes
@@ -21,14 +21,14 @@ workflow. Deterministic code controls the process around it. Two principles shap
 - **[Loop engineering](#loop-engineering):** every failure goes back to the same agent session, and each loop has a
   hard limit.
 
-> **Status: v2 · 0.8.0.** Explicit slash-command opt-in, content/small/large paths and profiled handoffs retain
+> **Status: v2 · 0.8.2.** Explicit slash-command opt-in, content/small/large paths and profiled handoffs retain
 > v2's deterministic orchestration. v1 ran each step in a new session and let the model choose transitions;
 > the last v1 release is tagged `v1-final`. No speed or token savings are claimed without controlled measurement.
 
 ## Architecture
 
 ```
-Explicit slash commands ── plan · feedback · build · ship · status · stop
+Explicit slash commands ── plan · build · review · fix · verify · ship · status · stop
       │
       ▼
 Hermes Kanban: one card per delivery (the delivery's state)
@@ -52,8 +52,8 @@ done     shipped; the pull request is ready for review
 
 A **round** is one run of the graph. It runs from the card's current node until the next interrupt, and then hands
 control back to the board. Feedback on a card starts a new round that resumes the same agent session: before
-approval it revises the plan, after it it changes the code. Shipping runs the final checks on the latest commit and
-marks the pull request ready for review.
+approval it revises the plan, after it it changes the code. Stage commands enter at the requested specialist gate
+without restarting planning. Shipping checks the latest commit; it marks the PR ready only when explicitly requested.
 
 **Plan (large/default route).** The agent studies the repository and writes a plan (what changes, the steps, how it will be tested), with
 the questions only the developer can answer, each with a recommended answer. Nothing is built until the plan is
@@ -91,7 +91,7 @@ delivery stops and requests a decision.
 | tests first | Guard tests that fail, or new tests that already pass | 2 |
 | build ⇄ checks | Output of the failing checks on the changed files (security checks share this budget) | 3 |
 | build ⇄ QA | Failures observed in the running application | 2 |
-| build ⇄ review | Findings from an independent reviewer; findings still open at the limit are listed in the pull request | 2 |
+| build ⇄ review | Findings from an independent reviewer; unresolved findings block at the limit | 2 |
 | build ⇄ CI | The failing CI jobs and their logs | 2 |
 | reviewer ⇄ delivery | Feedback from the reviewer | None |
 
@@ -157,7 +157,7 @@ Forge stays warm through tests, implementation and fixes. Re-reviews use `last_r
 prior findings. A cold reviewer, changed profile or rewritten history gets the full branch range. QA never resumes
 the builder's session. Legacy single-session checkpoints migrate without restarting their delivery. An unavailable
 explicit reviewer/QA role cannot silently pass; project QA `off` and content-only QA remain intentional skips.
-Review-budget exhaustion still carries open findings into the PR rather than claiming they were resolved.
+Review-budget exhaustion blocks for a decision; unresolved findings never become approval.
 
 Reports include per-role agent calls/time, input/output/cache tokens and elapsed node time. Parallel QA/review
 seconds are not added to elapsed wall time. These are measurement seams, **not measured speed/token savings**:
@@ -185,6 +185,8 @@ projects:
 checks:
   - {name: lint, files: "*.ts *.vue", run: "npx eslint --max-warnings=0 {files}", projects: [my-app]}
   - {name: secrets, run: "gitleaks git --log-opts={base}..HEAD", stage: security}   # runs with QA and review
+  # Checks are required by default. required: false permits an unavailable tool as explicit residual risk,
+  # not as a pass. A real failure still requires correction.
 
 # lessons.yaml: the 10 most recent entries are included in the build prompt ("*" applies to all projects)
 my-app:
@@ -219,6 +221,9 @@ clarification tool only when necessary. The message is preserved verbatim rather
 ```text
 /cp-plan --size small fix the disabled button we discussed
 /cp-build implement the plan above
+/cp-review review the change I built outside cpipe
+/cp-fix correct the review findings
+/cp-verify verify the final behavior we discussed
 /cp-ship let’s create a draft PR for this
 /cp-status how are these changes doing?
 /cp-stop stop the work we just started
@@ -230,9 +235,14 @@ unspecified delivery size remains `large` and requires plan approval.
 
 - `/cp-plan` explicitly opts into a planned delivery; Hermes resolves the request and repository first.
 - `/cp-build` builds the discussed plan: it resumes a matching delivery, or uses native tools for direct work.
-- `/cp-ship` also supports changes made directly earlier in the session, without a prior `/cp-plan`.
-  A draft request creates/updates a **draft PR**, not a ready PR. Unspecified PR state defaults to draft.
-  Existing delivery acceptance can use its final-check/readiness transition. Shipping **never merges**.
+- `/cp-review` adopts existing committed work or resumes its matching delivery for read-only specialist review.
+  It reports one verdict and findings without editing, publishing or restarting implementation.
+- `/cp-fix` sends bounded findings to the builder, then runs checks and independent verification of the new commit.
+- `/cp-verify` runs configured checks, security checks, independent review and applicable QA. Bounded corrections
+  stay with the builder. It stops with local evidence and does not publish.
+- `/cp-ship` works without a prior `/cp-plan`: it adopts the existing work, runs missing gates and creates/updates
+  a **draft PR** by default. Marking a PR ready must be requested explicitly and requires the current revision's
+  review, verification and CI. Shipping **never merges**.
 - `/cp-status` reads real Git/PR or matching delivery evidence; it does not start or mutate work.
 - `/cp-stop` targets only the identified work, preserving files and unrelated deliveries/services.
 
@@ -244,12 +254,29 @@ hermes config set plugins.entries.cpipe.allow_gateway_injection true
 ```
 
 If the host cannot queue into the current session, the command reports that no work started. It does
-not fall back to an ID parser, choose the newest delivery, or create a delivery to publish direct changes.
+not fall back to an ID parser or choose the newest unrelated delivery. No workflow starts if queuing fails.
 
 For backend deliveries, internal tests/build/QA/review handoffs still run automatically after the
 explicit start (and approval for large work). Hermes' native clarification answers can revise/resume
 only the existing waiting delivery they belong to; unrelated chat cannot start a new delivery.
 There is no `/cp-feedback` or `/cp-project`: use native clarification and Hermes project context.
+
+### Adopt work without rebuilding it
+
+Late entry requires a clean, committed source checkout, a resolved PR base and the intended scope from the
+conversation. cpipe snapshots that exact commit onto a separate delivery branch; it does not stash, reset or
+switch the source checkout. It records source/base provenance and explicitly does **not** claim retrospective TDD.
+The daemon and configured specialist profiles must be available, just as for a planned delivery.
+
+A typical path is `/cp-review` → `/cp-fix` (if needed) → `/cp-verify` → `/cp-ship`. You can enter directly at
+verification or shipping; those commands still enforce the required gates. Source changes committed after adoption
+are not silently copied into the snapshot: adopt their new revision explicitly.
+
+Receipts bind approvals to the exact commit, diff base, scope and gate configuration. Unchanged gates are reused
+without another model call; changed inputs invalidate them. The builder resumes its own session, and the reviewer
+uses the delta plus prior finding IDs after corrections. QA, security and review run concurrently when applicable.
+Required checks that cannot run, missing required QA and pending/cancelled/skipped CI block rather than pass.
+An absent check configuration is reported as such, never described as a test pass.
 
 Set `command_only: false` in `cpipe.yaml` only to deliberately expose the optional legacy backend tools:
 `cpipe_plan`, `cpipe_build`, `cpipe_ship`, `cpipe_status`, and `cpipe_stop`. This is compatibility mode,
@@ -266,7 +293,7 @@ cpipe/graph.py           workflow graph, transition function and loop limits
 cpipe/round.py           round driver (python -m cpipe.round <task>): every node
 cpipe/engines/           engine integrations: Codex, Claude Code, Hermes profile, opencode
 cpipe/pr.py              push, pull request, CI monitoring, public-text scan
-cpipe/tools.py           Hermes chat tools and slash commands: plan, feedback, build, ship
+cpipe/tools.py           session-aware commands, stage adoption and backend actions
 cpipe/report.py          status and report
 cpipe/settings.py        cpipe.yaml loader; one runtime lane per engine
 cpipe/quality.py         checks and security nodes (quality.yaml)
@@ -289,6 +316,7 @@ docs/runtime/            runtime documentation
 - [x] Explicit slash-command opt-in; content/small/large workflow selection
 - [x] Hermes role handoffs; persistent builder sessions and delta-scoped re-review
 - [x] Per-role timing and token reporting without conflating parallel time with wall-clock time
+- [x] Late-entry review/fix/verification, frozen-revision gate reuse and draft-by-default shipping
 
 ## Safety
 

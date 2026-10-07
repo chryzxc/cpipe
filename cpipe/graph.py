@@ -16,22 +16,24 @@ unavailable / failed) ends the round with that status; so does the round's wall 
 from __future__ import annotations
 
 # Where a round stops, and the runtime status it reports.
-TERMINAL = {"proposal": "needs_review", "handoff": "needs_review", "ask": "blocked", "stuck": "blocked", "paused": "blocked",
+TERMINAL = {"proposal": "needs_review", "handoff": "needs_review", "reviewed": "needs_review", "verified": "needs_review", "ask": "blocked", "stuck": "blocked", "paused": "blocked",
             "done": "success", "rate_limited": "rate_limited", "unavailable": "unavailable", "failed": "failed"}
 ENGINE_DOWN = ("rate_limited", "unavailable", "failed")
-ENGINE_NODES = ("plan", "tests", "build")  # nodes the wall clock is checked before
+ENGINE_NODES = ("plan", "tests", "build", "review_stage", "verify")  # nodes the wall clock is checked before
 
 EDGES = {
-    "setup": {"ok": "plan", "approved": "tests", "content": "build"},
+    "setup": {"ok": "plan", "approved": "tests", "content": "build", "review": "review_stage",
+              "fix": "build", "verify": "checks", "ship": "checks", "blocked": "stuck"},
+    "review_stage": {"ok": "reviewed", "blocked": "stuck"},
     "plan": {"ok": "proposal", "needs_user": "ask"},
     "split": {"ok": "done"},
-    "tests": {"ok": "build", "fix": "tests", "limit": "stuck", "needs_user": "ask"},
+    "tests": {"ok": "build", "fix": "tests", "limit": "stuck", "needs_user": "ask", "blocked": "stuck"},
     "build": {"ok": "checks", "needs_user": "ask"},
-    "checks": {"ok": "verify", "fix": "build", "limit": "stuck"},
+    "checks": {"ok": "verify", "fix": "build", "limit": "stuck", "blocked": "stuck"},
     "verify": {"ok": "pr", "fix": "build", "limit": "stuck", "blocked": "stuck"},
     "pr": {"ok": "ci", "fix": "build", "limit": "stuck", "blocked": "stuck"},
-    "ci": {"ok": "handoff", "fix": "build", "limit": "stuck"},
-    "final": {"ok": "done", "fix": "build", "limit": "stuck", "blocked": "stuck"},
+    "ci": {"ok": "handoff", "fix": "build", "limit": "stuck", "blocked": "stuck"},
+    "final": {"ok": "done", "fix": "build", "limit": "stuck", "blocked": "stuck", "reverify": "checks"},
 }
 
 
@@ -46,7 +48,7 @@ def next_node(node: str, outcome: str, ready: bool = False) -> str:
     return "final" if to == "handoff" and ready else to
 
 
-def loop_outcome(failed: list[str], rounds: dict, limits: dict, soft: tuple = ("review",)) -> str:
+def loop_outcome(failed: list[str], rounds: dict, limits: dict, soft: tuple = ()) -> str:
     """Count one failure per failed loop: ``fix`` while every failed loop has budget left, ``limit`` once a hard
     loop is out of it. A soft loop out of budget passes (its findings go into the PR instead)."""
     for k in failed:

@@ -56,10 +56,10 @@ def test_loop_outcome():
     assert [graph.loop_outcome(["checks"], rounds, LIMITS) for _ in range(4)] == ["fix", "fix", "fix", "limit"]
     rounds = {}
     assert graph.loop_outcome([], rounds, LIMITS) == "ok" and rounds == {}
-    # review is soft: out of budget it passes, its findings go into the PR
+    # Required review cannot become a pass when its rework budget is exhausted
     rounds = {"review": 2}
-    assert graph.loop_outcome(["review"], rounds, LIMITS) == "ok"
-    assert graph.loop_outcome(["review", "qa"], {"review": 2}, LIMITS) == "fix"
+    assert graph.loop_outcome(["review"], rounds, LIMITS) == "limit"
+    assert graph.loop_outcome(["review", "qa"], {"review": 2}, LIMITS) == "limit"
     assert graph.loop_outcome(["review", "qa"], {"review": 2, "qa": 2}, LIMITS) == "limit"
 
 
@@ -268,6 +268,12 @@ def test_unknown_project_asks_then_saves(board, repo, tmp_path, hermes_home):
     shipped = tools.plan({"request": "a calculator", "project": "Calc App", "repo": "new"})
     assert shipped["project"] == "calc-app"
     assert workspace_prep.projects()["calc-app"]["repo"] == str(root / "calc-app")
+    # This generated calculator has unit checks, not a browser app. Explicitly
+    # disable browser QA rather than treating a missing recipe as a pass.
+    import yaml
+    projects = workspace_prep.projects()
+    projects["calc-app"]["qa"] = "off"
+    (hermes_home / "delivery" / "projects.yaml").write_text(yaml.safe_dump({"projects": projects}))
     plan_and_approve(board, sched, shipped["task_id"])
     from cpipe.runtime import hermes_api as h
     task = h.get_task(board, shipped["task_id"])

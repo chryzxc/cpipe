@@ -100,23 +100,37 @@ def publish(ws: Path, state: dict, branch: str) -> tuple[str, str]:
 
 
 def ci(ws: Path, state: dict, minutes: int) -> tuple[str, str]:
-    """``(ok | fail, detail)``: waits for the pull request's checks; a failure's log tail is the detail."""
+    """``(ok | fail | blocked, detail)``: waits for checks; pending/unavailable is never a pass."""
     if not state.get("pr_url") or not (ws / ".github" / "workflows").is_dir():
         return "ok", "no CI"
+    expected = _git(ws, "rev-parse", "HEAD").stdout.strip()
+    snapshot = _gh(ws, "pr", "view", state["pr_url"], "--json", "headRefOid")
+    try:
+        remote_head = json.loads(snapshot.stdout)["headRefOid"]
+    except (ValueError, KeyError, TypeError):
+        return "blocked", "Could not verify the pull request revision; no CI approval recorded"
+    if snapshot.returncode or remote_head != expected:
+        return "blocked", "The pull request head differs from the verified local revision; no CI approval recorded"
     start = time.time()
     while True:
         done = _gh(ws, "pr", "checks", state["pr_url"], "--json", "name,state,bucket,link")
         try:
             checks = json.loads(done.stdout or "[]")
         except ValueError:
-            checks = []
+            return "blocked", "CI check results could not be read; no approval recorded"
+        if not isinstance(checks, list) or any(not isinstance(c, dict) for c in checks):
+            return "blocked", "CI returned an invalid check list; no approval recorded"
+        if done.returncode not in (0, 1, 8):
+            return "blocked", "CI checks are unavailable: " + (done.stderr or done.stdout).strip()[-1000:]
         waited = time.time() - start
         if checks and not any(c.get("bucket") == "pending" for c in checks):
             break
         if waited > minutes * 60 or (not checks and waited > NO_CHECKS_WAIT):
-            return "ok", "CI still running at handoff" if checks else "no CI checks reported"
+            return "blocked", "CI still running at handoff" if checks else "no CI checks reported"
         time.sleep(POLL)
     failed = [c for c in checks if c.get("bucket") == "fail"]
+    if any(c.get("bucket") not in ("pass", "fail") for c in checks):
+        return "blocked", "CI contains cancelled, skipped or unrecognized results; no approval recorded"
     if not failed:
         return "ok", f"CI passed ({len(checks)} checks)"
     logs = []

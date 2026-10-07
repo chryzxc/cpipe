@@ -35,7 +35,7 @@ def test_default_registration_hides_all_tools_but_keeps_commands():
     ctx = Context()
     tools.register(ctx)
     assert set(ctx.tools) == {"cpipe_execute_intent"}
-    assert set(ctx.commands) == set(tools.COMMANDS)
+    assert set(ctx.commands) == set(__import__("cpipe.intents", fromlist=["POLICIES"]).POLICIES)
     assert ctx.commands["cp-plan"][1]["args_hint"] == "[message]"
 
 
@@ -44,7 +44,7 @@ def test_tool_registration_is_explicitly_opt_in(monkeypatch):
     ctx = Context()
     tools.register(ctx)
     assert set(ctx.tools) == set(tools.SCHEMAS) | {"cpipe_execute_intent"}
-    assert set(ctx.commands) == set(tools.COMMANDS)
+    assert set(ctx.commands) == set(__import__("cpipe.intents", fromlist=["POLICIES"]).POLICIES)
     monkeypatch.setitem(tools.HANDLERS, "cpipe_plan", lambda args: {"accepted": args})
     assert json.loads(ctx.tools["cpipe_plan"]({"project": "app"}))["accepted"] == {"project": "app"}
 

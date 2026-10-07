@@ -162,7 +162,8 @@ def describe() -> dict[str, Any]:
 
 def create_card(conn, *, title: str, body: str, assignee: str, repo: str, branch: str,
                 model: Optional[str] = None, parents: Iterable[str] = (), creator_task_id: Optional[str] = None,
-                size: str = "large") -> str:
+                size: str = "large", adoption: Optional[dict] = None,
+                idempotency_key: Optional[str] = None, max_runtime_seconds: Optional[int] = None) -> str:
     """A delivery card, linked to the calling chat session when there is one: Hermes then notifies that chat when
     the card needs review, blocks or completes (its own kanban_create provenance and auto-subscribe)."""
     session_id, kt = None, None
@@ -181,8 +182,12 @@ def create_card(conn, *, title: str, body: str, assignee: str, repo: str, branch
         tid = kb.create_task(conn, title=title, body=body, assignee=assignee, created_by="cpipe",
                              workspace_kind="worktree", workspace_path=repo, branch_name=branch,
                              model_override=model, parents=tuple(parents), creator_task_id=creator_task_id,
-                             session_id=session_id)
+                             session_id=session_id, idempotency_key=idempotency_key,
+                             max_runtime_seconds=max_runtime_seconds)
         comment(conn, tid, size, author="cpipe:size")
+        if adoption is not None:
+            import json
+            comment(conn, tid, json.dumps(adoption), author="cpipe:adopt")
     if kt is not None:
         try:
             kt._maybe_auto_subscribe(conn, tid)
