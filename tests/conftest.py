@@ -26,6 +26,11 @@ def hermes_home(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(home))
     monkeypatch.setenv("HERMES_KANBAN_HOME", str(home))
+    # Hermes now shares Kanban across profiles via the default user root. Round
+    # workers intentionally do not inherit HERMES_KANBAN_* claim material, so
+    # their fallback root must also resolve to this throwaway test home.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("HERMES_REAL_HOME", raising=False)
     from cpipe import settings  # new projects never land in the real ~/Projects
     monkeypatch.setitem(settings.DEFAULTS, "projects_root", str(tmp_path / "projects"))
     monkeypatch.setenv("HERMES_KANBAN_CRASH_GRACE_SECONDS", "0")
