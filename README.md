@@ -14,16 +14,55 @@ prepares a draft pull request by default. Marking it ready needs an explicit req
 Each delivery is a single card on the Hermes Kanban board. Hermes profiles are the default runner: Planner,
 Forge, Sentry and QA can collaborate in separate sessions, while the builder stays warm through tests, changes
 and rework. Codex/Claude/opencode adapters remain opt-in; no external coding CLI is required for the Hermes
-workflow. Deterministic code controls the process around it. Two principles shape the design:
+workflow. Deterministic code controls the process around it. Three principles shape the design:
 
 - **[Graph engineering](#graph-engineering):** the workflow is a fixed graph defined in code. The agent never decides
   what happens next.
 - **[Loop engineering](#loop-engineering):** every failure goes back to the same agent session, and each loop has a
   hard limit.
+- **[Outcome learning](#outcome-learning):** verified gate recoveries inform later work in the same repository.
+  Lessons are bounded hints, not automatic policy changes or proof that a gate passed.
 
 > **Status: v2 · 0.8.3.** Explicit slash-command opt-in, content/small/large paths and profiled handoffs retain
 > v2's deterministic orchestration. v1 ran each step in a new session and let the model choose transitions;
 > the last v1 release is tagged `v1-final`. No speed or token savings are claimed without controlled measurement.
+
+## Installation and quick start
+
+Requires Python 3.11+ and a Hermes Agent installation with native plugin support and
+session message injection. Install the plugin through the current plugin manager:
+
+```sh
+hermes plugins install chryzxc/cpipe --enable
+hermes plugins doctor ~/.hermes/plugins/cpipe --ci
+hermes plugins compat ~/.hermes/plugins/cpipe
+hermes config set plugins.entries.cpipe.allow_gateway_injection true
+```
+
+The plugin declares `pyyaml>=6` and `agent-client-protocol>=0.9,<0.10`. Run installation
+in an interactive terminal and review the dependency preparation prompt; `--enable`
+does not grant dependency consent. To replace an existing installation, add `--force`.
+For reproducible installation, add `--ref` with the full 40-character commit SHA of
+the revision you intend to test. Use your active profile's plugin directory instead
+of `~/.hermes/plugins/cpipe` when operating a separate profile.
+
+Create or select the specialist profiles named in your configuration, then check
+compatibility and start the worker daemon in a separate terminal:
+
+```sh
+hermes cpipe doctor
+hermes cpipe run
+```
+
+Start a fresh chat with `/new` after reinstalling. Commands and hooks may hot-reload,
+but model tools take effect in the next session. In the repository's project chat,
+start with `/cp-plan --size small` followed by the requested change, or use `/cp-review`
+to adopt an existing committed change. No delivery ID is required. Large plans wait
+for approval; shipping prepares a draft PR and never merges or deploys.
+
+The `gh` CLI and authorized GitHub access are needed for PR creation and remote-check
+verification. Existing code-graph tools/indexes are optional; missing graph context
+falls back to source inspection. Outcome learning requires no external service.
 
 ## Architecture
 
@@ -325,6 +364,10 @@ is opened.
 
 ```
 cpipe/graph.py           workflow graph, transition function and loop limits
+cpipe/code_context.py    bounded read-only code-relationship context
+cpipe/learning.py        repository-scoped verified gate outcomes
+cpipe/intents.py         explicit-command receipts and session-aware authorization
+cpipe/native.py          native message injection and clarification hooks
 cpipe/round.py           round driver (python -m cpipe.round <task>): every node
 cpipe/engines/           engine integrations: Codex, Claude Code, Hermes profile, opencode
 cpipe/pr.py              push, pull request, CI monitoring, public-text scan
@@ -352,6 +395,8 @@ docs/runtime/            runtime documentation
 - [x] Hermes role handoffs; persistent builder sessions and delta-scoped re-review
 - [x] Per-role timing and token reporting without conflating parallel time with wall-clock time
 - [x] Late-entry review/fix/verification, frozen-revision gate reuse and draft-by-default shipping
+- [x] Bounded local code-graph context for builders and independent reviewers
+- [x] Repository-scoped gate-outcome learning with final-head CI evidence for CI recovery
 
 ## Safety
 
@@ -369,9 +414,15 @@ fakes (`tests/fake_codex.py`, `tests/fake_gh.py`).
 ```sh
 uv venv --python <hermes-agent venv python> .venv
 uv pip install --python .venv/bin/python pytest pyyaml "agent-client-protocol>=0.9,<0.10"
-# Board tests require the hermes-agent checkout on sys.path (e.g. via a .pth file); otherwise they are skipped.
+# The full suite requires a Hermes Agent checkout on sys.path (e.g. via a .pth file).
 .venv/bin/python -m pytest -q
 ```
+
+The complete suite includes tests that import `hermes_cli` during collection. A
+standalone environment without the Hermes Agent checkout cannot run that full
+suite; some older modules skip, but not all integration modules do. Local plugin
+validation and the hosted CI badge are separate evidence: do not describe remote
+CI as passing merely because local tests or Plugin Doctor passed.
 
 ## License
 

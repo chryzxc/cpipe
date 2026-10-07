@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "cpipe"
 version = "0.8.3"
-description = "Session-aware collaborative development for Hermes Agent: planning, building, independent review, fixes, verification and draft shipping. Adopt existing committed work using conversation context. Never merges."
+description = "Session-aware collaborative development for Hermes Agent with independent review, revision-bound verification, bounded code-graph context and repository-scoped outcome learning. Adopt committed work or start explicitly; prepare draft pull requests, never merge or deploy."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
   {name = "Christian Rey Villablanca"},
 ]
-keywords = ["hermes-agent", "kanban", "delivery", "planning", "tdd", "code-review", "agentic-workflow", "graph-engineering", "loop-engineering", "profiled-agents", "opt-in-workflow"]
+keywords = ["hermes-agent", "kanban", "delivery", "planning", "tdd", "code-review", "agentic-workflow", "graph-engineering", "loop-engineering", "profiled-agents", "opt-in-workflow", "outcome-learning", "code-graph", "session-aware"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "License :: OSI Approved :: MIT License",
@@ -27,6 +27,13 @@ Issues = "https://github.com/chryzxc/cpipe/issues"
 [dependency-groups]
 dev = [
   "pytest>=8",
+]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+  "cpipe", "tests", ".github", ".gitignore", "__init__.py",
+  "README.md", "LICENSE", "plugin.yaml", "pyproject.toml",
+  "docs/runtime/README.md", "docs/runtime/CHANGELOG.md",
 ]
 
 [tool.hatch.build.targets.wheel]
