@@ -4,10 +4,12 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-8957e5)](LICENSE)
 [![Requires: Hermes Agent](https://img.shields.io/badge/requires-Hermes%20Agent-1f6feb)](https://github.com/NousResearch/hermes-agent)
 
-cpipe is a [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that runs a development workflow
-from planning to shipping: **plan** (with the developer's questions answered and the plan approved), **tests
-first**, **implement**, **verify**, **review and refactor**, **ship**. The result is a pull request that is tested,
-quality-assured and reviewed before it reaches a human.
+cpipe is an **opt-in development workflow** for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
+Start a delivery explicitly with `/cp-plan --size content|small|large`; ordinary coding requests stay in normal
+chat. Hermes profiles collaborate through a fixed graph and bounded feedback loops, producing a pull request
+for human review. Content changes skip planning, test-writing and browser QA; small changes start tests and
+implementation immediately; large changes require an approved plan first. Shipping runs final checks and marks
+the pull request ready for review—it never merges or deploys.
 
 Each delivery is a single card on the Hermes Kanban board. Hermes profiles are the default runner: Planner,
 Forge, Sentry and QA can collaborate in separate sessions, while the builder stays warm through tests, changes
@@ -19,13 +21,14 @@ workflow. Deterministic code controls the process around it. Two principles shap
 - **[Loop engineering](#loop-engineering):** every failure goes back to the same agent session, and each loop has a
   hard limit.
 
-> **Status: v2.** v2 replaces the v1 multi-agent workflow, which ran each step in a new session and let the model
-> choose transitions; that made it slow and costly. The last v1 release is tagged `v1-final`.
+> **Status: v2 · 0.8.0.** Explicit slash-command opt-in, content/small/large paths and profiled handoffs retain
+> v2's deterministic orchestration. v1 ran each step in a new session and let the model choose transitions;
+> the last v1 release is tagged `v1-final`. No speed or token savings are claimed without controlled measurement.
 
 ## Architecture
 
 ```
-Hermes chat ── plan · feedback · build · ship · status · stop
+Explicit slash commands ── plan · feedback · build · ship · status · stop
       │
       ▼
 Hermes Kanban: one card per delivery (the delivery's state)
@@ -33,13 +36,13 @@ Hermes Kanban: one card per delivery (the delivery's state)
       ▼
 cpipe daemon → supervisor → round
       │
-setup → plan ── the plan and its questions, for approval ── (feedback: plan again)
-code    agent
-      │ build (approved)
-      ▼
-tests first → build ⇄ checks → verify ──────────────────────── → pull request → CI
-agent+code    agent    code     QA · security · review+refactor     code           code
-                                agent  code     2nd agent
+setup ── large   → plan → human approval → tests ─┐
+      ├─ small  → tests ────────────────────────┤
+      └─ content ──────────────────────────────┤
+                                               ▼
+                 build ⇄ checks → verify → pull request → CI
+                 builder session   QA · security · independent review
+                                   (content skips browser QA)
       │
       ▼
 review   the plan is ready for approval, or the change is ready to test
@@ -57,7 +60,7 @@ the questions only the developer can answer, each with a recommended answer. Not
 approved. When the plan has independent parts, each part becomes its own delivery with its own pull request;
 parts that depend on others wait for them.
 
-**Tests first.** Before any code changes, the agent writes tests and cpipe runs them: tests that pin existing
+**Tests first (small/large).** Before any code changes, the agent writes tests and cpipe runs them: tests that pin existing
 behavior must pass, and the new tests for the change must fail. Tests that already pass are sent back. The build
 then makes them pass; if it changes a test written first, the reviewer is told to check the change.
 
@@ -92,8 +95,9 @@ delivery stops and requests a decision.
 | build ⇄ CI | The failing CI jobs and their logs | 2 |
 | reviewer ⇄ delivery | Feedback from the reviewer | None |
 
-The agent keeps its context for the whole delivery (`codex exec resume`, `claude --resume`, `hermes --resume`,
-`opencode --session`). Repeated rounds stay small and fast. Each round also has a wall-clock limit
+The builder retains its session through tests, implementation and rework; planning, independent review and QA
+use separate role sessions in a profiled workflow. Adapters resume their sessions (`codex exec resume`,
+`claude --resume`, `hermes --resume`, `opencode --session`). Each round also has a wall-clock limit
 (`round_minutes`); a delivery that reaches it pauses and continues from its last commit.
 
 ## Engines
@@ -188,7 +192,7 @@ my-app:
 ```
 
 Repository conventions and agent skills belong with the engines, not with cpipe: an `AGENTS.md` in each
-repository, and skills under `~/.codex/skills` or `~/.claude/skills`.
+repository and the selected Hermes profile's skills. Optional external adapters use their own skill directories.
 
 ## Usage
 
@@ -272,6 +276,9 @@ docs/runtime/            runtime documentation
 - [x] Parallel deliveries; decomposition of large tasks into child deliveries
 - [x] Reporting: duration, token usage and rounds per node
 - [x] Plan approval with questions; tests first, checked by running them; review with refactoring
+- [x] Explicit slash-command opt-in; content/small/large workflow selection
+- [x] Hermes role handoffs; persistent builder sessions and delta-scoped re-review
+- [x] Per-role timing and token reporting without conflating parallel time with wall-clock time
 
 ## Safety
 

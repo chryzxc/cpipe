@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cpipe"
-version = "0.7.0"
-description = "cpipe: a Hermes Agent plugin that runs the development workflow from plan to ship: an approved plan, tests first, implementation, verification, review and refactoring, then a pull request. A fixed graph in code (graph engineering) drives one coding-agent session per delivery through bounded feedback loops (loop engineering)."
+version = "0.8.0"
+description = "Opt-in development workflows for Hermes Agent: explicit slash commands, content/small/large paths, profiled handoffs, and tested, reviewed pull requests. A fixed graph drives bounded feedback loops; shipping marks a PR ready for human review, never merges."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
   {name = "Christian Rey Villablanca"},
 ]
-keywords = ["hermes-agent", "codex", "claude-code", "kanban", "delivery", "planning", "tdd", "code-review", "agentic-workflow", "graph-engineering", "loop-engineering"]
+keywords = ["hermes-agent", "kanban", "delivery", "planning", "tdd", "code-review", "agentic-workflow", "graph-engineering", "loop-engineering", "profiled-agents", "opt-in-workflow"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "License :: OSI Approved :: MIT License",
