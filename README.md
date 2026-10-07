@@ -204,46 +204,56 @@ hermes cpipe report   # duration, runs and tokens per delivery and node
 ```
 
 Deliveries are **opt-in**, started by explicit slash commands. Ordinary coding requests stay on the normal
-assistance path; the plugin does not infer a delivery from chat. `command_only: true` is the default: no `cpipe`
-model tools are registered, and previously registered calls return a command-only error before side effects.
-Commands started explicitly still use the daemon's normal profiled handoffs. This is a routing policy, not a
-sandbox against a shell/Python caller. Remove any old "always start cpipe" instructions from your coordinator.
+assistance path. `command_only: true` is the default: legacy unrestricted `cpipe_*` tools are disabled.
+The receipt-gated `cpipe_execute_intent` bridge is registered so Hermes can resolve a command's target
+from session context before executing its authorized backend action. Receipts expire, are session-bound
+when the host supplies a session key, and prevent duplicate execution. They are not a sandbox against
+shell/Python callers. Remove any old "always start cpipe" instructions from your coordinator.
 
-Set `command_only: false` in `cpipe.yaml` only if you deliberately want the optional `cpipe` model toolset:
+## Session-aware chat commands
 
-| Tool | Effect |
-|---|---|
-| `cpipe_plan` | Starts a delivery with its own worktree/branch. `size=large` (default) returns a plan for approval; explicit `small`/`content` takes the fast path. Engine/model can be named |
-| `cpipe_feedback` | Answers the plan's questions or requests changes; the same session takes another round |
-| `cpipe_build` | Approves the plan: tests first, build, verification, review, then a pull request to test |
-| `cpipe_ship` | Accepts the change: final checks, then the pull request is marked ready for review |
-| `cpipe_status` | Reports where one delivery, or every open delivery, stands |
-| `cpipe_stop` | Stops a delivery and archives its card |
-
-The same actions are slash commands, typed directly into a Hermes chat. They answer at once, without a model turn:
+Type a command followed by a normal message. **No delivery ID is required.** Hermes uses the same
+conversation history and native project context as reference, verifies the target, and uses its native
+clarification tool only when necessary. The message is preserved verbatim rather than parsed as an ID.
 
 ```text
-/cp-plan [--size content|small|large] [project:] <idea>      /cp-feedback <card> <text>      /cp-build <card> [notes]
-/cp-ship <card> [last changes]  /cp-status [card]               /cp-stop <card>
-/cp-project <name> <path|new>
+/cp-plan --size small fix the disabled button we discussed
+/cp-build implement the plan above
+/cp-ship let’s create a draft PR for this
+/cp-status how are these changes doing?
+/cp-stop stop the work we just started
 ```
 
-Use `--size` before the project/request (`--size=small` is also supported). Omitted size is `large`:
+An empty message uses the existing conversation. Project names and delivery IDs remain optional
+references, not mandatory positional arguments. `--size content|small|large` guides `/cp-plan`;
+unspecified delivery size remains `large` and requires plan approval.
 
-```text
-/cp-plan --size content my-app: change the footer wording
-/cp-plan --size small my-app: fix the disabled button condition
-/cp-plan --size large my-app: add password reset
-/cp-feedback t_1a2b3c4d keep the system theme as the default
-/cp-build t_1a2b3c4d      → approve the large plan; content/small do not need this step
-/cp-ship t_1a2b3c4d       → accept the result; final checks, PR ready for review (never merge)
+- `/cp-plan` explicitly opts into a planned delivery; Hermes resolves the request and repository first.
+- `/cp-build` builds the discussed plan: it resumes a matching delivery, or uses native tools for direct work.
+- `/cp-ship` also supports changes made directly earlier in the session, without a prior `/cp-plan`.
+  A draft request creates/updates a **draft PR**, not a ready PR. Unspecified PR state defaults to draft.
+  Existing delivery acceptance can use its final-check/readiness transition. Shipping **never merges**.
+- `/cp-status` reads real Git/PR or matching delivery evidence; it does not start or mutate work.
+- `/cp-stop` targets only the identified work, preserving files and unrelated deliveries/services.
+
+Commands queue a native Hermes user turn; the initial reply reports **queued**, not completed.
+The host must support `inject_message`. Desktop/TUI also requires the plugin permission:
+
+```sh
+hermes config set plugins.entries.cpipe.allow_gateway_injection true
 ```
 
-After an explicit start (and plan approval for large work), cpipe runs the internal tests/build/QA/review
-handoffs automatically. It pauses only at the workflow's human decision boundaries, not for each bot handoff.
+If the host cannot queue into the current session, the command reports that no work started. It does
+not fall back to an ID parser, choose the newest delivery, or create a delivery to publish direct changes.
 
-For a project without a saved repository, cpipe replies with the question; answer with
-`/cp-project recipe-site ~/code/recipes` (or `new`) and run `/cp-plan` again.
+For backend deliveries, internal tests/build/QA/review handoffs still run automatically after the
+explicit start (and approval for large work). Hermes' native clarification answers can revise/resume
+only the existing waiting delivery they belong to; unrelated chat cannot start a new delivery.
+There is no `/cp-feedback` or `/cp-project`: use native clarification and Hermes project context.
+
+Set `command_only: false` in `cpipe.yaml` only to deliberately expose the optional legacy backend tools:
+`cpipe_plan`, `cpipe_build`, `cpipe_ship`, `cpipe_status`, and `cpipe_stop`. This is compatibility mode,
+not the recommended session-aware command interface.
 
 The chat that starts a delivery is notified when the plan is ready, when the pull request is ready to test, when
 a decision is needed, and when the delivery completes. GitHub access uses the `gh` CLI; without it, the branch is pushed and no pull request

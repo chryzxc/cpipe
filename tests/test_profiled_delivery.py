@@ -14,6 +14,8 @@ from test_round import calls, lanes, settle
 
 def test_profiled_delivery_end_to_end(board, tmp_path, hermes_home, monkeypatch):
     fx = make_repo(tmp_path, "python")
+    monkeypatch.chdir(fx.repo)
+    monkeypatch.setenv("HERMES_SESSION_ID", "")
     fx.profile["qa"] = "off"
     install([fx], hermes_home)
     here = Path(__file__).parent

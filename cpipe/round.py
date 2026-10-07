@@ -520,7 +520,7 @@ class Round:
                 "Questions (each with a recommended answer):\n" + "\n".join(f"- {q}" for q in st["questions"])
                 if st.get("questions") else "",
                 "Split into separate pull requests:\n" + "\n".join(parts) if len(parts) >= 2 else "",
-                f"Answer or change it with /cp-feedback {self.task_id} <text>; approve with /cp-build {self.task_id}."]))
+                "Answer or request changes through Hermes native clarification; approve with /cp-build in this session."]))
         if end == "ask":
             return (r.data.get("question") if r else "") or "The engine needs a decision."
         if end == "stuck":

@@ -34,16 +34,16 @@ def test_command_only_requires_a_boolean(value):
 def test_default_registration_hides_all_tools_but_keeps_commands():
     ctx = Context()
     tools.register(ctx)
-    assert ctx.tools == {}
+    assert set(ctx.tools) == {"cpipe_execute_intent"}
     assert set(ctx.commands) == set(tools.COMMANDS)
-    assert "--size" in ctx.commands["cp-plan"][1]["args_hint"]
+    assert ctx.commands["cp-plan"][1]["args_hint"] == "[message]"
 
 
 def test_tool_registration_is_explicitly_opt_in(monkeypatch):
     monkeypatch.setattr(settings, "load", lambda: {"command_only": False})
     ctx = Context()
     tools.register(ctx)
-    assert set(ctx.tools) == set(tools.SCHEMAS)
+    assert set(ctx.tools) == set(tools.SCHEMAS) | {"cpipe_execute_intent"}
     assert set(ctx.commands) == set(tools.COMMANDS)
     monkeypatch.setitem(tools.HANDLERS, "cpipe_plan", lambda args: {"accepted": args})
     assert json.loads(ctx.tools["cpipe_plan"]({"project": "app"}))["accepted"] == {"project": "app"}
@@ -85,7 +85,7 @@ def test_plan_command_preserves_request_and_passes_size(raw, size, project, expe
     tools.register(ctx)
     calls = []
     monkeypatch.setattr(tools, "plan", lambda args: calls.append(args) or {"task_id": "test", "status": "ready"})
-    assert "ready" in ctx.commands["cp-plan"][0](raw)
+    assert "ready" in tools.command("cp-plan", raw)
     expected = {"request": expected_request, "size": size}
     if project is not None:
         expected["project"] = project
@@ -102,13 +102,12 @@ def test_invalid_plan_arguments_never_start_a_delivery(raw, monkeypatch):
     monkeypatch.setattr(tools, "plan", lambda args: pytest.fail("invalid command started delivery"))
     ctx = Context()
     tools.register(ctx)
-    reply = ctx.commands["cp-plan"][0](raw)
+    reply = tools.command("cp-plan", raw)
     assert "usage:" in reply.lower()
     assert "--size" in reply
 
 
 @pytest.mark.parametrize("name,raw,handler_name,expected", [
-    ("cp-feedback", "test Keep it simple", "feedback", {"task_id": "test", "text": "Keep it simple"}),
     ("cp-build", "test", "build", {"task_id": "test", "text": ""}),
     ("cp-ship", "test", "ship", {"task_id": "test", "text": ""}),
     ("cp-status", "test", "status", {"task_id": "test"}),
@@ -119,5 +118,5 @@ def test_explicit_steering_commands_still_work_in_command_only_mode(name, raw, h
     monkeypatch.setattr(tools, handler_name, lambda args: calls.append(args) or {"task_id": "test", "status": "ok"})
     ctx = Context()
     tools.register(ctx)
-    assert "ok" in ctx.commands[name][0](raw)
+    assert "ok" in tools.command(name, raw)
     assert calls == [expected]
