@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytest.importorskip("hermes_cli.kanban_db", reason="needs a Hermes Agent checkout")
+
 from cpipe import engines, graph, report, settings
 from cpipe.engines import hermes
 from cpipe.round import Round, feedback

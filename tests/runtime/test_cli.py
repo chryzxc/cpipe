@@ -34,6 +34,7 @@ def test_lanes_and_doctor(hermes_home, capsys):
     assert "pid-tracked" in out and "UNAVAILABLE: executable not found" in out
 
 
+@needs_hermes
 def test_plugin_registers_cli_command_and_tools(monkeypatch):
     import json
 
