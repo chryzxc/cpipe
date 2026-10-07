@@ -21,12 +21,12 @@ from typing import Any
 
 import yaml
 
-CODEX_APP = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
 DEFAULTS: dict[str, Any] = {
-    "default_engine": "codex",
-    "fallback_engine": "claude",
-    "review_engine": "claude",
-    "engines": {"codex": {"bin": CODEX_APP if os.path.exists(CODEX_APP) else "codex", "concurrency": 3}},
+    "default_engine": "hermes",
+    "fallback_engine": None,
+    "review_engine": "hermes",
+    "roles": {},
+    "engines": {"hermes": {"bin": "hermes", "concurrency": 3}},
     "limits": {"tests": 2, "checks": 3, "qa": 2, "review": 2, "ci": 2, "round_minutes": 90},
     "env_pass": [],
     "projects_root": "~/Projects",  # where a new project's repo is started
@@ -51,6 +51,14 @@ def load(raw: Any = None) -> dict:
     cfg["limits"] = {**DEFAULTS["limits"], **(raw.get("limits") or {})}
     if not cfg["engines"] or not isinstance(cfg["engines"], dict):
         raise ValueError("cpipe.yaml engines must be a non-empty mapping")
+    if "default_engine" not in raw and raw.get("engines") and "hermes" not in cfg["engines"]:
+        cfg["default_engine"] = next(iter(cfg["engines"]))
+    roles = cfg.get("roles", {})
+    if not isinstance(roles, dict):
+        raise ValueError("roles must be a mapping of plan/build/review/qa to configured engines")
+    for role, engine in roles.items():
+        if role not in ("plan", "build", "review", "qa") or not isinstance(engine, str) or engine not in cfg["engines"]:
+            raise ValueError(f"roles: invalid role or engine: {role!r}: {engine!r}")
     if cfg["default_engine"] not in cfg["engines"]:
         raise ValueError(f"default_engine {cfg['default_engine']!r} is not under engines")
     return cfg

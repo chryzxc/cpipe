@@ -9,9 +9,10 @@ from planning to shipping: **plan** (with the developer's questions answered and
 first**, **implement**, **verify**, **review and refactor**, **ship**. The result is a pull request that is tested,
 quality-assured and reviewed before it reaches a human.
 
-Each delivery is a single card on the Hermes Kanban board. A coding agent (Codex, Claude Code, a Hermes profile or
-opencode) carries out the work in one continuous session. Deterministic code controls the process around it. Two
-principles shape the design:
+Each delivery is a single card on the Hermes Kanban board. Hermes profiles are the default runner: Planner,
+Forge, Sentry and QA can collaborate in separate sessions, while the builder stays warm through tests, changes
+and rework. Codex/Claude/opencode adapters remain opt-in; no external coding CLI is required for the Hermes
+workflow. Deterministic code controls the process around it. Two principles shape the design:
 
 - **[Graph engineering](#graph-engineering):** the workflow is a fixed graph defined in code. The agent never decides
   what happens next.
@@ -51,7 +52,7 @@ control back to the board. Feedback on a card starts a new round that resumes th
 approval it revises the plan, after it it changes the code. Shipping runs the final checks on the latest commit and
 marks the pull request ready for review.
 
-**Plan.** The agent studies the repository and writes a plan (what changes, the steps, how it will be tested), with
+**Plan (large/default route).** The agent studies the repository and writes a plan (what changes, the steps, how it will be tested), with
 the questions only the developer can answer, each with a recommended answer. Nothing is built until the plan is
 approved. When the plan has independent parts, each part becomes its own delivery with its own pull request;
 parts that depend on others wait for them.
@@ -116,19 +117,45 @@ engine).
 `~/.hermes/cpipe.yaml` (all keys optional):
 
 ```yaml
-default_engine: codex
-fallback_engine: claude
-review_engine: claude
+default_engine: builder
+fallback_engine: null   # optional, explicitly configured adapter for usage-limit recovery
+roles: {plan: planner, build: builder, review: reviewer, qa: verifier}
 engines:
-  codex:  {bin: codex, model: <model>, reasoning: medium, plan_reasoning: high, qa_profile: <codex profile>,
-           concurrency: 3}
-  claude: {bin: claude, model: <model>, concurrency: 2}
-  coder:  {kind: hermes, profile: <hermes profile>, concurrency: 2}
-  opencode: {model: <provider/model>, concurrency: 1}
+  planner:  {kind: hermes, profile: archon, concurrency: 1}
+  builder:  {kind: hermes, profile: forge, concurrency: 3}
+  reviewer: {kind: hermes, profile: sentry, concurrency: 1}
+  verifier: {kind: hermes, profile: sentinel, concurrency: 1}
 limits: {tests: 2, checks: 3, qa: 2, review: 2, ci: 2, round_minutes: 90}
 env_pass: [GH_TOKEN]   # additional environment variables exposed to rounds and engines
 projects_root: ~/Projects   # where the repository of a new project is started
 ```
+
+Use the profile names actually installed on your machine. Hermes inherits each profile's configured model/provider;
+`model` is an explicit override, never an inferred roster mapping. With no configuration, the default and review
+engines are Hermes and no external fallback is enabled. `roles` is optional; explicitly configured engine choices
+remain supported. Engine concurrency caps dispatcher delivery slots, not the QA/review calls inside each delivery.
+
+### Profiled fast paths and handoffs
+
+Pass `size` to `cpipe_plan` explicitly; the runner does not guess task complexity:
+
+- **`content`**: implement → deterministic checks and scope-limited review. No planning approval, test-writing turn
+  or browser QA. Configured checks still run. Use for text, markup, styles, docs or config values, never logic.
+- **`small`**: tests → implement → checks/QA/review. No planning turn or approval pause; the request authorizes
+  the bounded scope.
+- **`large`** (default when omitted): Planner → human plan approval → Forge → independent review/QA. Use for
+  ambiguous, cross-boundary or risky work.
+
+Planner and Forge own separate sessions; Forge receives the approved scope, progress file and same worktree.
+Forge stays warm through tests, implementation and fixes. Re-reviews use `last_reviewed_head..new_head` and verify
+prior findings. A cold reviewer, changed profile or rewritten history gets the full branch range. QA never resumes
+the builder's session. Legacy single-session checkpoints migrate without restarting their delivery. An unavailable
+explicit reviewer/QA role cannot silently pass; project QA `off` and content-only QA remain intentional skips.
+Review-budget exhaustion still carries open findings into the PR rather than claiming they were resolved.
+
+Reports include per-role agent calls/time, input/output/cache tokens and elapsed node time. Parallel QA/review
+seconds are not added to elapsed wall time. These are measurement seams, **not measured speed/token savings**:
+compare equivalent live tasks before making that claim. This preserves v2's fixed graph, not a wholesale v1 rollback.
 
 A delivery's project is a name from `projects.yaml`. For a project cpipe does not know yet it asks where the
 repository is (in chat through Hermes' clarify): the path to a git checkout, or `new` to start a repository under
@@ -174,7 +201,7 @@ Deliveries are started and steered from Hermes chat through the `cpipe` toolset:
 
 | Tool | Effect |
 |---|---|
-| `cpipe_plan` | Starts a delivery: one card with its own worktree and branch; the plan comes back for approval. The engine and model can be named in the request |
+| `cpipe_plan` | Starts a delivery with its own worktree/branch. `size=large` (default) returns a plan for approval; explicit `small`/`content` takes the fast path. Engine/model can be named |
 | `cpipe_feedback` | Answers the plan's questions or requests changes; the same session takes another round |
 | `cpipe_build` | Approves the plan: tests first, build, verification, review, then a pull request to test |
 | `cpipe_ship` | Accepts the change: final checks, then the pull request is marked ready for review |

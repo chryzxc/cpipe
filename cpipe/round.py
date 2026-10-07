@@ -63,7 +63,7 @@ def build_prompt(task, ws: Path, state: dict, notes: list[str]) -> str:
     profile = workspace_prep.project_profile(state["project"])
     conventions = "\n".join(str(profile.get("conventions") or "").strip().splitlines()[:10])
     lessons = workspace_prep.lessons(state["project"])
-    return "\n\n".join(filter(None, [
+    prompt = "\n\n".join(filter(None, [
         f"{task.title}\n\n{(task.body or '').strip()}".strip(),
         f"Worktree {ws}, branch {task.branch_name}, PR base {state['base']}. Project: {state['project']}.",
         "- Do the whole task in this session: read what you need, edit, add/adjust tests that prove it, run them, "
@@ -80,6 +80,11 @@ def build_prompt(task, ws: Path, state: dict, notes: list[str]) -> str:
         "Lessons from past deliveries:\n" + "\n".join(f"- {t}" for t in lessons) if lessons else "",
         "\n".join(f"Note: {n}" for n in notes),
     ]))
+    if state.get("size") == "content":
+        prompt = prompt.replace("edit, add/adjust tests that prove it, run them, ", "edit only the requested content, ")
+        prompt = prompt.replace("- Test first: a test that shows the change (or pins what must not break) comes before the code.",
+                                "- Content-only: do not add tests or change application logic.")
+    return prompt
 
 
 PLAN = ("Before building, plan, for the user to approve: don't change code yet. Read what you need in the repo. "
@@ -113,6 +118,9 @@ def feedback(conn, task_id: str, state: dict) -> str:
         if c.author in DIRECTIVES:
             key, value = DIRECTIVES[c.author]
             state[key] = value
+        elif c.author == "cpipe:size":
+            if state.get("node") == "setup" and c.body.strip() in ("large", "small", "content"):
+                state["size"] = c.body.strip()
         elif c.author != ME:
             said.append(f"{c.author}: {c.body.strip()}")
     return "\n\n".join(said)
@@ -125,7 +133,7 @@ def said_prompt(said: str) -> str:
 def spend(state: dict, node: str, result: engines.EngineResult) -> None:
     with _spend_lock:
         per = state.setdefault("by_node", {}).setdefault(node, {})
-        for k, v in result.tokens.items():
+        for k, v in (result.tokens or {}).items():
             state["usage"][k] = state["usage"].get(k, 0) + v
             per[k] = per.get(k, 0) + v
 
@@ -155,7 +163,16 @@ class Round:
         self.task_id, self.ws, self.conn, self.cfg = task_id, ws, conn, cfg
         self.task = hermes_api.get_task(conn, task_id)
         self.state = load_state(ws) or new_state(ws, self.task, engine)
-        self.limits, self.rounds = cfg["limits"], {}
+        self.limits = cfg["limits"]
+        self.rounds = self.state.setdefault("rounds", {})
+        # Migrate older single-engine state once; newer state records each engine/profile owner.
+        self.state.setdefault("session_owners", {})
+        if "sessions" not in self.state:
+            self.state["sessions"] = {}
+            if self.state.get("session"):
+                name, eng, ec = self.engine()
+                self.state["sessions"][name] = self.state["session"]
+                self.state["session_owners"][name] = [eng.__name__, ec.get("profile") or "default"]
         self.fell_back = False
         self.last: Optional[engines.EngineResult] = None
 
@@ -168,21 +185,47 @@ class Round:
             ec["model"] = self.state["model"]
         return name, engines.get(name, ec), ec
 
+    def role_engine(self, node: str) -> str:
+        role = "build" if node == "tests" else node
+        configured = self.state["engine"] if role == "build" else self.cfg.get("roles", {}).get(role)
+        return self.state.get("role_overrides", {}).get(role) or configured or self.state["engine"]
+
+    def call(self, node: str, name: str, eng, ec: dict, prompt: str, **kwargs) -> engines.EngineResult:
+        start = time.monotonic()
+        r = eng.run(ec, prompt, self.ws, log=log, **kwargs)
+        spend(self.state, node, r)
+        with _spend_lock:
+            self.state.setdefault("agent_calls", []).append({
+                "node": node, "engine": name, "profile": kwargs.get("profile") or ec.get("profile"),
+                "seconds": round(time.monotonic() - start, 3), "status": r.status, "tokens": r.tokens})
+        return r
+
     def turn(self, node: str, prompt: str, schema: dict = engines.RESULT_SCHEMA, reasoning: Optional[str] = None,
              fallback: bool = True, profile: Optional[str] = None) -> engines.EngineResult:
         """One turn of the delivery's build session; at a usage limit, once per round, the fallback engine takes
         over from the commits."""
-        name, eng, ec = self.engine()
-        r = eng.run(ec, prompt, self.ws, session=self.state["session"], schema=schema, log=log,
-                    reasoning=reasoning, profile=profile)
-        spend(self.state, node, r)
+        name, eng, ec = self.engine(self.role_engine(node))
+        # QA always owns a separate session, even if it uses the builder's CLI/profile.
+        key = f"qa:{name}:{profile or ec.get('profile') or ''}" if node == "qa" else name
+        owner = [eng.__name__, profile or ec.get("profile") or "default"]
+        session = self.state["sessions"].get(key) if self.state["session_owners"].get(key) == owner else None
+        if not session and node != "qa":
+            context = build_prompt(self.task, self.ws, self.state, [])
+            if not prompt.startswith(context):
+                prompt = (context + "\n\nApproved scope:\n"
+                          + (self.state.get("plan") or self.task.body or self.task.title) + "\n\n" + prompt)
+        r = self.call(node, name, eng, ec, prompt, session=session, schema=schema,
+                      reasoning=reasoning, profile=profile)
         fb = self.cfg.get("fallback_engine")
         if (r.status == "rate_limited" and fallback and not self.fell_back and fb and fb != name
                 and fb in self.cfg["engines"] and engines.available(fb, self.cfg["engines"][fb])[0]):
             self.fell_back = True
             log(f"{name} hit its usage limit: {fb} takes over")
-            had_session = bool(self.state["session"])
-            self.state.update(engine=fb, model=None, session=None)
+            had_session = bool(session)
+            role = "build" if node == "tests" else node
+            self.state.setdefault("role_overrides", {})[role] = fb
+            if role == "build" or not self.cfg.get("roles", {}).get(role):
+                self.state.update(engine=fb, model=None, session=None)
             if had_session:
                 prompt = (build_prompt(self.task, self.ws, self.state, []) + "\n\nAnother engine started this "
                           f"delivery and hit its usage limit. Its work is committed: see `git log "
@@ -190,7 +233,10 @@ class Round:
                           + prompt)
             return self.turn(node, prompt, schema, reasoning, fallback, None)
         if r.session:
-            self.state["session"] = r.session
+            self.state["sessions"][key] = r.session
+            self.state["session_owners"][key] = owner
+            if node in ("tests", "build"):
+                self.state["session"] = r.session
         return r
 
     # --- nodes: each returns (outcome, the next build prompt or "") ---
@@ -198,10 +244,16 @@ class Round:
     def setup(self, prompt: str, said: str):
         notes = workspace_prep.prepare(self.ws, self.state["base"])
         prompt = build_prompt(self.task, self.ws, self.state, notes) + (f"\n\nAlso from the user:\n{said}" if said else "")
+        size = self.state.get("size", "large")
+        if size in ("small", "content"):
+            self.state["approved"] = True  # explicit fast-path submission authorizes implementation
+        if size == "content":
+            prompt += "\n\nContent-only scope. Do not add tests or change application logic."
+            return "content", prompt
         return ("approved" if self.state.get("approved") else "ok"), prompt
 
     def plan(self, prompt: str, said: str):
-        _, _, ec = self.engine()
+        _, _, ec = self.engine(self.role_engine("plan"))
         r = self.last = self.turn("plan", f"{prompt}\n\n{PLAN}", engines.PLAN_SCHEMA,
                                   reasoning=ec.get("plan_reasoning", "high"))
         if r.status in graph.ENGINE_DOWN or r.status == "needs_user":
@@ -267,6 +319,8 @@ class Round:
         return out, prompt
 
     def qa(self) -> tuple[Optional[bool], str]:
+        if self.state.get("size") == "content":
+            return None, "QA: not needed for content-only scope"
         mode = workspace_prep.project_profile(self.state["project"]).get("qa") or "browser"
         if mode == "off":
             return None, "QA: off for this project"
@@ -280,7 +334,7 @@ class Round:
         prompt = (f"QA: verify this delivery in the running app ({', '.join(app['urls'].values())}) using {how}, "
                   "the way a user would: the changed behavior and what is next to it. Save screenshots to "
                   ".cpipe/qa/. Don't edit code. Report pass, or fail with each problem.")
-        _, _, ec = self.engine()
+        _, _, ec = self.engine(self.role_engine("qa"))
         with screen_lock() if mode == "computer-use" else contextlib.nullcontext():
             r = self.turn("qa", prompt, engines.QA_SCHEMA, fallback=False, profile=ec.get("qa_profile"))
         if r.status == "pass":
@@ -298,17 +352,30 @@ class Round:
         return sorted(names(f"{self.base_sha()}..{tdd['head']}") & names(f"{tdd['head']}..HEAD"))
 
     def review(self, name: Optional[str] = None) -> tuple[Optional[bool], str]:
-        name = name or self.cfg.get("review_engine")
+        name = name or self.cfg.get("roles", {}).get("review") or self.cfg.get("review_engine")
         if not (name in self.cfg["engines"] and engines.available(name, self.cfg["engines"][name])[0]):
+            if self.cfg.get("roles", {}).get("review"):
+                return None, f"Review: configured role {name} is unavailable"
             name = self.state["engine"]
         eng_name, eng, ec = self.engine(name)
-        diff = f"`git diff {self.base_sha()}...HEAD`"
+        current_head = head(self.ws)
+        owner = [eng_name, eng.__name__, ec.get("profile") or "default"]
+        session = (self.state.get("review_session")
+                   if self.state.get("review_owner") == owner and self.state.get("review_engine") == name else None)
+        previous_head = self.state.get("review_head") if session else None
+        if previous_head and subprocess.run(["git", "-C", str(self.ws), "merge-base", "--is-ancestor",
+                                             previous_head, current_head], capture_output=True).returncode:
+            previous_head = None  # a rebase/rewritten history needs full-range review
+        diff = (f"`git diff {previous_head}..{current_head}`" if previous_head
+                else f"`git diff {self.base_sha()}...{current_head}`")
+        if previous_head:
+            diff += ". Review this delta and verify every prior finding: " + "; ".join(self.state.get("findings") or [])
         changed = self.tests_changed()
         if changed:
             diff += (f". Tests were written first and then changed during the build: {', '.join(changed)}. "
                      "Check each change is justified, not a weakened test")
-        if self.state.get("review_session") and self.state.get("review_engine") == name:
-            session, prompt = self.state["review_session"], f"The branch changed since your last review. Review it again: {diff}."
+        if session:
+            prompt = f"The branch changed since your last review. Review it again: {diff}."
         else:
             session = None
             prompt = (f"You review a change before a human sees it. The request:\n\n{self.task.title}\n\n"
@@ -317,12 +384,18 @@ class Round:
                       "security problems, clear breaks of the repo's conventions, and refactors that clearly pay "
                       "off in the changed code (duplication, needless complexity, unclear names). Approve when "
                       "nothing blocks; style preferences are not findings.")
-        r = eng.run(ec, prompt, self.ws, session=session, schema=engines.REVIEW_SCHEMA, log=log, readonly=True)
-        spend(self.state, "review", r)
-        if r.status in graph.ENGINE_DOWN and name != self.state["engine"]:
+        if self.state.get("findings") and not previous_head:
+            prompt += "\nVerify prior findings too: " + "; ".join(self.state["findings"])
+        prompt += "\nReturn all findings in one verdict with stable IDs REV-001, REV-002, etc."
+        if self.state.get("size") == "content":
+            prompt += "\nContent-only scope. Do not require new tests or unrelated refactors. Check wording, layout and preserved behavior."
+        r = self.call("review", eng_name, eng, ec, prompt, session=session, schema=engines.REVIEW_SCHEMA, readonly=True)
+        if r.status in graph.ENGINE_DOWN and name != self.state["engine"] and not self.cfg.get("roles", {}).get("review"):
             log(f"review on {name}: {r.status}; the delivery's engine reviews instead")
             return self.review(self.state["engine"])
-        self.state.update(review_session=r.session or session, review_engine=name)
+        self.state.update(review_session=r.session or session, review_engine=name, review_owner=owner)
+        if r.status in ("approve", "changes"):
+            self.state["review_head"] = current_head
         if r.status == "approve":
             return True, f"Review ({eng_name}): approved"
         if r.status == "changes":
@@ -340,6 +413,12 @@ class Round:
         with ThreadPoolExecutor(max_workers=3) as pool:
             jobs = {"qa": pool.submit(self.qa), "checks": pool.submit(self.security), "review": pool.submit(self.review)}
             done = {k: f.result() for k, f in jobs.items()}
+        if self.cfg.get("roles", {}).get("review") and done["review"][0] is None:
+            return "blocked", done["review"][1]  # an explicitly configured reviewer is a required gate
+        if (self.cfg.get("roles", {}).get("qa") and done["qa"][0] is None
+                and self.state.get("size") != "content"
+                and workspace_prep.project_profile(self.state["project"]).get("qa") != "off"):
+            return "blocked", done["qa"][1]
         failed = [k for k, (ok, _) in done.items() if ok is False]
         out = graph.loop_outcome(failed, self.rounds, self.limits)
         tdd = self.state.get("tdd") or {}

@@ -28,10 +28,24 @@ def row(conn, task) -> dict:
         n["seconds"] += e["end"] - e["start"]
     for node, usage in (st.get("by_node") or {}).items():
         nodes.setdefault(node, {"seconds": 0, "tokens": 0})["tokens"] = _tokens(usage)
+    timeline = st.get("timeline") or []
+    timed_nodes = {e["node"] for e in timeline}
+    for call in st.get("agent_calls") or []:
+        node = call["node"]
+        n = nodes.setdefault(node, {"seconds": 0, "tokens": 0})
+        if node not in timed_nodes:
+            n["seconds"] += call["seconds"]
+    elapsed = (max(e["end"] for e in timeline) - min(e["start"] for e in timeline)) if timeline else 0
+    calls = st.get("agent_calls") or []
     return {"task_id": task.id, "title": task.title, "status": task.status, "node": st.get("node"),
+            "elapsed_seconds": elapsed,  # includes time between rounds and human approval waits
+            "agent_seconds": sum(c["seconds"] for c in calls),  # additive work, not elapsed time
+            "agent_calls": len(calls), "agents": sorted({c.get("profile") or c["engine"] for c in calls}),
+            "calls_without_usage": sum(c.get("tokens") is None for c in calls),
             "engine": st.get("engine") or (task.assignee or "")[3:], "pr": st.get("pr_url"),
-            "runs": hermes_api.run_count(conn, task.id), "minutes": round(sum(n["seconds"] for n in nodes.values()) / 60, 1),
-            "tokens": _tokens(st.get("usage") or {}), "nodes": nodes}
+            "runs": hermes_api.run_count(conn, task.id), "minutes": round(sum(e["end"] - e["start"] for e in timeline) / 60, 1),
+            "tokens": _tokens(st.get("usage") or {}),
+            "cached_input_tokens": int((st.get("usage") or {}).get("cached_input_tokens", 0)), "nodes": nodes}
 
 
 def rows(conn, open_only: bool = False) -> list[dict]:
@@ -46,6 +60,9 @@ def render(items: list[dict]) -> str:
         out.append(f"{r['task_id']:<14} {r['status']:<9} {r['engine']:<9} {r['runs']:>4} {r['minutes']:>6} "
                    f"{r['tokens']:>10}  {r['title'][:50]}")
         out.append("    " + "  ".join(f"{k} {v['seconds'] // 60}m/{v['tokens']}t" for k, v in r["nodes"].items()))
+        out.append(f"    elapsed {r['elapsed_seconds']}s (includes waits); agent work {r['agent_seconds']}s "
+                   f"across {r['agent_calls']} calls; agents {', '.join(r['agents']) or 'unrecorded'}; "
+                   f"calls without token usage {r['calls_without_usage']}")
     if items:
         out.append(f"{'total':<14} {'':<9} {'':<9} {sum(r['runs'] for r in items):>4} "
                    f"{round(sum(r['minutes'] for r in items), 1):>6} {sum(r['tokens'] for r in items):>10}  "

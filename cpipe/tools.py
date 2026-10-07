@@ -40,8 +40,10 @@ SCHEMAS = {
     "cpipe_plan": _schema(
         "cpipe_plan",
         "Start a development task in one of the user's projects: the coding engine studies the repo and writes a "
-        "plan, with questions, for the user to approve before anything is built. Use when the user asks to build, "
-        "fix or change something. Returns at once; the user is notified when the plan is ready.",
+        "plan, with questions, for approval (size=large, the default). Use size=small only for a clear, authorized "
+        "logic change in one area, or content for text/styles/docs only: those start implementation immediately, "
+        "still get independent review and pause before shipping. Unclear or cross-boundary work must stay large. "
+        "Returns at once; the user is notified at the next approval boundary.",
         {"request": {"type": "string", "description": "The full task, in the user's words plus any context"},
          "project": {"type": "string", "description": "The project's name (optional when exactly one project is "
                                                       "configured). An unknown project returns a question for the "
@@ -53,6 +55,8 @@ SCHEMAS = {
          "engine": {"type": "string", "description": "Coding engine, only when the user names one (e.g. codex, "
                                                      "claude, or a configured Hermes profile engine)"},
          "model": {"type": "string", "description": "Model, only when the user names one"},
+         "size": {"type": "string", "enum": ["large", "small", "content"], "default": "large",
+                  "description": "large: approved plan first; small: clear authorized logic change; content: text/styles/docs only. Fast paths authorize implementation, not shipping."},
          },
         ["request"]),
     "cpipe_feedback": _schema(
@@ -135,6 +139,9 @@ def resolve_project(project: str | None, cfg: dict) -> tuple[str, Path] | dict:
 
 
 def plan(args: dict) -> dict:
+    size = args.get("size", "large")
+    if size not in ("large", "small", "content"):
+        return {"error": "size must be large, small, or content"}
     cfg = settings.load()
     if args.get("repo"):
         found = save_project(args.get("project") or Path(args["repo"]).expanduser().name, args["repo"], cfg)
@@ -145,7 +152,7 @@ def plan(args: dict) -> dict:
                                                                "again with project and repo set from the answer."}
     name, repo = found
     known = workspace_prep.projects().get(name) or {}
-    engine = args.get("engine") or known.get("engine") or cfg["default_engine"]
+    engine = args.get("engine") or known.get("engine") or cfg.get("roles", {}).get("build") or cfg["default_engine"]
     if engine not in cfg["engines"]:
         return {"error": f"unknown engine {engine!r}; one of: {', '.join(cfg['engines'])}"}
     request = args["request"].strip()
@@ -154,8 +161,8 @@ def plan(args: dict) -> dict:
     with closing(hermes_api.connect(None)) as conn:
         tid = hermes_api.create_card(conn, title=title, body=request, assignee=f"cp:{engine}",
                                      repo=str(repo), branch=branch,
-                                     model=args.get("model"))
-    return {"task_id": tid, "project": name, "engine": engine, "branch": branch}
+                                     model=args.get("model"), size=size)
+    return {"task_id": tid, "project": name, "engine": engine, "branch": branch, "size": size}
 
 
 def _steer(task_id: str, text: str, directive: str = "") -> dict:

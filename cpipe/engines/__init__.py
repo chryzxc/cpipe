@@ -53,7 +53,7 @@ class EngineResult:
     summary: str = ""
     session: Optional[str] = None
     data: dict = field(default_factory=dict)   # the structured result
-    tokens: dict = field(default_factory=dict)
+    tokens: Optional[dict] = field(default_factory=dict)
 
 
 def kind(name: str, cfg: dict) -> str:
