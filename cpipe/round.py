@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from . import code_context, engines, graph, learning, pr, quality, settings, test_env, workspace_prep
+from . import code_context, discovery, engines, graph, learning, pr, quality, settings, test_env, workspace_prep
 from .home import root as hermes_home
 from .runtime import hermes_api
 
@@ -80,7 +80,7 @@ def build_prompt(task, ws: Path, state: dict, notes: list[str]) -> str:
         conventions,
         "Lessons from past deliveries:\n" + "\n".join(f"- {t}" for t in lessons) if lessons else "",
         learning.context(ws) if state.get("size") != "content" else "",
-        code_context.context(ws, task.title, state) if state.get("size") != "content" else "",
+        (discovery.context(state) or code_context.context(ws, task.title, state)) if state.get("size") != "content" else "",
         "\n".join(f"Note: {n}" for n in notes),
     ]))
     if state.get("size") == "content":
@@ -247,6 +247,36 @@ class Round:
                 "seconds": round(time.monotonic() - start, 3), "status": r.status, "tokens": r.tokens})
         return r
 
+    def discover(self) -> None:
+        """One optional, isolated navigation call. Never block or fall back to a costly builder."""
+        name = self.cfg.get("roles", {}).get("discover")
+        if not name or self.state.get("size", "large") != "large":
+            self.state.pop("discovery", None)
+            return
+        # Only Hermes has the tool-free snapshot mode. No session/model override inheritance.
+        ec = dict(self.cfg["engines"][name])
+        if ec.get("kind", name) != "hermes":
+            self.state["discovery"] = {"status": "unavailable", "detail": "Discovery requires a Hermes engine"}
+            return
+        ec["discovery_only"] = True
+        key = None
+        try:
+            request = self.task.title + "\n" + (self.task.body or "") + "\n" + (self.state.get("review_scope") or "")
+            key, prompt = discovery.prepare(self.ws, request, self.state, ec)
+            if self.state.get("discovery", {}).get("key") == key:
+                return
+            self.state["discovery"] = {"key": key, "status": "unavailable"}
+            if not engines.available(name, ec)[0]:
+                return
+            result = self.call("discover", name, engines.get(name, ec), ec, prompt,
+                               session=None, schema=discovery.SCHEMA, readonly=True)
+            brief = result.data.get("brief") if isinstance(result.data, dict) else None
+            self.state["discovery"].update(status=result.status)
+            if result.status == "done" and isinstance(brief, str) and brief.strip():
+                self.state["discovery"]["brief"] = brief.strip()[:discovery.MAX_BRIEF]
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            self.state["discovery"] = {"key": key, "status": "unavailable", "detail": type(exc).__name__}
+
     def turn(self, node: str, prompt: str, schema: dict = engines.RESULT_SCHEMA, reasoning: Optional[str] = None,
              fallback: bool = True, profile: Optional[str] = None) -> engines.EngineResult:
         """One turn of the delivery's build session; at a usage limit, once per round, the fallback engine takes
@@ -257,6 +287,7 @@ class Round:
         owner = [eng.__name__, profile or ec.get("profile") or "default"]
         session = self.state["sessions"].get(key) if self.state["session_owners"].get(key) == owner else None
         if not session and node != "qa":
+            self.discover()
             context = build_prompt(self.task, self.ws, self.state, [])
             if not prompt.startswith(context):
                 prompt = (context + "\n\nApproved scope:\n"
@@ -307,6 +338,7 @@ class Round:
         if adopted and head(self.ws) != self.state.get("adoption", {}).get("head"):
             return "blocked", "The adopted commit changed before setup; adopt the current revision again."
         notes = workspace_prep.prepare(self.ws, None if adopted else self.state["base"])
+        self.discover()
         prompt = build_prompt(self.task, self.ws, self.state, notes) + (f"\n\nAlso from the user:\n{said}" if said else "")
         if self.state.get("adopted"):
             if head(self.ws) != self.state["adoption"]["head"]:
