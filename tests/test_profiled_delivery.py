@@ -2,6 +2,10 @@
 import os
 from pathlib import Path
 
+import pytest
+
+pytest.importorskip("hermes_cli.kanban_db", reason="needs a Hermes Agent checkout")
+
 from cpipe import report, tools
 from cpipe.runtime import hermes_api
 from fixtures.make_repo import TASK, install, make_repo

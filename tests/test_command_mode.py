@@ -3,6 +3,8 @@ import json
 
 import pytest
 
+pytest.importorskip("hermes_cli.kanban_db", reason="needs a Hermes Agent checkout")
+
 from cpipe import settings, tools
 
 
