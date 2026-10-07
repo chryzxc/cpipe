@@ -21,7 +21,7 @@ workflow. Deterministic code controls the process around it. Two principles shap
 - **[Loop engineering](#loop-engineering):** every failure goes back to the same agent session, and each loop has a
   hard limit.
 
-> **Status: v2 · 0.8.2.** Explicit slash-command opt-in, content/small/large paths and profiled handoffs retain
+> **Status: v2 · 0.8.3.** Explicit slash-command opt-in, content/small/large paths and profiled handoffs retain
 > v2's deterministic orchestration. v1 ran each step in a new session and let the model choose transitions;
 > the last v1 release is tagged `v1-final`. No speed or token savings are claimed without controlled measurement.
 
@@ -80,6 +80,33 @@ function, `next_node(node, outcome, ready)`, determines every transition; `loop_
 - **State on the card.** Each delivery is a single Kanban card, and its status is the only interrupt.
 - **Verifiable.** Table tests cover every edge and limit. The complete graph also runs end to end against a
   scripted agent on generated repositories.
+
+Code relationships are a separate graph, not a replacement for the workflow graph. For coding work,
+cpipe queries an existing local `graphify-out/graph.json`, or falls back to an existing CodeGraph index.
+The builder and independent reviewer receive bounded caller/dependency/test context. Queries are read-only,
+local and cached by revision, dirty status, index timestamp and request; no additional model call is made.
+Index freshness is not certified: specialists must confirm relationships against source and refresh the
+local AST index after edits where supported. Missing tools, failed queries and timeouts fall back to source
+inspection, never a graph-derived verification pass. Content-only work does not query code graphs.
+
+## Outcome learning
+
+Coding deliveries capture gate corrections for tests-first, checks, independent review, runtime QA,
+security and remote CI. A local SQLite store at `$HERMES_HOME/state/cpipe-learning.sqlite` groups
+observations by a hashed repository identity and delivery, so retries do not inflate counts and linked
+worktrees share lessons without leaking them to unrelated repositories. Only predefined pattern keys and
+counts are stored: no prompts, source, raw findings, credentials or private transcripts.
+
+Failures remain observations until independent verification succeeds on the clean final revision; CI
+recovery additionally requires green final-head remote CI. Up to five repository-scoped lessons are reused
+in later builder prompts. Repeated verified recoveries expose a structural follow-up proposal (test, lint,
+preflight check or canonical helper), not an automatic out-of-scope code/skill edit. Existing curated
+project lessons remain supported. Store errors do not waive gates or fail an otherwise valid delivery.
+
+This is bounded outcome-driven workflow learning, **not** model training or autonomous skill rewriting.
+It does not infer the root cause from arbitrary failure text, mine unrelated chats, apply human corrections
+as new policy, or claim a proposed structural follow-up has been implemented. Those need explicit scoping
+and verification.
 
 ## Loop engineering
 
@@ -240,8 +267,16 @@ unspecified delivery size remains `large` and requires plan approval.
 - `/cp-fix` sends bounded findings to the builder, then runs checks and independent verification of the new commit.
 - `/cp-verify` runs configured checks, security checks, independent review and applicable QA. Bounded corrections
   stay with the builder. It stops with local evidence and does not publish.
-- `/cp-ship` works without a prior `/cp-plan`: it adopts the existing work, runs missing gates and creates/updates
-  a **draft PR** by default. Marking a PR ready must be requested explicitly and requires the current revision's
+- `/cp-ship` means complete the work, not just publish it. It works without a prior `/cp-plan`: it adopts
+  existing work and independently reviews correctness, security, test adequacy and justified refactors in the
+  changed code. The builder adds missing regression/characterization tests, fixes problems and refactors only
+  when warranted, then runs focused tests and the applicable existing regression suite. Corrections receive
+  independent re-review and final-revision verification, including applicable QA and configured security checks.
+  Existing correct behavior may already pass new characterization tests; adopted work never earns retrospective
+  TDD claims. Content-only work does not require unrelated tests or refactors. Missing evidence is a finding,
+  not approval; unresolved findings and unavailable required gates block shipping. Unrelated rewrites remain
+  outside scope. Valid complete-review receipts are reused rather than calling every bot again.
+  Only after these gates does it create/update a **draft PR** by default. Marking a PR ready must be requested explicitly and requires the current revision's
   review, verification and CI. Shipping **never merges**.
 - `/cp-status` reads real Git/PR or matching delivery evidence; it does not start or mutate work.
 - `/cp-stop` targets only the identified work, preserving files and unrelated deliveries/services.

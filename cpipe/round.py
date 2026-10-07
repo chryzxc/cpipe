@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from . import engines, graph, pr, quality, settings, test_env, workspace_prep
+from . import code_context, engines, graph, learning, pr, quality, settings, test_env, workspace_prep
 from .home import root as hermes_home
 from .runtime import hermes_api
 
@@ -79,6 +79,8 @@ def build_prompt(task, ws: Path, state: dict, notes: list[str]) -> str:
         "- `how_to_test`: the steps a reviewer follows to see the change work.",
         conventions,
         "Lessons from past deliveries:\n" + "\n".join(f"- {t}" for t in lessons) if lessons else "",
+        learning.context(ws) if state.get("size") != "content" else "",
+        code_context.context(ws, task.title, state) if state.get("size") != "content" else "",
         "\n".join(f"Note: {n}" for n in notes),
     ]))
     if state.get("size") == "content":
@@ -94,7 +96,10 @@ PLAN = ("Before building, plan, for the user to approve: don't change code yet. 
         "each with your recommended answer; keep them few. If the task is really several independent changes "
         "that would each make a reviewable pull request on its own, list them in `parts` (title; request: a "
         "self-contained task description; after: the indexes of parts that must land first). Otherwise leave "
-        "`parts` empty.")
+        "`parts` empty. Name the domain data shape and organizing structure before logic. Include a short "
+        "throughput checkpoint: blocking prerequisites, independent workstreams, shared mutable state, "
+        "and the smallest safe decomposition. Mark non-applicable dimensions with a reason; one coupled "
+        "change stays with one owner. Use runtime evidence for empirical decisions, not user guesswork.")
 APPROVED = "The user approved the plan in .cpipe/progress.md."
 TESTS = ("Tests first, before any code change. If the change touches existing behavior, make sure tests pin what "
          "must not break: add them where missing; they must pass now. Then write the tests for the new or fixed "
@@ -106,6 +111,36 @@ TESTS = ("Tests first, before any code change. If the change touches existing be
 BUILD = ("Now implement the plan until the new tests and the whole suite pass (green). Don't weaken or delete the "
          "tests written first; if one is wrong, fix it and say why in `assumptions`. Then refactor what you "
          "touched while the tests stay green, and commit.")
+
+# Shared by review/verify/ship so a complete review can be reused at shipping.
+# Version the contract in gate_key: older approvals must not bypass new requirements.
+REVIEW_CONTRACT_VERSION = 1
+COMPLETENESS_REVIEW = (
+    "Completion review, not merely a diff/style check:\n"
+    "- Trace the requested behavior through its real callers and dependencies. Check correctness, security, "
+    "compatibility and adjacent regressions against the approved scope.\n"
+    "- Inspect tests for the changed behavior, preserved behavior, relevant edge/error cases and integration "
+    "boundaries. Missing, weak or incorrect coverage is a finding; passing configured checks alone does not "
+    "prove adequate coverage. Request concrete tests, not arbitrary coverage percentages.\n"
+    "- Assess behavior-preserving refactors in the changed code: remove harmful duplication or needless "
+    "complexity when it materially improves correctness or maintainability. No cosmetic churn, unrelated "
+    "rewrites or scope expansion. Refactor only when justified, not on every shipping run.\n"
+    "- Require actual focused-test and applicable existing regression-suite evidence for testable changes. "
+    "Inspect the commands, results and revision in the supplied check evidence and repository artifacts. "
+    "If evidence is missing, request executable checks with the correction; unavailable or unrun checks "
+    "are not passes. Explicitly justify genuinely untestable/content-only scope.\n"
+    "- Return all actionable gaps in one verdict. The builder, not the reviewer, adds tests, fixes code and "
+    "performs justified refactors; independently re-review corrections before publication."
+)
+CORRECTION_CONTRACT = (
+    "For these bounded corrections: add missing regression/characterization tests before editing code. "
+    "A test for an existing correct behavior may pass immediately; reproduce an actual bug with a failing "
+    "test before fixing it. Do not claim retrospective TDD. Preserve behavior during justified refactors; "
+    "do not weaken tests or expand scope. Run focused tests and the applicable existing regression suite, "
+    "record exact commands/results in .cpipe/progress.md, and commit the corrected code and tests. "
+    "If required executable checks are missing, configure them through the project's existing supported "
+    "check configuration or report the missing dependency. Independent review and verification follow."
+)
 
 
 def feedback(conn, task_id: str, state: dict) -> str:
@@ -253,6 +288,18 @@ class Round:
 
     # --- nodes: each returns (outcome, the next build prompt or "") ---
 
+    def remember(self, patterns: list[str], *, verified: bool = False) -> None:
+        if self.state.get("size") == "content":
+            return
+        pending = sorted(set(self.state.get("learning_patterns", [])) | set(patterns))
+        self.state["learning_patterns"] = pending
+        if pending:
+            # Remote CI recovery needs a green final-head CI result, not a local verify receipt.
+            signals = [p for p in pending if not verified or p != "ci"]
+            warning = learning.record(self.ws, self.task_id, signals, verified=verified)
+            if warning:
+                self.state["learning_warning"] = warning
+
     def setup(self, prompt: str, said: str):
         # An adopted branch is frozen work, not a fresh delivery branch. Never
         # reset it to the base just because its commit already exists on a remote.
@@ -281,7 +328,8 @@ class Round:
             findings = "; ".join(self.state.get("findings") or [])
             return (prompt + "\n\nFix only these bounded findings/improvements: "
                     + (self.state.get("stage_text") or findings)
-                    + "\nAdd regression tests first for each correction. Do not claim the adopted work was TDD."
+                    + "\nAdd regression/characterization tests first; existing correct behavior may already pass."
+                      " Reproduce actual bugs before fixing them. Do not claim the adopted work was TDD."
                       " Test, commit, and return for independent review of the new revision.")
         return prompt
 
@@ -289,6 +337,8 @@ class Round:
         if not self.clean_revision():
             return "blocked", "Review needs a clean committed worktree; commit the application changes first."
         approved, detail = self.review()
+        if approved is False:
+            self.remember(["review"])
         self.state["stage_result"] = detail
         return ("blocked", detail) if approved is None else ("ok", prompt)
 
@@ -343,6 +393,8 @@ class Round:
         return "ok", BUILD + (f" The new tests: `{tdd['red']}`." if tdd["red"] else "")
 
     def build(self, prompt: str, said: str):
+        if self.state.get("size") != "content" and (self.state.get("entry") == "fix" or any(self.rounds.values())):
+            prompt += "\n\n" + CORRECTION_CONTRACT
         r = self.last = self.turn("build", prompt)
         self.state["assumptions"] += r.data.get("assumptions") or []
         for k in ("summary", "how_to_test"):
@@ -374,6 +426,7 @@ class Round:
                   "profile_configs": stamps, "quality": quality.load(), "scope": [self.task.title, self.task.body],
                   "size": self.state.get("size"), "model": self.state.get("model"),
                   "review_scope": self.state.get("review_scope", ""),
+                  "review_contract": REVIEW_CONTRACT_VERSION,
                   "recipe": recipe.read_text() if recipe.exists() else None}
         digest = hashlib.sha256(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()
         return {"head": head(self.ws), "base": self.base_sha(), "config": digest}
@@ -480,8 +533,17 @@ class Round:
         if self.state.get("findings") and not previous_head:
             prompt += "\nVerify prior findings too: " + "; ".join(self.state["findings"])
         prompt += "\nReturn all findings in one verdict with stable IDs REV-001, REV-002, etc."
+        if self.state.get("size") != "content":
+            prompt += "\n\n" + code_context.context(self.ws, self.task.title if self.task else "existing change", self.state)
         if self.state.get("size") == "content":
             prompt += "\nContent-only scope. Do not require new tests or unrelated refactors. Check wording, layout and preserved behavior."
+        else:
+            prompt += "\n\n" + COMPLETENESS_REVIEW
+            prompt += "\nCurrent revision check evidence (missing evidence is not a pass):\n" + json.dumps({
+                "current_head": current_head,
+                "checks_receipt": self.state.get("checks_receipt"),
+                "checks": self.state.get("checks_evidence") or [],
+            }, sort_keys=True)
         if self.state.get("review_scope"):
             prompt += "\nAdditional requested review scope: " + self.state["review_scope"]
         r = self.call("review", eng_name, eng, ec, prompt, session=session, schema=engines.REVIEW_SCHEMA, readonly=True)
@@ -528,10 +590,12 @@ class Round:
         key = self.gate_key()
         if self.state.get("verification_receipt") == key and self.clean_revision():
             self.state["verified_head"] = key["head"]
+            self.remember([], verified=True)
             return "ok", prompt
         with ThreadPoolExecutor(max_workers=3) as pool:
             jobs = {"qa": pool.submit(self.qa), "checks": pool.submit(self.security), "review": pool.submit(self.review)}
             done = {k: f.result() for k, f in jobs.items()}
+        self.remember(["security" if k == "checks" else k for k, (ok, _) in done.items() if ok is False])
         if done["checks"][0] is None:
             return "blocked", done["checks"][1]
         if done["review"][0] is None:
@@ -550,6 +614,7 @@ class Round:
             if self.gate_key() != key or not self.clean_revision():
                 return "blocked", "The revision or gate configuration changed during verification; reverify the final revision."
             self.state.update(verified_head=key["head"], verification_receipt=key)
+            self.remember([], verified=True)
             return out, prompt
         return out, "\n\n".join(done[k][1] for k in failed) + "\n\nFix it, test, commit."
 
@@ -570,6 +635,12 @@ class Round:
         if out != "ok":
             return "blocked", detail
         self.state["ci_head"] = head(self.ws)
+        if ("ci" in self.state.get("learning_patterns", [])
+                and self.state.get("ci_check_evidence", {}).get("head") == self.state["ci_head"]
+                and self.state.get("verification_receipt") == self.gate_key() and self.clean_revision()):
+            warning = learning.record(self.ws, self.task_id, ["ci"], verified=True)
+            if warning:
+                self.state["learning_warning"] = warning
         return "ok", prompt
 
     def final(self, prompt: str, said: str):
@@ -619,6 +690,8 @@ class Round:
                 break
             log(f"node {node} ({st['engine']})")
             outcome, prompt = getattr(self, node)(prompt, said)
+            if node in ("tests", "checks", "ci") and outcome in ("fix", "limit"):
+                self.remember([node])
             said = ""
             st["timeline"].append({"node": node, "start": int(start), "end": int(time.time()), "outcome": outcome,
                                    "engine": st["engine"]})

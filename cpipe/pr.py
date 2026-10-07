@@ -101,6 +101,7 @@ def publish(ws: Path, state: dict, branch: str) -> tuple[str, str]:
 
 def ci(ws: Path, state: dict, minutes: int) -> tuple[str, str]:
     """``(ok | fail | blocked, detail)``: waits for checks; pending/unavailable is never a pass."""
+    state.pop("ci_check_evidence", None)
     if not state.get("pr_url") or not (ws / ".github" / "workflows").is_dir():
         return "ok", "no CI"
     expected = _git(ws, "rev-parse", "HEAD").stdout.strip()
@@ -132,6 +133,7 @@ def ci(ws: Path, state: dict, minutes: int) -> tuple[str, str]:
     if any(c.get("bucket") not in ("pass", "fail") for c in checks):
         return "blocked", "CI contains cancelled, skipped or unrecognized results; no approval recorded"
     if not failed:
+        state["ci_check_evidence"] = {"head": expected, "count": len(checks)}
         return "ok", f"CI passed ({len(checks)} checks)"
     logs = []
     for c in failed[:3]:
