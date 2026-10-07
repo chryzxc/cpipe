@@ -4,7 +4,7 @@ manifest_version: 2
 api_version: 1
 provides_tools: [cpipe_execute_intent]
 provides_hooks: [pre_llm_call, post_tool_call]
-description: "Session-aware collaborative development for Hermes Agent: planning, building, independent review, fixes, verification and draft shipping. Adopt existing committed work using conversation context. Never merges."
+description: "Session-aware collaborative development for Hermes Agent with independent review, revision-bound verification, bounded code-graph context and repository-scoped outcome learning. Adopt committed work or start explicitly; prepare draft pull requests, never merge or deploy."
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
-tags: [hermes-agent, delivery, workflow, planning, tdd, kanban, code-review, qa, profiled-agents, opt-in-workflow, graph-engineering, loop-engineering]
+tags: [hermes-agent, delivery, workflow, planning, tdd, kanban, code-review, qa, profiled-agents, opt-in-workflow, graph-engineering, loop-engineering, outcome-learning, code-graph, session-aware]
