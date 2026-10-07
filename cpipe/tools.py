@@ -3,16 +3,16 @@ plan → build → ship, and the user decides at each step:
 
     cpipe_plan      a new delivery: one card, its own worktree and branch; the engine plans, and the plan (with
                     its questions) comes back for the user's approval
-    cpipe_feedback  answers and changes, for the plan or for the built change: the same session takes another round
+    native clarify answers and changes for the waiting plan/change: the same session takes another round
     cpipe_build     approve the plan: build, checks, QA, security, review, a draft pull request to test
     cpipe_ship      accept the change: final checks, then the pull request is marked ready for review
     cpipe_status    where a delivery stands (or all of them)
     cpipe_stop      archive a delivery
 
-Slash commands are the default entry point (``/cp-plan [--size small] [project:] <idea>``, ...): no model
-turn, the answer comes back at once. Model tools are exposed only with ``command_only: false``.
-``/cp-project`` saves where a project's repository is. This is an opt-in routing policy, not a sandbox
-against agents deliberately invoking the package through a shell or Python.
+Slash commands enqueue natural-language intents in the current Hermes session. The receipt-gated
+bridge resolves their backend arguments from conversation context; direct work uses native tools.
+Unrestricted legacy model tools are exposed only with ``command_only: false``. Hermes owns project
+selection. This is opt-in routing, not a sandbox against deliberate shell/Python invocation.
 
 The chat that starts a delivery is subscribed to it: Hermes notifies it when the plan is ready, when the pull
 request is ready to test, when a decision is needed, and when it completes.
@@ -27,7 +27,7 @@ import subprocess
 from contextlib import closing
 from pathlib import Path
 
-from . import report, settings, workspace_prep
+from . import native, report, settings, workspace_prep
 from .runtime import hermes_api
 
 _ID = {"task_id": {"type": "string", "description": "The delivery's card id"}}
@@ -61,10 +61,6 @@ SCHEMAS = {
                   "description": "large: approved plan first; small: clear authorized logic change; content: text/styles/docs only. Fast paths authorize implementation, not shipping."},
          },
         ["request"]),
-    "cpipe_feedback": _schema(
-        "cpipe_feedback", "Send the user's answers or requested changes to a delivery: before approval they revise "
-                          "the plan, after it they change the code and update the pull request. Same session.",
-        {**_ID, "text": {"type": "string", "description": "The requested changes"}}, ["task_id", "text"]),
     "cpipe_build": _schema(
         "cpipe_build", "The user approves a delivery's plan: it is built, tested, QA'd, reviewed, and opened as a "
                        "draft pull request to test.",
@@ -121,23 +117,32 @@ def save_project(name: str, repo: str, cfg: dict) -> tuple[str, Path] | dict:
 
 
 def resolve_project(project: str | None, cfg: dict) -> tuple[str, Path] | dict:
-    """``(name, repo)`` from projects.yaml, or what to ask the user: ``{"question", "choices", "project"}``."""
+    """Hermes identity/session first; legacy delivery configuration is a fallback.
+
+    Resolving a path is read-only. Project setup and selection belong to Hermes.
+    Never infer the target from a different Desktop session's active project.
+    """
+    found = native.project_repo(project)
+    if found:
+        return found
     known = {k: v for k, v in workspace_prep.projects().items() if v.get("repo")}
     if not project:
-        if len(known) == 1:
-            project = next(iter(known))
-        else:
-            return {"question": "Which project is this for?", "choices": [*known, "a new project (give it a name)"]}
+        cwd = native.session_cwd()
+        matches = [(name, Path(value["repo"]).expanduser()) for name, value in known.items()
+                   if cwd and cwd.resolve().is_relative_to(Path(value["repo"]).expanduser().resolve())]
+        if len(matches) == 1:
+            return matches[0]
+        return {"question": "Which project is this for? Select it in Hermes, or give its name or checkout path.",
+                "choices": list(known)}
     for name in (project, _key(project)):
         if name in known:
             return name, Path(known[name]["repo"]).expanduser()
     if project.startswith(("/", "~")):
-        return save_project(Path(project).expanduser().name, project, cfg)
-    guess = Path(cfg["projects_root"]).expanduser() / _slug(project)
-    choices = ([str(guess)] if guess.is_dir() and not _checkout(guess) else []) + ["new"]
-    return {"project": project, "choices": choices,
-            "question": f"Where is the repo for {project}? The path to its git checkout, or new to start one at "
-                        f"{guess}. It is saved for next time."}
+        path = Path(project).expanduser()
+        why = _checkout(path)
+        return {"error": why} if why else (_key(path.name), path)
+    return {"project": project, "choices": [],
+            "question": f"Where is the checkout for {project}? Select or create its project in Hermes first."}
 
 
 def plan(args: dict) -> dict:
@@ -150,9 +155,12 @@ def plan(args: dict) -> dict:
     else:
         found = resolve_project(args.get("project"), cfg)
     if isinstance(found, dict):
-        return found if "error" in found else {**found, "next": "Ask the user (clarify), then call cpipe_plan "
-                                                               "again with project and repo set from the answer."}
+        return found if "error" in found else {**found, "next": "Use Hermes native clarify/project selection. "
+                                              "No delivery was started. After selecting the checkout, rerun "
+                                              "the explicit /cp-plan command; ordinary answers never start one."}
     name, repo = found
+    if why := _checkout(repo):
+        return {"error": why}
     known = workspace_prep.projects().get(name) or {}
     engine = args.get("engine") or known.get("engine") or cfg.get("roles", {}).get("build") or cfg["default_engine"]
     if engine not in cfg["engines"]:
@@ -224,7 +232,7 @@ def stop(args: dict) -> dict:
         return {"task_id": args["task_id"], "archived": hermes_api.archive(conn, args["task_id"])}
 
 
-HANDLERS = {"cpipe_plan": plan, "cpipe_feedback": feedback, "cpipe_build": build, "cpipe_ship": ship,
+HANDLERS = {"cpipe_plan": plan, "cpipe_build": build, "cpipe_ship": ship,
             "cpipe_status": status, "cpipe_stop": stop}
 
 
@@ -240,16 +248,15 @@ def call(name: str, args: dict) -> str:
 
 
 
-# --- slash commands: /cp-ship, /cp-feedback, /cp-ready, /cp-status, /cp-stop ---
+# --- explicit delivery lifecycle commands; Hermes owns interaction/project setup ---
 
 def _text(out: dict) -> str:
     if out.get("error"):
         return f"cpipe: {out['error']}"
     if out.get("question"):
-        name = out.get("project") or "<name>"
-        return (f"cpipe: {out['question']}\nAnswer with /cp-project {name} <path>"
-                + (" (or new)" if "new" in out["choices"] else "") + ", then /cp-plan again."
-                + ("\nChoices: " + ", ".join(out["choices"]) if out["choices"] else ""))
+        return (f"cpipe: {out['question']}\nUse Hermes native project selection/clarify, then rerun /cp-plan. "
+                "No delivery was started."
+                + ("\nChoices: " + ", ".join(out["choices"]) if out.get("choices") else ""))
     if "deliveries" in out:
         return "\n".join(_text(d) for d in out["deliveries"]) or "cpipe: no open deliveries"
     parts = [out.get("task_id", ""), out.get("title") or out.get("project") or "",
@@ -298,21 +305,11 @@ def _plan_args(raw: str) -> dict:
     return {"request": raw, "size": size}
 
 
-def _project(raw: str) -> dict:
-    name, _, repo = raw.strip().rpartition(" ")   # the last word is the path (or new): names may have spaces
-    if not name.strip():
-        return {"error": "usage: /cp-project <name> <path|new>"}
-    found = save_project(name.strip(), repo, settings.load())
-    return found if isinstance(found, dict) else {"project": found[0], "note": f"saved: {found[1]}"}
-
-
 COMMANDS = {
     "cp-plan": ("Start an explicit delivery: large plans first; small/content start implementation",
                 "[--size content|small|large] [project:] <idea>",
                 lambda raw: plan(_plan_args(raw))),
-    "cp-project": ("Save where a project's repo is (new starts one)", "<name> <path|new>", lambda raw: _project(raw)),
-    "cp-feedback": ("Answer the plan's questions, or send changes", "<card> <text>",
-                    lambda raw: feedback(dict(zip(("task_id", "text"), _split(raw))))),
+
     "cp-build": ("Approve the plan: build, test, review, draft PR", "<card> [notes]",
                  lambda raw: build(dict(zip(("task_id", "text"), _split(raw))))),
     "cp-ship": ("Accept the change: final checks, PR ready for review", "<card> [last changes]",
@@ -333,10 +330,11 @@ def command(name: str, raw: str) -> str:
 
 
 def register(ctx) -> None:
+    native.register(ctx)
     if not settings.load()["command_only"]:
         for name, schema in SCHEMAS.items():
             ctx.register_tool(name=name, toolset="cpipe", schema=schema,
                               handler=lambda args, _n=name, **kw: call(_n, args))
     if hasattr(ctx, "register_command"):
-        for name, (desc, hint, _) in COMMANDS.items():
-            ctx.register_command(name, lambda raw="", _n=name: command(_n, raw), description=desc, args_hint=hint)
+        from . import intents
+        intents.register(ctx)

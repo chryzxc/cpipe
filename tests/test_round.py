@@ -121,6 +121,8 @@ def settle(board, sched, tids, want="review"):
 def repo(tmp_path, hermes_home, monkeypatch):
     """The python fixture without QA (no app servers in tests), fake gh on PATH, fake logs in tmp."""
     fx = make_repo(tmp_path, "python")
+    monkeypatch.chdir(fx.repo)
+    monkeypatch.setenv("HERMES_SESSION_ID", "")
     fx.profile["qa"] = "off"
     install([fx], hermes_home)
     bin_dir = tmp_path / "bin"
@@ -161,7 +163,7 @@ def test_delivery_end_to_end(board, repo):
     assert "a - b" in (repo.repo / "calc.py").read_text() and len(calls(repo)) == 1
     assert "approve with /cp-build" in h.latest_summary(board, tid)
 
-    tools.command("cp-feedback", f"{tid} floats: no, ints only")  # answers revise the plan, same session
+    tools.feedback({"task_id": tid, "text": "floats: no, ints only"})  # answers revise the plan, same session
     settle(board, sched, [tid])
     revise = calls(repo)[-1]
     assert revise["resumed"] and "ints only" in revise["prompt"] and "(revised)" in tools.status({"task_id": tid})["plan"]
@@ -185,7 +187,7 @@ def test_delivery_end_to_end(board, repo):
     assert "--draft" in create and "## How to test" in create[create.index("--body") + 1]
     assert str(ws) not in create[create.index("--body") + 1]
 
-    assert f"{tid}  " in tools.command("cp-feedback", f"{tid} also leave a note in calc.py")
+    assert tools.feedback({"task_id": tid, "text": "also leave a note in calc.py"})["task_id"] == tid
     settle(board, sched, [tid])
     last = [c for c in calls(repo) if not c["readonly"]][-1]
     assert last["resumed"] and last["thread"] == builds[0]["thread"] and "also leave a note" in last["prompt"]
@@ -261,8 +263,8 @@ def test_unknown_project_asks_then_saves(board, repo, tmp_path, hermes_home):
     root = tmp_path / "projects"
     sched = lanes(projects_root=str(root))
     asked = tools.plan({"request": "a calculator", "project": "Calc App"})
-    assert asked["choices"] == ["new"] and "clarify" in asked["next"] and "task_id" not in asked
-    assert "/cp-project Calc App <path> (or new)" in tools.command("cp-plan", "Calc App: a calculator")
+    assert asked["choices"] == [] and "clarify" in asked["next"] and "task_id" not in asked
+    assert "Hermes native project selection/clarify" in tools.command("cp-plan", "Calc App: a calculator")
     shipped = tools.plan({"request": "a calculator", "project": "Calc App", "repo": "new"})
     assert shipped["project"] == "calc-app"
     assert workspace_prep.projects()["calc-app"]["repo"] == str(root / "calc-app")

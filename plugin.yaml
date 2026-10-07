@@ -1,8 +1,10 @@
 name: cpipe
-version: 0.8.0
+version: 0.8.1
 manifest_version: 2
 api_version: 1
-description: "Opt-in development workflows for Hermes Agent: explicit slash commands, content/small/large paths, profiled handoffs, and tested, reviewed pull requests. A fixed graph drives bounded feedback loops; shipping marks a PR ready for human review, never merges."
+provides_tools: [cpipe_execute_intent]
+provides_hooks: [pre_llm_call, post_tool_call]
+description: "Session-aware development commands for Hermes Agent: natural-language planning, building, shipping and status using conversation context. Supports direct changes and draft pull requests, plus opt-in profiled workflows. Never merges."
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
 tags: [hermes-agent, delivery, workflow, planning, tdd, kanban, code-review, qa, profiled-agents, opt-in-workflow, graph-engineering, loop-engineering]
