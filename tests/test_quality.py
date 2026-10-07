@@ -77,13 +77,19 @@ def test_a_check_dies_with_the_worker_that_started_it(tmp_path):
     check = int(pidfile.read_text())
     worker.kill()  # the worker dies mid-check, so its own timeout never fires
     worker.wait()
-    for _ in range(50):
-        try:
-            os.kill(check, 0)
-        except ProcessLookupError:
+    deadline = time.monotonic() + quality.ORPHAN_POLL + 3
+    while time.monotonic() < deadline:
+        status = subprocess.run(["ps", "-o", "stat=", "-p", str(check)],
+                                capture_output=True, text=True).stdout.strip()
+        # Linux may retain a dead orphan as a zombie until PID 1 reaps it.
+        # kill(pid, 0) still succeeds then, but the check is no longer running.
+        if not status or status.startswith("Z"):
             break
         time.sleep(0.1)
     else:
-        os.killpg(check, 9)
+        try:
+            os.killpg(check, 9)
+        except ProcessLookupError:
+            pass
         raise AssertionError("the check outlived its worker")
     assert quality._run("exit 3", tmp_path).returncode == 3  # a check's own exit code still comes through

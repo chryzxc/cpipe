@@ -71,6 +71,21 @@ def test_worktree_gets_a_clone_of_the_code_index(tmp_path, monkeypatch):
     (main / ".codegraph").mkdir()
     (main / ".codegraph" / "codegraph.db").write_text("index")
     calls = []
+    run = subprocess.run
+
+    def clone_or_run(args, **kwargs):
+        if args[0] == "cp":
+            # The success path must not require CI's filesystem to support
+            # copy-on-write (the production path still refuses full copies).
+            import sys
+            flag = "-c" if sys.platform == "darwin" else "--reflink=always"
+            assert args == ["cp", flag, str(main / ".codegraph" / "codegraph.db"),
+                            str(wt / ".codegraph")]
+            workspace_prep.shutil.copyfile(args[2], wt / ".codegraph" / "codegraph.db")
+            return subprocess.CompletedProcess(args, 0)
+        return run(args, **kwargs)
+
+    monkeypatch.setattr(workspace_prep.subprocess, "run", clone_or_run)
     monkeypatch.setattr(workspace_prep.shutil, "which", lambda name: "/bin/" + name)
     monkeypatch.setattr(workspace_prep, "_sync_codegraph", calls.append)
     assert workspace_prep.link_codegraph(wt)
@@ -81,3 +96,25 @@ def test_worktree_gets_a_clone_of_the_code_index(tmp_path, monkeypatch):
     assert ".codegraph" not in status.stdout
     assert not workspace_prep.link_codegraph(wt)      # already there
     assert not workspace_prep.link_codegraph(main)    # the main checkout keeps its own
+
+
+def test_code_index_clone_failure_leaves_no_copy(tmp_path, monkeypatch):
+    main, wt = repo_with_worktree(tmp_path)
+    (main / ".codegraph").mkdir()
+    (main / ".codegraph" / "codegraph.db").write_text("index")
+    run = subprocess.run
+    attempts, synced = [], []
+
+    def failed_clone_or_run(args, **kwargs):
+        if args[0] == "cp":
+            attempts.append(args)
+            return subprocess.CompletedProcess(args, 1)
+        return run(args, **kwargs)
+
+    monkeypatch.setattr(workspace_prep.subprocess, "run", failed_clone_or_run)
+    monkeypatch.setattr(workspace_prep.shutil, "which", lambda name: "/bin/" + name)
+    monkeypatch.setattr(workspace_prep, "_sync_codegraph", synced.append)
+    assert not workspace_prep.link_codegraph(wt)
+    assert len(attempts) == 1  # no fallback to an expensive full copy
+    assert not (wt / ".codegraph").exists()
+    assert synced == []
