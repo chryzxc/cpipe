@@ -16,8 +16,8 @@ from contextlib import closing
 from .home import root
 
 POLICIES = {
-    "cp-plan": "Plan the requested work using this conversation. Resolve the repository, full request and optional --size/project hints from session context. Use the authorized backend plan operation only for an explicitly requested cpipe delivery; default to large when size is unspecified.",
-    "cp-build": "Approve and build the matching cpipe plan with the configured builder, tests-first, independent review and verification. Use its same-session task_id. If none exists, resolve the full request and repository, then call the build operation without task_id, supplying request and project or repo. The backend returns an exact native clarify form: call clarify with that form unchanged. Its confirmation starts the small delivery automatically; report the hook result or use status, never ask the user to repeat /cp-plan and never call plan with this receipt. To review already implemented work, use /cp-review instead. Never implement this command in the coordinator session.",
+    "cp-plan": "Plan the requested work using this conversation. Resolve the repository, full request and optional --size/project hints from session context. Use the authorized backend plan operation only for an explicitly requested cpipe delivery. It returns a three-choice execution routing form; copy each returned clarify form unchanged until the user confirms routing. Never infer routing consent from saved defaults; default to large when size is unspecified.",
+    "cp-build": "Approve and build the matching cpipe plan with the configured builder, tests-first, independent review and verification. Use its same-session task_id. If none exists, resolve the full request and repository, then call the build operation without task_id, supplying request and project or repo. The backend returns an exact native clarify form: call clarify with that form unchanged. Its confirmation opens execution routing clarification; copy each returned clarify form unchanged until routing is confirmed. Then report the hook result or use status, never ask the user to repeat /cp-plan and never call plan with this receipt. To review already implemented work, use /cp-review instead. Never implement this command in the coordinator session.",
     "cp-review": "Independently review this work using the configured reviewer. Resolve the existing same-session task_id; otherwise adopt the current committed checkout with request/project/base. Stop locally after review; no edits or publishing. Findings return for /cp-fix, then /cp-verify.",
     "cp-fix": "Have the configured builder fix the specified review findings or bounded improvements; reuse its warm session. Then independently review and verify the resulting revision. Use the same-session task_id, or adopt the existing committed work. No publishing.",
     "cp-verify": "Run deterministic checks, independent review and verifier/QA on the final committed revision. Reuse valid exact-revision receipts. Use the same-session task_id or adopt existing work. Stop locally; no publishing. Missing required checks are not passes.",
@@ -86,7 +86,7 @@ def dispatch(ctx, name, message=""):
             conn.execute("DELETE FROM intents WHERE token=?", (token,))
         return ("cpipe: could not queue the command in this session. No work started. "
                 "Desktop/TUI requires an existing session and the plugin's allow_gateway_injection permission.")
-    return f"cpipe: /{name} queued — resolving this conversation, then handing off to specialists. Results follow here."
+    return f"cpipe: /{name} queued — resolving this conversation, then confirming execution routing for new work. Results follow here."
 
 
 def _active_delivery(sid):
@@ -115,9 +115,114 @@ def _build_start_form(conn, receipt, payload):
         "choices": ["Start a small delivery", "Cancel"],
     }]}
     result = {"status": "needs_confirmation", "session_id": sid, "arguments": scope, "clarify": form,
-              "next": "Call native clarify with the supplied form unchanged. Confirmation starts this delivery automatically; do not request another slash command."}
+              "next": "Call native clarify with the supplied form unchanged. Confirmation opens execution routing; copy subsequent clarify forms unchanged. Do not request another slash command."}
     conn.execute("UPDATE intents SET result=? WHERE token=?", (json.dumps(result), receipt["token"]))
     return result
+
+
+def _route_start_form(conn, receipt, payload, sid=None):
+    from . import routing
+    from .native import _session
+    sid = sid or _session(None)
+    if not sid:
+        return {"error": "routing selection requires the owning Hermes session"}
+    if receipt["result"]:
+        return json.loads(receipt["result"])
+    if not isinstance(payload.get("request"), str) or not payload["request"].strip():
+        return {"error": "resolve the full request before routing"}
+    scope = {k: payload[k] for k in ("request", "project", "repo", "title", "size") if k in payload}
+    pending = {"status": "needs_routing", "phase": "mode", "session_id": sid, "arguments": scope,
+               "clarify": routing.mode_form(scope, secrets.token_hex(12)),
+               "next": "Call clarify with this exact form. No work starts until execution routing is confirmed."}
+    conn.execute("UPDATE intents SET result=? WHERE token=?", (json.dumps(pending), receipt["token"]))
+    return pending
+
+
+def confirm_route_start(sid, asked, values):
+    """Receipt-bound native routing; model arguments cannot self-confirm a route."""
+    from . import routing, settings, tools
+    if not (root() / "cpipe-intents.db").exists() or len(values) != 1:
+        return None
+    with closing(_connect()) as conn:
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            for receipt in conn.execute("SELECT * FROM intents WHERE state='pending' AND result IS NOT NULL").fetchall():
+                pending = json.loads(receipt["result"])
+                if (pending.get("status") != "needs_routing" or pending.get("session_id") != sid
+                        or pending.get("clarify", {}).get("questions") != asked
+                        or receipt["expires"] < time.time() or not receipt["session_key"]
+                        or receipt["session_key"] != _session_key()):
+                    continue
+                break
+            else:
+                return None
+            value = values[0]
+            phase = pending["phase"]
+            cfg = settings.load()
+            try:
+                if phase == "mode":
+                    mode = routing.MODES.get(value)
+                    if not mode:
+                        return None
+                    if mode == "specialists":
+                        route = routing.specialist_route(cfg)
+                    else:
+                        choices = routing.candidates(cfg, mode)
+                        if not choices:
+                            raise ValueError("No available configured engine for this route. Configure it or select another route; no work started.")
+                        pending.update(mode=mode, candidates=choices, phase="engine", clarify={"questions": [{
+                            "question": f"[cpipe-engine {secrets.token_hex(12)}] Which configured {'Hermes profile' if mode == 'single' else 'external CLI'} should own the entire flow? "
+                                        + "Available: " + ", ".join(choices),
+                            **({"choices": list(choices)} if len(choices) <= 4 else {})}]})
+                        route = None
+                elif phase == "engine":
+                    if value not in pending["candidates"]:
+                        return None
+                    route = routing.snapshot(cfg, pending["mode"], value)
+                elif phase == "confirm":
+                    if value not in ("Start with this route", "Cancel"):
+                        return None
+                    if value == "Cancel":
+                        result = {"status": "cancelled"}
+                        conn.execute("UPDATE intents SET state='complete', result=? WHERE token=?", (json.dumps(result), receipt["token"]))
+                        _build_notice(conn, receipt["token"], sid, result)
+                        return result
+                    if _active_delivery(sid):
+                        raise ValueError("A same-session delivery appeared; resolve it instead of starting another.")
+                    route = pending["routing"]
+                    # Verify availability again; frozen assignments remain unchanged.
+                    if set(route["engines"]) != set(routing.candidates({"engines": route["engines"]},
+                            "external" if route["mode"] == "external" else "single")):
+                        raise ValueError("Selected route became unavailable; no work started.")
+                    conn.execute("UPDATE intents SET state='claimed' WHERE token=?", (receipt["token"],))
+                    route = None
+                else:
+                    return None
+                if route:
+                    pending.update(phase="confirm", routing=route, clarify={"questions": [{
+                        "question": f"[cpipe-route-confirm {secrets.token_hex(12)}] Confirm this delivery's execution route:\n"
+                                    + routing.describe(route), "choices": ["Start with this route", "Cancel"]}]})
+            except ValueError as exc:
+                # Keep the original mode form available for a different choice.
+                result = {"error": str(exc), "clarify": pending["clarify"]}
+                _build_notice(conn, receipt["token"], sid, result)
+                return result
+            if phase != "confirm":
+                conn.execute("UPDATE intents SET result=? WHERE token=?", (json.dumps(pending), receipt["token"]))
+                _build_notice(conn, receipt["token"], sid, pending)
+                return pending
+        payload = {**pending["arguments"], "engine": pending["routing"]["engine"], "routing": pending["routing"]}
+        try:
+            result = tools.HANDLERS["cpipe_plan"](payload)
+        except Exception as exc:
+            result = {"error": f"{type(exc).__name__}: {exc}; inspect status before reissuing the command"}
+            with conn:
+                _build_notice(conn, receipt["token"], sid, result)
+            return result
+        with conn:
+            conn.execute("UPDATE intents SET state='complete', result=? WHERE token=?", (json.dumps(result), receipt["token"]))
+            _build_notice(conn, receipt["token"], sid, result)
+        return result
 
 
 def _build_notice(conn, token, sid, result):
@@ -134,7 +239,7 @@ def build_start_context(sid):
             return None
         conn.execute("DELETE FROM build_notices WHERE session_id=?", (sid,))
     return {"context": "[cpipe build confirmation results]\n" + "\n".join(row["result"] for row in rows)
-            + "\nReport the result or check status. Do not request another /cp-plan: the confirmation has been handled. Do not infer shipping or merging permission."}
+            + "\nIf a clarify form is supplied, call clarify with that exact form to continue routing. Otherwise report the result or check status. Do not request another /cp-plan. Do not infer shipping or merging permission."}
 
 
 def confirm_build_start(sid, asked, values):
@@ -161,23 +266,14 @@ def confirm_build_start(sid, asked, values):
                                  (json.dumps(result), receipt["token"]))
                     _build_notice(conn, receipt["token"], sid, result)
                     return result
-                conn.execute("UPDATE intents SET state='claimed' WHERE token=?", (receipt["token"],))
-                break
+                conn.execute("UPDATE intents SET result=NULL WHERE token=?", (receipt["token"],))
+                fresh = dict(receipt)
+                fresh["result"] = None
+                result = _route_start_form(conn, fresh, pending["arguments"], sid)
+                _build_notice(conn, receipt["token"], sid, result)
+                return result
             else:
                 return None
-        try:
-            result = tools.HANDLERS["cpipe_plan"](pending["arguments"])
-        except Exception as exc:
-            # The handler may already have submitted a card. Never replay it.
-            result = {"error": f"{type(exc).__name__}: {exc}; inspect status before reissuing the command"}
-            with conn:
-                _build_notice(conn, receipt["token"], sid, result)
-            return result
-        with conn:
-            conn.execute("UPDATE intents SET state='complete', result=? WHERE token=?",
-                         (json.dumps(result), receipt["token"]))
-            _build_notice(conn, receipt["token"], sid, result)
-        return result
 
 
 def execute(args, **_):
@@ -203,6 +299,8 @@ def execute(args, **_):
                     return receipt["result"]
                 if receipt["state"] != "pending":
                     return json.dumps({"error": "operation already claimed; inspect status before retrying"})
+                if operation == "plan":
+                    return json.dumps(_route_start_form(conn, receipt, payload))
                 if operation == "build" and not payload.get("task_id"):
                     return json.dumps(_build_start_form(conn, receipt, payload))
                 if operation not in ("plan", "review", "fix", "verify", "ship") or payload.get("task_id"):

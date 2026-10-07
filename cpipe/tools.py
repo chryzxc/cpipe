@@ -161,6 +161,9 @@ def plan(args: dict) -> dict:
     name, repo = found
     if why := _checkout(repo):
         return {"error": why}
+    if args.get("routing"):
+        from .routing import effective_config
+        cfg = effective_config(cfg, args["routing"])
     known = workspace_prep.projects().get(name) or {}
     engine = args.get("engine") or known.get("engine") or cfg.get("roles", {}).get("build") or cfg["default_engine"]
     if engine not in cfg["engines"]:
@@ -171,7 +174,7 @@ def plan(args: dict) -> dict:
     with closing(hermes_api.connect(None)) as conn:
         tid = hermes_api.create_card(conn, title=title, body=request, assignee=f"cp:{engine}",
                                      repo=str(repo), branch=branch,
-                                     model=args.get("model"), size=size)
+                                     model=args.get("model"), size=size, routing=args.get("routing"))
     return {"task_id": tid, "project": name, "engine": engine, "branch": branch, "size": size}
 
 
@@ -297,6 +300,7 @@ def _brief(conn, task) -> dict:
            "stage": STAGES.get(node, "planning" if not st.get("approved") else "building"),
            "engine": st.get("engine") or task.assignee[3:], "pr": st.get("pr_url"),
            "verification": st.get("verification"), "findings": st.get("findings"),
+           "routing": st.get("routing"),
            "source_head": (st.get("adoption") or {}).get("head"), "verified_head": st.get("verified_head")}
     if node == "proposal":
         out.update(plan=st.get("plan"), questions=st.get("questions"))

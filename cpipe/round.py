@@ -154,6 +154,8 @@ def feedback(conn, task_id: str, state: dict) -> str:
         if c.author in DIRECTIVES:
             key, value = DIRECTIVES[c.author]
             state[key] = value
+        elif c.author == "cpipe:routing":
+            continue  # constructor applies frozen routing before any engine call
         elif c.author == "cpipe:size":
             if state.get("node") == "setup" and c.body.strip() in ("large", "small", "content"):
                 state["size"] = c.body.strip()
@@ -210,6 +212,14 @@ class Round:
         self.task_id, self.ws, self.conn, self.cfg = task_id, ws, conn, cfg
         self.task = hermes_api.get_task(conn, task_id)
         self.state = load_state(ws) or new_state(ws, self.task, engine)
+        route = self.state.get("routing")
+        if not route and conn is not None:
+            route = next((json.loads(c.body) for c in hermes_api.comments_after(conn, task_id)
+                          if c.author == "cpipe:routing"), None)
+        if route:
+            from .routing import effective_config
+            self.state["routing"] = route
+            self.cfg = effective_config(cfg, route)
         self.limits = cfg["limits"]
         self.rounds = self.state.setdefault("rounds", {})
         # Migrate older single-engine state once; newer state records each engine/profile owner.
@@ -391,7 +401,8 @@ class Round:
             ids.append(hermes_api.create_card(
                 self.conn, title=part["title"], body=part["request"], assignee=self.task.assignee,
                 repo=main_checkout(self.ws), branch=f"{self.task.branch_name}-{i + 1}",
-                model=self.task.model_override, parents=after, creator_task_id=self.task_id))
+                model=self.task.model_override, parents=after, creator_task_id=self.task_id,
+                routing=self.state.get("routing")))
             hermes_api.comment(self.conn, ids[-1], "part of an approved plan", author="cpipe:approved")
         self.state["children"] = ids
         return "ok", ""
@@ -533,7 +544,8 @@ class Round:
         current_head = head(self.ws)
         key = self.gate_key()
         if self.state.get("review_receipt") == key and not self.state.get("findings") and self.clean_revision():
-            return True, f"Review ({eng_name}): approved (same revision; reused)"
+            return True, f"Review ({eng_name}): approved (same revision; reused)" + (
+                f"; {self.state['routing']['review_kind']}" if self.state.get("routing") else "")
         owner = [eng_name, eng.__name__, ec.get("profile") or "default"]
         session = (self.state.get("review_session")
                    if self.state.get("review_owner") == owner and self.state.get("review_engine") == name else None)
@@ -592,10 +604,12 @@ class Round:
             if self.gate_key() != key:
                 return None, "Review: revision or gate configuration changed during the verdict; rerun review"
             self.state.update(review_receipt=key, findings=[])
-            return True, f"Review ({eng_name}): approved"
+            return True, f"Review ({eng_name}): approved" + (
+                f"; {self.state['routing']['review_kind']}" if self.state.get("routing") else "")
         if r.status == "changes":
             self.state["findings"] = r.data.get("findings") or [r.summary]
-            return False, "The independent review asks for changes:\n" + "\n".join(f"- {f}" for f in self.state["findings"])
+            label = (self.state.get("routing") or {}).get("review_kind", "independent review")
+            return False, f"The {label} asks for changes:\n" + "\n".join(f"- {f}" for f in self.state["findings"])
         return None, f"Review: skipped ({eng_name} {r.status})"
 
     def security(self) -> tuple[Optional[bool], str]:

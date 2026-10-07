@@ -55,8 +55,10 @@ def load(raw: Any = None) -> dict:
     cfg["limits"] = {**DEFAULTS["limits"], **(raw.get("limits") or {})}
     if not cfg["engines"] or not isinstance(cfg["engines"], dict):
         raise ValueError("cpipe.yaml engines must be a non-empty mapping")
+    cfg["engines"] = dict(cfg["engines"])
     if "default_engine" not in raw and raw.get("engines") and "hermes" not in cfg["engines"]:
         cfg["default_engine"] = next(iter(cfg["engines"]))
+    cfg["engines"].setdefault("hermes", {"kind": "hermes", "bin": "hermes", "profile": "default", "concurrency": 3})
     roles = cfg.get("roles", {})
     if not isinstance(roles, dict):
         raise ValueError("roles must be a mapping of discover/plan/build/review/qa to configured engines")

@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from cpipe import intents, native, tools
+from cpipe import intents, native, tools, engines
 from cpipe.runtime import hermes_api as h
 
 
@@ -21,6 +21,7 @@ class Context:
 def start(board, monkeypatch):
     monkeypatch.setattr(intents, "_session_key", lambda: "chat-a")
     monkeypatch.setattr(native, "_session", lambda explicit: explicit or "chat-a")
+    monkeypatch.setattr(engines, "available", lambda *a: (True, ""))
     ctx = Context()
     intents.dispatch(ctx, "cp-build", "Save submitted applications and their submission dates")
     match = re.search(r"receipt: ([\w-]+)", ctx.prompt)
@@ -37,14 +38,26 @@ def reply(form, choice="Start a small delivery", **extra):
     return {"responses": [{"question": form["questions"][0]["question"], "user_response": choice}], **extra}
 
 
+def finish(form):
+    result = native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form))
+    assert result["status"] == "needs_routing"
+    for value in ("Single Hermes profile (default or another)", "hermes", "Start with this route"):
+        form = result["clarify"]
+        result = native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form, value))
+    return result
+
+
 def test_build_confirmation_starts_same_request_once(start):
     args, calls = start
     out = json.loads(intents.execute(args))
     assert out["status"] == "needs_confirmation" and not calls
     form = out["clarify"]
-    result = native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form))
+    result = finish(form)
     assert result["task_id"] == "new-delivery"
-    assert calls == [{**args["arguments"], "size": "small"}]
+    assert len(calls) == 1
+    assert calls[0]["size"] == "small"
+    assert calls[0]["routing"]["mode"] == "single"
+    assert calls[0]["request"] == args["arguments"]["request"]
     assert native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form)) is None
     assert json.loads(intents.execute(args))["task_id"] == "new-delivery"
     assert len(calls) == 1
@@ -101,7 +114,7 @@ def test_pending_form_preserves_scope_on_retry(start):
     retry = json.loads(intents.execute({**args, "arguments": {"request": "different work", "project": "other"}}))
     assert retry == first
     form = first["clarify"]
-    native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form))
+    finish(form)
     assert calls[0]["request"] == args["arguments"]["request"]
 
 
@@ -115,7 +128,7 @@ def test_existing_delivery_is_not_replaced_by_new_start(start, board):
 def test_confirmation_outcome_reaches_next_llm_once(start):
     args, _ = start
     form = json.loads(intents.execute(args))["clarify"]
-    native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form))
+    finish(form)
     assert native.before_turn(session_id="chat-b") is None
     assert "new-delivery" in native.before_turn(session_id="chat-a")["context"]
     assert native.before_turn(session_id="chat-a") is None
@@ -129,7 +142,7 @@ def test_handler_failure_is_reported_without_replaying(start, monkeypatch):
         calls.append(payload)
         raise RuntimeError("submission interrupted")
     monkeypatch.setitem(tools.HANDLERS, "cpipe_plan", fail)
-    result = native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form))
+    result = finish(form)
     assert "submission interrupted" in result["error"]
     assert "submission interrupted" in native.before_turn(session_id="chat-a")["context"]
     assert native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form)) is None
@@ -155,7 +168,7 @@ def test_confirmation_creates_real_same_session_small_delivery(start, board, tmp
     monkeypatch.setitem(tools.HANDLERS, "cpipe_plan", tools.plan)
     form = json.loads(intents.execute(args))["clarify"]
     assert h.list_cards(board) == []
-    result = native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form))
+    result = finish(form)
     task = h.get_task(board, result["task_id"])
     assert task is not None
     assert task.session_id == "chat-a" and task.assignee == "cp:hermes" and task.status == "ready"
