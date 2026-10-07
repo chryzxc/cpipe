@@ -141,7 +141,7 @@ def _route_start_form(conn, receipt, payload, sid=None):
 def confirm_route_start(sid, asked, values):
     """Receipt-bound native routing; model arguments cannot self-confirm a route."""
     from . import routing, settings, tools
-    if not (root() / "cpipe-intents.db").exists() or len(values) != 1:
+    if not (root() / "cpipe-intents.db").exists() or not values:
         return None
     with closing(_connect()) as conn:
         with conn:
@@ -156,8 +156,10 @@ def confirm_route_start(sid, asked, values):
                 break
             else:
                 return None
-            value = values[0]
             phase = pending["phase"]
+            if len(values) != (len(routing.ROLES) if phase == "roles" else 1):
+                return None
+            value = values[0]
             cfg = settings.load()
             try:
                 if phase == "mode":
@@ -165,7 +167,13 @@ def confirm_route_start(sid, asked, values):
                     if not mode:
                         return None
                     if mode == "specialists":
-                        route = routing.specialist_route(cfg)
+                        try:
+                            route = routing.specialist_route(cfg)
+                        except ValueError:
+                            choices = routing.specialist_candidates(cfg)
+                            form = routing.specialist_form(choices)
+                            pending.update(mode=mode, candidates=choices, phase="roles", clarify=form)
+                            route = None
                     else:
                         choices = routing.candidates(cfg, mode)
                         if not choices:
@@ -175,6 +183,16 @@ def confirm_route_start(sid, asked, values):
                                         + "Available: " + ", ".join(choices),
                             **({"choices": list(choices)} if len(choices) <= 4 else {})}]})
                         route = None
+                elif phase == "roles":
+                    try:
+                        route = routing.selected_specialists(cfg, pending["candidates"], values)
+                    except ValueError as exc:
+                        pending["clarify"] = routing.specialist_form(pending["candidates"], str(exc))
+                        pending["error"] = str(exc)
+                        conn.execute("UPDATE intents SET result=? WHERE token=?", (json.dumps(pending), receipt["token"]))
+                        _build_notice(conn, receipt["token"], sid, pending)
+                        return pending
+                    pending.pop("error", None)
                 elif phase == "engine":
                     if value not in pending["candidates"]:
                         return None
@@ -229,8 +247,8 @@ def _build_notice(conn, token, sid, result):
     conn.execute("INSERT OR REPLACE INTO build_notices VALUES (?, ?, ?)", (token, sid, json.dumps(result)))
 
 
-def build_start_context(sid):
-    """Post-tool hooks are observers; deliver their outcome through pre-LLM context."""
+def take_build_results(sid):
+    """Read and consume outcomes once for this session only."""
     if not (root() / "cpipe-intents.db").exists():
         return None
     with closing(_connect()) as conn, conn:
@@ -238,7 +256,15 @@ def build_start_context(sid):
         if not rows:
             return None
         conn.execute("DELETE FROM build_notices WHERE session_id=?", (sid,))
-    return {"context": "[cpipe build confirmation results]\n" + "\n".join(row["result"] for row in rows)
+    return [json.loads(row["result"]) for row in rows]
+
+
+def build_start_context(sid):
+    """Fallback for hosts that consume notices at the next turn boundary."""
+    results = take_build_results(sid)
+    if not results:
+        return None
+    return {"context": "[cpipe build confirmation results]\n" + "\n".join(json.dumps(result) for result in results)
             + "\nIf a clarify form is supplied, call clarify with that exact form to continue routing. Otherwise report the result or check status. Do not request another /cp-plan. Do not infer shipping or merging permission."}
 
 

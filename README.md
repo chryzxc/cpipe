@@ -336,7 +336,7 @@ Up to five lessons are supplied to later builds. Repeated recoveries can suggest
 
 ## Development
 
-The current package version is **0.9.2**. The workflow is defined in `cpipe/graph.py`, with tests for transitions and correction limits. The previous implementation is preserved under the `v1-final` tag.
+The current package version is **0.9.3**. The workflow is defined in `cpipe/graph.py`, with tests for transitions and correction limits. The previous implementation is preserved under the `v1-final` tag.
 
 | Module | Responsibility |
 |---|---|

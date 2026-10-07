@@ -1,9 +1,9 @@
 name: cpipe
-version: "0.9.2"
+version: "0.9.3"
 manifest_version: 2
 api_version: 1
 provides_tools: [cpipe_execute_intent]
-provides_hooks: [pre_llm_call, post_tool_call]
+provides_hooks: [pre_llm_call, post_tool_call, transform_tool_result]
 description: "A development workflow for Hermes Agent that brings planning, implementation, testing, and independent review together to prepare draft pull requests."
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
