@@ -2,8 +2,8 @@
 
 A command is an explicit user action, not a positional delivery-id parser. An
 opaque, expiring receipt allows only that command's backend operation; normal
-conversation cannot start a delivery through the bridge. Direct changes can be
-shipped with native tools without manufacturing a cpipe delivery.
+conversation cannot start a delivery through the bridge. Stage commands adopt
+existing committed work and run specialist gates; they never bypass the runner.
 """
 from __future__ import annotations
 
@@ -17,19 +17,22 @@ from .home import root
 
 POLICIES = {
     "cp-plan": "Plan the requested work using this conversation. Resolve the repository, full request and optional --size/project hints from session context. Use the authorized backend plan operation only for an explicitly requested cpipe delivery; default to large when size is unspecified.",
-    "cp-build": "Build the plan or changes discussed in this conversation. If a matching existing cpipe delivery owns this work, use its build operation. Otherwise implement directly with Hermes tools in the verified checkout; do not create a delivery merely to build earlier direct work.",
-    "cp-ship": "Ship the changes discussed in this conversation, including earlier direct work without a cpipe delivery. Verify the checkout, branch, scoped diff, tests, remote and PR target. Honor the user's requested PR state: 'draft PR' means create/update a draft, NOT mark it ready. For direct work or a draft request use native Git/GitHub tools; do not create a new cpipe delivery or use the backend ship operation. Use backend ship only to accept a matching completed cpipe delivery for final checks and readiness. Without a stated PR state, default to draft. Never merge, deploy or publish a release.",
+    "cp-build": "Approve and build the matching cpipe plan with the configured builder, tests-first, independent review and verification. Use its same-session task_id. If none exists, clarify whether to start /cp-plan --size small or adopt existing work with /cp-review. Never implement this command in the coordinator session.",
+    "cp-review": "Independently review this work using the configured reviewer. Resolve the existing same-session task_id; otherwise adopt the current committed checkout with request/project/base. Stop locally after review; no edits or publishing. Findings return for /cp-fix, then /cp-verify.",
+    "cp-fix": "Have the configured builder fix the specified review findings or bounded improvements; reuse its warm session. Then independently review and verify the resulting revision. Use the same-session task_id, or adopt the existing committed work. No publishing.",
+    "cp-verify": "Run deterministic checks, independent review and verifier/QA on the final committed revision. Reuse valid exact-revision receipts. Use the same-session task_id or adopt existing work. Stop locally; no publishing. Missing required checks are not passes.",
+    "cp-ship": "Run the collaborative review/fix/verification flow before publishing this work. Use the same-session task_id, or adopt earlier work without a cpipe delivery. Use the backend ship operation, never a direct-tools bypass. Default to draft; ready=true only when the user explicitly asks to mark it ready. Never merge, deploy or publish a release.",
     "cp-status": "Report current status of the work discussed here from real Git/PR/test or matching cpipe evidence. Do not mutate work or start a delivery.",
     "cp-stop": "Stop only the work or existing cpipe delivery identified by this conversation and the user's message. Do not delete files, reset branches, archive unrelated deliveries or stop unrelated services.",
 }
 
 SCHEMA = {
     "name": "cpipe_execute_intent",
-    "description": "Execute the cpipe backend operation authorized by a specific explicit /cp-* command. Requires its receipt token. Ordinary chat has no receipt and cannot start a delivery. For direct work and draft PR requests use native tools instead.",
+    "description": "Execute the cpipe backend operation authorized by a specific explicit /cp-* command. Requires its receipt token. Ordinary chat has no receipt and cannot start a delivery. Stage commands adopt existing work and dispatch configured specialist profiles.",
     "parameters": {"type": "object", "properties": {
         "token": {"type": "string"},
-        "operation": {"type": "string", "enum": ["plan", "build", "ship", "status", "stop"]},
-        "arguments": {"type": "object", "description": "Resolved backend arguments: request/repo/project/size for plan, task_id/text for existing deliveries."},
+        "operation": {"type": "string", "enum": ["plan", "build", "review", "fix", "verify", "ship", "status", "stop"]},
+        "arguments": {"type": "object", "description": "Resolved scope: request/project/size for plan; task_id/text for an existing delivery, or request/project/base to adopt committed work; ready=true only when explicitly requested."},
     }, "required": ["token", "operation", "arguments"]},
 }
 
@@ -57,9 +60,7 @@ def dispatch(ctx, name, message=""):
         return "cpipe: this Hermes host cannot queue session-aware commands; update Hermes. No work started."
     token = secrets.token_urlsafe(24)
     key = _session_key()
-    # The backend ship transition marks a PR ready; it must never execute a
-    # request explicitly asking for a draft. Native tools preserve that state.
-    operation = "draft" if name == "cp-ship" and "draft" in message.casefold() else name[3:]
+    operation = name[3:]
     prompt = (f"The user explicitly invoked /{name} in this conversation. Use the existing session history "
               "and native project context as reference; the message below is normal user guidance, not a delivery id.\n"
               + POLICIES[name] + "\nResolve targets from evidence; use native clarify only if genuinely ambiguous. "
@@ -67,7 +68,7 @@ def dispatch(ctx, name, message=""):
               "verification. Do not claim queued work has completed. An optional delivery id is only a reference. "
               "Do not infer scope, base branch or approvals from plugin defaults.\n"
               f"For cpipe backend work only, cpipe_execute_intent receipt: {token}. "
-              f"Permitted mutation: {operation} (draft uses native tools only); status lookup is also allowed. "
+              f"Permitted operation: {operation}; status lookup is also allowed. "
               "Use the matching same-session delivery, never an unrelated card.\n"
               "User message (preserved verbatim):\n" + message)
     with closing(_connect()) as conn, conn:
@@ -83,7 +84,7 @@ def dispatch(ctx, name, message=""):
             conn.execute("DELETE FROM intents WHERE token=?", (token,))
         return ("cpipe: could not queue the command in this session. No work started. "
                 "Desktop/TUI requires an existing session and the plugin's allow_gateway_injection permission.")
-    return f"cpipe: /{name} queued in this session." if not name.startswith("/") else "cpipe: queued."
+    return f"cpipe: /{name} queued — resolving this conversation, then handing off to specialists. Results follow here."
 
 
 def execute(args, **_):
@@ -109,13 +110,13 @@ def execute(args, **_):
                     return receipt["result"]
                 if receipt["state"] != "pending":
                     return json.dumps({"error": "operation already claimed; inspect status before retrying"})
-                if operation != "plan":
+                if operation not in ("plan", "review", "fix", "verify", "ship") or payload.get("task_id"):
                     from .native import _session
                     sid = _session(None)
                     with closing(h.connect(None)) as board:
                         task = h.get_task(board, payload.get("task_id", ""))
                     if not sid or not task or task.session_id != sid or not (task.assignee or "").startswith("cp:"):
-                        return json.dumps({"error": "no matching same-session cpipe delivery; use native tools or clarify"})
+                        return json.dumps({"error": "no matching same-session cpipe delivery; clarify the target"})
                 conn.execute("UPDATE intents SET state='claimed' WHERE token=?", (token,))
         try:
             if operation == "status":
@@ -124,6 +125,8 @@ def execute(args, **_):
                 with closing(h.connect(None)) as board:
                     result = {"deliveries": [tools._brief(board, task) for task in h.list_cards(board)
                                               if sid and task.session_id == sid and task.status not in ("done", "archived")]}
+            elif operation in ("review", "fix", "verify", "ship"):
+                result = tools.stage(operation, payload)
             else:
                 result = tools.HANDLERS["cpipe_" + operation](payload)
             encoded = json.dumps(result)

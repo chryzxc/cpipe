@@ -66,7 +66,7 @@ def test_plugin_registers_cli_command_and_tools(monkeypatch):
     # a tool error is returned to the chat, never raised
     assert "error" in json.loads(ctx.tools["cpipe_plan"]["handler"]({"request": "x", "project": "p", "repo": "/dev/null"}))
     # the same, as slash commands
-    assert set(ctx.commands) == {"cp-plan", "cp-build", "cp-ship", "cp-status", "cp-stop"}
+    assert set(ctx.commands) == {"cp-plan", "cp-build", "cp-review", "cp-fix", "cp-verify", "cp-ship", "cp-status", "cp-stop"}
     assert "No work started" in ctx.commands["cp-plan"]("")
     assert "No work started" in ctx.commands["cp-plan"]("x")
 

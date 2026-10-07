@@ -10,7 +10,7 @@ plan → build → ship, and the user decides at each step:
     cpipe_stop      archive a delivery
 
 Slash commands enqueue natural-language intents in the current Hermes session. The receipt-gated
-bridge resolves their backend arguments from conversation context; direct work uses native tools.
+bridge resolves their backend arguments from conversation context; late entry adopts committed work.
 Unrestricted legacy model tools are exposed only with ``command_only: false``. Hermes owns project
 selection. This is opt-in routing, not a sandbox against deliberate shell/Python invocation.
 
@@ -193,6 +193,89 @@ def feedback(args: dict) -> dict:
     return _steer(args["task_id"], args["text"])
 
 
+def stage(entry: str, args: dict) -> dict:
+    """Enter a specialist stage on the owning card, or snapshot existing committed work.
+
+    Review is read-only. Fix/verify may run bounded rework. Only ship authorizes
+    publication, draft by default. Source checkout, branch and history stay intact.
+    """
+    if entry not in ("review", "fix", "verify", "ship"):
+        return {"error": "unknown collaborative stage"}
+    if not isinstance(args.get("ready", False), bool):
+        return {"error": "ready must be a boolean"}
+    if entry != "ship" and args.get("ready"):
+        return {"error": "only /cp-ship can authorize PR readiness"}
+    if args.get("task_id"):
+        if not re.fullmatch(r"t_[0-9a-f]{8}", args["task_id"]):
+            return {"error": "invalid task_id; resolve the matching delivery from this session"}
+        with closing(hermes_api.connect(None)) as conn:
+            task = hermes_api.get_task(conn, args["task_id"])
+            if not task or not (task.assignee or "").startswith("cp:") or task.status in ("done", "archived"):
+                return {"error": "no open cpipe delivery with that id"}
+            if task.status == "running":
+                return {"error": "delivery is running; wait for its handoff before entering another stage"}
+            state = report.state_of(conn, task)
+            if state.get("node") in ("setup", "plan", "split", "proposal", "tests"):
+                return {"error": "this delivery has not built a revision yet; approve it with /cp-build first"}
+            directive = {"entry": entry, "publish": entry == "ship", "ready": args.get("ready", False),
+                         "text": (args.get("text") or "").strip()}
+            if entry == "fix" and not directive["text"] and not state.get("findings"):
+                return {"question": "What findings or bounded improvements should the builder fix?"}
+            hermes_api.comment(conn, task.id, json.dumps(directive), "cpipe:stage")
+            hermes_api.resume(conn, task.id)
+            return {"task_id": task.id, "stage": entry, "note": "Specialist stage queued; results follow here."}
+
+    cfg = settings.load()
+    found = resolve_project(args.get("project") or args.get("repo"), cfg)
+    if isinstance(found, dict):
+        return {**found, "next": "Use native clarify/project selection; no workflow started."}
+    name, repo = found
+    if why := _checkout(repo):
+        return {"error": why}
+    dirty = _git("-C", str(repo), "status", "--porcelain", "--untracked-files=normal")
+    if dirty.returncode or dirty.stdout.strip():
+        return {"error": "Existing work must be committed in a clean checkout before adoption. "
+                         "No files were stashed, committed or reset."}
+    request = str(args.get("request") or "").strip()
+    if not request:
+        return {"question": "What should this existing change accomplish? Resolve its scope from this conversation."}
+    known = workspace_prep.projects().get(name) or {}
+    base = args.get("base") or known.get("base_branch") or workspace_prep.default_branch(repo)
+    if not isinstance(base, str) or _git("check-ref-format", "--branch", base).returncode:
+        return {"error": "base must be a valid branch name"}
+    ref = next((r for r in (f"refs/remotes/origin/{base}", f"refs/heads/{base}")
+                if _git("-C", str(repo), "rev-parse", "--verify", "-q", r).returncode == 0), None)
+    if not ref:
+        return {"error": f"PR base {base!r} is unavailable locally; fetch or choose its correct branch first"}
+    sha = _git("-C", str(repo), "rev-parse", "HEAD").stdout.strip()
+    merge = _git("-C", str(repo), "merge-base", ref, sha)
+    if merge.returncode:
+        return {"error": "source revision and PR base have no shared history"}
+    changed = _git("-C", str(repo), "diff", "--name-only", merge.stdout.strip(), sha)
+    if changed.returncode or not changed.stdout.strip():
+        return {"error": "there is no committed change against the PR base to adopt"}
+    engine = args.get("engine") or known.get("engine") or cfg.get("roles", {}).get("build") or cfg["default_engine"]
+    if engine not in cfg["engines"]:
+        return {"error": f"unknown engine {engine!r}"}
+    title = request.splitlines()[0][:100]
+    branch = f"cp/{_slug(title)}-{secrets.token_hex(4)}"
+    # Pre-create a branch at the exact receipt: dispatcher never guesses source HEAD.
+    created = _git("-C", str(repo), "branch", branch, sha)
+    if created.returncode:
+        return {"error": f"could not snapshot source revision: {created.stderr.strip()}"}
+    adoption = {"entry": entry, "publish": entry == "ship", "ready": args.get("ready", False),
+                "head": sha, "base": base, "base_head": _git("-C", str(repo), "rev-parse", ref).stdout.strip(),
+                "source_branch": _git("-C", str(repo), "branch", "--show-current").stdout.strip(),
+                "request": request}
+    with closing(hermes_api.connect(None)) as conn:
+        tid = hermes_api.create_card(conn, title=title, body=request, assignee=f"cp:{engine}", model=None,
+                                     repo=str(repo), branch=branch, idempotency_key=f"cpipe:adopt:{branch}",
+                                     max_runtime_seconds=(int(cfg["limits"]["round_minutes"]) + settings.PR_MINUTES) * 60,
+                                     adoption=adoption)
+        return {"task_id": tid, "project": name, "branch": branch, "stage": entry,
+                "source_head": sha, "note": "Existing work adopted; no retrospective TDD claim. Specialist results follow here."}
+
+
 def build(args: dict) -> dict:
     return _steer(args["task_id"], args.get("text") or "", "approved")
 
@@ -203,7 +286,8 @@ def ship(args: dict) -> dict:
 
 STAGES = {"setup": "planning", "plan": "planning", "proposal": "plan ready: approve with /cp-build",
           "ask": "needs your answer", "handoff": "ready to test: accept with /cp-ship", "final": "shipping",
-          "done": "shipped", "stuck": "stuck", "paused": "paused"}
+          "done": "shipped", "stuck": "stuck", "paused": "paused",
+          "review_stage": "reviewing", "reviewed": "review complete", "verified": "verification complete"}
 
 
 def _brief(conn, task) -> dict:
@@ -212,7 +296,8 @@ def _brief(conn, task) -> dict:
     out = {"task_id": task.id, "title": task.title, "status": task.status,
            "stage": STAGES.get(node, "planning" if not st.get("approved") else "building"),
            "engine": st.get("engine") or task.assignee[3:], "pr": st.get("pr_url"),
-           "verification": st.get("verification")}
+           "verification": st.get("verification"), "findings": st.get("findings"),
+           "source_head": (st.get("adoption") or {}).get("head"), "verified_head": st.get("verified_head")}
     if node == "proposal":
         out.update(plan=st.get("plan"), questions=st.get("questions"))
     return out

@@ -14,6 +14,10 @@ if args[:2] == ["repo", "view"]:
     print(json.dumps({"url": "https://github.com/acme/app"}))
 elif args[:2] == ["pr", "create"]:
     print("https://github.com/acme/app/pull/7")
+elif args[:2] == ["pr", "view"]:
+    import subprocess
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    print(json.dumps({"headRefOid": os.environ.get("FAKE_GH_HEAD", head)}))
 elif args[:2] == ["pr", "checks"]:
     print(os.environ.get("FAKE_GH_CHECKS", "[]"))
 elif args[:2] == ["run", "view"]:

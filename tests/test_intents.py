@@ -50,16 +50,18 @@ def test_commands_preserve_natural_language_in_same_session(hermes_home, monkeyp
     assert metadata["argument_mode"] == "text"
 
 
-def test_ship_direct_work_and_draft_do_not_create_delivery(hermes_home, monkeypatch):
+def test_ship_adopts_existing_work_and_uses_specialists_before_draft(hermes_home, monkeypatch):
     ctx = Context()
-    monkeypatch.setattr(tools, "plan", lambda *a: pytest.fail("delivery created"))
+    calls = []
+    monkeypatch.setattr(tools, "stage", lambda entry, args: calls.append((entry, args)) or {"stage": entry})
     assert "queued" in intents.dispatch(ctx, "cp-ship", "let’s create a draft PR for this")
     prompt = ctx.messages[0][0]
     assert "without a cpipe delivery" in prompt
-    assert "NOT mark it ready" in prompt and "default to draft" in prompt
-    assert "Never merge" in prompt
-    result = json.loads(intents.execute({"token": token(ctx), "operation": "ship", "arguments": {}}))
-    assert "incompatible" in result["error"]
+    assert "Default to draft" in prompt and "only when the user explicitly asks" in prompt
+    assert "never a direct-tools bypass" in prompt and "Never merge" in prompt
+    args = {"request": "Resolve existing scope"}
+    result = json.loads(intents.execute({"token": token(ctx), "operation": "ship", "arguments": args}))
+    assert result == {"stage": "ship"} and calls == [("ship", args)]
 
 
 @pytest.mark.parametrize("name", intents.POLICIES)

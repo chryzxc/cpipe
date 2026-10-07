@@ -48,16 +48,20 @@ def test_checks_run_without_hermes_python_path(tmp_path, monkeypatch):
     assert done.returncode == 0
 
 
-def test_a_broken_check_tool_is_skipped_and_reported_until_it_runs(tmp_path):
+def test_a_broken_required_check_blocks_and_is_reported_until_it_runs(tmp_path):
     home, ws, base = setup(tmp_path, '  - name: sec\n    files: "*.js"\n    run: "sh x.sh"\n'
                                      '  - name: gone\n    run: "no-such-tool-xyz {files}"\n')
     (ws / "x.sh").write_text("echo 'Traceback (most recent call last):'; exit 2\n")
     problems = home / "state" / "setup-problems.json"
-    assert quality.run_checks(ws, base, "app", home, "t_1") == []
+    evidence = []
+    failures = quality.run_checks(ws, base, "app", home, "t_1", evidence=evidence)
+    assert len(failures) == 2 and all(f.startswith("[unavailable]") for f in failures)
+    assert all(e["status"] == "unavailable" and e["required"] for e in evidence)
     assert set(json.loads(problems.read_text())) == {"sec", "gone"}
     assert json.loads(problems.read_text())["sec"]["card"] == "t_1"
     (ws / "x.sh").write_text("exit 0\n")
-    assert quality.run_checks(ws, base, "app", home) == []
+    failures = quality.run_checks(ws, base, "app", home)
+    assert len(failures) == 1 and "gone" in failures[0]
     assert set(json.loads(problems.read_text())) == {"gone"}
     assert quality.missing_tools("app", home) == ["gone"]
 

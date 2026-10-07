@@ -13,6 +13,7 @@ import argparse
 import contextlib
 import fcntl
 import json
+import hashlib
 import os
 import subprocess
 import threading
@@ -121,8 +122,19 @@ def feedback(conn, task_id: str, state: dict) -> str:
         elif c.author == "cpipe:size":
             if state.get("node") == "setup" and c.body.strip() in ("large", "small", "content"):
                 state["size"] = c.body.strip()
+        elif c.author in ("cpipe:adopt", "cpipe:stage"):
+            directive = json.loads(c.body)
+            if c.author == "cpipe:adopt" and state.get("node") == "setup":
+                state.update(adoption=directive, adopted=True, base=directive["base"])
+            state.update(entry=directive["entry"], publish=directive.get("publish", False),
+                         ready=directive.get("ready", False), stage_requested=True,
+                         stage_text=directive.get("text") or directive.get("request") or "")
+            if directive.get("text"):
+                state["review_scope"] = directive["text"]
         elif c.author != ME:
             said.append(f"{c.author}: {c.body.strip()}")
+    if said:
+        state["review_scope"] = "\n\n".join(filter(None, [state.get("review_scope"), *said]))
     return "\n\n".join(said)
 
 
@@ -242,8 +254,20 @@ class Round:
     # --- nodes: each returns (outcome, the next build prompt or "") ---
 
     def setup(self, prompt: str, said: str):
-        notes = workspace_prep.prepare(self.ws, self.state["base"])
+        # An adopted branch is frozen work, not a fresh delivery branch. Never
+        # reset it to the base just because its commit already exists on a remote.
+        adopted = self.state.get("adopted")
+        if adopted and head(self.ws) != self.state.get("adoption", {}).get("head"):
+            return "blocked", "The adopted commit changed before setup; adopt the current revision again."
+        notes = workspace_prep.prepare(self.ws, None if adopted else self.state["base"])
         prompt = build_prompt(self.task, self.ws, self.state, notes) + (f"\n\nAlso from the user:\n{said}" if said else "")
+        if self.state.get("adopted"):
+            if head(self.ws) != self.state["adoption"]["head"]:
+                return "blocked", "The adopted worktree is not at the requested revision; nothing was reviewed."
+            self.state["approved"] = True
+            self.state["stage_requested"] = False
+            self.state["verification"] = ["Adopted existing committed work; tests-first history was not asserted."]
+            return self.state["entry"], self.stage_prompt(prompt)
         size = self.state.get("size", "large")
         if size in ("small", "content"):
             self.state["approved"] = True  # explicit fast-path submission authorizes implementation
@@ -251,6 +275,22 @@ class Round:
             prompt += "\n\nContent-only scope. Do not add tests or change application logic."
             return "content", prompt
         return ("approved" if self.state.get("approved") else "ok"), prompt
+
+    def stage_prompt(self, prompt: str = "") -> str:
+        if self.state.get("entry") == "fix":
+            findings = "; ".join(self.state.get("findings") or [])
+            return (prompt + "\n\nFix only these bounded findings/improvements: "
+                    + (self.state.get("stage_text") or findings)
+                    + "\nAdd regression tests first for each correction. Do not claim the adopted work was TDD."
+                      " Test, commit, and return for independent review of the new revision.")
+        return prompt
+
+    def review_stage(self, prompt: str, said: str):
+        if not self.clean_revision():
+            return "blocked", "Review needs a clean committed worktree; commit the application changes first."
+        approved, detail = self.review()
+        self.state["stage_result"] = detail
+        return ("blocked", detail) if approved is None else ("ok", prompt)
 
     def plan(self, prompt: str, said: str):
         _, _, ec = self.engine(self.role_engine("plan"))
@@ -293,7 +333,9 @@ class Round:
             problems.append("A feature or fix needs new tests that fail now: give their command in `red_command`.")
         elif tdd["red"]:
             red = quality._run(tdd["red"], self.ws)
-            if red is not None and red.returncode == 0:
+            if red is None or red.returncode in (126, 127):
+                return "blocked", "The tests-first command could not run; unavailable tests are not evidence of RED."
+            if red.returncode == 0:
                 problems.append(f"The new tests already pass (`{tdd['red']}`), so they don't test the change yet. "
                                 "Write tests that fail until the change is made.")
         if problems:
@@ -308,12 +350,55 @@ class Round:
                 self.state[k] = r.data[k]
         return ("ok" if r.status == "done" else r.status), prompt
 
+    def clean_revision(self) -> bool:
+        from .runtime.gitstate import porcelain
+        paths = porcelain(self.ws)
+        return paths is not None and not any(not p.startswith(".cpipe/") for p in paths)
+
+    def gate_key(self) -> dict:
+        """Only immutable revision + scope + gate configuration earns reuse, never agent claims."""
+        profile = workspace_prep.project_profile(self.state["project"])
+        stamps = {}
+        for ec in self.cfg["engines"].values():
+            if (ec.get("kind") or "") == "hermes" or ec.get("profile"):
+                name = ec.get("profile") or "default"
+                root = Path.home() / ".hermes"
+                path = root / "config.yaml" if name == "default" else root / "profiles" / name / "config.yaml"
+                try:
+                    stamps[name] = path.stat().st_mtime_ns
+                except OSError:
+                    stamps[name] = None
+        recipe = self.ws / "wtg.yaml"
+        config = {"roles": self.cfg.get("roles"), "engines": self.cfg["engines"],
+                  "review_engine": self.cfg.get("review_engine"), "profile": profile,
+                  "profile_configs": stamps, "quality": quality.load(), "scope": [self.task.title, self.task.body],
+                  "size": self.state.get("size"), "model": self.state.get("model"),
+                  "review_scope": self.state.get("review_scope", ""),
+                  "recipe": recipe.read_text() if recipe.exists() else None}
+        digest = hashlib.sha256(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()
+        return {"head": head(self.ws), "base": self.base_sha(), "config": digest}
+
     def base_sha(self) -> str:
-        return quality.diff_base(self.ws, self.state["base"]) or pr.base_ref(self.ws, self.state["base"])
+        return (self.state.get("adoption", {}).get("base_head")
+                or quality.diff_base(self.ws, self.state["base"])
+                or pr.base_ref(self.ws, self.state["base"]))
 
     def checks(self, prompt: str, said: str):
-        failures = quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id)
+        if not self.clean_revision():
+            return "blocked", "Checks need a clean committed application revision."
+        key = self.gate_key()
+        if self.state.get("checks_receipt") == key:
+            return "ok", prompt
+        evidence = []
+        failures = quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id, evidence=evidence)
+        self.state["checks_evidence"] = evidence
+        if any(f.startswith("[unavailable]") for f in failures):
+            return "blocked", "Required checks could not run:\n" + "\n".join(failures)
+        if self.gate_key() != key or not self.clean_revision():
+            return "blocked", "The revision or gate configuration changed during checks; rerun on a frozen revision."
         out = graph.loop_outcome(["checks"] if failures else [], self.rounds, self.limits)
+        if not failures:
+            self.state["checks_receipt"] = key
         if failures:
             return out, "The checks failed on your branch:\n\n" + "\n\n".join(failures) + "\n\nFix it and commit."
         return out, prompt
@@ -334,6 +419,8 @@ class Round:
         prompt = (f"QA: verify this delivery in the running app ({', '.join(app['urls'].values())}) using {how}, "
                   "the way a user would: the changed behavior and what is next to it. Save screenshots to "
                   ".cpipe/qa/. Don't edit code. Report pass, or fail with each problem.")
+        if self.state.get("review_scope"):
+            prompt += "\nAdditional acceptance scope:\n" + self.state["review_scope"]
         _, _, ec = self.engine(self.role_engine("qa"))
         with screen_lock() if mode == "computer-use" else contextlib.nullcontext():
             r = self.turn("qa", prompt, engines.QA_SCHEMA, fallback=False, profile=ec.get("qa_profile"))
@@ -359,10 +446,16 @@ class Round:
             name = self.state["engine"]
         eng_name, eng, ec = self.engine(name)
         current_head = head(self.ws)
+        key = self.gate_key()
+        if self.state.get("review_receipt") == key and not self.state.get("findings") and self.clean_revision():
+            return True, f"Review ({eng_name}): approved (same revision; reused)"
         owner = [eng_name, eng.__name__, ec.get("profile") or "default"]
         session = (self.state.get("review_session")
                    if self.state.get("review_owner") == owner and self.state.get("review_engine") == name else None)
+        inputs = {k: v for k, v in key.items() if k != "head"}
         previous_head = self.state.get("review_head") if session else None
+        if self.state.get("review_inputs") and self.state["review_inputs"] != inputs:
+            previous_head = None  # changed scope/config/base must be reviewed across the full range
         if previous_head and subprocess.run(["git", "-C", str(self.ws), "merge-base", "--is-ancestor",
                                              previous_head, current_head], capture_output=True).returncode:
             previous_head = None  # a rebase/rewritten history needs full-range review
@@ -389,14 +482,22 @@ class Round:
         prompt += "\nReturn all findings in one verdict with stable IDs REV-001, REV-002, etc."
         if self.state.get("size") == "content":
             prompt += "\nContent-only scope. Do not require new tests or unrelated refactors. Check wording, layout and preserved behavior."
+        if self.state.get("review_scope"):
+            prompt += "\nAdditional requested review scope: " + self.state["review_scope"]
         r = self.call("review", eng_name, eng, ec, prompt, session=session, schema=engines.REVIEW_SCHEMA, readonly=True)
+        if self.gate_key() != key or not self.clean_revision():
+            self.state.pop("review_receipt", None)
+            return None, "Review: the frozen revision or gate configuration changed; restore it and rerun review"
         if r.status in graph.ENGINE_DOWN and name != self.state["engine"] and not self.cfg.get("roles", {}).get("review"):
             log(f"review on {name}: {r.status}; the delivery's engine reviews instead")
             return self.review(self.state["engine"])
         self.state.update(review_session=r.session or session, review_engine=name, review_owner=owner)
         if r.status in ("approve", "changes"):
-            self.state["review_head"] = current_head
+            self.state.update(review_head=current_head, review_inputs=inputs)
         if r.status == "approve":
+            if self.gate_key() != key:
+                return None, "Review: revision or gate configuration changed during the verdict; rerun review"
+            self.state.update(review_receipt=key, findings=[])
             return True, f"Review ({eng_name}): approved"
         if r.status == "changes":
             self.state["findings"] = r.data.get("findings") or [r.summary]
@@ -404,35 +505,58 @@ class Round:
         return None, f"Review: skipped ({eng_name} {r.status})"
 
     def security(self) -> tuple[Optional[bool], str]:
+        evidence = []
         failures = quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id,
-                                      stage="security")
-        return (False, "The security checks failed:\n\n" + "\n\n".join(failures)) if failures else (True, "Security checks: passed")
+                                      stage="security", evidence=evidence)
+        self.state["security_evidence"] = evidence
+        if any(f.startswith("[unavailable]") for f in failures):
+            return None, "Required security checks could not run:\n" + "\n".join(failures)
+        label = self.check_label("Security checks", evidence)
+        return (False, "The security checks failed:\n\n" + "\n\n".join(failures)) if failures else (True, label)
+
+    @staticmethod
+    def check_label(label: str, evidence: list) -> str:
+        if not evidence:
+            return f"{label}: none configured (not a test pass)"
+        statuses = [r["status"] for r in evidence]
+        if "unavailable" in statuses:
+            return f"{label}: optional checks unavailable; residual risk"
+        return f"{label}: passed" if "pass" in statuses else f"{label}: not applicable to changed files"
 
     def verify(self, prompt: str, said: str):
-        """QA, security checks and the independent review, in parallel."""
+        """Independent gates on one revision, in parallel; exact-revision receipts avoid repeat model calls."""
+        key = self.gate_key()
+        if self.state.get("verification_receipt") == key and self.clean_revision():
+            self.state["verified_head"] = key["head"]
+            return "ok", prompt
         with ThreadPoolExecutor(max_workers=3) as pool:
             jobs = {"qa": pool.submit(self.qa), "checks": pool.submit(self.security), "review": pool.submit(self.review)}
             done = {k: f.result() for k, f in jobs.items()}
-        if self.cfg.get("roles", {}).get("review") and done["review"][0] is None:
+        if done["checks"][0] is None:
+            return "blocked", done["checks"][1]
+        if done["review"][0] is None:
             return "blocked", done["review"][1]  # an explicitly configured reviewer is a required gate
-        if (self.cfg.get("roles", {}).get("qa") and done["qa"][0] is None
+        if (done["qa"][0] is None
                 and self.state.get("size") != "content"
                 and workspace_prep.project_profile(self.state["project"]).get("qa") != "off"):
             return "blocked", done["qa"][1]
         failed = [k for k, (ok, _) in done.items() if ok is False]
         out = graph.loop_outcome(failed, self.rounds, self.limits)
         tdd = self.state.get("tdd") or {}
-        first = ([f"Tests first ({tdd['kind']}): {', '.join(tdd['tests'][:5]) or 'none'}"
-                  + (", failing before the change, passing after" if tdd.get("red") else "")] if tdd else [])
-        self.state["verification"] = first + ["Checks: passed"] + [text.splitlines()[0] for ok, text in done.values()]
+        first = (["Adopted existing work; tests-first history was not asserted."] if self.state.get("adopted") else ([f"Tests first ({tdd['kind']}): {', '.join(tdd['tests'][:5]) or 'none'}"
+                  + (", failing before the change, passing after" if tdd.get("red") else "")] if tdd else []))
+        self.state["verification"] = first + [self.check_label("Checks", self.state.get("checks_evidence") or [])] + [text.splitlines()[0] for ok, text in done.values()]
         if out == "ok":
-            self.state["verified_head"] = head(self.ws)
-            if "review" in failed:  # out of review budget: the open findings go into the PR
-                self.state["verification"] += [f"Open review finding: {f}" for f in self.state.get("findings", [])]
+            if self.gate_key() != key or not self.clean_revision():
+                return "blocked", "The revision or gate configuration changed during verification; reverify the final revision."
+            self.state.update(verified_head=key["head"], verification_receipt=key)
             return out, prompt
         return out, "\n\n".join(done[k][1] for k in failed) + "\n\nFix it, test, commit."
 
     def pr(self, prompt: str, said: str):
+        if (not self.clean_revision() or self.state.get("verification_receipt") != self.gate_key()
+                or head(self.ws) != self.state.get("verified_head")):
+            return "blocked", "Publishing requires successful review and verification of this exact clean revision."
         out, detail = pr.publish(self.ws, self.state, self.task.branch_name)
         if out == "fix":
             return graph.loop_outcome(["checks"], self.rounds, self.limits), detail
@@ -443,16 +567,20 @@ class Round:
         self.state["ci"] = detail
         if out == "fail":
             return graph.loop_outcome(["ci"], self.rounds, self.limits), detail + "\n\nFix it and commit."
+        if out != "ok":
+            return "blocked", detail
+        self.state["ci_head"] = head(self.ws)
         return "ok", prompt
 
     def final(self, prompt: str, said: str):
-        if head(self.ws) != self.state.get("verified_head"):
-            failures = (quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id)
-                        + quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id,
-                                             stage="security"))
-            if failures:
-                return (graph.loop_outcome(["checks"], self.rounds, self.limits),
-                        "The final checks failed:\n\n" + "\n\n".join(failures) + "\n\nFix it and commit.")
+        key = self.gate_key()
+        if (not self.clean_revision() or self.state.get("checks_receipt") != key
+                or self.state.get("verification_receipt") != key or self.state.get("verified_head") != key["head"]):
+            return "reverify", "The revision or gate inputs changed; rerun checks and independent verification."
+        if self.state.get("pr_url") and self.state.get("ci_head") != key["head"]:
+            out, detail = self.ci(prompt, said)
+            if out != "ok":
+                return out, detail
         err = pr.ready(self.ws, self.state)
         return ("blocked", f"Marking the pull request ready failed: {err}") if err else ("ok", "")
 
@@ -460,6 +588,9 @@ class Round:
 
     def start(self, said: str) -> tuple[str, str]:
         st, node = self.state, self.state["node"]
+        if st.pop("stage_requested", False) and node != "setup":
+            entry = st["entry"]
+            return {"review": "review_stage", "fix": "build", "verify": "checks", "ship": "checks"}[entry], self.stage_prompt()
         if node not in graph.TERMINAL:  # a new delivery, or a round that died mid-way
             prompt = st.get("prompt") or ""
             return node, prompt + (f"\n\n{said_prompt(said)}" if said and node != "setup" else "")
@@ -494,6 +625,8 @@ class Round:
             if outcome == "limit" or outcome == "blocked":
                 st["why"] = prompt
             to = graph.next_node(node, outcome, bool(st.get("ready")))
+            if node == "verify" and outcome == "ok" and st.get("publish") is False:
+                to = "verified"
             if to in graph.ENGINE_DOWN:
                 st["at"] = node
             if to in ("handoff", "final"):  # input that arrived during the round comes first
@@ -509,6 +642,13 @@ class Round:
 
     def summary(self) -> str:
         st, end, r = self.state, self.state["node"], self.last
+        if end in ("reviewed", "verified"):
+            if end == "reviewed":
+                findings = st.get("findings") or []
+                return "\n".join([st.get("stage_result") or "Reviewed existing work.",
+                                  *findings, "No changes published. Use /cp-fix to correct findings or /cp-verify to run remaining gates."])
+            return "\n".join(["Verified this revision locally; no changes published.",
+                              *(st.get("verification") or []), "Use /cp-ship to prepare the draft pull request."])
         if end == "handoff":
             where = st.get("pr_url") or (st.get("notes") or {}).get("pr") or ""
             return "\n\n".join(filter(None, [st.get("summary") or "Built, checked and reviewed.", where,

@@ -144,6 +144,7 @@ def test_qa_never_resumes_the_builder(tmp_path, monkeypatch):
 
 def test_review_uses_its_role_and_only_reviews_delta_on_rework(tmp_path, monkeypatch):
     r = runner(tmp_path, monkeypatch)
+    monkeypatch.setattr(r, "clean_revision", lambda: True)  # role-only test; Git is stubbed below
     calls = []
     monkeypatch.setattr("cpipe.round.engines.available", lambda *a: (True, ""))
     monkeypatch.setattr("cpipe.round.head", lambda *a: "new-head")
@@ -301,6 +302,7 @@ def test_required_qa_cannot_silently_pass(tmp_path, monkeypatch):
 @pytest.mark.parametrize("cold", [True, False])
 def test_cold_or_rewritten_review_uses_full_range_and_prior_findings(tmp_path, monkeypatch, cold):
     r = runner(tmp_path, monkeypatch)
+    monkeypatch.setattr(r, "clean_revision", lambda: True)  # role-only test; Git is stubbed below
     r.state.update(review_engine="reviewer", review_session=None if cold else "sentry-session",
                    review_owner=["reviewer", hermes.__name__, "sentry"], review_head="old-head",
                    findings=["REV-001: fix the copy"])
