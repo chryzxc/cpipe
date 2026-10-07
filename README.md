@@ -11,8 +11,8 @@ for human review. Content changes skip planning, test-writing and browser QA; sm
 implementation immediately; large changes require an approved plan first. Shipping runs required gates and
 prepares a draft pull request by default. Marking it ready needs an explicit request; it never merges or deploys.
 
-Each delivery is a single card on the Hermes Kanban board. Hermes profiles are the default runner: Planner,
-Forge, Sentry and QA can collaborate in separate sessions, while the builder stays warm through tests, changes
+Each delivery is a single card on the Hermes Kanban board. Hermes profiles are the default runner: planning,
+building, independent review and QA can collaborate in separate sessions, while the builder stays warm through tests, changes
 and rework. Codex/Claude/opencode adapters remain opt-in; no external coding CLI is required for the Hermes
 workflow. Deterministic code controls the process around it. Three principles shape the design:
 
@@ -23,7 +23,7 @@ workflow. Deterministic code controls the process around it. Three principles sh
 - **[Outcome learning](#outcome-learning):** verified gate recoveries inform later work in the same repository.
   Lessons are bounded hints, not automatic policy changes or proof that a gate passed.
 
-> **Status: v2 · 0.8.3.** Explicit slash-command opt-in, content/small/large paths and profiled handoffs retain
+> **Status: v2 · 0.9.0.** Explicit slash-command opt-in, content/small/large paths and profiled handoffs retain
 > v2's deterministic orchestration. v1 ran each step in a new session and let the model choose transitions;
 > the last v1 release is tagged `v1-final`. No speed or token savings are claimed without controlled measurement.
 
@@ -190,21 +190,46 @@ engine).
 command_only: true     # default: explicit slash commands; no model-callable delivery tools
 default_engine: builder
 fallback_engine: null   # optional, explicitly configured adapter for usage-limit recovery
-roles: {plan: planner, build: builder, review: reviewer, qa: verifier}
+roles: {discover: explorer, plan: planner, build: builder, review: reviewer, qa: verifier}
 engines:
-  planner:  {kind: hermes, profile: archon, concurrency: 1}
-  builder:  {kind: hermes, profile: forge, concurrency: 3}
-  reviewer: {kind: hermes, profile: sentry, concurrency: 1}
-  verifier: {kind: hermes, profile: sentinel, concurrency: 1}
+  explorer: {kind: hermes, profile: example-explorer, concurrency: 1} # optional
+  planner:  {kind: hermes, profile: example-planner, concurrency: 1}
+  builder:  {kind: hermes, profile: example-builder, concurrency: 3}
+  reviewer: {kind: hermes, profile: example-reviewer, concurrency: 1}
+  verifier: {kind: hermes, profile: example-verifier, concurrency: 1}
 limits: {tests: 2, checks: 3, qa: 2, review: 2, ci: 2, round_minutes: 90}
 env_pass: [GH_TOKEN]   # additional environment variables exposed to rounds and engines
 projects_root: ~/Projects   # where the repository of a new project is started
 ```
 
-Use the profile names actually installed on your machine. Hermes inherits each profile's configured model/provider;
+The `example-*` profile names above are illustrative, not bundled profiles. Replace them with
+the profile names actually installed on your machine. Hermes inherits each profile's configured model/provider;
 `model` is an explicit override, never an inferred roster mapping. With no configuration, the default and review
 engines are Hermes and no external fallback is enabled. `roles` is optional; explicitly configured engine choices
 remain supported. Engine concurrency caps dispatcher delivery slots, not the QA/review calls inside each delivery.
+
+### Optional discovery
+
+Remove `roles.discover` to disable discovery (the default). When configured, large deliveries get a
+bounded navigation pass before planning or a cold implementation session; small and content deliveries
+skip it. Select a low-cost model/provider in your explorer profile: the runner inherits its configuration,
+not the builder's model override. The `example-explorer` name is illustrative, not a bundled profile.
+
+Discovery currently supports Hermes engines only. It supplies an existing Graphify/CodeGraph query
+when available plus locally ranked source excerpts to a **tool-free**, isolated session. The explorer
+cannot edit, run commands or recursively delegate. It returns a short source-linked brief covering
+entry points, callers/dependencies, existing tests and unresolved questions. Partial snapshots and
+graph hints are not plans, approvals or verification; the planner/builder must confirm important claims.
+Ignored untracked files, symlinks and non-source files are excluded from the source snapshot.
+
+The brief replaces duplicate graph context in the implementation prompt and is cached in the existing
+git-excluded delivery state. Source content, revision, request, engine configuration or graph-context
+changes invalidate it when discovery is next needed. The input snapshot and brief are bounded, and
+the model call has a 60-second run budget with a 75-second subprocess cutoff. An unavailable,
+failed or rate-limited explorer falls back to normal source discovery without a builder-model retry;
+failed calls are not repeated for the same cache key. No extra card or approval step is created.
+Discovery calls/time/tokens appear under `discover` in the existing usage accounting. Compare equivalent
+end-to-end tasks with and without it before claiming cost, token or time savings.
 
 ### Profiled fast paths and handoffs
 
@@ -215,11 +240,11 @@ the runner does not guess task complexity:
   or browser QA. Configured checks still run. Use for text, markup, styles, docs or config values, never logic.
 - **`small`**: tests → implement → checks/QA/review. No planning turn or approval pause; the request authorizes
   the bounded scope.
-- **`large`** (default when omitted): Planner → human plan approval → Forge → independent review/QA. Use for
+- **`large`** (default when omitted): Planning → human plan approval → implementation → independent review/QA. Use for
   ambiguous, cross-boundary or risky work.
 
-Planner and Forge own separate sessions; Forge receives the approved scope, progress file and same worktree.
-Forge stays warm through tests, implementation and fixes. Re-reviews use `last_reviewed_head..new_head` and verify
+The planner and builder own separate sessions; the builder receives the approved scope, progress file and same worktree.
+The builder stays warm through tests, implementation and fixes. Re-reviews use `last_reviewed_head..new_head` and verify
 prior findings. A cold reviewer, changed profile or rewritten history gets the full branch range. QA never resumes
 the builder's session. Legacy single-session checkpoints migrate without restarting their delivery. An unavailable
 explicit reviewer/QA role cannot silently pass; project QA `off` and content-only QA remain intentional skips.

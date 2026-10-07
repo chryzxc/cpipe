@@ -59,9 +59,9 @@ def load(raw: Any = None) -> dict:
         cfg["default_engine"] = next(iter(cfg["engines"]))
     roles = cfg.get("roles", {})
     if not isinstance(roles, dict):
-        raise ValueError("roles must be a mapping of plan/build/review/qa to configured engines")
+        raise ValueError("roles must be a mapping of discover/plan/build/review/qa to configured engines")
     for role, engine in roles.items():
-        if role not in ("plan", "build", "review", "qa") or not isinstance(engine, str) or engine not in cfg["engines"]:
+        if role not in ("discover", "plan", "build", "review", "qa") or not isinstance(engine, str) or engine not in cfg["engines"]:
             raise ValueError(f"roles: invalid role or engine: {role!r}: {engine!r}")
     if cfg["default_engine"] not in cfg["engines"]:
         raise ValueError(f"default_engine {cfg['default_engine']!r} is not under engines")
