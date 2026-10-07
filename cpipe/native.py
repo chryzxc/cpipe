@@ -190,7 +190,7 @@ def after_tool(*, session_id=None, tool_name=None, args=None, result=None, **_):
         data = json.loads(result) if isinstance(result, str) else result
     except (TypeError, ValueError):
         return None
-    if not isinstance(data, dict) or data.get("error") or data.get("timed_out"):
+    if not isinstance(data, dict) or data.get("error") or data.get("timed_out") or data.get("notice"):
         return None
     rows = data.get("responses")
     asked = arguments.get("questions")
@@ -206,11 +206,13 @@ def after_tool(*, session_id=None, tool_name=None, args=None, result=None, **_):
         if not isinstance(value, str) or not value.strip():
             return None
         values.append(value.strip())
-    from .intents import confirm_build_start
-    started = confirm_build_start(sid, asked, values)
+    from .intents import confirm_build_start, confirm_route_start
+    started = confirm_route_start(sid, asked, values)
+    if started is None:
+        started = confirm_build_start(sid, asked, values)
     if started is not None:
         return {**started, "context": "[cpipe build confirmation result] " + json.dumps(started)
-                + "\nReport this result or check status. Do not ask the user to repeat /cp-plan; the confirmed request has been handled."}
+                + "\nIf a clarify form is supplied, call clarify with it unchanged to continue routing. Otherwise report this result or check status. Do not ask the user to repeat /cp-plan."}
     from .home import root as hermes_home
     if not (hermes_home() / "cpipe-interactions.db").exists():
         return None

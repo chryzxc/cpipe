@@ -32,6 +32,9 @@ def token(ctx):
 @pytest.fixture(autouse=True)
 def session(monkeypatch):
     monkeypatch.setattr(intents, "_session_key", lambda: "chat-a")
+    from cpipe import engines, native
+    monkeypatch.setattr(native, "_session", lambda explicit: explicit or "chat-a")
+    monkeypatch.setattr(engines, "available", lambda *a: (True, ""))
 
 
 @pytest.mark.parametrize("command", intents.POLICIES)
@@ -85,6 +88,17 @@ def test_ordinary_chat_cannot_invoke_backend(hermes_home, monkeypatch):
     assert not (hermes_home / "cpipe-intents.db").exists()
 
 
+def finish_routing(args):
+    from cpipe import native
+    pending = json.loads(intents.execute(args))
+    assert pending["status"] == "needs_routing"
+    for value in ("Single Hermes profile (default or another)", "hermes", "Start with this route"):
+        form = pending["clarify"]
+        pending = native.after_tool(session_id="chat-a", tool_name="clarify", args=form,
+            result={"responses": [{"question": form["questions"][0]["question"], "user_response": value}]})
+    return {k: v for k, v in pending.items() if k != "context"}
+
+
 def test_receipts_are_command_scoped_session_bound_and_idempotent(hermes_home, monkeypatch):
     ctx = Context()
     intents.dispatch(ctx, "cp-plan", "implement this")
@@ -96,7 +110,7 @@ def test_receipts_are_command_scoped_session_bound_and_idempotent(hermes_home, m
     monkeypatch.setattr(intents, "_session_key", lambda: "other-chat")
     assert "wrong-session" in json.loads(intents.execute(args))["error"]
     monkeypatch.setattr(intents, "_session_key", lambda: "chat-a")
-    assert json.loads(intents.execute(args)) == {"task_id": "test-only"}
+    assert finish_routing(args) == {"task_id": "test-only"}
     assert json.loads(intents.execute(args)) == {"task_id": "test-only"}
     assert len(calls) == 1
 
@@ -118,8 +132,8 @@ def test_claimed_failure_is_not_replayed(hermes_home, monkeypatch):
         calls.append(args)
         raise RuntimeError("test interruption after possible commit")
     monkeypatch.setitem(tools.HANDLERS, "cpipe_plan", fail)
-    args = {"token": token(ctx), "operation": "plan", "arguments": {}}
-    assert "inspect status" in json.loads(intents.execute(args))["error"]
+    args = {"token": token(ctx), "operation": "plan", "arguments": {"request": "resolved work"}}
+    assert "inspect status" in finish_routing(args)["error"]
     assert "already claimed" in json.loads(intents.execute(args))["error"]
     assert len(calls) == 1
 

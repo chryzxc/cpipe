@@ -6,7 +6,7 @@
 
 **From an idea to a reviewed pull request, with Hermes Agent.**
 
-cpipe brings planning, implementation, testing, and independent review into one development workflow. Describe a change in your Hermes chat, choose its size, and let configured profiles handle the work. You can also bring an existing commit to cpipe for review, fixes, or verification.
+cpipe brings planning, implementation, testing, and review into one development workflow. Describe a change in your Hermes chat, choose its size and execution route, and let the selected profiles or coding CLI handle the work. You can also bring an existing commit to cpipe for review, fixes, or verification.
 
 The builder keeps its conversation through implementation and corrections. Reviewers work in separate sessions, and cpipe tracks which checks apply to the latest commit. The result is a draft pull request with verification evidence—not an automatic merge or deployment.
 
@@ -15,7 +15,7 @@ The builder keeps its conversation through implementation and corrections. Revie
 - **Plans larger changes.** Review the proposed approach before implementation begins.
 - **Starts smaller changes directly.** Choose a shorter path for focused fixes or content updates.
 - **Tests code changes.** Small and large deliveries write and run tests before implementation.
-- **Reviews independently.** Separate review and QA sessions check the result and return findings to the builder.
+- **Reviews the result.** Separate review and QA sessions check the change and return findings to the builder. Specialist routing uses a different review profile; single-profile routing is explicitly labelled same-profile review.
 - **Works with existing commits.** Start at review, verification, or shipping without rebuilding the change.
 - **Keeps context between corrections.** The builder resumes its session rather than starting over.
 - **Tracks progress and usage.** Inspect delivery status, time, and available token counts.
@@ -77,6 +77,24 @@ For a large change, review the plan and continue with:
 
 Regular chat remains available for work outside cpipe. Its workflow starts when you use a cpipe command.
 
+## Choose who does the work
+
+Before a new `/cp-plan` delivery starts, clarification offers **three choices**:
+
+| Route | Best fit | Trade-offs |
+|---|---|---|
+| **Specialist bots/profiles** | Larger work that benefits from separate planning, implementation, review, and QA owners | Uses each Hermes profile's instructions and tools; requires configured, available role assignments and different build/review profiles. More setup and handoffs. |
+| **External coding CLI** | Focused repository work when you deliberately want an installed CLI | Uses that CLI's authentication, permissions, settings, and instructions—not Hermes profile skills. The selected backend owns the stages; its review is same-backend review. |
+| **Single Hermes profile** | Bounded work or a simple end-to-end setup | The default profile, or one other configured profile you select, owns every stage. Fewer handoffs, but review is same-profile review, not independent specialist approval. |
+
+The question includes the resolved request, explains the trade-offs, and recommends specialists for large work or one profile for small/content work. Speed and cost depend on the task and models; neither route guarantees savings.
+
+For single-profile or external routing, select an available configured engine next. cpipe then shows the stage owners and model settings for confirmation. No delivery is queued until you confirm. A timeout, cancellation, unavailable engine, or missing specialist setup starts nothing.
+
+The route is saved **for that delivery**, including resumed stages and approved child work. It does not rewrite global defaults or reroute existing cards. Automatic engine fallback is disabled: a selected profile cannot silently become an external CLI. Confirmation shows explicit model overrides or an observed Hermes profile default. Unresolved defaults are labelled as such; profile/CLI defaults continue to follow that backend’s settings rather than being silently overridden.
+
+The default Hermes profile remains an option even with a saved external default. Other profiles must be configured as Hermes engines. Mixed routing is not a fourth option.
+
 ## Chat commands
 
 Commands use the current conversation and project context. You do not need to remember a delivery ID. Hermes asks for clarification when it cannot identify the intended request or repository.
@@ -104,7 +122,7 @@ For example:
 
 A command without a message uses the existing conversation. Project names and delivery IDs can be supplied when useful, but are not required.
 
-If you use `/cp-build` before a plan exists, cpipe asks whether to start a small delivery for the resolved request and project. Selecting **Start a small delivery** starts that same request automatically—you do not need to repeat `/cp-plan`. Cancelling or leaving the question unanswered starts nothing. To review work you have already implemented, use `/cp-review`.
+If you use `/cp-build` before a plan exists, cpipe asks whether to start a small delivery for the resolved request and project. Selecting **Start a small delivery** opens the same three-choice routing clarification for that request. After you confirm the route, it starts automatically—you do not need to repeat `/cp-plan`. Cancelling or leaving the question unanswered starts nothing. To review work you have already implemented, use `/cp-review`.
 
 Commands queue a new turn in your Hermes session. The first reply confirms that the request was queued, not that the work is finished. If the host cannot queue the turn, no workflow starts. cpipe does not select an unrelated delivery as a fallback.
 
@@ -137,7 +155,7 @@ Pull requests are drafts by default. Ask explicitly to mark one ready; that requ
 
 ## Configure profiles
 
-Settings live in `~/.hermes/cpipe.yaml`. Every key is optional. Without custom settings, cpipe uses Hermes for implementation and review, with no external fallback.
+Settings live in `~/.hermes/cpipe.yaml`. Every key is optional. Without custom settings, the default Hermes profile is available for the entire flow. Saved defaults do not replace the routing confirmation for new `/cp-plan` deliveries.
 
 ```yaml
 command_only: true
@@ -205,7 +223,7 @@ Hermes is the default runner; no external coding CLI is required. cpipe also inc
 | `claude` | `claude -p --resume` | `--json-schema` |
 | `opencode` | `opencode run --session` | JSON block in the final message |
 
-An engine's `kind` defaults to its name. Multiple named engines can use the same adapter. To recover from a usage limit with another configured engine, set `fallback_engine`; it continues from the commits and `.cpipe/progress.md`.
+An engine's `kind` defaults to its name. Multiple named engines can use the same adapter. `fallback_engine` remains supported for legacy or direct backend deliveries; newly confirmed chat routes disable automatic fallback so your selection cannot silently change.
 
 ## Configure projects and checks
 
@@ -318,7 +336,7 @@ Up to five lessons are supplied to later builds. Repeated recoveries can suggest
 
 ## Development
 
-The current package version is **0.9.1**. The workflow is defined in `cpipe/graph.py`, with tests for transitions and correction limits. The previous implementation is preserved under the `v1-final` tag.
+The current package version is **0.9.2**. The workflow is defined in `cpipe/graph.py`, with tests for transitions and correction limits. The previous implementation is preserved under the `v1-final` tag.
 
 | Module | Responsibility |
 |---|---|
