@@ -22,13 +22,13 @@ ENGINE_DOWN = ("rate_limited", "unavailable", "failed")
 ENGINE_NODES = ("plan", "tests", "build")  # nodes the wall clock is checked before
 
 EDGES = {
-    "setup": {"ok": "plan", "approved": "tests"},
+    "setup": {"ok": "plan", "approved": "tests", "content": "build"},
     "plan": {"ok": "proposal", "needs_user": "ask"},
     "split": {"ok": "done"},
     "tests": {"ok": "build", "fix": "tests", "limit": "stuck", "needs_user": "ask"},
     "build": {"ok": "checks", "needs_user": "ask"},
     "checks": {"ok": "verify", "fix": "build", "limit": "stuck"},
-    "verify": {"ok": "pr", "fix": "build", "limit": "stuck"},
+    "verify": {"ok": "pr", "fix": "build", "limit": "stuck", "blocked": "stuck"},
     "pr": {"ok": "ci", "fix": "build", "limit": "stuck", "blocked": "stuck"},
     "ci": {"ok": "handoff", "fix": "build", "limit": "stuck"},
     "final": {"ok": "done", "fix": "build", "limit": "stuck", "blocked": "stuck"},
