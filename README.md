@@ -117,6 +117,7 @@ engine).
 `~/.hermes/cpipe.yaml` (all keys optional):
 
 ```yaml
+command_only: true     # default: explicit slash commands; no model-callable delivery tools
 default_engine: builder
 fallback_engine: null   # optional, explicitly configured adapter for usage-limit recovery
 roles: {plan: planner, build: builder, review: reviewer, qa: verifier}
@@ -137,7 +138,8 @@ remain supported. Engine concurrency caps dispatcher delivery slots, not the QA/
 
 ### Profiled fast paths and handoffs
 
-Pass `size` to `cpipe_plan` explicitly; the runner does not guess task complexity:
+Select `size` explicitly with `/cp-plan --size content|small|large` (or with `cpipe_plan` in optional tool mode);
+the runner does not guess task complexity:
 
 - **`content`**: implement → deterministic checks and scope-limited review. No planning approval, test-writing turn
   or browser QA. Configured checks still run. Use for text, markup, styles, docs or config values, never logic.
@@ -197,7 +199,13 @@ hermes cpipe status   # open deliveries
 hermes cpipe report   # duration, runs and tokens per delivery and node
 ```
 
-Deliveries are started and steered from Hermes chat through the `cpipe` toolset:
+Deliveries are **opt-in**, started by explicit slash commands. Ordinary coding requests stay on the normal
+assistance path; the plugin does not infer a delivery from chat. `command_only: true` is the default: no `cpipe`
+model tools are registered, and previously registered calls return a command-only error before side effects.
+Commands started explicitly still use the daemon's normal profiled handoffs. This is a routing policy, not a
+sandbox against a shell/Python caller. Remove any old "always start cpipe" instructions from your coordinator.
+
+Set `command_only: false` in `cpipe.yaml` only if you deliberately want the optional `cpipe` model toolset:
 
 | Tool | Effect |
 |---|---|
@@ -211,19 +219,24 @@ Deliveries are started and steered from Hermes chat through the `cpipe` toolset:
 The same actions are slash commands, typed directly into a Hermes chat. They answer at once, without a model turn:
 
 ```text
-/cp-plan [project:] <idea>      /cp-feedback <card> <text>      /cp-build <card> [notes]
+/cp-plan [--size content|small|large] [project:] <idea>      /cp-feedback <card> <text>      /cp-build <card> [notes]
 /cp-ship <card> [last changes]  /cp-status [card]               /cp-stop <card>
 /cp-project <name> <path|new>
 ```
 
-For example:
+Use `--size` before the project/request (`--size=small` is also supported). Omitted size is `large`:
 
 ```text
-/cp-plan my-app: add a dark mode toggle      → the plan and its questions
+/cp-plan --size content my-app: change the footer wording
+/cp-plan --size small my-app: fix the disabled button condition
+/cp-plan --size large my-app: add password reset
 /cp-feedback t_1a2b3c4d keep the system theme as the default
-/cp-build t_1a2b3c4d                         → tests first, build, verify, review: a pull request to test
-/cp-ship t_1a2b3c4d                          → the pull request is ready for review
+/cp-build t_1a2b3c4d      → approve the large plan; content/small do not need this step
+/cp-ship t_1a2b3c4d       → accept the result; final checks, PR ready for review (never merge)
 ```
+
+After an explicit start (and plan approval for large work), cpipe runs the internal tests/build/QA/review
+handoffs automatically. It pauses only at the workflow's human decision boundaries, not for each bot handoff.
 
 For a project without a saved repository, cpipe replies with the question; answer with
 `/cp-project recipe-site ~/code/recipes` (or `new`) and run `/cp-plan` again.
