@@ -7,6 +7,7 @@ import json
 import logging
 import shutil
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -21,6 +22,7 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     sub.add_parser("tick", help="run a single discovery/claim pass and exit")
     sub.add_parser("lanes", help="print the validated lane registry")
     sub.add_parser("doctor", help="check config, Hermes compatibility and executor availability")
+    sub.add_parser("v2-smoke", help="exercise an offline v2 fixture; no native workers or publication")
     for name, what in (("status", "open deliveries"), ("report", "time, runs and tokens per delivery and node")):
         p = sub.add_parser(name, help=what)
         p.add_argument("--json", action="store_true")
@@ -55,6 +57,15 @@ def _setup_logging() -> None:
 def handle(args: argparse.Namespace) -> int:
     _setup_logging()
     cmd = getattr(args, "wr_command", None) or "doctor"
+    if cmd == "v2-smoke":
+        from ..delivery import smoke
+        from ..delivery.sandbox import SandboxUnavailable
+        try:
+            print(json.dumps(smoke.run(), indent=2))
+            return 0
+        except (SandboxUnavailable, RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            print(f"cpipe: offline v2 smoke failed: {exc}", file=sys.stderr)
+            return 1
     if cmd in ("status", "report"):
         from contextlib import closing
         from .. import report

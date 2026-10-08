@@ -365,6 +365,31 @@ The experimental `cpipe/delivery/` core is tested independently. It is not yet c
 | `report.py`, `settings.py` | Reporting and configuration |
 | `runtime/` | Worker scheduling and lifecycle |
 
+### Offline v2 smoke test (macOS)
+
+From this checkout, using the test environment described below:
+
+```sh
+.venv/bin/python -m cpipe.runtime v2-smoke
+```
+
+When this revision is installed as a local plugin, the same command is
+`hermes cpipe v2-smoke`. It creates a disposable Git repository, runs real
+sandboxed behavior checks (RED → confined fixture edit → GREEN), persists the
+v2 events, verifies event replay and journal reopening, and removes its scratch
+files. Its JSON report also records denied writes outside the approved file,
+denied Git configuration writes, and denied network use. Exit zero means this
+**offline fixture** passed and reached `testable`, not that a live delivery is
+ready.
+
+This command does not use models, create native tasks, review a user change,
+publish, or enable v2 for `/cp-*` commands. The macOS boundary grants exact file
+writes and denies forking; it is not comprehensive host-data isolation or a live
+Hermes executor. Missing `sandbox-exec` fails closed without an unconfined retry.
+Live/native v2 remains unavailable until its worker boundary is integrated and
+verified. The legacy dispatch guard remains unchanged; its core rebinding is a
+separate plugin-validation failure, not something this smoke test clears.
+
 ### Run tests
 
 The full suite needs a Hermes Agent checkout available on Python's import path, including `hermes_cli`. Use the Hermes environment's Python to create the test environment, install the dependencies, and make that checkout importable—for example, with a `.pth` file.
