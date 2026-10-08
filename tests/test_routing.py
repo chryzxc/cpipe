@@ -116,12 +116,25 @@ def test_specialist_roster_comes_from_hermes_not_directory_globbing(flow, hermes
     seen = []
     def roster(**kwargs):
         seen.append(kwargs)
-        return [SimpleNamespace(name="default"), SimpleNamespace(name="registered")]
+        return [SimpleNamespace(name="default", description="General help."),
+                SimpleNamespace(name="registered", description="Plans\n  complex changes.")]
     monkeypatch.setattr(profiles, "list_profiles", roster)
     ready = routing.specialist_candidates(flow[1])
     assert {ec.get("profile") or "default" for ec in ready.values()} == {"default", "registered"}
     assert seen == [{"lazy_skill_count": True}]
     assert "profile:builder" not in ready and "builder" not in ready
+    label = routing.owner_label("profile:registered", ready["profile:registered"])
+    assert "registered" in label and "Plans complex changes." in label
+    assert routing.resolve_owner(ready, label) == "profile:registered"
+    assert routing.resolve_owner(ready, "registered") == "profile:registered"
+    assert label in routing.specialist_form(ready)["questions"][0]["choices"]
+    route = routing.selected_specialists(flow[1], ready,
+        ["hermes", "profile:registered", "hermes", "hermes"])
+    assert all("profile_description" not in ec for ec in route["engines"].values())
+    # No fabricated role description when Hermes has none.
+    monkeypatch.setattr(profiles, "list_profiles", lambda **kw: [SimpleNamespace(name="default")])
+    fallback = routing.specialist_candidates(flow[1])
+    assert "No description configured." in routing.owner_label("hermes", fallback["hermes"])
 
 
 def test_profile_model_lookup_uses_hermes_profile_resolution(flow, hermes_home, monkeypatch):
