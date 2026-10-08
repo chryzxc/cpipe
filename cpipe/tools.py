@@ -362,7 +362,8 @@ def call(name: str, args: dict) -> str:
     try:
         # Recheck at invocation so a cached registration cannot bypass a mode change.
         if settings.load()["command_only"]:
-            return json.dumps({"error": "cpipe is in command-only mode. Use an explicit /cp- command."})
+            from .intents import optional_workflow_error
+            return json.dumps(optional_workflow_error())
         return json.dumps(HANDLERS[name](args or {}))
     except Exception as e:  # a tool error is the chat's to report, never a crash
         return json.dumps({"error": f"{type(e).__name__}: {e}"})

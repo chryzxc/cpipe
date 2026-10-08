@@ -97,6 +97,8 @@ The default Hermes profile remains an option even with a saved external default.
 
 ## Chat commands
 
+cpipe is optional. Ordinary chat requests to review a PR, compare feature parity, fix code, run tests, or verify behavior are handled directly with normal tools; they do not require any `/cp-*` command. The command receipt requirement applies only to entering cpipe, not to authorizing normal assistance. Use the commands below only when you choose the structured cpipe workflow.
+
 Commands use the current conversation and project context. You do not need to remember a delivery ID. Hermes asks for clarification when it cannot identify the intended request or repository.
 
 | Command | What it does |

@@ -53,7 +53,9 @@ def test_tool_registration_is_explicitly_opt_in(monkeypatch):
 def test_cached_model_calls_are_blocked_before_any_side_effect(name, monkeypatch):
     monkeypatch.setitem(tools.HANDLERS, name, lambda args: pytest.fail("model tool reached a handler"))
     result = json.loads(tools.call(name, {}))
-    assert "command-only" in result["error"]
+    assert "optional cpipe workflow" in result["error"]
+    assert result["cpipe_started"] is False
+    assert "directly with normal tools" in result["next"]
     assert "/cp-" in result["error"]
 
 
@@ -64,7 +66,7 @@ def test_switching_to_command_only_blocks_previously_registered_tools(monkeypatc
     tools.register(ctx)
     cfg["command_only"] = True
     monkeypatch.setitem(tools.HANDLERS, "cpipe_plan", lambda args: pytest.fail("stale tool bypassed mode"))
-    assert "command-only" in json.loads(ctx.tools["cpipe_plan"]({}))["error"]
+    assert "optional cpipe workflow" in json.loads(ctx.tools["cpipe_plan"]({}))["error"]
 
 
 @pytest.mark.parametrize("raw,size,project,expected_request", [
