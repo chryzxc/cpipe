@@ -20,8 +20,6 @@ def command(cfg: dict, prompt: str, cwd: Path, session: Optional[str], profile: 
     if cfg.get("discovery_only"):
         argv += ["--toolsets", "none", "--ignore-rules", "--max-turns", "1", "--run-budget", "60"]
         session = None
-    else:
-        argv += ["--yolo"]
     if cfg.get("model"):
         argv += ["--model", cfg["model"]]
     return argv + (["--resume", session] if session else [])
