@@ -83,11 +83,19 @@ def test_unavailable_queue_is_honest_and_revokes_receipt(hermes_home):
     assert "error" in result
 
 
-def test_ordinary_chat_cannot_invoke_backend(hermes_home, monkeypatch):
+@pytest.mark.parametrize("operation", ["plan", "review", "fix", "verify"])
+@pytest.mark.parametrize("existing_receipts", [False, True])
+def test_ordinary_chat_continues_directly_without_starting_cpipe(hermes_home, monkeypatch, operation, existing_receipts):
     monkeypatch.setitem(tools.HANDLERS, "cpipe_plan", lambda *a: pytest.fail("backend ran"))
-    result = json.loads(intents.execute({"token": "invented", "operation": "plan", "arguments": {}}))
-    assert "explicit /cp-*" in result["error"]
-    assert not (hermes_home / "cpipe-intents.db").exists()
+    monkeypatch.setattr(tools, "stage", lambda *a: pytest.fail("stage backend ran"))
+    if existing_receipts:
+        intents._connect().close()
+    result = json.loads(intents.execute({"token": "invented", "operation": operation, "arguments": {}}))
+    assert "optional cpipe workflow" in result["error"]
+    assert result["cpipe_started"] is False
+    assert "directly with normal tools" in result["next"]
+    assert "Do not require the user to send a /cp command" in result["next"]
+    assert (hermes_home / "cpipe-intents.db").exists() == existing_receipts
 
 
 def finish_routing(args):

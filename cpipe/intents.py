@@ -28,7 +28,7 @@ POLICIES = {
 
 SCHEMA = {
     "name": "cpipe_execute_intent",
-    "description": "Execute the cpipe backend operation authorized by a specific explicit /cp-* command. Requires its receipt token. Ordinary chat has no receipt and cannot start a delivery. Stage commands adopt existing work and dispatch configured specialist profiles.",
+    "description": "Optional cpipe workflow only: execute an operation after the user deliberately invokes /cp-*. Requires that command receipt. Do not use for ordinary chat requests to review, fix, test, verify or build; perform those directly with normal tools, without requiring a /cp command. Stage commands adopt existing work and dispatch configured specialist profiles.",
     "parameters": {"type": "object", "properties": {
         "token": {"type": "string"},
         "operation": {"type": "string", "enum": ["plan", "build", "review", "fix", "verify", "ship", "status", "stop"]},
@@ -325,6 +325,14 @@ def confirm_build_start(sid, asked, values):
                 return None
 
 
+def optional_workflow_error():
+    return {
+        "error": "An explicit /cp-* command is required only to use the optional cpipe workflow.",
+        "cpipe_started": False,
+        "next": "For an ordinary chat request, continue the requested review, fix, test, verification or implementation directly with normal tools. Do not require the user to send a /cp command, invent a receipt, or create a delivery. Preserve normal approval boundaries for publishing, merging and deployment.",
+    }
+
+
 def execute(args, **_):
     """Fail closed without a valid receipt; cache a completed mutation on replay."""
     from . import tools
@@ -334,12 +342,14 @@ def execute(args, **_):
     if not isinstance(payload, dict) or operation not in {n[3:] for n in POLICIES}:
         return json.dumps({"error": "invalid operation or arguments"})
     if not (root() / "cpipe-intents.db").exists():
-        return json.dumps({"error": "an explicit /cp-* command is required"})
+        return json.dumps(optional_workflow_error())
     with closing(_connect()) as conn:
         with conn:
             conn.execute("BEGIN IMMEDIATE")
             receipt = conn.execute("SELECT * FROM intents WHERE token=?", (token,)).fetchone()
-            if (not receipt or receipt["expires"] < time.time()
+            if not receipt:
+                return json.dumps(optional_workflow_error())
+            if (receipt["expires"] < time.time()
                     or (receipt["session_key"] and receipt["session_key"] != _session_key())
                     or operation not in (receipt["operation"], "status")):
                 return json.dumps({"error": "missing, expired, wrong-session or incompatible command receipt"})
