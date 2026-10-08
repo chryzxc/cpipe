@@ -124,6 +124,8 @@ A command without a message uses the existing conversation. Project names and de
 
 If you use `/cp-build` before a plan exists, cpipe asks whether to start a small delivery for the resolved request and project. Selecting **Start a small delivery** opens the same three-choice routing clarification for that request. After you confirm the route, it starts automatically—you do not need to repeat `/cp-plan`. Cancelling or leaving the question unanswered starts nothing. To review work you have already implemented, use `/cp-review`.
 
+When a large delivery has finished planning and has no unanswered questions, Hermes presents its native approval dialog with the frozen plan and confirmed execution route. Accept resumes the existing build workflow (including a draft PR if enabled); reject, dismissal, timeout, or a changed plan starts no build. Approval is for this plan only—not for PR readiness, merging, or deployment. Outstanding questions still use native clarification first. `/cp-build` remains the explicit fallback when the host has no interactive approval channel.
+
 Commands queue a new turn in your Hermes session. The first reply confirms that the request was queued, not that the work is finished. If the host cannot queue the turn, no workflow starts. cpipe does not select an unrelated delivery as a fallback.
 
 ## Bring existing work
