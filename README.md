@@ -27,7 +27,7 @@ You need Python 3.11+ and a Hermes Agent installation that supports native plugi
 ```sh
 hermes plugins install chryzxc/cpipe --enable
 hermes plugins doctor ~/.hermes/plugins/cpipe --ci
-hermes plugins compat ~/.hermes/plugins/cpipe
+hermes plugins validate ~/.hermes/plugins/cpipe
 hermes config set plugins.entries.cpipe.allow_gateway_injection true
 ```
 
@@ -347,7 +347,9 @@ Up to five lessons are supplied to later builds. Repeated recoveries can suggest
 
 ## Development
 
-The current package version is **0.9.3**. The workflow is defined in `cpipe/graph.py`, with tests for transitions and correction limits. The previous implementation is preserved under the `v1-final` tag.
+The current package version is **0.9.9**. The workflow is defined in `cpipe/graph.py`, with tests for transitions and correction limits. The previous implementation is preserved under the `v1-final` tag.
+
+The experimental `cpipe/delivery/` core is tested independently. It is not yet connected to native worker execution; the chat commands still use the existing runtime.
 
 | Module | Responsibility |
 |---|---|
@@ -372,7 +374,7 @@ uv venv --python <hermes-agent-venv-python> .venv
 uv pip install --python .venv/bin/python pytest pyyaml "agent-client-protocol>=0.9,<0.10"
 .venv/bin/python -m pytest -q
 hermes plugins doctor . --ci
-hermes plugins compat .
+hermes plugins validate .
 ```
 
 Tests use generated repositories, temporary Hermes state, and scripted agent/GitHub responses. They do not use your normal Hermes board. A standalone Python environment without Hermes cannot collect the entire suite.
