@@ -132,7 +132,8 @@ def test_missing_or_same_owner_mapping_opens_explicit_profile_selection(flow, co
     pending = json.loads(intents.execute(args))
     selection = answer(pending, "Specialist bots/profiles")
     assert selection["phase"] == "roles"
-    assert len(selection["clarify"]["questions"]) == 4
+    assert len(selection["clarify"]["questions"]) == 1
+    assert selection["clarify"]["questions"][0]["choices"]
     assert not calls
 
 
