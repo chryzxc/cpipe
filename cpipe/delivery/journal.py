@@ -103,7 +103,12 @@ class Journal:
                               (delivery_id,)).fetchone()
         return (row[0], json.loads(row[1])) if row else (0, None)
 
-    def append(self, delivery_id, expected_version, key, snapshot, intents=()):
+    def event(self, delivery_id, key):
+        row = self.db.execute("SELECT payload FROM event WHERE delivery=? AND key=?",
+                              (delivery_id, key)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def append(self, delivery_id, expected_version, key, snapshot, intents=(), *, fact=None):
         identity(delivery_id, "delivery_id")
         identity(key, "event key")
         if type(expected_version) is not int or expected_version < 0:
@@ -119,7 +124,12 @@ class Journal:
             ids.append(intent_id)
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate intent id")
-        payload = encoded({"snapshot": snapshot, "intents": intents})
+        record = {"snapshot": snapshot, "intents": intents}
+        if fact is not None:
+            if type(fact) is not dict:
+                raise ValueError("fact must be a dictionary")
+            record["fact"] = fact
+        payload = encoded(record)
         self.db.execute("BEGIN IMMEDIATE")
         try:
             previous = self.db.execute(
