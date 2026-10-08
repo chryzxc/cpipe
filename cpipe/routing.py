@@ -12,10 +12,8 @@ ROLES = ("plan", "build", "review", "qa")
 
 
 def profile_home(profile):
-    from .home import root
-    home = root()
-    base = home.parent.parent if home.parent.name == "profiles" else home
-    return base if profile == "default" else base / "profiles" / profile
+    from hermes_cli.profiles import get_profile_dir
+    return get_profile_dir(profile)
 
 
 def configured_model(ec):
@@ -48,20 +46,17 @@ def candidates(cfg, mode):
 
 
 def specialist_candidates(cfg):
-    """Discover installed profiles without changing configuration or their models."""
-    ready = candidates(cfg, "single")
-    from .home import root
-    home = root()
-    base = home.parent.parent if home.parent.name == "profiles" else home
-    profiles = base / "profiles"
+    """Use Hermes' live roster, including its profile identity/deletion rules."""
+    from hermes_cli.profiles import list_profiles
+    roster = {p.name for p in list_profiles(lazy_skill_count=True)}
+    ready = {name: ec for name, ec in candidates(cfg, "single").items()
+             if (ec.get("profile") or "default") in roster}
     represented = {ec.get("profile") or "default" for ec in ready.values()}
-    if profiles.is_dir():
-        for file in sorted(profiles.glob("*/config.yaml")):
-            profile = file.parent.name
-            name = "profile:" + profile
-            ec = {"kind": "hermes", "profile": profile, "bin": "hermes"}
-            if profile not in represented and name not in ready and engines.available(name, ec)[0]:
-                ready[name] = ec
+    for profile in sorted(roster):
+        name = "profile:" + profile
+        ec = {"kind": "hermes", "profile": profile, "bin": "hermes"}
+        if profile not in represented and name not in ready and engines.available(name, ec)[0]:
+            ready[name] = ec
     return ready
 
 
