@@ -128,6 +128,10 @@ When a large delivery has finished planning and has no unanswered questions, Her
 
 Commands queue a new turn in your Hermes session. The first reply confirms that the request was queued, not that the work is finished. If the host cannot queue the turn, no workflow starts. cpipe does not select an unrelated delivery as a fallback.
 
+This interaction applies across the command family, not just `/cp-plan`: new `/cp-review`, `/cp-fix`, `/cp-verify`, and `/cp-ship` deliveries use the same routing picker. Required delivery questions and next-action choices use native clarification; completed plans, draft publication, and PR readiness use native approval dialogs bound to the current session and exact delivery revision. Selecting an answer continues in the same tool loop—you do not need to type “proceed.” Cancellation, rejection, unavailable UI transport, and stale approvals do not advance work. These approvals do not authorize merging or deployment.
+
+Starting or resuming a delivery checks the runner, starts it if necessary, and immediately nudges queued work instead of waiting for its next scheduled scan. The card is released only after its session wake subscription is verified. Startup and dispatch failures are reported rather than presented as successful progress. Cards display the selected Hermes profile or CLI name as their assignee; internal ownership comes from delivery metadata, not a `cp:` assignee prefix.
+
 ## Bring existing work
 
 You can enter directly at review, verification, or shipping. The source checkout must be clean and committed, with a known base branch and scope.

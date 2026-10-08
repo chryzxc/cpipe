@@ -80,12 +80,6 @@ def _prompt(task, state, revision):
     Unlike routine command safety, this must not honor --yolo, cached scopes,
     auto-approve policy or unattended workers. No session/permanent buttons.
     """
-    from tools import approval
-    from tools.approval_context import _fire_approval_hook, _no_user_can_answer, get_current_session_key
-    from tools.approval_gateway_wait import _await_gateway_decision
-    from tools.approval_prompt import prompt_dangerous_approval
-    if _no_user_can_answer():
-        return {"resolved": False, "choice": None, "unavailable": True}
     command = f"Build approved plan: {task.title} [{revision[:12]}]"
     description = ("Accept to authorize the existing build workflow for this exact plan: implementation, tests and "
                    "configured review, including a draft PR if enabled for this delivery. Reject leaves the plan "
@@ -96,11 +90,21 @@ def _prompt(task, state, revision):
     if state.get("routing"):
         from .routing import describe
         description += "\n\nConfirmed execution route:\n" + describe(state["routing"])
+    return _native_prompt(command, description, "cpipe_plan_approval", "Approve this development plan?")
+
+
+def _native_prompt(command, description, pattern, title):
+    from tools import approval
+    from tools.approval_context import _fire_approval_hook, _no_user_can_answer, get_current_session_key
+    from tools.approval_gateway_wait import _await_gateway_decision
+    from tools.approval_prompt import prompt_dangerous_approval
+    if _no_user_can_answer():
+        return {"resolved": False, "choice": None, "unavailable": True}
     from agent.redact import redact_sensitive_text
     command, description = redact_sensitive_text(command), redact_sensitive_text(description)
     data = {"command": command, "description": description,
-            "pattern_key": "cpipe_plan_approval", "pattern_keys": ["cpipe_plan_approval"],
-            "allow_session": False, "allow_permanent": False, "title": "Approve this development plan?"}
+            "pattern_key": pattern, "pattern_keys": [pattern],
+            "allow_session": False, "allow_permanent": False, "title": title}
     key = get_current_session_key()
     with approval._lock:
         notify = approval._gateway_notify_cbs.get(key)
@@ -114,7 +118,7 @@ def _prompt(task, state, revision):
     hooks.update(session_key=key, surface="cli")
     _fire_approval_hook("pre_approval_request", **hooks)
     choice = prompt_dangerous_approval(command, description, allow_session=False,
-                                      allow_permanent=False, title="Approve this development plan?", approval_callback=callback)
+                                      allow_permanent=False, title=title, approval_callback=callback)
     _fire_approval_hook("post_approval_response", **hooks, choice=choice)
     return {"resolved": choice in ("once", "deny"), "choice": choice}
 
@@ -162,6 +166,9 @@ def request(args, session_id=None):
                     result.update(status="approved", note="Exact plan approved; implementation queued. No shipping authorization.")
             if result["status"] == "approved" and not h.resume(conn, tid):
                 result.update(status="waiting_for_approval", note="Approval recorded but delivery did not resume; check its current state.")
+            elif result["status"] == "approved":
+                from .tools import _activate
+                _activate(tid)
     with _store() as store:
         store.execute("UPDATE plan_approvals SET result=? WHERE session_id=? AND task_id=? AND revision=?",
                       (json.dumps(result), *key))

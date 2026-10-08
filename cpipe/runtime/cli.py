@@ -57,7 +57,7 @@ def handle(args: argparse.Namespace) -> int:
     cmd = getattr(args, "wr_command", None) or "doctor"
     if cmd in ("status", "report"):
         from contextlib import closing
-        from ... import report
+        from .. import report
         from . import hermes_api
         with closing(hermes_api.connect(args.board)) as conn:
             items = report.rows(conn, open_only=cmd == "status")

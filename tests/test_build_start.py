@@ -171,7 +171,7 @@ def test_confirmation_creates_real_same_session_small_delivery(start, board, tmp
     result = finish(form)
     task = h.get_task(board, result["task_id"])
     assert task is not None
-    assert task.session_id == "chat-a" and task.assignee == "cp:hermes" and task.status == "ready"
+    assert task.session_id == "chat-a" and task.assignee == "default" and task.status == "ready"
     assert any(c.author == "cpipe:size" and c.body == "small" for c in h.comments_after(board, task.id))
     assert args["arguments"]["request"] in task.body
     assert native.after_tool(session_id="chat-a", tool_name="clarify", args=form, result=reply(form)) is None

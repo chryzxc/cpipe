@@ -145,6 +145,17 @@ def resolve_project(project: str | None, cfg: dict) -> tuple[str, Path] | dict:
             "question": f"Where is the checkout for {project}? Select or create its project in Hermes first."}
 
 
+def _activate(task_id=None):
+    from .runtime import activation
+    activation.ensure_running()
+    if task_id:
+        result = activation.nudge()
+        if result.errors:
+            raise RuntimeError("Delivery dispatch failed; inspect status: " + ", ".join(result.errors))
+        if task_id in result.spawn_failed:
+            raise RuntimeError("Delivery supervisor could not start; the card records the launch failure")
+
+
 def plan(args: dict) -> dict:
     size = args.get("size", "large")
     if size not in ("large", "small", "content"):
@@ -171,23 +182,34 @@ def plan(args: dict) -> dict:
     request = args["request"].strip()
     title = (args.get("title") or request.splitlines()[0])[:100]
     branch = f"cp/{_slug(title)}-{secrets.token_hex(2)}"
+    _activate()
     with closing(hermes_api.connect(None)) as conn:
-        tid = hermes_api.create_card(conn, title=title, body=request, assignee=f"cp:{engine}",
+        from . import engines
+        owner = cfg.get("roles", {}).get("plan", engine) if size == "large" else engine
+        ec = cfg["engines"][owner]
+        assignee = (ec.get("profile") or "default") if engines.kind(owner, ec) == "hermes" else engines.kind(owner, ec)
+        tid = hermes_api.create_card(conn, title=title, body=request, assignee=assignee, engine=engine,
                                      repo=str(repo), branch=branch,
                                      model=args.get("model"), size=size, routing=args.get("routing"))
-    return {"task_id": tid, "project": name, "engine": engine, "branch": branch, "size": size}
+    _activate(tid)
+    return {"task_id": tid, "project": name, "engine": engine, "assignee": assignee,
+            "branch": branch, "size": size, "runner_ready": True}
 
 
 def _steer(task_id: str, text: str, directive: str = "") -> dict:
     with closing(hermes_api.connect(None)) as conn:
         task = hermes_api.get_task(conn, task_id)
-        if not task or not (task.assignee or "").startswith("cp:"):
+        if not hermes_api.is_delivery(task):
             return {"error": f"{task_id} is not a cpipe delivery"}
+        if task.status in ("done", "archived"):
+            return {"error": "Delivery is closed; no directive was recorded"}
+        _activate()
         if text.strip():
             hermes_api.comment(conn, task_id, text, author="user")
         if directive:
             hermes_api.comment(conn, task_id, directive, author=f"cpipe:{directive}")
         resumed = hermes_api.resume(conn, task_id)
+        _activate(task_id)
         return {"task_id": task_id, "status": hermes_api.get_task(conn, task_id).status,
                 "note": "" if resumed else "queued: the delivery reads it at its next round"}
 
@@ -213,7 +235,7 @@ def stage(entry: str, args: dict) -> dict:
             return {"error": "invalid task_id; resolve the matching delivery from this session"}
         with closing(hermes_api.connect(None)) as conn:
             task = hermes_api.get_task(conn, args["task_id"])
-            if not task or not (task.assignee or "").startswith("cp:") or task.status in ("done", "archived"):
+            if not hermes_api.is_delivery(task) or task.status in ("done", "archived"):
                 return {"error": "no open cpipe delivery with that id"}
             if task.status == "running":
                 return {"error": "delivery is running; wait for its handoff before entering another stage"}
@@ -224,11 +246,16 @@ def stage(entry: str, args: dict) -> dict:
                          "text": (args.get("text") or "").strip()}
             if entry == "fix" and not directive["text"] and not state.get("findings"):
                 return {"question": "What findings or bounded improvements should the builder fix?"}
+            _activate()
             hermes_api.comment(conn, task.id, json.dumps(directive), "cpipe:stage")
             hermes_api.resume(conn, task.id)
+            _activate(task.id)
             return {"task_id": task.id, "stage": entry, "note": "Specialist stage queued; results follow here."}
 
+    from . import routing
     cfg = settings.load()
+    if args.get("routing"):
+        cfg = routing.effective_config(cfg, args["routing"])
     found = resolve_project(args.get("project") or args.get("repo"), cfg)
     if isinstance(found, dict):
         return {**found, "next": "Use native clarify/project selection; no workflow started."}
@@ -262,6 +289,7 @@ def stage(entry: str, args: dict) -> dict:
         return {"error": f"unknown engine {engine!r}"}
     title = request.splitlines()[0][:100]
     branch = f"cp/{_slug(title)}-{secrets.token_hex(4)}"
+    _activate()
     # Pre-create a branch at the exact receipt: dispatcher never guesses source HEAD.
     created = _git("-C", str(repo), "branch", branch, sha)
     if created.returncode:
@@ -271,10 +299,15 @@ def stage(entry: str, args: dict) -> dict:
                 "source_branch": _git("-C", str(repo), "branch", "--show-current").stdout.strip(),
                 "request": request}
     with closing(hermes_api.connect(None)) as conn:
-        tid = hermes_api.create_card(conn, title=title, body=request, assignee=f"cp:{engine}", model=None,
+        from . import engines
+        owner = cfg.get("roles", {}).get("review", engine) if entry == "review" else engine
+        ec = cfg["engines"][owner]
+        assignee = (ec.get("profile") or "default") if engines.kind(owner, ec) == "hermes" else engines.kind(owner, ec)
+        tid = hermes_api.create_card(conn, title=title, body=request, assignee=assignee, engine=engine, model=None,
                                      repo=str(repo), branch=branch, idempotency_key=f"cpipe:adopt:{branch}",
                                      max_runtime_seconds=(int(cfg["limits"]["round_minutes"]) + settings.PR_MINUTES) * 60,
-                                     adoption=adoption)
+                                     adoption=adoption, routing=args.get("routing"))
+        _activate(tid)
         return {"task_id": tid, "project": name, "branch": branch, "stage": entry,
                 "source_head": sha, "note": "Existing work adopted; no retrospective TDD claim. Specialist results follow here."}
 
@@ -298,7 +331,7 @@ def _brief(conn, task) -> dict:
     node = st.get("node") or "setup"
     out = {"task_id": task.id, "title": task.title, "status": task.status,
            "stage": STAGES.get(node, "planning" if not st.get("approved") else "building"),
-           "engine": st.get("engine") or task.assignee[3:], "pr": st.get("pr_url"),
+           "engine": st.get("engine") or hermes_api.engine_of(conn, task), "pr": st.get("pr_url"),
            "verification": st.get("verification"), "findings": st.get("findings"),
            "routing": st.get("routing"),
            "source_head": (st.get("adoption") or {}).get("head"), "verified_head": st.get("verified_head")}

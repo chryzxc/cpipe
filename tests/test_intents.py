@@ -63,8 +63,10 @@ def test_ship_adopts_existing_work_and_uses_specialists_before_draft(hermes_home
     assert "Default to draft" in prompt and "only when the user explicitly asks" in prompt
     assert "never a direct-tools bypass" in prompt and "Never merge" in prompt
     args = {"request": "Resolve existing scope"}
-    result = json.loads(intents.execute({"token": token(ctx), "operation": "ship", "arguments": args}))
-    assert result == {"stage": "ship"} and calls == [("ship", args)]
+    result = finish_routing({"token": token(ctx), "operation": "ship", "arguments": args})
+    assert result == {"stage": "ship"} and len(calls) == 1
+    assert calls[0][0] == "ship" and calls[0][1]["request"] == args["request"]
+    assert calls[0][1]["routing"]["mode"] == "single"
 
 
 @pytest.mark.parametrize("name", intents.POLICIES)

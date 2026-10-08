@@ -163,7 +163,8 @@ def describe() -> dict[str, Any]:
 def create_card(conn, *, title: str, body: str, assignee: str, repo: str, branch: str,
                 model: Optional[str] = None, parents: Iterable[str] = (), creator_task_id: Optional[str] = None,
                 size: str = "large", adoption: Optional[dict] = None, routing: Optional[dict] = None,
-                idempotency_key: Optional[str] = None, max_runtime_seconds: Optional[int] = None) -> str:
+                idempotency_key: Optional[str] = None, max_runtime_seconds: Optional[int] = None,
+                engine: Optional[str] = None) -> str:
     """A delivery card, linked to the calling chat session when there is one: Hermes then notifies that chat when
     the card needs review, blocks or completes (its own kanban_create provenance and auto-subscribe)."""
     session_id, kt = None, None
@@ -177,25 +178,42 @@ def create_card(conn, *, title: str, body: str, assignee: str, repo: str, branch
         pass
     if size not in ("large", "small", "content"):
         raise ValueError("size must be large, small, or content")
-    # Publish the task and its route atomically: a dispatcher must never see half a submission.
+    from .. import settings
+    from .dispatch_guard import install
+    install()
+    max_runtime_seconds = max_runtime_seconds or (int(settings.load()["limits"]["round_minutes"]) + settings.PR_MINUTES) * 60
+    idempotency_key = idempotency_key or f"cpipe:{repo}:{branch}"
+    target = kt._resolve_notify_target() if kt is not None else None
+    if session_id and not target:
+        raise RuntimeError("No native session wake subscription is available; no delivery queued")
+    # Keep it non-dispatchable until Hermes' standalone subscription transaction
+    # commits. Its API does not permit nesting inside our creation transaction.
     with kb.write_txn(conn):
         tid = kb.create_task(conn, title=title, body=body, assignee=assignee, created_by="cpipe",
                              workspace_kind="worktree", workspace_path=repo, branch_name=branch,
                              model_override=model, parents=tuple(parents), creator_task_id=creator_task_id,
                              session_id=session_id, idempotency_key=idempotency_key,
-                             max_runtime_seconds=max_runtime_seconds)
+                             max_runtime_seconds=max_runtime_seconds, initial_status="blocked")
         comment(conn, tid, size, author="cpipe:size")
+        comment(conn, tid, engine or assignee.removeprefix("cp:"), author="cpipe:engine")
         if routing is not None:
             import json
             comment(conn, tid, json.dumps(routing), author="cpipe:routing")
         if adoption is not None:
             import json
             comment(conn, tid, json.dumps(adoption), author="cpipe:adopt")
-    if kt is not None:
+    if target:
+        from hermes_cli import kanban_db_notify as notify
         try:
-            kt._maybe_auto_subscribe(conn, tid)
-        except Exception:
-            pass
+            notify.add_notify_sub(conn, task_id=tid, **{**target, "delivery_mode": "notify+wake"})
+            if not any(s["platform"] == target["platform"] and s["chat_id"] == target["chat_id"]
+                       and s["delivery_mode"] == "notify+wake" for s in notify.list_notify_subs(conn, tid)):
+                raise RuntimeError("subscription readback failed")
+        except Exception as exc:
+            kb.block_task(conn, tid, reason="Native session wake subscription failed; fix transport before resuming",
+                          kind="capability")
+            raise RuntimeError(f"Native session wake subscription failed; {tid} remains blocked, not queued") from exc
+    resume(conn, tid)
     return tid
 
 
@@ -213,8 +231,19 @@ def archive(conn, task_id: str) -> bool:
     return bool(kb.archive_task(conn, task_id))
 
 
-def list_cards(conn, prefix: str = "cp:") -> list[Task]:
-    return [t for t in kb.list_tasks(conn, include_archived=True) if (t.assignee or "").startswith(prefix)]
+def is_delivery(task) -> bool:
+    return bool(task and (task.created_by == "cpipe" or (task.assignee or "").startswith("cp:")))
+
+
+def engine_of(conn, task) -> str:
+    if (task.assignee or "").startswith("cp:"):
+        return task.assignee[3:]
+    return next((c.body for c in comments_after(conn, task.id) if c.author == "cpipe:engine"), task.assignee or "")
+
+
+def list_cards(conn, prefix: Optional[str] = None) -> list[Task]:
+    return [t for t in kb.list_tasks(conn, include_archived=True) if is_delivery(t)
+            and (prefix is None or (t.assignee or "").startswith(prefix))]
 
 
 def latest_metadata(conn, task_id: str) -> dict:

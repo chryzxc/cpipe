@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from cpipe import intents, settings, tools
-from test_intents import Context, token
+from test_intents import Context, token, finish_routing
 
 
 def test_stage_commands_registered():
@@ -17,15 +17,24 @@ def test_stage_commands_registered():
                                           ("cp-fix", "fix"), ("cp-ship", "ship")])
 def test_stage_intent_runs_specialist_backend(monkeypatch, tmp_path, command, action):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    monkeypatch.setattr(intents, "_session_key", lambda: "stage-session")
+    monkeypatch.setattr(intents, "_session_key", lambda: "chat-a")
+    from cpipe import native, engines
+    monkeypatch.setattr(native, "_session", lambda explicit: explicit or "chat-a")
+    monkeypatch.setattr(engines, "available", lambda *a: (True, ""))
     seen = []
     monkeypatch.setattr(tools, "stage", lambda name, args: seen.append((name, args)) or {"task_id": "t_stage"})
     ctx = Context()
     intents.dispatch(ctx, command, "this existing change")
-    result = json.loads(intents.execute({"token": token(ctx), "operation": action,
-                                         "arguments": {"request": "Review the existing change"}}))
+    receipt = {"token": token(ctx), "operation": action, "arguments": {"request": "Review the existing change"}}
+    assert json.loads(intents.execute(receipt))["status"] == "needs_routing"
+    assert not seen
+    result = finish_routing(receipt)
     assert result["task_id"] == "t_stage"
-    assert seen == [(action, {"request": "Review the existing change"})]
+    assert len(seen) == 1 and seen[0][0] == action
+    assert seen[0][1]["request"] == "Review the existing change"
+    assert seen[0][1]["routing"]["mode"] == "single"
+    assert json.loads(intents.execute(receipt))["task_id"] == "t_stage"
+    assert len(seen) == 1
 
 
 def test_direct_bypass_no_longer_allowed(monkeypatch, tmp_path):

@@ -42,7 +42,7 @@ def row(conn, task) -> dict:
             "agent_seconds": sum(c["seconds"] for c in calls),  # additive work, not elapsed time
             "agent_calls": len(calls), "agents": sorted({c.get("profile") or c["engine"] for c in calls}),
             "calls_without_usage": sum(c.get("tokens") is None for c in calls),
-            "engine": st.get("engine") or (task.assignee or "")[3:], "pr": st.get("pr_url"),
+            "engine": st.get("engine") or hermes_api.engine_of(conn, task), "pr": st.get("pr_url"),
             "runs": hermes_api.run_count(conn, task.id), "minutes": round(sum(e["end"] - e["start"] for e in timeline) / 60, 1),
             "tokens": _tokens(st.get("usage") or {}),
             "cached_input_tokens": int((st.get("usage") or {}).get("cached_input_tokens", 0)), "nodes": nodes}
