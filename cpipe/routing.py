@@ -79,16 +79,45 @@ def selected_specialists(cfg, ready, selected):
     return snapshot(local, "specialists", "hermes", roles)
 
 
-def specialist_form(ready, error=None):
+MORE_PROFILES = "More profiles"
+
+
+def owner_label(name, ec):
+    profile = ec.get("profile") or ("default" if engines.kind(name, ec) == "hermes" else name)
+    model = ec.get("model") or configured_model({**ec, "kind": engines.kind(name, ec)}) or "configured default"
+    return f"{profile} — {model} [{name}]"
+
+
+def resolve_owner(ready, value):
+    """Accept clickable labels and unambiguous profile names, not model guesses."""
+    value = value.strip()
+    if value in ready:
+        return value
+    matches = [name for name, ec in ready.items()
+               if value == owner_label(name, ec) or value == (ec.get("profile") or "default")]
+    return matches[0] if len(matches) == 1 else None
+
+
+def specialist_form(ready, error=None, selected=(), page=0):
     if len({ec.get("profile") or "default" for ec in ready.values()}) < 2:
         raise ValueError("Specialist routing needs at least two available Hermes profiles for independent review. Choose single-profile mode or install another profile. No work started.")
     import secrets
-    descriptions = "; ".join(f"{name}: {ec.get('profile') or 'default'} ({ec.get('model') or configured_model(ec) or 'profile default'})"
-                             for name, ec in ready.items())
-    return {"questions": [{"question": f"[cpipe-owner {secrets.token_hex(12)}] Select the {role} owner. "
+    role = ROLES[len(selected)]
+    options = {name: ec for name, ec in ready.items() if role != "review" or
+               (ec.get("profile") or "default") != (ready[selected[1]].get("profile") or "default")}
+    names = list(options)
+    count = (len(names) + 2) // 3
+    page %= count
+    labels = [owner_label(name, options[name]) for name in names[page * 3:page * 3 + 3]]
+    if count > 1:
+        labels.append(MORE_PROFILES)
+    title = {"plan": "planning", "build": "implementation", "review": "independent review", "qa": "testing"}[role]
+    return {"questions": [{"question": f"[cpipe-owner {secrets.token_hex(12)}] Choose the profile for {title} "
+             + f"({len(selected) + 1} of {len(ROLES)}). Models shown are the profiles' current settings; this does not change them. "
+             + (f"Page {page + 1} of {count}. " if count > 1 else "")
              + (str(error) + " " if error else "")
-             + "Build and review must use different profiles. Available owners: " + descriptions,
-             **({"choices": list(ready)} if len(ready) <= 4 else {})} for role in ROLES]}
+             + ("The implementation profile is excluded to keep review independent." if role == "review" else ""),
+             "choices": labels}]}
 
 
 def specialist_route(cfg):

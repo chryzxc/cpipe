@@ -65,8 +65,10 @@ def test_build_missing_roles_continues_in_same_tool_loop_exactly_once(bridge):
     assert pending["phase"] == "roles" and not calls
     assert set(pending["candidates"]) >= {"hermes", "profile:builder", "profile:reviewer"}
     owners = ["hermes", "profile:builder", "profile:reviewer", "hermes"]
-    out, _ = clarify(pending["clarify"], owners)
-    pending = out["cpipe"]
+    for owner in owners:
+        label = routing.owner_label(owner, pending["candidates"][owner])
+        assert label in pending["clarify"]["questions"][0]["choices"]
+        pending = clarify(pending["clarify"], [label])[0]["cpipe"]
     assert pending["phase"] == "confirm" and not calls
     assert "test-model" in pending["clarify"]["questions"][0]["question"]
     assert clarify(pending["clarify"], ["Start with this route"])[0]["cpipe"]["task_id"] == "test-only"
@@ -82,14 +84,44 @@ def test_build_missing_roles_continues_in_same_tool_loop_exactly_once(bridge):
     assert json.loads(intents.execute(receipt))["task_id"] == "test-only"
 
 
+def test_large_roster_is_clickable_and_paging_does_not_start_work(bridge, hermes_home):
+    pending, clarify, calls, _, _ = bridge
+    for i in range(12):
+        p = hermes_home / "profiles" / f"extra{i}" / "config.yaml"
+        p.parent.mkdir(parents=True)
+        p.write_text("model:\n  default: extra-model\n")
+    pending = clarify(pending["clarify"], ["Start a small delivery"])[0]["cpipe"]
+    pending = clarify(pending["clarify"], ["Specialist bots/profiles"])[0]["cpipe"]
+    seen = set()
+    for page in range(5):
+        q = pending["clarify"]["questions"][0]
+        assert len(q["choices"]) == 4 and pending["selected"] == [] and not calls
+        assert "Available owners:" not in q["question"] and len(q["question"]) < 350
+        seen.update(routing.resolve_owner(pending["candidates"], v) for v in q["choices"] if v != routing.MORE_PROFILES)
+        old_form = pending["clarify"]
+        pending = clarify(old_form, [routing.MORE_PROFILES])[0]["cpipe"]
+        assert "cpipe" not in clarify(old_form, [q["choices"][0]])[0]
+    assert seen == set(pending["candidates"])
+    for owner in ("default", "builder", "reviewer", "default"):
+        pending = clarify(pending["clarify"], [owner])[0]["cpipe"]
+    assert pending["phase"] == "confirm" and not calls
+    assert clarify(pending["clarify"], ["Start with this route"])[0]["cpipe"]["task_id"] == "test-only"
+    assert len(calls) == 1
+
+
 def test_invalid_owners_are_visible_and_can_be_corrected(bridge):
     pending, clarify, calls, _, _ = bridge
     pending = clarify(pending["clarify"], ["Start a small delivery"])[0]["cpipe"]
     pending = clarify(pending["clarify"], ["Specialist bots/profiles"])[0]["cpipe"]
-    pending = clarify(pending["clarify"], ["hermes"] * 4)[0]["cpipe"]
-    assert "different build and review" in pending["error"] and pending["phase"] == "roles"
+    pending = clarify(pending["clarify"], ["gpt-6.1-sol"])[0]["cpipe"]
+    assert "listed profile" in pending["error"] and pending["selected"] == []
+    for owner in ("default", "builder"):
+        pending = clarify(pending["clarify"], [owner])[0]["cpipe"]
+    pending = clarify(pending["clarify"], ["builder"])[0]["cpipe"]
+    assert "different profile" in pending["error"] and len(pending["selected"]) == 2
     assert not calls
-    pending = clarify(pending["clarify"], ["hermes", "profile:builder", "profile:reviewer", "hermes"])[0]["cpipe"]
+    for owner in ("reviewer", "default"):
+        pending = clarify(pending["clarify"], [owner])[0]["cpipe"]
     assert pending["phase"] == "confirm" and "error" not in pending
     assert clarify(pending["clarify"], ["Cancel"])[0]["cpipe"]["status"] == "cancelled"
     assert not calls
@@ -122,7 +154,8 @@ def test_confirmed_specialists_create_one_real_session_card_with_frozen_route(br
     monkeypatch.setitem(tools.HANDLERS, "cpipe_plan", tools.plan)
     pending = clarify(pending["clarify"], ["Start a small delivery"])[0]["cpipe"]
     pending = clarify(pending["clarify"], ["Specialist bots/profiles"])[0]["cpipe"]
-    pending = clarify(pending["clarify"], ["hermes", "profile:builder", "profile:reviewer", "hermes"])[0]["cpipe"]
+    for owner in ("hermes", "profile:builder", "profile:reviewer", "hermes"):
+        pending = clarify(pending["clarify"], [owner])[0]["cpipe"]
     assert not h.list_cards(board)
     result = clarify(pending["clarify"], ["Start with this route"])[0]["cpipe"]
     assert "task_id" in result, result

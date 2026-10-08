@@ -157,7 +157,7 @@ def confirm_route_start(sid, asked, values):
             else:
                 return None
             phase = pending["phase"]
-            if len(values) != (len(routing.ROLES) if phase == "roles" else 1):
+            if len(values) != (len(routing.ROLES) if phase == "roles" and "selected" not in pending else 1):
                 return None
             value = values[0]
             cfg = settings.load()
@@ -172,7 +172,7 @@ def confirm_route_start(sid, asked, values):
                         except ValueError:
                             choices = routing.specialist_candidates(cfg)
                             form = routing.specialist_form(choices)
-                            pending.update(mode=mode, candidates=choices, phase="roles", clarify=form)
+                            pending.update(mode=mode, candidates=choices, phase="roles", selected=[], page=0, clarify=form)
                             route = None
                     else:
                         choices = routing.candidates(cfg, mode)
@@ -184,15 +184,32 @@ def confirm_route_start(sid, asked, values):
                             **({"choices": list(choices)} if len(choices) <= 4 else {})}]})
                         route = None
                 elif phase == "roles":
-                    try:
-                        route = routing.selected_specialists(cfg, pending["candidates"], values)
-                    except ValueError as exc:
-                        pending["clarify"] = routing.specialist_form(pending["candidates"], str(exc))
-                        pending["error"] = str(exc)
-                        conn.execute("UPDATE intents SET result=? WHERE token=?", (json.dumps(pending), receipt["token"]))
-                        _build_notice(conn, receipt["token"], sid, pending)
-                        return pending
-                    pending.pop("error", None)
+                    ready = pending["candidates"]
+                    route = None
+                    # Older, already displayed four-question forms remain answerable.
+                    selected = pending.get("selected", [])
+                    if "selected" not in pending:
+                        owners = [routing.resolve_owner(ready, v) for v in values]
+                        try:
+                            route = routing.selected_specialists(cfg, ready, owners)
+                        except ValueError as exc:
+                            pending.update(selected=[], page=0, error=str(exc))
+                    elif value == routing.MORE_PROFILES and value in asked[0].get("choices", []):
+                        pending["page"] += 1
+                    else:
+                        owner = routing.resolve_owner(ready, value)
+                        if owner is None:
+                            pending["error"] = "Choose a listed profile, not a model name. No work started."
+                        elif len(selected) == 2 and (ready[owner].get("profile") or "default") == (ready[selected[1]].get("profile") or "default"):
+                            pending["error"] = "Choose a different profile for independent review. No work started."
+                        else:
+                            pending["selected"].append(owner)
+                            pending["page"] = 0
+                            pending.pop("error", None)
+                            if len(pending["selected"]) == len(routing.ROLES):
+                                route = routing.selected_specialists(cfg, ready, pending["selected"])
+                    if route is None:
+                        pending["clarify"] = routing.specialist_form(ready, pending.get("error"), pending["selected"], pending["page"])
                 elif phase == "engine":
                     if value not in pending["candidates"]:
                         return None
@@ -217,6 +234,7 @@ def confirm_route_start(sid, asked, values):
                 else:
                     return None
                 if route:
+                    pending.pop("error", None)
                     pending.update(phase="confirm", routing=route, clarify={"questions": [{
                         "question": f"[cpipe-route-confirm {secrets.token_hex(12)}] Confirm this delivery's execution route:\n"
                                     + routing.describe(route), "choices": ["Start with this route", "Cancel"]}]})
