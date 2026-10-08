@@ -200,7 +200,8 @@ def after_tool(*, session_id=None, tool_name=None, args=None, result=None, **_):
     values = []
     for question, row in zip(asked, rows):
         if (not isinstance(question, dict) or not isinstance(row, dict)
-                or row.get("question") != question.get("question")):
+                or not isinstance(question.get("question"), str)
+                or row.get("question") not in (question["question"], question["question"].strip())):
             return None
         value = row.get("user_response")
         if not isinstance(value, str) or not value.strip():

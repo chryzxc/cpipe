@@ -46,8 +46,12 @@ def bridge(hermes_home, monkeypatch, tmp_path):
     monkeypatch.setattr(plugins, "has_hook", lambda name: name in hooks)
     monkeypatch.setattr(plugins, "invoke_hook", lambda name, **kwargs: [hooks[name](**kwargs)] if name in hooks else [])
     def clarify(form, values, session="chat-a", **extra):
-        rows = [{"question": q["question"], "user_response": value} for q, value in zip(form["questions"], values)]
-        original = {"responses": rows, **extra}
+        from tools.clarify_tool import clarify_tool
+        # Exercise Hermes' own normalization and response serialization.
+        original = json.loads(clarify_tool(form["questions"], callback=lambda questions: {
+            "answers": {q["qid"]: value for q, value in zip(questions, values)},
+            "outcome": "submitted"}))
+        original.update(extra)
         monkeypatch.setattr(registry, "dispatch", lambda *a, **kw: json.dumps(original))
         result = model_tools.handle_function_call("clarify", form, session_id=session, skip_pre_tool_call_hook=True)
         return json.loads(result), original

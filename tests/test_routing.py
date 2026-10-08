@@ -110,6 +110,29 @@ def test_wrong_session_and_changed_form_are_rejected(flow):
     assert not flow[2]
 
 
+def test_specialist_roster_comes_from_hermes_not_directory_globbing(flow, hermes_home, monkeypatch):
+    from hermes_cli import profiles
+    # Existing configured directories deliberately differ from Hermes' roster.
+    seen = []
+    def roster(**kwargs):
+        seen.append(kwargs)
+        return [SimpleNamespace(name="default"), SimpleNamespace(name="registered")]
+    monkeypatch.setattr(profiles, "list_profiles", roster)
+    ready = routing.specialist_candidates(flow[1])
+    assert {ec.get("profile") or "default" for ec in ready.values()} == {"default", "registered"}
+    assert seen == [{"lazy_skill_count": True}]
+    assert "profile:builder" not in ready and "builder" not in ready
+
+
+def test_profile_model_lookup_uses_hermes_profile_resolution(flow, hermes_home, monkeypatch):
+    from hermes_cli import profiles
+    custom = hermes_home / "registered-location"
+    custom.mkdir()
+    (custom / "config.yaml").write_text("model:\n  default: registered-model\n")
+    monkeypatch.setattr(profiles, "get_profile_dir", lambda name: custom)
+    assert routing.configured_model({"kind": "hermes", "profile": "registered"}) == "registered-model"
+
+
 def test_cancel_does_not_submit(flow):
     pending = start(flow, "Single Hermes profile (default or another)", "hermes")
     assert answer(pending, "Cancel")["status"] == "cancelled"
