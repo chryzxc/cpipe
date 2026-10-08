@@ -48,7 +48,7 @@ def candidates(cfg, mode):
 def specialist_candidates(cfg):
     """Use Hermes' live roster, including its profile identity/deletion rules."""
     from hermes_cli.profiles import list_profiles
-    roster = {p.name for p in list_profiles(lazy_skill_count=True)}
+    roster = {p.name: p for p in list_profiles(lazy_skill_count=True)}
     ready = {name: ec for name, ec in candidates(cfg, "single").items()
              if (ec.get("profile") or "default") in roster}
     represented = {ec.get("profile") or "default" for ec in ready.values()}
@@ -57,6 +57,9 @@ def specialist_candidates(cfg):
         ec = {"kind": "hermes", "profile": profile, "bin": "hermes"}
         if profile not in represented and name not in ready and engines.available(name, ec)[0]:
             ready[name] = ec
+    for ec in ready.values():
+        info = roster[ec.get("profile") or "default"]
+        ec["profile_description"] = " ".join((getattr(info, "description", "") or "").split()) or "No description configured."
     return ready
 
 
@@ -80,7 +83,9 @@ MORE_PROFILES = "More profiles"
 def owner_label(name, ec):
     profile = ec.get("profile") or ("default" if engines.kind(name, ec) == "hermes" else name)
     model = ec.get("model") or configured_model({**ec, "kind": engines.kind(name, ec)}) or "configured default"
-    return f"{profile} — {model} [{name}]"
+    label = f"{profile} — {model} [{name}]"
+    description = ec.get("profile_description")
+    return f"{label} — {description}" if description else label
 
 
 def resolve_owner(ready, value):
@@ -141,6 +146,7 @@ def snapshot(cfg, mode, engine, roles=None):
     # A QA-specific profile must not silently break the user's selected ownership.
     for name, ec in configs.items():
         ec.pop("qa_profile", None)
+        ec.pop("profile_description", None)  # Picker metadata is not execution configuration.
         ec["kind"] = engines.kind(name, ec)
         if model := configured_model(ec):
             ec["observed_model"] = model
