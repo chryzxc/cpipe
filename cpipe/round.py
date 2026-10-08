@@ -479,6 +479,22 @@ class Round:
                 or quality.diff_base(self.ws, self.state["base"])
                 or pr.base_ref(self.ws, self.state["base"]))
 
+    def repair_unavailable(self, stage: str, failures: list[str]):
+        """Try bounded, in-scope setup repair before making a human blocker."""
+        attempts = self.state.get("setup_repairs", 0)
+        limit = int(self.cfg["limits"].get("max_fixes", 5))
+        if self.state.get("adopted") or attempts >= limit or self.state.get("fixes", 0) >= limit:
+            return "blocked", "Required checks could not run:\n" + "\n".join(failures)
+        self.state["setup_repairs"] = attempts + 1
+        self.state["fixes"] = self.state.get("fixes", 0) + 1
+        self.state.setdefault("setup_repair_history", []).append({"stage": stage, "failures": failures})
+        return "fix", (
+            "Repair the recoverable local setup preventing required checks from running, then rerun them. "
+            "Stay within the approved scope and preserve the existing check definitions, authorization, "
+            "environment values and unrelated changes. Do not skip or weaken gates, use force-exit, "
+            "change credentials, publish, deploy or fabricate results. If repair needs new permissions "
+            "or a product decision, return needs_user with the exact blocker.\n" + "\n".join(failures))
+
     def checks(self, prompt: str, said: str):
         if not self.clean_revision():
             return "blocked", "Checks need a clean committed application revision."
@@ -489,7 +505,7 @@ class Round:
         failures = quality.run_checks(self.ws, self.base_sha(), self.state["project"], card=self.task_id, evidence=evidence)
         self.state["checks_evidence"] = evidence
         if any(f.startswith("[unavailable]") for f in failures):
-            return "blocked", "Required checks could not run:\n" + "\n".join(failures)
+            return self.repair_unavailable("checks", failures)
         if self.gate_key() != key or not self.clean_revision():
             return "blocked", "The revision or gate configuration changed during checks; rerun on a frozen revision."
         out = graph.loop_outcome(["checks"] if failures else [], self.rounds, self.limits)
@@ -643,13 +659,13 @@ class Round:
             done = {k: f.result() for k, f in jobs.items()}
         self.remember(["security" if k == "checks" else k for k, (ok, _) in done.items() if ok is False])
         if done["checks"][0] is None:
-            return "blocked", done["checks"][1]
+            return self.repair_unavailable("verify", [done["checks"][1]])
         if done["review"][0] is None:
             return "blocked", done["review"][1]  # an explicitly configured reviewer is a required gate
         if (done["qa"][0] is None
                 and self.state.get("size") != "content"
                 and workspace_prep.project_profile(self.state["project"]).get("qa") != "off"):
-            return "blocked", done["qa"][1]
+            return self.repair_unavailable("qa", [done["qa"][1]])
         failed = [k for k, (ok, _) in done.items() if ok is False]
         out = graph.loop_outcome(failed, self.rounds, self.limits)
         tdd = self.state.get("tdd") or {}

@@ -98,8 +98,12 @@ def test_adoption_preserves_source_and_records_provenance(existing, monkeypatch)
                         created.append(kw) or "t_stage")
     monkeypatch.setattr(tools.hermes_api, "comment", lambda c, tid, body, author:
                         comments.append((author, body)))
+    monkeypatch.setattr(tools.hermes_api, "get_task", lambda c, tid:
+                        SimpleNamespace(id=tid, status="ready", current_run_id=None))
     result = tools.stage("review", {"request": "review the existing work"})
     assert result["task_id"] == "t_stage"
+    assert result["status"] == "ready" and result["dispatch_scheduled"]
+    assert not result["dispatched"] and not result["worker_started"]
     assert created[0]["repo"] == str(existing)
     adopted = created[0]["adoption"]
     assert adopted["head"] == before and adopted["base"] == "main"

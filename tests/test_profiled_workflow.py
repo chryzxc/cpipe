@@ -119,14 +119,19 @@ def test_required_gate_failure_checkpoints_the_full_round(tmp_path, monkeypatch,
     reason = f"{gate} unavailable: missing executable"
     monkeypatch.setattr(r, gate, lambda: (None, reason))
     monkeypatch.setattr(r, "pr", lambda *a: pytest.fail("a missing required gate must never publish"))
+    repairs = []
+    monkeypatch.setattr(r, "build", lambda prompt, said: (repairs.append(prompt) or "ok", "local repair attempted"))
+    monkeypatch.setattr(r, "checks", lambda *a: ("ok", "checks passed"))
     out = r.run()
     assert out["status"] == "blocked"
-    assert out["summary"] == reason
+    assert reason in out["summary"]
+    assert bool(repairs) == (gate == "qa")
+    assert r.state["approved"] is True
     assert r.state["node"] == "stuck"
     assert "verified_head" not in r.state
     saved = load_state(tmp_path)
     assert saved is not None
-    assert saved["node"] == "stuck" and saved["why"] == reason
+    assert saved["node"] == "stuck" and reason in saved["why"]
     assert saved["timeline"][-1]["outcome"] == "blocked"
 
 
@@ -295,7 +300,10 @@ def test_required_qa_cannot_silently_pass(tmp_path, monkeypatch):
     monkeypatch.setattr(r, "qa", lambda: (None, "QA: app could not start"))
     monkeypatch.setattr(r, "review", lambda: (True, "Review: approved"))
     monkeypatch.setattr(r, "security", lambda: (True, "Security checks: passed"))
-    assert r.verify("build", "") == ("blocked", "QA: app could not start")
+    outcome, detail = r.verify("build", "")
+    assert outcome == "fix"
+    assert "QA: app could not start" in detail
+    assert r.state["setup_repairs"] == 1
     assert "verified_head" not in r.state
 
 

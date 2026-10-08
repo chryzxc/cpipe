@@ -1,5 +1,5 @@
 name: cpipe
-version: 0.9.8
+version: 0.9.9
 manifest_version: 2
 api_version: 1
 provides_tools: [cpipe_execute_intent, cpipe_approve_plan, cpipe_approve_action]

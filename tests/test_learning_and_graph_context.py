@@ -103,7 +103,8 @@ def test_unavailable_required_gate_cannot_confirm_learning(existing, tmp_path, m
     monkeypatch.setattr(r, "qa", lambda: (None, "QA unavailable"))
     monkeypatch.setattr(r, "security", lambda: (True, "Security passed"))
     monkeypatch.setattr(r, "review", lambda: (True, "Review passed"))
-    assert r.verify("", "")[0] == "blocked"
+    assert r.verify("", "")[0] == "fix"
+    assert "verified_head" not in r.state
     assert learning.recalled(existing)[0]["recovered"] == 0
 
 

@@ -15,13 +15,14 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional
 
 from . import hermes_api as h
 from . import paths, procutil
 from .config import Lane, RuntimeConfig
+from .launcher import module_command
 
 log = logging.getLogger("cpipe.runtime")
 
@@ -38,6 +39,29 @@ class TickResult:
 
 class DaemonLockError(RuntimeError):
     pass
+
+
+def round_owner(conn, task, lane: Lane) -> str:
+    """The selected stage executor, never the internal engine/lane identifier."""
+    if lane.adapter != "round":
+        return lane.assignee
+    from .. import engines, report, settings
+    from ..routing import effective_config
+    state = report.state_of(conn, task)
+    cfg = settings.load()
+    route = state.get("routing")
+    if not route and conn is not None:
+        route = next((json.loads(c.body) for c in h.comments_after(conn, task.id)
+                      if c.author == "cpipe:routing"), None)
+    if route:
+        cfg = effective_config(cfg, route)
+    node = state.get("node", "setup")
+    role = node if node in ("plan", "review", "qa") else "build"
+    if node == "setup" and state.get("size", "large") == "large":
+        role = "plan"
+    engine = state.get("role_overrides", {}).get(role) or cfg.get("roles", {}).get(role) or lane.name
+    ec = cfg["engines"].get(engine) or {}
+    return (ec.get("profile") or "default") if engines.kind(engine, ec) == "hermes" else engines.kind(engine, ec)
 
 
 class Scheduler:
@@ -73,6 +97,11 @@ class Scheduler:
                 if lane.adapter == "round":
                     return h.is_delivery(task) and h.engine_of(conn, task) == lane.name
                 return task.assignee == lane.assignee
+            from .recovery import recover
+            for task in tasks:
+                if any(lane.adapter == "round" and matches(task, lane) for lane in lanes.values()):
+                    recover(conn, task, log=log.warning)
+            tasks = h.kb.list_tasks(conn)  # post-transition canonical readback
             running = {key: sum(t.status == "running" and matches(t, lane) for t in tasks)
                        for key, lane in lanes.items()}
             for assignee, lane in lanes.items():
@@ -83,6 +112,18 @@ class Scheduler:
                         continue
                     if task.claim_lock:
                         continue
+                    dispatch_lane = lane
+                    if lane.adapter == "round":
+                        owner = round_owner(conn, task, lane)
+                        if task.assignee != owner:
+                            try:
+                                if not h.kb.assign_task(conn, task.id, owner):
+                                    result.lost_race.append(task.id)
+                                    continue
+                            except RuntimeError:  # another scheduler already claimed it
+                                result.lost_race.append(task.id)
+                                continue
+                        dispatch_lane = replace(lane, assignee=owner)
                     claimer = h.new_claimer()
                     claimed = h.claim_task(conn, task.id, claimer=claimer,
                                            ttl_seconds=self.config.claim_ttl_seconds)
@@ -91,7 +132,7 @@ class Scheduler:
                         continue
                     run_id = claimed.current_run_id
                     try:
-                        proc = self._spawn(board, claimed.id, run_id, claimer, lane)
+                        proc = self._spawn(board, claimed.id, run_id, claimer, dispatch_lane)
                     except Exception as exc:
                         log.error("task %s: supervisor spawn failed: %s", task.id, exc)
                         self._release_failed_spawn(conn, claimed.id, run_id, exc)
@@ -107,7 +148,7 @@ class Scheduler:
 
     def _spawn(self, board: str, task_id: str, run_id: int, claimer: str,
                lane: Lane) -> subprocess.Popen:
-        argv = [self.python, "-m", "cpipe.runtime.supervisor",
+        argv = module_command("cpipe.runtime.supervisor") + [
                 "--board", board, "--task", task_id, "--run-id", str(run_id),
                 "--claimer", claimer, "--lane-json", json.dumps(lane.to_dict()),
                 "--heartbeat-interval", str(self.config.heartbeat_interval_seconds),

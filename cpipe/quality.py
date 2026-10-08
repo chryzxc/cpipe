@@ -19,6 +19,8 @@ optional check (``required: false``) records residual risk. Setup problems go to
 from __future__ import annotations
 
 import fnmatch
+import fcntl
+import threading
 import json
 import os
 import re
@@ -106,24 +108,30 @@ def missing_tools(project: Optional[str], home: Optional[Path] = None) -> list[s
             if (tool := _tool(str(c["run"]))) not in SHELL_WORDS and not shutil.which(tool)]
 
 
+_SETUP_LOCK = threading.RLock()
+
+
 def report_setup(name: str, detail: Optional[str], card: Optional[str] = None, home: Optional[Path] = None,
                  only: Optional[str] = None) -> None:
-    """Record a broken check tool for the operator (board triage digest); detail None clears it, or with `only`,
-    clears it only when that was the recorded problem. Never raises."""
+    """Serialize parallel check reports across threads and worker processes."""
     try:
         path = (home or _root_home()) / "state" / "setup-problems.json"
-        try:
-            problems = json.loads(path.read_text())
-        except (OSError, ValueError):
-            problems = {}
-        if detail is None and name in problems and only in (None, problems[name].get("detail")):
-            del problems[name]
-        elif detail is not None and name not in problems:
-            problems[name] = {"detail": detail[-400:], "card": card, "at": time.time()}
-        else:
-            return
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(problems))
+        with _SETUP_LOCK, path.with_suffix(".lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                problems = json.loads(path.read_text())
+            except (OSError, ValueError):
+                problems = {}
+            if detail is None and name in problems and only in (None, problems[name].get("detail")):
+                del problems[name]
+            elif detail is not None and name not in problems:
+                problems[name] = {"detail": detail[-400:], "card": card, "at": time.time()}
+            else:
+                return
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(problems))
+            temporary.replace(path)
     except Exception:
         pass
 
