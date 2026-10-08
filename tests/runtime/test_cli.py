@@ -61,7 +61,7 @@ def test_plugin_registers_cli_command_and_tools(monkeypatch):
     ctx = Ctx()
     pkg.register(ctx)
     assert ctx.calls[0]["name"] == "cpipe"
-    assert set(ctx.tools) == {"cpipe_plan", "cpipe_build", "cpipe_ship", "cpipe_status", "cpipe_stop", "cpipe_execute_intent"}
+    assert set(ctx.tools) == {"cpipe_plan", "cpipe_build", "cpipe_ship", "cpipe_status", "cpipe_stop", "cpipe_execute_intent", "cpipe_approve_plan"}
     assert {t["toolset"] for t in ctx.tools.values()} == {"cpipe"}
     # a tool error is returned to the chat, never raised
     assert "error" in json.loads(ctx.tools["cpipe_plan"]["handler"]({"request": "x", "project": "p", "repo": "/dev/null"}))

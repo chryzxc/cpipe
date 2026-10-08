@@ -169,6 +169,10 @@ def before_turn(*, session_id=None, **_):
             task, (fingerprint, questions) = selected[0]
         else:
             task, (fingerprint, questions) = eligible[0]
+        from . import plan_approval
+        approval = plan_approval.offer(conn, task, sid)
+        if approval is not None:
+            return approval
         with _store() as store:
             args = _form(store, sid, task.id, fingerprint, questions)
         return {"context": f"cpipe delivery {task.id} is waiting. Only when discussing this delivery, use Hermes' "
@@ -294,6 +298,8 @@ def transform_result(*, session_id=None, tool_name=None, args=None, result=None,
 
 
 def register(ctx):
+    from . import plan_approval
+    plan_approval.register(ctx)
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", before_turn)
         ctx.register_hook("post_tool_call", after_tool)

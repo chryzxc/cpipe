@@ -161,7 +161,8 @@ def test_delivery_end_to_end(board, repo):
     assert brief["stage"].startswith("plan ready") and brief["questions"] and "Make add add" in brief["plan"]
     assert "Questions:" in tools.command("cp-status", tid)
     assert "a - b" in (repo.repo / "calc.py").read_text() and len(calls(repo)) == 1
-    assert "approve with /cp-build" in h.latest_summary(board, tid)
+    assert "cpipe_approve_plan" in h.latest_summary(board, tid)
+    assert "/cp-build remains an explicit fallback" in h.latest_summary(board, tid)
 
     tools.feedback({"task_id": tid, "text": "floats: no, ints only"})  # answers revise the plan, same session
     settle(board, sched, [tid])

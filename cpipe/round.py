@@ -779,7 +779,10 @@ class Round:
                 "Questions (each with a recommended answer):\n" + "\n".join(f"- {q}" for q in st["questions"])
                 if st.get("questions") else "",
                 "Split into separate pull requests:\n" + "\n".join(parts) if len(parts) >= 2 else "",
-                "Answer or request changes through Hermes native clarification; approve with /cp-build in this session."]))
+                "Present this plan with Hermes native approval (cpipe_approve_plan, using the exact arguments from "
+                "this session’s cpipe context). Accept authorizes building this plan only; reject leaves it waiting. "
+                "If questions remain, answer or request changes through native clarification first. "
+                "/cp-build remains an explicit fallback; PR readiness, merging and deployment are separate."]))
         if end == "ask":
             return (r.data.get("question") if r else "") or "The engine needs a decision."
         if end == "stuck":
