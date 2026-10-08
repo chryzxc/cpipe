@@ -192,8 +192,11 @@ def plan(args: dict) -> dict:
                                      repo=str(repo), branch=branch,
                                      model=args.get("model"), size=size, routing=args.get("routing"))
     _activate(tid)
-    return {"task_id": tid, "project": name, "engine": engine, "assignee": assignee,
-            "branch": branch, "size": size, "runner_ready": True}
+    with closing(hermes_api.connect(None)) as conn:
+        current = hermes_api.get_task(conn, tid)
+        return {"task_id": tid, "project": name, "engine": engine, "assignee": current.assignee,
+                "branch": branch, "size": size, "status": current.status,
+                **hermes_api.dispatch_state(conn, current)}
 
 
 def _steer(task_id: str, text: str, directive: str = "") -> dict:
@@ -203,15 +206,48 @@ def _steer(task_id: str, text: str, directive: str = "") -> dict:
             return {"error": f"{task_id} is not a cpipe delivery"}
         if task.status in ("done", "archived"):
             return {"error": "Delivery is closed; no directive was recorded"}
-        _activate()
-        if text.strip():
-            hermes_api.comment(conn, task_id, text, author="user")
-        if directive:
-            hermes_api.comment(conn, task_id, directive, author=f"cpipe:{directive}")
-        resumed = hermes_api.resume(conn, task_id)
-        _activate(task_id)
-        return {"task_id": task_id, "status": hermes_api.get_task(conn, task_id).status,
-                "note": "" if resumed else "queued: the delivery reads it at its next round"}
+        recovery_only = task.status == "triage"
+        if task.status == "blocked" and getattr(task, "block_kind", None):
+            from .runtime.recovery import eligible
+            recovery_only = bool(eligible(conn, task))
+        try:
+            _activate()
+            # Recovery is not plan acceptance or publication authorization.
+            if recovery_only:
+                current = hermes_api.get_task(conn, task_id)
+                if current is None:
+                    return {"error": f"No task {task_id}"}
+                resumed = False
+                if current.status == "triage" and text.strip() and not directive:
+                    from . import report
+                    if report.state_of(conn, current).get("node") == "ask":
+                        hermes_api.comment(conn, task_id, text, author="user")
+                        resumed = bool(hermes_api.kb.specify_triage_task(conn, task_id))
+                if current.status in ("blocked", "triage") and not resumed and not hermes_api.resume(conn, task_id):
+                    current = hermes_api.get_task(conn, task_id)
+                    return {"task_id": task_id, "status": current.status,
+                            **hermes_api.dispatch_state(conn, current),
+                            "error": "Delivery remains in triage; no directive recorded. Resolve its named blocker first."}
+            else:
+                if text.strip():
+                    hermes_api.comment(conn, task_id, text, author="user")
+                if directive:
+                    hermes_api.comment(conn, task_id, directive, author=f"cpipe:{directive}")
+                hermes_api.resume(conn, task_id)
+            _activate(task_id)
+        except RuntimeError as exc:
+            current = hermes_api.get_task(conn, task_id)
+            return {"task_id": task_id, "status": current.status,
+                    **hermes_api.dispatch_state(conn, current), "error": str(exc)}
+        current = hermes_api.get_task(conn, task_id)
+        receipt = hermes_api.dispatch_state(conn, current)
+        if current.status in ("blocked", "triage", "review"):
+            return {"task_id": task_id, "status": current.status, **receipt,
+                    "error": f"Delivery remains {current.status}; execution was not resumed."}
+        note = ("Worker started." if receipt["worker_started"] else "Claimed; awaiting worker startup."
+                if receipt["dispatched"] else "Queued for dispatch." if receipt["dispatch_scheduled"]
+                else "Waiting on dependencies; not dispatched.")
+        return {"task_id": task_id, "status": current.status, **receipt, "note": note}
 
 
 def feedback(args: dict) -> dict:
@@ -250,7 +286,12 @@ def stage(entry: str, args: dict) -> dict:
             hermes_api.comment(conn, task.id, json.dumps(directive), "cpipe:stage")
             hermes_api.resume(conn, task.id)
             _activate(task.id)
-            return {"task_id": task.id, "stage": entry, "note": "Specialist stage queued; results follow here."}
+            current = hermes_api.get_task(conn, task.id)
+            result = {"task_id": task.id, "stage": entry, "status": current.status,
+                      **hermes_api.dispatch_state(conn, current)}
+            if current.status in ("blocked", "triage", "review"):
+                result["error"] = f"Delivery remains {current.status}; the stage was not dispatched."
+            return result
 
     from . import routing
     cfg = settings.load()
@@ -308,8 +349,10 @@ def stage(entry: str, args: dict) -> dict:
                                      max_runtime_seconds=(int(cfg["limits"]["round_minutes"]) + settings.PR_MINUTES) * 60,
                                      adoption=adoption, routing=args.get("routing"))
         _activate(tid)
+        current = hermes_api.get_task(conn, tid)
         return {"task_id": tid, "project": name, "branch": branch, "stage": entry,
-                "source_head": sha, "note": "Existing work adopted; no retrospective TDD claim. Specialist results follow here."}
+                "source_head": sha, "status": current.status, **hermes_api.dispatch_state(conn, current),
+                "note": "Existing work adopted; no retrospective TDD claim."}
 
 
 def build(args: dict) -> dict:
@@ -337,6 +380,7 @@ def _brief(conn, task) -> dict:
            "source_head": (st.get("adoption") or {}).get("head"), "verified_head": st.get("verified_head")}
     if node == "proposal":
         out.update(plan=st.get("plan"), questions=st.get("questions"))
+    out.update(hermes_api.dispatch_state(conn, task))
     return out
 
 

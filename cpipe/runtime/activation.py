@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from . import paths
+from .launcher import module_command, preflight
 
 
 def health_path() -> Path:
@@ -43,19 +44,20 @@ def ensure_running(timeout: float = 5):
     from .dispatch_guard import install
     install()
     load_config()  # validate before spawning
+    receipt = preflight()  # same bootstrap and plugin root as every worker
     ready = readiness()
     if ready:
-        return ready
+        return {**ready, "preflight": receipt}
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(p for p in (_package_root(), _hermes_root(), env.get("PYTHONPATH", "")) if p)
     with (paths.runtime_home() / "daemon.log").open("a") as log:
-        proc = subprocess.Popen([sys.executable, "-m", "cpipe.runtime", "run"], env=env,
+        proc = subprocess.Popen(module_command("cpipe.runtime", "run"), env=env,
                                 start_new_session=True, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=log, close_fds=True)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if ready := readiness():
-            return ready
+            return {**ready, "preflight": receipt}
         if proc.poll() is not None:
             break
         time.sleep(.05)  # launch handshake only, never polling a delivery

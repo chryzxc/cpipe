@@ -77,7 +77,7 @@ def runtime_raw(cfg: dict) -> dict:
     timeout = (int(cfg["limits"]["round_minutes"]) + PR_MINUTES) * 60
     lanes = {name: {"assignee": f"cp:{name}", "adapter": "round",
                     "concurrency": int((body or {}).get("concurrency", 1)), "timeout_seconds": timeout,
-                    "on_success": "complete", "on_failure": "block",
+                    "on_success": "complete", "on_failure": "fail",
                     "env": {"pass": [*ENV_PASS, *cfg.get("env_pass", [])], "set": {"PYTHONPATH": pythonpath}}}
              for name, body in cfg["engines"].items()}
     return {k: v for k, v in {"lanes": lanes, "boards": cfg.get("boards")}.items() if v}

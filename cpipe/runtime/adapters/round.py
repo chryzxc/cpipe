@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 from ..result import Status, WorkerResult
+from ..launcher import module_command
 from .base import LaunchContext
 from .command import CommandAdapter
 
@@ -28,8 +29,8 @@ class RoundAdapter(CommandAdapter):
 
     def launch(self, ctx: LaunchContext) -> None:
         self._result = Path(tempfile.mkstemp(prefix=f"cpipe-{ctx.task_id}-", suffix=".json")[1])
-        self.lane = replace(self.lane, command=(sys.executable, "-m", "cpipe.round", ctx.task_id,
-                                                "--result", str(self._result)))
+        self.lane = replace(self.lane, command=tuple(module_command(
+            "cpipe.round", ctx.task_id, "--result", str(self._result))))
         super().launch(ctx)
 
     def collect_result(self) -> WorkerResult:
@@ -43,4 +44,6 @@ class RoundAdapter(CommandAdapter):
         if fallback.status is Status.CANCELLED or not data.get("status"):
             return fallback  # cancelled, or the round crashed before writing: its output tail says why
         meta = {**fallback.metadata, **(data.get("metadata") or {})}
+        if data.get("status") == "blocked" and meta.get("cpipe", {}).get("node") == "paused":
+            meta["cpipe"]["runtime_failure"] = "transient"
         return WorkerResult(Status(data["status"]), data.get("summary", ""), meta, exit_code=fallback.exit_code)

@@ -87,7 +87,7 @@ def _snapshot(conn, task, session_id: str):
     from . import report
     from .runtime import hermes_api as h
     if (not task or not h.is_delivery(task)
-            or task.session_id != session_id or task.status not in ("review", "blocked")):
+            or task.session_id != session_id or task.status not in ("review", "blocked", "triage")):
         return None
     state = report.state_of(conn, task)
     node = state.get("node")

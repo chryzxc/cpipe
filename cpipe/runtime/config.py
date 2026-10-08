@@ -155,7 +155,9 @@ def _parse_lane(name: str, body: Any) -> Lane:
     _reject_unknown(body, _LANE_KEYS, where)
 
     assignee = body.get("assignee")
-    if not isinstance(assignee, str) or not _ASSIGNEE_RE.match(assignee):
+    if not isinstance(assignee, str) or not (
+            _ASSIGNEE_RE.match(assignee) or
+            (body.get("adapter") == "round" and re.fullmatch(r"[a-z][a-z0-9_-]*", assignee))):
         raise ConfigError(
             f"{where}.assignee must be an explicit lowercase '{ASSIGNEE_PREFIX}<name>' "
             f"identifier, got {assignee!r}")

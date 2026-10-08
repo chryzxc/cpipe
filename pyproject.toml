@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cpipe"
-version = "0.9.8"
+version = "0.9.9"
 description = "A development workflow for Hermes Agent that brings planning, implementation, testing, and independent review together to prepare draft pull requests."
 readme = "README.md"
 requires-python = ">=3.11"

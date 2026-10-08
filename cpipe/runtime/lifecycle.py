@@ -32,7 +32,8 @@ def apply(conn, *, lane: Lane, task_id: str, run_id: int, result: WorkerResult,
     summary = (result.summary or "").strip() or f"{lane.assignee} finished with status {status.value}"
     metadata = {**result.metadata, "cpipe_runtime": {
         "lane": lane.name, "assignee": lane.assignee, "adapter": lane.adapter,
-        "status": status.value, "exit_code": result.exit_code}}
+        "status": status.value, "exit_code": result.exit_code,
+        "result": dict(result.metadata.get("cpipe", {}))}}
     if result.artifacts:
         metadata["artifacts"] = list(result.artifacts)
 
@@ -54,12 +55,16 @@ def apply(conn, *, lane: Lane, task_id: str, run_id: int, result: WorkerResult,
             reviewer=lane.reviewer))
 
     if status is Status.BLOCKED:
+        state = result.metadata.get("cpipe", {})
+        retryable = state.get("runtime_failure") == "transient" and state.get("node") == "paused"
+        kind = "transient" if retryable else "needs_input"
         return _write(log, "block", lambda: h.block(
-            conn, task_id, run_id=run_id, reason=summary, kind="needs_input"))
+            conn, task_id, run_id=run_id, reason=summary, kind=kind,
+            recovery={"runtime_failure": "transient", "node": "paused"} if retryable else None))
 
     if status in (Status.FAILED, Status.TIMED_OUT) and lane.on_failure == "block":
         return _write(log, "block", lambda: h.block(
-            conn, task_id, run_id=run_id, reason=_reason(status, summary), kind="needs_input"))
+            conn, task_id, run_id=run_id, reason=_reason(status, summary), kind="transient"))
 
     code, kind = {
         Status.FAILED: (h.EXIT_FAILED, "transient"),

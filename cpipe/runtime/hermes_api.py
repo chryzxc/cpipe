@@ -116,8 +116,12 @@ def request_review(conn, task_id: str, *, run_id: int, summary: str, metadata: d
                                   reviewer=reviewer, expected_run_id=run_id))
 
 
-def block(conn, task_id: str, *, run_id: int, reason: str, kind: str) -> bool:
-    return kb.block_task(conn, task_id, reason=reason, kind=kind, expected_run_id=run_id)
+def block(conn, task_id: str, *, run_id: int, reason: str, kind: str, recovery: Optional[dict] = None) -> bool:
+    written = kb.block_task(conn, task_id, reason=reason, kind=kind, expected_run_id=run_id)
+    if written and recovery:
+        import json
+        comment(conn, task_id, json.dumps({**recovery, "run_id": run_id}), "cpipe:runtime-block")
+    return bool(written)
 
 
 def comment(conn, task_id: str, body: str, author: str = "cpipe") -> None:
@@ -217,14 +221,43 @@ def create_card(conn, *, title: str, body: str, assignee: str, repo: str, branch
     return tid
 
 
-def resume(conn, task_id: str) -> bool:
-    """Back to ready for another round, from review or blocked."""
+def resume(conn, task_id: str, *, runtime_ready: bool = False) -> bool:
+    """Resume via native transitions, with explicit infrastructure triage repair."""
     task = kb.get_task(conn, task_id)
     if task and task.status == "review":
         return bool(kb.reopen_review_task(conn, task_id))
-    if task and task.status == "blocked":
+    if task and task.status in ("blocked", "triage"):
+        from .recovery import eligible
+        infrastructure = eligible(conn, task)
+        if infrastructure and not runtime_ready:
+            from .launcher import preflight
+            preflight()
+        if task.status == "triage":
+            if not infrastructure:
+                return False
+            return bool(kb.specify_triage_task(conn, task_id))
         return bool(kb.unblock_task(conn, task_id))
     return False
+
+
+def events_after(conn, task_id: str) -> list:
+    return kb.list_events(conn, task_id)
+
+
+def dispatch_state(conn, task) -> dict:
+    """Read canonical claim plus the child acknowledgment for this exact run."""
+    import json
+    from .paths import runtime_home
+    dispatched = bool(task.status == "running" and getattr(task, "current_run_id", None))
+    started = False
+    if dispatched:
+        try:
+            receipt = json.loads((runtime_home() / "starts" / f"{task.id}.{task.current_run_id}.json").read_text())
+            started = receipt.get("run_id") == task.current_run_id and receipt.get("task_id") == task.id
+        except (OSError, ValueError, TypeError):
+            pass
+    return {"dispatch_scheduled": task.status in ("ready", "running"), "dispatched": dispatched,
+            "worker_started": started, "run_id": getattr(task, "current_run_id", None)}
 
 
 def archive(conn, task_id: str) -> bool:
