@@ -165,7 +165,7 @@ def test_confirmed_specialists_create_one_real_session_card_with_frozen_route(br
     assert "task_id" in result, result
     task = h.get_task(board, result["task_id"])
     assert task is not None
-    assert task.session_id == "chat-a" and task.assignee == "cp:hermes" and task.status == "ready"
+    assert task.session_id == "chat-a" and task.assignee == "builder" and task.status == "ready"
     route = json.loads(next(c.body for c in h.comments_after(board, task.id) if c.author == "cpipe:routing"))
     assert route == pending["routing"]
     assert route["engines"][route["roles"]["build"]]["profile"] == "builder"

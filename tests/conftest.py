@@ -33,6 +33,10 @@ def hermes_home(tmp_path, monkeypatch):
     monkeypatch.delenv("HERMES_REAL_HOME", raising=False)
     from cpipe import settings  # new projects never land in the real ~/Projects
     monkeypatch.setitem(settings.DEFAULTS, "projects_root", str(tmp_path / "projects"))
+    # Command-unit tests inspect queued cards; daemon integration tests exercise
+    # activation directly rather than launching an LLM for every receipt.
+    from cpipe import tools
+    monkeypatch.setattr(tools, "_activate", lambda task_id=None: None)
     monkeypatch.setenv("HERMES_KANBAN_CRASH_GRACE_SECONDS", "0")
     monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
     monkeypatch.delenv("HERMES_KANBAN_DB", raising=False)

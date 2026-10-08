@@ -72,6 +72,9 @@ def dispatch(ctx, name, message=""):
               f"For cpipe backend work only, cpipe_execute_intent receipt: {token}. "
               f"Permitted operation: {operation}; status lookup is also allowed. "
               "Use the matching same-session delivery, never an unrelated card.\n"
+              "Any required confirmation, clarification or approval must use Hermes' native UI. "
+              "Never ask for a chat reply such as proceed. Copy returned clarify forms exactly; "
+              "consume their continuation in the same tool loop. New stage deliveries also require routing confirmation.\n"
               "User message (preserved verbatim):\n" + message)
     with closing(_connect()) as conn, conn:
         conn.execute("DELETE FROM intents WHERE expires < ?", (time.time(),))
@@ -92,7 +95,7 @@ def dispatch(ctx, name, message=""):
 def _active_delivery(sid):
     from .runtime import hermes_api as h
     with closing(h.connect(None)) as board:
-        return any(t.session_id == sid and (t.assignee or "").startswith("cp:")
+        return any(t.session_id == sid and h.is_delivery(t)
                    and t.status not in ("done", "archived") for t in h.list_cards(board))
 
 
@@ -130,7 +133,7 @@ def _route_start_form(conn, receipt, payload, sid=None):
         return json.loads(receipt["result"])
     if not isinstance(payload.get("request"), str) or not payload["request"].strip():
         return {"error": "resolve the full request before routing"}
-    scope = {k: payload[k] for k in ("request", "project", "repo", "title", "size") if k in payload}
+    scope = {k: payload[k] for k in ("request", "project", "repo", "title", "size", "base", "text", "ready") if k in payload}
     pending = {"status": "needs_routing", "phase": "mode", "session_id": sid, "arguments": scope,
                "clarify": routing.mode_form(scope, secrets.token_hex(12)),
                "next": "Call clarify with this exact form. No work starts until execution routing is confirmed."}
@@ -249,7 +252,9 @@ def confirm_route_start(sid, asked, values):
                 return pending
         payload = {**pending["arguments"], "engine": pending["routing"]["engine"], "routing": pending["routing"]}
         try:
-            result = tools.HANDLERS["cpipe_plan"](payload)
+            result = (tools.stage(receipt["operation"], payload)
+                      if receipt["operation"] in ("review", "fix", "verify", "ship")
+                      else tools.HANDLERS["cpipe_plan"](payload))
         except Exception as exc:
             result = {"error": f"{type(exc).__name__}: {exc}; inspect status before reissuing the command"}
             with conn:
@@ -347,12 +352,14 @@ def execute(args, **_):
                     return json.dumps(_route_start_form(conn, receipt, payload))
                 if operation == "build" and not payload.get("task_id"):
                     return json.dumps(_build_start_form(conn, receipt, payload))
+                if operation in ("review", "fix", "verify", "ship") and not payload.get("task_id"):
+                    return json.dumps(_route_start_form(conn, receipt, payload))
                 if operation not in ("plan", "review", "fix", "verify", "ship") or payload.get("task_id"):
                     from .native import _session
                     sid = _session(None)
                     with closing(h.connect(None)) as board:
                         task = h.get_task(board, payload.get("task_id", ""))
-                    if not sid or not task or task.session_id != sid or not (task.assignee or "").startswith("cp:"):
+                    if not sid or not task or task.session_id != sid or not h.is_delivery(task):
                         return json.dumps({"error": "no matching same-session cpipe delivery; clarify the target"})
                 conn.execute("UPDATE intents SET state='claimed' WHERE token=?", (token,))
         try:

@@ -129,7 +129,7 @@ def test_default_plugin_registers_native_hooks_without_model_delivery_tools():
             self.tools[name] = kw
     ctx = Context()
     tools.register(ctx)
-    assert set(ctx.tools) == {"cpipe_execute_intent", "cpipe_approve_plan"}
+    assert set(ctx.tools) == {"cpipe_execute_intent", "cpipe_approve_plan", "cpipe_approve_action"}
     assert {"pre_llm_call", "post_tool_call"} <= set(ctx.hooks)
     assert "cp-feedback" not in ctx.commands and "cp-project" not in ctx.commands
 

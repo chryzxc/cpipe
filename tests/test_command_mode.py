@@ -34,7 +34,7 @@ def test_command_only_requires_a_boolean(value):
 def test_default_registration_hides_delivery_tools_but_keeps_bridges_and_commands():
     ctx = Context()
     tools.register(ctx)
-    assert set(ctx.tools) == {"cpipe_execute_intent", "cpipe_approve_plan"}
+    assert set(ctx.tools) == {"cpipe_execute_intent", "cpipe_approve_plan", "cpipe_approve_action"}
     assert set(ctx.commands) == set(__import__("cpipe.intents", fromlist=["POLICIES"]).POLICIES)
     assert ctx.commands["cp-plan"][1]["args_hint"] == "[message]"
 
@@ -43,7 +43,7 @@ def test_tool_registration_is_explicitly_opt_in(monkeypatch):
     monkeypatch.setattr(settings, "load", lambda: {"command_only": False})
     ctx = Context()
     tools.register(ctx)
-    assert set(ctx.tools) == set(tools.SCHEMAS) | {"cpipe_execute_intent", "cpipe_approve_plan"}
+    assert set(ctx.tools) == set(tools.SCHEMAS) | {"cpipe_execute_intent", "cpipe_approve_plan", "cpipe_approve_action"}
     assert set(ctx.commands) == set(__import__("cpipe.intents", fromlist=["POLICIES"]).POLICIES)
     monkeypatch.setitem(tools.HANDLERS, "cpipe_plan", lambda args: {"accepted": args})
     assert json.loads(ctx.tools["cpipe_plan"]({"project": "app"}))["accepted"] == {"project": "app"}

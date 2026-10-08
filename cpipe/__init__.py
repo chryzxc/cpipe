@@ -13,6 +13,9 @@ def register(ctx) -> None:
     from . import tools
     from .runtime.cli import handle, setup_parser
 
+    from .runtime.dispatch_guard import install
+    install()
+
     tools.register(ctx)
 
     ctx.register_cli_command(

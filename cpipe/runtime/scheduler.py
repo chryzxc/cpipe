@@ -33,6 +33,7 @@ class TickResult:
     lost_race: list[str] = field(default_factory=list)
     spawn_failed: list[str] = field(default_factory=list)
     swept_orphans: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 class DaemonLockError(RuntimeError):
@@ -55,6 +56,7 @@ class Scheduler:
                 self._tick_board(board, result)
             except Exception as exc:
                 log.warning("board %s: tick failed: %s", board, exc)
+                result.errors.append(f"{board}: {type(exc).__name__}")
         return result
 
     def _boards(self) -> list[str]:
@@ -66,9 +68,15 @@ class Scheduler:
         conn = h.connect(board)
         try:
             lanes = self.config.lanes
-            running = h.running_counts(conn, lanes.keys())
+            tasks = h.kb.list_tasks(conn)
+            def matches(task, lane):
+                if lane.adapter == "round":
+                    return h.is_delivery(task) and h.engine_of(conn, task) == lane.name
+                return task.assignee == lane.assignee
+            running = {key: sum(t.status == "running" and matches(t, lane) for t in tasks)
+                       for key, lane in lanes.items()}
             for assignee, lane in lanes.items():
-                ready = h.list_tasks(conn, status="ready", assignee=assignee)
+                ready = [t for t in tasks if t.status == "ready" and matches(t, lane)]
                 for task in ready:
                     if running[assignee] >= lane.concurrency:
                         result.capped.append(task.id)
@@ -138,11 +146,15 @@ class Scheduler:
     # -- loop -------------------------------------------------------------------------
     def run_forever(self, *, stop=lambda: False) -> None:
         with daemon_lock():
+            from .activation import publish_health
+            from .config import load_config
             log.info("cpipe daemon started (pid %s, mode %s, lanes %s)", os.getpid(),
                      h.describe()["mode"], ", ".join(self.config.lanes))
             while not stop():
                 started = time.monotonic()
+                publish_health()
                 try:
+                    self.config = load_config()
                     self.tick()
                 except Exception as exc:  # a bad tick must never kill the daemon
                     log.exception("tick failed: %s", exc)
@@ -172,6 +184,8 @@ class daemon_lock:
 
     def __exit__(self, *exc):
         try:
+            from .activation import health_path
+            health_path().unlink(missing_ok=True)
             fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
         finally:
             self._fh.close()
