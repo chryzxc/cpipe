@@ -1,4 +1,4 @@
-# cpipe v2
+# cpipe
 
 A standalone, opt-in Hermes plugin for **local-only** development. Start with `/cp-run <task>`: investigate or design, review a Markdown approach, explicitly approve the frozen scope, then implement and verify. No Hermes Agent fork or core dispatcher modification is required.
 
@@ -61,12 +61,12 @@ The adaptive planning and annotation interpretation happen in the native coordin
 ```sh
 hermes cpipe doctor
 hermes cpipe status
-hermes cpipe v2-smoke
+hermes cpipe smoke
 # Explicit opt-in only: runs live models and consumes usage.
-hermes cpipe v2-live-probe --builder forge --reviewer sentry --seconds 480
+hermes cpipe live-probe --builder forge --reviewer sentry --seconds 480
 ```
 
-`v2-smoke` uses disposable fixture state and fails if its sandbox boundary is unavailable. `v2-live-probe` also uses disposable fixture state, but its workers are unsandboxed. Neither diagnostic migrates or resumes previous deliveries.
+`smoke` uses disposable fixture state and fails if its sandbox boundary is unavailable. `live-probe` also uses disposable fixture state, but its workers are unsandboxed. Neither diagnostic migrates or resumes previous deliveries.
 
 Development tests require the supported Hermes Agent checkout and pytest. Set `HERMES_AGENT_ROOT` if the checkout is not in the default local location. Tests use throwaway Hermes homes and native boards, not the operator's live board.
 

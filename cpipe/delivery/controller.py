@@ -42,7 +42,7 @@ def propose(service, plan, checks):
             or len({a.profile for a in plan.actors}) != 2
             or len(checks) == 0 or any(type(c) is not PytestCheck for c in checks)
             or tuple(c.identity() for c in checks) + (review_identity(),) != plan.checks):
-        raise ValueError('v2 supports explicit local-only Hermes execution with pytest and independent review')
+        raise ValueError('cpipe supports explicit local-only Hermes execution with pytest and independent review')
     artifact = validate_worktree(plan)
     now = int(time.time())
     e = plan.envelope
@@ -66,12 +66,12 @@ def validate_spec(spec):
     expected = {'worktree', 'repo', 'base', 'goal', 'acceptance', 'non_goals', 'write_paths',
                 'forbidden_paths', 'builder', 'reviewer', 'seconds', 'checks'}
     if type(spec) is not dict or set(spec) != expected:
-        raise ValueError('provide the exact v2 specification fields; legacy arguments are unsupported')
+        raise ValueError('provide the exact specification fields; unsupported arguments are rejected')
     if type(spec['seconds']) is not int or not 30 <= spec['seconds'] <= 1800:
-        raise ValueError('v2 requires a bounded 30..1800 second budget')
+        raise ValueError('cpipe requires a bounded 30..1800 second budget')
     for key in ('acceptance', 'non_goals', 'write_paths', 'forbidden_paths', 'checks'):
         if type(spec[key]) is not list:
-            raise ValueError('v2 requires explicit list fields')
+            raise ValueError('cpipe requires explicit list fields')
 
     root = Path(spec['worktree'])
     if not root.is_absolute() or root.resolve() != root:

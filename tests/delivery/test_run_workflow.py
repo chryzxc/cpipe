@@ -27,7 +27,7 @@ def run_context(repo, hermes_home, monkeypatch):
     ctx, queued = Context(), []
     ctx.inject_message = lambda text, **kw: queued.append(text) or True
     native.register(ctx)
-    assert ctx.commands['cp-run']('Fix double returning the input') == 'cpipe v2: /cp-run queued in this session.'
+    assert ctx.commands['cp-run']('Fix double returning the input') == 'cpipe: /cp-run queued in this session.'
     token = re.search(r'using token ([A-Za-z0-9_-]+), operation', queued[0]).group(1)
     spec = dict(worktree=str(repo), repo='local/fixture', base='feature', goal='Fix double returning the input',
                 acceptance=['double returns n * 2'], non_goals=['No publication'], write_paths=['double.py'],

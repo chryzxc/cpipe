@@ -1,4 +1,4 @@
-"""Session-bound slash intents for v2 only. No legacy cards, stages or daemons."""
+"""Session-bound task commands with explicit frozen-plan consent."""
 from contextlib import contextmanager
 import hashlib
 import json
@@ -9,7 +9,7 @@ from .delivery.journal import Journal, encoded
 from .delivery.service import Service, State
 from .delivery import controller
 
-SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe v2 only. Consume an explicit /cp-run command receipt. '
+SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow. Consume an explicit /cp-run command receipt. '
     'Ordinary requests use normal tools. Plans require explicit worktree, scope, pytest checks and distinct saved '
     'builder/reviewer profiles. Prepare a reviewable Markdown draft, then freeze and approve before build. Never publishes or merges.',
     parameters=dict(type='object', additionalProperties=False,
@@ -52,7 +52,7 @@ def _intent_key(token):
 def dispatch(ctx, name, raw=''):
     sid, key = session(), session_key()
     if not sid or not key:
-        return 'cpipe v2: a live session is required; no work started.'
+        return 'cpipe: a live session is required; no work started.'
     op = name[3:]
     if op == 'run' and not raw.strip():
         return 'Usage: /cp-run <task>. No work started.'
@@ -68,9 +68,9 @@ def dispatch(ctx, name, raw=''):
                     return json.dumps(controller.cancel(service, raw.strip(), session_id=sid, profile_id=profile))
                 return json.dumps(controller.summary(controller.owned(service, raw.strip(), sid, profile)))
         except Exception as exc:
-            return json.dumps({'error': 'v2 state lookup failed: ' + type(exc).__name__})
+            return json.dumps({'error': 'state lookup failed: ' + type(exc).__name__})
     if op not in {'run', 'plan', 'build'} or not hasattr(ctx, 'inject_message'):
-        return 'cpipe v2: unsupported operation or native session injection unavailable. No work started.'
+        return 'cpipe: unsupported operation or native session injection unavailable. No work started.'
     from agent.redact import redact_sensitive_text
     from .runtime.envpolicy import Redactor
     import os
@@ -80,7 +80,7 @@ def dispatch(ctx, name, raw=''):
                       profile_id=profile, expires=time.time() + (86400 if op == 'run' else 900), state='pending', result=None)
         service.journal.db.execute('INSERT INTO intent(id,payload,acknowledged) VALUES (?,?,1)',
                                   (_intent_key(token), encoded(record)))
-    prompt = ('The user explicitly chose cpipe v2 with /' + name + '. No legacy pipeline is supported. '
+    prompt = ('The user explicitly chose cpipe with /' + name + '. '
         'Resolve the complete request and exact repository/worktree from this session with tools. '
         'Preserve unrelated edits. Do not implement in the coordinator session, delegate, publish or merge. '
         'For plan, propose an exact local-only spec with explicit pytest checks and distinct saved Hermes '
@@ -91,7 +91,7 @@ def dispatch(ctx, name, raw=''):
         'A proposal returns the full frozen plan and approval_arguments: present it to the user and use '
         'cpipe_approve_plan with those exact arguments. Human consent cannot be inferred. If approved, '
         'the same plan receipt may execute build for its own delivery_id; otherwise leave it waiting. '
-        'Build accepts only a same-session approved delivery_id, never a legacy task_id. '
+        'Build accepts only a same-session approved delivery_id, not a task_id. '
         'Report real state, not worker prose. This controller is local-only, unsandboxed and has no PR adapter.\n'
         'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
     if op == 'run':
@@ -136,17 +136,17 @@ def dispatch(ctx, name, raw=''):
     if not queued:
         with scope() as (service, _, __):
             service.journal.db.execute('DELETE FROM intent WHERE id=?', (_intent_key(token),))
-        return 'cpipe v2: unable to inject into this session. Enable the native injection permission; no work started.'
-    return 'cpipe v2: /' + name + ' queued in this session.'
+        return 'cpipe: unable to inject into this session. Enable the native injection permission; no work started.'
+    return 'cpipe: /' + name + ' queued in this session.'
 
 
 def execute(args, **kwargs):
     try:
         if type(args) is not dict or set(args) != {'token', 'operation', 'arguments'}:
-            raise ValueError('invalid v2 intent arguments')
+            raise ValueError('invalid intent arguments')
         token, op, payload = args['token'], args['operation'], args['arguments']
         if type(token) is not str or not token or op not in {'prepare', 'plan', 'build', 'status', 'stop'} or type(payload) is not dict:
-            raise ValueError('invalid v2 intent arguments')
+            raise ValueError('invalid intent arguments')
         sid, key = session(kwargs.get('session_id')), session_key()
         with scope() as (service, profile, home):
             db = service.journal.db
@@ -165,17 +165,17 @@ def execute(args, **kwargs):
                 record = json.loads(row[0]) if row else None
                 if (not record or record.get('kind') != 'slash_v2' or record['expires'] <= time.time()
                     or (record['session_id'], record['profile_id'], record['session_key']) != (sid, profile, key)):
-                    raise ValueError('missing, expired or wrong-session v2 receipt')
+                    raise ValueError('missing, expired or wrong-session receipt')
                 continuation = (record['operation'] == 'plan' and op == 'build' and record['state'] == 'complete'
                     and record['result'] and payload == {'delivery_id': record['result'].get('delivery_id')})
                 if op not in {record['operation'], 'status'} and not continuation:
-                    raise ValueError('incompatible v2 receipt')
+                    raise ValueError('incompatible receipt')
                 if op != 'status':
                     if record['state'] == 'complete' and not continuation:
                         db.execute('COMMIT')
                         return json.dumps(record['result'])
                     if record['state'] != 'pending' and not continuation:
-                        raise ValueError('v2 intent already claimed; inspect status')
+                        raise ValueError('intent already claimed; inspect status')
                     if continuation:
                         record['operation'] = 'build'
                     record['state'] = 'claimed'
@@ -194,7 +194,7 @@ def execute(args, **kwargs):
                 out = controller.summary(controller.from_spec(service, payload, session_id=sid, profile_id=profile))
             else:
                 if set(payload) != {'delivery_id'} or type(payload['delivery_id']) is not str:
-                    raise ValueError('only v2 delivery_id is accepted')
+                    raise ValueError('only delivery_id is accepted')
                 if op == 'build':
                     out = controller.run(service, payload['delivery_id'], session_id=sid, profile_id=profile,
                                          evidence_root=home / 'cpipe-v2' / 'evidence')
@@ -208,7 +208,7 @@ def execute(args, **kwargs):
             return json.dumps(out)
     except Exception as exc:
         # Never retain parameters, provider output or credential-bearing errors.
-        return json.dumps({'error': 'cpipe v2 operation failed: ' + type(exc).__name__ +
+        return json.dumps({'error': 'cpipe operation failed: ' + type(exc).__name__ +
             '. No authority inferred; inspect the current draft or /cp-status before retrying.'})
 
 
@@ -219,6 +219,6 @@ def register(ctx):
     if hasattr(ctx, 'register_command'):
         for name in ('cp-run', 'cp-status', 'cp-stop'):
             ctx.register_command(name, lambda raw='', _name=name: dispatch(ctx, _name, raw),
-                description='Run a task with adaptive investigation and review' if name == 'cp-run' else 'cpipe v2: ' + name[3:],
+                description='Run a task with adaptive investigation and review' if name == 'cp-run' else 'cpipe: ' + name[3:],
                 args_hint='<task>' if name == 'cp-run' else '[delivery_id]' if name == 'cp-status' else '<delivery_id>',
                 argument_mode='text')
