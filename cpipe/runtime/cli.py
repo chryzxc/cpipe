@@ -1,4 +1,4 @@
-"""Supported v2 diagnostics only; the legacy daemon is retired."""
+"""Local delivery diagnostics."""
 import argparse
 import json
 import sys
@@ -6,10 +6,10 @@ import sys
 
 def setup_parser(parser):
     sub = parser.add_subparsers(dest='wr_command')
-    sub.add_parser('doctor', help='check v2 plugin registration and native host interfaces')
-    sub.add_parser('status', help='inspect profile-local v2 deliveries (read-only)')
-    sub.add_parser('v2-smoke', help='run the offline fixture, not a production delivery')
-    live = sub.add_parser('v2-live-probe', help='explicit unsandboxed live-model fixture; consumes model usage')
+    sub.add_parser('doctor', help='check plugin registration and native host interfaces')
+    sub.add_parser('status', help='inspect profile-local deliveries (read-only)')
+    sub.add_parser('smoke', help='run the offline fixture, not a production delivery')
+    live = sub.add_parser('live-probe', help='explicit unsandboxed live-model fixture; consumes model usage')
     live.add_argument('--builder', required=True)
     live.add_argument('--reviewer', required=True)
     live.add_argument('--seconds', type=int, default=480)
@@ -28,7 +28,7 @@ def handle(args):
                         ('register_tool', 'register_command', 'register_cli_command', 'inject_message'))
             ready = ready and callable(getattr(kanban_db, 'claim_task', None))
             print(json.dumps(dict(version=__version__, engine_version=2, native_interfaces=ready,
-                legacy_supported=False, completion_target='local_only', sandboxed=False)))
+                completion_target='local_only', sandboxed=False)))
             return 0 if ready else 1
         if command == 'status':
             from hermes_constants import get_hermes_home
@@ -44,18 +44,18 @@ def handle(args):
                           journal.db.execute('SELECT snapshot FROM delivery')]
                 print(json.dumps(dict(engine_version=2, deliveries=[summary(s) for s in states])))
             return 0
-        if command == 'v2-smoke':
+        if command == 'smoke':
             from ..delivery.smoke import run
             print(json.dumps(run(), indent=2))
             return 0
-        if command == 'v2-live-probe':
+        if command == 'live-probe':
             from ..delivery.live_probe import observe_actor, run
             actors = (observe_actor('builder', args.builder), observe_actor('reviewer', args.reviewer))
             print(json.dumps(run(actors=actors, seconds=args.seconds), indent=2))
             return 0
-        raise ValueError('unsupported v2 command')
+        raise ValueError('unsupported command')
     except Exception as exc:
-        print('cpipe v2 diagnostic unavailable or failed: ' + type(exc).__name__, file=sys.stderr)
+        print('cpipe diagnostic unavailable or failed: ' + type(exc).__name__, file=sys.stderr)
         return 1
 
 

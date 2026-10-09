@@ -11,7 +11,7 @@ from cpipe.runtime.cli import main
 def test_smoke_cli_runs_real_commands_and_persists_testable_candidate(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     before = set(tmp_path.iterdir())
-    assert main(["v2-smoke"]) == 0
+    assert main(["smoke"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["mode"] == "offline_fixture"
     assert report["phase"] == "testable"
@@ -36,6 +36,6 @@ def test_smoke_cli_reports_unavailable_boundary_without_unconfined_fallback(tmp_
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     before = set(tmp_path.iterdir())
     monkeypatch.setattr("cpipe.delivery.sandbox.shutil.which", lambda _: None)
-    assert main(["v2-smoke"]) == 1
+    assert main(["smoke"]) == 1
     assert "unavailable" in capsys.readouterr().err
     assert set(tmp_path.iterdir()) == before
