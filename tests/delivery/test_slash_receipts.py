@@ -25,7 +25,7 @@ def test_slash_receipt_routes_plan_and_fences_session(repo, tmp_path, hermes_hom
     ctx = Context()
     ctx.inject_message = lambda text, **kw: queued.append((text, kw)) or True
     native.register(ctx)
-    assert 'queued' in ctx.commands['cp-plan']('Fix approved behavior')
+    assert ctx.commands['cp-plan']('Fix approved behavior') == 'cpipe v2: /cp-plan queued in this session.'
     assert queued[0][1] == {'role': 'user', 'session_key': 'chat-one'}
     token = re.search(r'using token ([A-Za-z0-9_-]+), operation', queued[0][0]).group(1)
     args = dict(token=token, operation='plan', arguments={})

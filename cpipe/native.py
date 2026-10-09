@@ -96,7 +96,7 @@ def dispatch(ctx, name, raw=''):
         with scope() as (service, _, __):
             service.journal.db.execute('DELETE FROM intent WHERE id=?', (_intent_key(token),))
         return 'cpipe v2: unable to inject into this session. Enable the native injection permission; no work started.'
-    return 'cpipe v2: /' + name + ' queued in this session; no legacy workflow will run.'
+    return 'cpipe v2: /' + name + ' queued in this session.'
 
 
 def execute(args, **kwargs):
