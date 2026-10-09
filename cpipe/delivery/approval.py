@@ -25,6 +25,8 @@ def _fresh(service, args, session_id, profile_id):
     if state is None:
         raise ValueError('missing proposal')
     owner = state.plan.envelope
+    from .approach import validate_document
+    validate_document(service, state.plan)
     now = int(time.time())
     if (owner.session_id != session_id or owner.profile_id != profile_id
             or state.phase != 'proposal' or state.approved
@@ -105,8 +107,9 @@ def presentation(plan, revision):
         lines += ['- No pull-request publication or status changes.']
     lines += ['- No merging, deployment or credential changes.',
               f'- Budget: {plan.budget.seconds:g} seconds; {plan.budget.calls} tool calls.',
-              '', 'Approval applies only to this frozen plan. Approving does not start workers; '
-              'execution is a separate step. Changed or expired plans cannot use this approval.',
+              '', 'Approval applies only to this frozen plan. Approving does not start workers in the approval tool itself. '
+              'In /cp-run, the coordinator continues '
+              'execution after native approval; no second command is needed. Changed or expired plans cannot use this approval.',
               'Execution is trusted local and not sandboxed; scope checks detect changes, not prevent them.',
               '', 'Technical details',
               f'Repository: {plan.envelope.repo}; branch: {plan.envelope.branch}',

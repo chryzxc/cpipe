@@ -59,7 +59,8 @@ def propose(service, plan, checks):
     return state
 
 
-def from_spec(service, spec, *, session_id, profile_id):
+def validate_spec(spec):
+    """Preflight a draft without saving a proposal or starting its budget."""
     from .live_probe import observe_actor
     from .artifact import fingerprint
     expected = {'worktree', 'repo', 'base', 'goal', 'acceptance', 'non_goals', 'write_paths',
@@ -71,8 +72,7 @@ def from_spec(service, spec, *, session_id, profile_id):
     for key in ('acceptance', 'non_goals', 'write_paths', 'forbidden_paths', 'checks'):
         if type(spec[key]) is not list:
             raise ValueError('v2 requires explicit list fields')
-    if not session_id or not profile_id:
-        raise ValueError('missing initiating session/profile')
+
     root = Path(spec['worktree'])
     if not root.is_absolute() or root.resolve() != root:
         raise ValueError('worktree must be an absolute non-symlink directory')
@@ -86,6 +86,31 @@ def from_spec(service, spec, *, session_id, profile_id):
         checks.append(PytestCheck(item['obligation'], tuple(item['targets']), tuple(item['criteria']), item['timeout_seconds']))
     checks = tuple(checks)
     actors = (observe_actor('builder', spec['builder']), observe_actor('reviewer', spec['reviewer']))
+    if len({a.profile for a in actors}) != 2 or not checks:
+        raise ValueError('distinct builder/reviewer profiles and checks are required')
+    from .contracts import identity, relative_path, string_tuple
+    for name in ('repo', 'base', 'goal'):
+        identity(spec[name], name)
+    for name in ('acceptance', 'non_goals', 'write_paths', 'forbidden_paths'):
+        string_tuple(tuple(spec[name]), name)
+    if not spec['acceptance'] or not spec['write_paths'] or not spec['forbidden_paths']:
+        raise ValueError('acceptance and scope paths are required')
+    for path in spec['write_paths'] + spec['forbidden_paths']:
+        relative_path(path)
+    for path in spec['write_paths']:
+        for denied in spec['forbidden_paths'] + ['.git']:
+            if path == denied or path.startswith(denied + '/') or denied.startswith(path + '/'):
+                raise ValueError('write allowance overlaps forbidden path')
+    if len({c.obligation for c in checks}) != len(checks) or any(c.obligation == 'review' for c in checks):
+        raise ValueError('check obligations must be unique and distinct from review')
+    return artifact, checks, actors
+
+
+def from_spec(service, spec, *, session_id, profile_id, approach=''):
+    if not session_id or not profile_id:
+        raise ValueError('missing initiating session/profile')
+    artifact, checks, actors = validate_spec(spec)
+    root = Path(spec['worktree'])
     now = int(time.time())
     e = Envelope('v2-' + uuid.uuid4().hex, session_id, profile_id, spec['repo'], artifact.branch,
         spec['base'], 'scope-' + uuid.uuid4().hex, tuple(c.obligation for c in checks) + ('review',), frozenset({'local'}))
@@ -95,7 +120,8 @@ def from_spec(service, spec, *, session_id, profile_id):
         forbidden_paths=tuple(spec['forbidden_paths']), actors=actors, budget=Budget(spec['seconds'], 8),
         policy_id='v2-local-only', check_definition='v2-frozen-pytest',
         checks=tuple(c.identity() for c in checks) + (review_identity(),), interactive=False,
-        repair_allowed=False, transient_retries=0, completion_target='local_only', expires_at=now + spec['seconds'])
+        repair_allowed=False, transient_retries=0, completion_target='local_only', expires_at=now + spec['seconds'],
+        approach=approach)
     return propose(service, p, checks)
 
 
@@ -121,6 +147,8 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
     state = owned(service, delivery_id, session_id, profile_id)
     if not state.approved:
         raise ValueError('v2 execution requires an approved frozen envelope')
+    from .approach import validate_document
+    validate_document(service, state.plan)
     if state.plan.completion_target != 'local_only':
         raise ValueError('v2 publication adapter is not installed')
     row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?',

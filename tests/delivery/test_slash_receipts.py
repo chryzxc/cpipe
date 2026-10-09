@@ -25,7 +25,8 @@ def test_slash_receipt_routes_plan_and_fences_session(repo, tmp_path, hermes_hom
     ctx = Context()
     ctx.inject_message = lambda text, **kw: queued.append((text, kw)) or True
     native.register(ctx)
-    assert ctx.commands['cp-plan']('Fix approved behavior') == 'cpipe v2: /cp-plan queued in this session.'
+    # Already-issued internal plan receipts remain readable; not a registered slash command.
+    assert native.dispatch(ctx, 'cp-plan', 'Fix approved behavior') == 'cpipe v2: /cp-plan queued in this session.'
     assert queued[0][1] == {'role': 'user', 'session_key': 'chat-one'}
     token = re.search(r'using token ([A-Za-z0-9_-]+), operation', queued[0][0]).group(1)
     args = dict(token=token, operation='plan', arguments={})
@@ -52,7 +53,7 @@ def test_failed_injection_leaves_no_receipt(hermes_home, monkeypatch):
     ctx = Context()
     ctx.inject_message = lambda *a, **kw: False
     native.register(ctx)
-    assert 'no work started' in ctx.commands['cp-plan']('Do nothing')
+    assert 'no work started' in ctx.commands['cp-run']('Do nothing')
     with Journal.for_profile(hermes_home) as store:
         assert store.db.execute('SELECT COUNT(*) FROM intent').fetchone()[0] == 0
 
