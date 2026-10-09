@@ -28,7 +28,7 @@ def command(actor, cwd, resume, timeout_seconds):
             '--format', 'stream-json', '--in', str(cwd), '--no-restore-cwd',
             '--model', actor.model, '--provider', actor.provider,
             '--run-budget', str(max(1, math.ceil(timeout_seconds))),
-            '--max-turns', '50', '--ignore-rules', '--source', 'tool']
+            '--max-turns', '50', '--source', 'tool']
     if resume:
         args += ['--resume', resume]
     return module_command('hermes_cli.main', *args)
@@ -167,6 +167,8 @@ class HermesWorker:
             'Do the assigned work with your own tools; do not delegate, invoke external coding CLIs, '
             'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
             'Do not commit, push, open PRs, or modify files outside write_paths. '
+            'Follow project instructions such as AGENTS.md and discover/load relevant installed skills '
+            'using skills_list and skill_view. Superpowers is optional, not a dependency. '
             'Credentials must never be written; replace any encountered values with [REDACTED].\n'
             'Frozen contract:\n' + encoded(state.plan.to_dict()) + '\n'
             'Current activity: ' + state.activity + '\n'

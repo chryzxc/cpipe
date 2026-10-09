@@ -4,7 +4,7 @@ manifest_version: 2
 api_version: 1
 provides_tools: [cpipe_execute_intent, cpipe_approve_plan]
 provides_hooks: []
-description: "v2-only local development workflow with frozen human-approved envelopes, observed tests and independent review."
+description: "Task-oriented /cp-run with adaptive Markdown approaches, frozen human approval, observed tests and independent review."
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
 tags: [hermes-agent, development-workflow, testing, code-review]

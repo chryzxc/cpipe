@@ -32,7 +32,7 @@ def test_registration_is_v2_only():
     assert not ctx.hooks
     params = ctx.tools['cpipe_approve_plan']['schema']['parameters']
     assert set(params['properties']) == {'delivery_id', 'plan_revision'}
-    assert {'cp-plan', 'cp-build', 'cp-status', 'cp-stop'} <= set(ctx.commands)
+    assert set(ctx.commands) == {'cp-run', 'cp-status', 'cp-stop'}
 
 
 @pytest.mark.parametrize('old', ['run', 'once', 'round', 'configure'])

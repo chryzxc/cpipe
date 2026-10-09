@@ -63,8 +63,12 @@ class ExecutionPlan(Versioned):
     transient_retries: int
     completion_target: str
     expires_at: int
+    approach: str = ''
 
     def __post_init__(self):
+        if (type(self.approach) is not str or len(self.approach.encode()) > 18000
+                or any(ord(c) < 32 and c not in '\n\t' for c in self.approach)):
+            raise ValueError('invalid reviewed approach')
         if type(self.envelope) is not Envelope or type(self.budget) is not Budget:
             raise ValueError("execution requires validated envelope and budget")
         for name in ("worktree", "common_git_dir"):
@@ -110,6 +114,8 @@ class ExecutionPlan(Versioned):
 
     def to_dict(self):
         data = super().to_dict()
+        if not self.approach:
+            data.pop('approach')  # Preserve existing frozen-plan digest identities.
         data.update(envelope=self.envelope.to_dict(), budget=self.budget.to_dict(),
                     actors=[a.to_dict() for a in self.actors],
                     checks=[c.to_dict() for c in self.checks])
@@ -117,8 +123,11 @@ class ExecutionPlan(Versioned):
 
     @classmethod
     def from_dict(cls, data):
+        if type(data) is dict and 'approach' not in data:
+            data = dict(data, approach='')
         values = cls._payload(data)
         values["envelope"] = Envelope.from_dict(values["envelope"])
+        # Optional reviewed approach was introduced without changing old digests.
         values["budget"] = Budget.from_dict(values["budget"])
         for name in ("acceptance", "non_goals", "write_paths", "forbidden_paths", "actors", "checks"):
             if type(values[name]) is not list:
