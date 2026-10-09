@@ -52,6 +52,11 @@ def register(ctx):
         'plugins:\n  enabled: [delivery-boundary-probe]\n'
         'approvals:\n  mode: manual\n')
     monkeypatch.delenv('HERMES_YOLO_MODE', raising=False)
+    # Registering a notifier does not establish an interactive gateway context.
+    # Configure the test's transport explicitly instead of inheriting the runner.
+    monkeypatch.setenv('HERMES_GATEWAY_SESSION', '1')
+    monkeypatch.delenv('HERMES_CRON_SESSION', raising=False)
+    monkeypatch.delenv('HERMES_SINGLE_QUERY_SESSION', raising=False)
     plugins.discover_plugins(force=True)
     marker = tmp_path / 'native-marker.txt'
     seen = []
