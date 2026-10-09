@@ -1,141 +1,65 @@
-"""``hermes cpipe <run|tick|lanes|doctor|status|report>`` (also ``python -m cpipe.runtime``)."""
-
-from __future__ import annotations
-
+"""Supported v2 diagnostics only; the legacy daemon is retired."""
 import argparse
 import json
-import logging
-import shutil
-import signal
-import subprocess
 import sys
-from pathlib import Path
-
-from .config import ConfigError, default_config_path, load_config
 
 
-def setup_parser(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--config", type=Path, default=None,
-                        help=f"config file (default: {default_config_path()})")
-    sub = parser.add_subparsers(dest="wr_command")
-    sub.add_parser("run", help="run the daemon (foreground)")
-    sub.add_parser("tick", help="run a single discovery/claim pass and exit")
-    sub.add_parser("lanes", help="print the validated lane registry")
-    sub.add_parser("doctor", help="check config, Hermes compatibility and executor availability")
-    sub.add_parser("v2-smoke", help="exercise an offline v2 fixture; no native workers or publication")
-    for name, what in (("status", "open deliveries"), ("report", "time, runs and tokens per delivery and node")):
-        p = sub.add_parser(name, help=what)
-        p.add_argument("--json", action="store_true")
-        p.add_argument("--board", default=None)
+def setup_parser(parser):
+    sub = parser.add_subparsers(dest='wr_command')
+    sub.add_parser('doctor', help='check v2 plugin registration and native host interfaces')
+    sub.add_parser('status', help='inspect profile-local v2 deliveries (read-only)')
+    sub.add_parser('v2-smoke', help='run the offline fixture, not a production delivery')
+    live = sub.add_parser('v2-live-probe', help='explicit unsandboxed live-model fixture; consumes model usage')
+    live.add_argument('--builder', required=True)
+    live.add_argument('--reviewer', required=True)
+    live.add_argument('--seconds', type=int, default=480)
 
 
-class _StderrHandler(logging.StreamHandler):
-    """Writes to whatever ``sys.stderr`` is at emit time."""
-
-    @property
-    def stream(self):
-        return sys.stderr
-
-    @stream.setter
-    def stream(self, _value):
-        pass
-
-
-def _setup_logging() -> None:
-    # Our own stderr handler: under ``hermes cpipe`` the root logger is
-    # already configured by Hermes (basicConfig would be a no-op and daemon logs
-    # would land in Hermes' agent.log instead of the service's log file).
-    log = logging.getLogger("cpipe.runtime")
-    if not any(isinstance(h, _StderrHandler) for h in log.handlers):
-        handler = _StderrHandler()
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-        log.addHandler(handler)
-    log.setLevel(logging.INFO)
-    log.propagate = False
-
-
-def handle(args: argparse.Namespace) -> int:
-    _setup_logging()
-    cmd = getattr(args, "wr_command", None) or "doctor"
-    if cmd == "v2-smoke":
-        from ..delivery import smoke
-        from ..delivery.sandbox import SandboxUnavailable
-        try:
-            print(json.dumps(smoke.run(), indent=2))
+def handle(args):
+    command = getattr(args, 'wr_command', None) or 'doctor'
+    try:
+        if command == 'doctor':
+            from .. import __version__
+            from ..delivery.native_bridge import NativeBridge
+            from ..delivery.approval import arguments
+            from hermes_cli.plugins import PluginContext
+            from hermes_cli import kanban_db
+            ready = all(callable(getattr(PluginContext, name, None)) for name in
+                        ('register_tool', 'register_command', 'register_cli_command', 'inject_message'))
+            ready = ready and callable(getattr(kanban_db, 'claim_task', None))
+            print(json.dumps(dict(version=__version__, engine_version=2, native_interfaces=ready,
+                legacy_supported=False, completion_target='local_only', sandboxed=False)))
+            return 0 if ready else 1
+        if command == 'status':
+            from hermes_constants import get_hermes_home
+            from ..delivery.journal import Journal
+            from ..delivery.service import State
+            from ..delivery.controller import summary
+            path = get_hermes_home() / 'delivery-v2' / 'facts.db'
+            if not path.exists():
+                print(json.dumps(dict(engine_version=2, deliveries=[])))
+                return 0
+            with Journal.for_profile(get_hermes_home()) as journal:
+                states = [State.from_dict(json.loads(row[0])) for row in
+                          journal.db.execute('SELECT snapshot FROM delivery')]
+                print(json.dumps(dict(engine_version=2, deliveries=[summary(s) for s in states])))
             return 0
-        except (SandboxUnavailable, RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
-            print(f"cpipe: offline v2 smoke failed: {exc}", file=sys.stderr)
-            return 1
-    if cmd in ("status", "report"):
-        from contextlib import closing
-        from .. import report
-        from . import hermes_api
-        with closing(hermes_api.connect(args.board)) as conn:
-            items = report.rows(conn, open_only=cmd == "status")
-        print(json.dumps(items, indent=2) if args.json else report.render(items))
-        return 0
-    try:
-        config = load_config(args.config)
-    except ConfigError as exc:
-        print(f"cpipe: config error: {exc}", file=sys.stderr)
-        return 2
-
-    if cmd == "lanes":
-        print(json.dumps({a: l.to_dict() for a, l in config.lanes.items()}, indent=2))
-        return 0
-    if cmd == "doctor":
-        return _doctor(config)
-
-    from .scheduler import DaemonLockError, Scheduler
-    sched = Scheduler(config)
-    if cmd == "tick":
-        res = sched.tick()
-        print(json.dumps(res.__dict__, indent=2, default=str))
-        return 0
-
-    stopping = {"flag": False}
-
-    def _stop(*_):
-        stopping["flag"] = True
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
-    try:
-        sched.run_forever(stop=lambda: stopping["flag"])
-    except DaemonLockError as exc:
-        print(f"cpipe: {exc}", file=sys.stderr)
+        if command == 'v2-smoke':
+            from ..delivery.smoke import run
+            print(json.dumps(run(), indent=2))
+            return 0
+        if command == 'v2-live-probe':
+            from ..delivery.live_probe import observe_actor, run
+            actors = (observe_actor('builder', args.builder), observe_actor('reviewer', args.reviewer))
+            print(json.dumps(run(actors=actors, seconds=args.seconds), indent=2))
+            return 0
+        raise ValueError('unsupported v2 command')
+    except Exception as exc:
+        print('cpipe v2 diagnostic unavailable or failed: ' + type(exc).__name__, file=sys.stderr)
         return 1
-    return 0
 
 
-def _doctor(config) -> int:
-    from . import hermes_api as h
-    from .adapters import create_adapter
-    info = h.describe()
-    print(f"hermes kanban : {info['hermes_kanban_db']}")
-    print(f"mode          : {info['mode']}")
-    if info["mode"] != "pid-tracked":
-        print("  ! claim-only: failures are recorded as blocks and dead supervisors are "
-              "recovered by claim TTL expiry")
-    else:
-        running, detail = h.dispatcher_presence()
-        print(f"dispatcher    : {(detail or 'running') if running else 'NOT RUNNING'}")
-        if not running:
-            print("  ! failed runs are booked by the Hermes dispatcher's crash sweep; without "
-                  "it they stay 'running'. Start the gateway with kanban.dispatch_in_gateway "
-                  "enabled (the default), or run `hermes kanban dispatch` periodically.")
-    print(f"boards        : {', '.join(config.boards) if config.boards else 'all'}")
-    worst = 0
-    for assignee, lane in config.lanes.items():
-        ok, why = create_adapter(lane).available()
-        print(f"lane {lane.name:<12} {assignee:<16} adapter={lane.adapter:<8} "
-              f"concurrency={lane.concurrency} {'OK' if ok else 'UNAVAILABLE: ' + why}")
-        worst = worst or (0 if ok else 1)
-    if not shutil.which("git"):
-        print("  ! git not found: changed_files metadata disabled")
-    return worst
-
-
-def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="cpipe")
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog='cpipe')
     setup_parser(parser)
     return handle(parser.parse_args(argv))

@@ -6,15 +6,6 @@ import os
 import re
 from typing import Mapping, Optional
 
-from .config import Lane
-
-# Minimal base every child gets; everything else must be listed in lane.env.pass.
-BASE_ALLOWLIST = ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TERM", "TMPDIR")
-
-# Never forwarded, even when listed: Hermes claim material would let the
-# external agent drive Kanban lifecycle writes the runtime owns.
-_DENY_PREFIXES = ("HERMES_KANBAN_",)
-
 _SECRET_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL|COOKIE)", re.I)
 _SECRET_VALUE_PATTERNS = [
     re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9_\-]{16,}"),
@@ -25,24 +16,6 @@ _SECRET_VALUE_PATTERNS = [
     re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-]{16,}"),
     re.compile(r"(?i)\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*)=(\S+)"),
 ]
-
-
-def build_child_env(lane: Lane, *, extra: Optional[Mapping[str, str]] = None,
-                    parent: Optional[Mapping[str, str]] = None) -> dict[str, str]:
-    parent = os.environ if parent is None else parent
-    env: dict[str, str] = {}
-    for name in (*BASE_ALLOWLIST, *lane.env.passthrough):
-        if name.startswith(_DENY_PREFIXES):
-            continue
-        value = parent.get(name)
-        if value is not None and not value.startswith("()"):
-            env[name] = value
-    for name, value in lane.env.set.items():
-        if not name.startswith(_DENY_PREFIXES):
-            env[name] = value
-    if extra:
-        env.update(extra)
-    return env
 
 
 class Redactor:
