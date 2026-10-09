@@ -6,13 +6,22 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
         with:
-          python-version: "3.12"
-      - run: pip install "pytest>=8,<9" "pyyaml>=6" "agent-client-protocol>=0.9,<0.10"
-      - run: python -m pytest -q
+          repository: NousResearch/hermes-agent
+          ref: 1744a19e0df568c647e4f3ff9c37f2a284a282fb
+          path: .hermes-agent
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --project .hermes-agent --group dev
+      - name: Test the v2 plugin against the supported native host
+        env:
+          HERMES_AGENT_ROOT: ${{ github.workspace }}/.hermes-agent
+        run: .hermes-agent/.venv/bin/python -m pytest tests -ra

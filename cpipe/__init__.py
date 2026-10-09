@@ -1,27 +1,12 @@
-"""cpipe: one card per delivery, driven through a fixed graph by the bundled runtime.
+"""cpipe v2 only: frozen local envelopes, observed checks and independent review."""
 
-``hermes cpipe run`` is the daemon (its own process, never inside the gateway). It claims ``cp:<engine>``
-cards and runs one round per claim through the selected content/small/large path. Builder sessions persist;
-planning, QA and review can use separate Hermes profiles. Explicit slash commands (``tools.py``) start and steer
-deliveries; model-callable tools are opt-in.
-"""
-
-from __future__ import annotations
+__version__ = '2.0.0'
 
 
-def register(ctx) -> None:
-    from . import tools
+def register(ctx):
+    from . import native
     from .runtime.cli import handle, setup_parser
-
-    from .runtime.dispatch_guard import install
-    install()
-
-    tools.register(ctx)
-
-    ctx.register_cli_command(
-        name="cpipe",
-        help="Delivery runner: claims cp:* cards and drives each delivery to a tested, reviewed pull request",
-        setup_fn=setup_parser,
-        handler_fn=handle,
-        description="Run, inspect and check the cpipe daemon.",
-    )
+    native.register(ctx)
+    ctx.register_cli_command(name='cpipe', help='cpipe v2 local delivery controller (no legacy daemon)',
+        setup_fn=setup_parser, handler_fn=handle,
+        description='Inspect v2 state and verify the installed native adapters.')
