@@ -81,6 +81,40 @@ def _finish(service, args, session_id, profile_id, result):
     return result
 
 
+def presentation(plan, revision):
+    """Readable copy from the frozen contract; no generated or inferred authority."""
+    capabilities = plan.envelope.capabilities
+    grants = {'local': 'Local development work', 'push': 'Push the branch',
+              'draft_pr': 'Open a draft pull request',
+              'mark_ready': 'Mark the pull request ready for review'}
+    lines = ['Scope', plan.envelope.scope,
+             *('- ' + item for item in plan.acceptance),
+             'Allowed files: ' + ', '.join(plan.write_paths),
+             'Excluded files: ' + ', '.join(plan.forbidden_paths)]
+    if plan.non_goals:
+        lines += ['Not included:', *('- ' + item for item in plan.non_goals)]
+    lines += ['', 'Verification',
+              *('- ' + check.obligation for check in plan.checks),
+              '- Independent review of the changes and observed results.', '', 'Limits']
+    lines += ['- ' + label for capability, label in grants.items() if capability in capabilities]
+    if not capabilities:
+        lines += ['- No execution capabilities granted.']
+    if 'push' not in capabilities:
+        lines += ['- No pushes.']
+    if not {'draft_pr', 'mark_ready'} & capabilities:
+        lines += ['- No pull-request publication or status changes.']
+    lines += ['- No merging, deployment or credential changes.',
+              f'- Budget: {plan.budget.seconds:g} seconds; {plan.budget.calls} tool calls.',
+              '', 'Approval applies only to this frozen plan. Approving does not start workers; '
+              'execution is a separate step. Changed or expired plans cannot use this approval.',
+              'Execution is trusted local and not sandboxed; scope checks detect changes, not prevent them.',
+              '', 'Technical details',
+              f'Repository: {plan.envelope.repo}; branch: {plan.envelope.branch}',
+              f'Plan revision: {revision}',
+              'The full frozen contract remains in the proposal; it is not repeated here.']
+    return plan.goal, '\n'.join(lines)
+
+
 def request(service, args, *, session_id, profile_id):
     """Only host transport consent can mint the reducer's envelope_approved event."""
     if (type(args) is not dict or set(args) != {'delivery_id', 'plan_revision'}
@@ -96,14 +130,9 @@ def request(service, args, *, session_id, profile_id):
     if previous is not None:
         return previous
     from cpipe.plan_approval import _native_prompt
-    description = (
-        'Accept authorizes only this frozen execution envelope, including its explicit capabilities. '
-        'Execution is trusted local and not sandboxed; scope checks detect changes, not prevent them. '
-        'Rejection leaves the proposal waiting. No merging, deployment or credential changes.\n\n'
-        + json.dumps(state.plan.to_dict(), sort_keys=True, indent=2))
+    command, description = presentation(state.plan, args['plan_revision'])
     try:
-        decision = _native_prompt('Authorize cpipe v2 plan [' + args['plan_revision'][:12] + ']',
-                                 description, 'cpipe_v2_envelope', 'Approve this development plan?')
+        decision = _native_prompt(command, description, 'cpipe_v2_envelope', 'Ready to start?')
     except Exception:
         decision = {}  # Never save transport diagnostics or credential-bearing exceptions.
     result = {'delivery_id': args['delivery_id'], 'status': 'waiting_for_approval'}

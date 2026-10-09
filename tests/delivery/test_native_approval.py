@@ -46,7 +46,14 @@ def test_real_gateway_accept_or_reject_and_restart_does_not_reprompt(repo, tmp_p
         seen.append(payload)
         assert not payload['allow_session'] and not payload['allow_permanent']
         assert 'not sandboxed' in payload['description']
-        assert state.plan.goal in payload['description']
+        assert state.plan.goal == payload['command']
+        assert payload['title'] == 'Ready to start?'
+        assert 'Scope\n' in payload['description']
+        assert 'Verification\n' in payload['description']
+        assert 'Limits\n' in payload['description']
+        assert '"schema"' not in payload['description']
+        for item in state.plan.acceptance + state.plan.non_goals + state.plan.write_paths:
+            assert item in payload['description']
         assert approval.resolve_gateway_approval('v2-fixture', choice, request_id=payload['request_id'])
     approval.register_gateway_notify('v2-fixture', notify)
     token = set_current_session_key('v2-fixture')
