@@ -22,7 +22,8 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'non_goals, write_paths, forbidden_paths, builder, reviewer, seconds and checks. Each check has '
                 'obligation, targets (relative .py files), criteria (exact pytest classname::name), timeout_seconds, '
                 'optional python (absolute project interpreter with pytest; defaults to <worktree>/.venv/bin/python). '
-                'Exactly one check has obligation behavior: the test proving the change, run before implementing. '
+                'Exactly one check has obligation behavior: the test proving the change; it must fail before implementing, '
+                'and the builder writes it first, so its file must be inside write_paths. '
                 'For /cp-run, plan: {draft_revision} freezes the reviewed draft; build: {delivery_id} from that plan after native approval. '
                 'Run status: {}. Existing plan receipts accept their full spec. Other operations: only delivery_id.')),
         required=['token', 'operation', 'arguments']))

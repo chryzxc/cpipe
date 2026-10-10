@@ -186,7 +186,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
     claimer = h.new_claimer()
     for _ in range(max(4, state.plan.budget.calls * 4)):
         state = owned(service, delivery_id, session_id, profile_id)
-        if not state.activity or state.activity not in {'tests', 'checks', 'implement', 'review'}:
+        if not state.activity or state.activity not in {'tests', 'checks', 'write_tests', 'implement', 'review'}:
             break
         action = state.activity
         tid = bridge.schedule(delivery_id)
@@ -200,7 +200,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             due = checks if action == 'checks' else tuple(c for c in checks if c.obligation == 'behavior')
             state = bridge.observe_checks(delivery_id, tid, claimer=claimer,
                                           checks=due, evidence_root=Path(evidence_root))
-        elif action == 'implement':
+        elif action in {'write_tests', 'implement'}:
             state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker)
         else:
             state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,

@@ -181,12 +181,16 @@ def _delta(state):
 
 def _prompt(state, resume):
     """Stable contract on a fresh session; on resume only the delta, since the session holds the rest."""
-    if state.activity == 'implement':
+    if state.activity == 'write_tests':
+        task = ('Write or fix only the behavior check\'s test (its exact targets and criteria are in the '
+                'approach) so it fails on the current code for the reason the change addresses. Do not '
+                'implement the change yet. Return only {"status":"done"}; the controller observes RED.')
+    elif state.activity == 'implement':
         task = ('Make the minimum authorized correction for the failing checks and open findings, '
                 'then return only {"status":"done"}. Passing checks and completion are the controller’s '
                 'job, not a prose assertion.')
-        if resume:
-            return 'Same delivery, next round. Activity: implement.\n' + _delta(state) + task
+    if state.activity in {'write_tests', 'implement'} and resume:
+        return 'Same delivery, next round. Activity: ' + state.activity + '.\n' + _delta(state) + task
     prompt = ('You are a directly executing worker in an explicitly selected cpipe v2 workflow. '
         'Do the assigned work with your own tools; do not delegate, invoke external coding CLIs, '
         'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
@@ -220,7 +224,7 @@ class HermesWorker:
             'reviewer' if state.activity == 'review' else 'builder'))
         if actor.engine != 'hermes':
             raise ValueError('unsupported v2 execution engine')
-        resume = state.builder_session if state.activity == 'implement' else ''
+        resume = state.builder_session if state.activity in {'write_tests', 'implement'} else ''
         prompt = _prompt(state, resume)
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(('HERMES_KANBAN_', 'GIT_')) and k != 'PYTHONPATH'}

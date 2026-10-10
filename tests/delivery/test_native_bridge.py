@@ -187,7 +187,7 @@ def test_native_completion_is_reconciled_after_journal_write_interruption(tmp_pa
         assert h.get_task(board, tid).status == 'done'
         assert service.read('d1') == state
         after = b.finish(event, tid, claimer='owner', summary='Observed behavior PASS')
-        assert after.activity == 'checks'
+        assert after.activity == 'write_tests'  # a first-run PASS is not a RED
         assert len(h.kb.list_runs(board, tid)) == 1
         assert b.finish(event, tid, claimer='owner', summary='Observed behavior PASS') == after
 

@@ -36,6 +36,31 @@ def setup_check(repo, tmp_path, source=None, *, timeout=20,
     return journal, service, state, spec
 
 
+def fixed(repo):
+    """Fake builder that applies the fix to the seeded double() bug."""
+    from cpipe.delivery.workers import WorkerResult
+    def execute(state, *, on_session, heartbeat, **kw):
+        on_session('builder-session')
+        heartbeat()
+        (repo / 'double.py').write_text('def double(n): return n * 2\n')
+        return WorkerResult('builder-session', {'status': 'done'})
+    return execute
+
+
+def red_then_implemented(b, repo, tmp_path, spec, claimer='controller'):
+    """Observe the behavior RED, then one in-scope builder fix; checks are next."""
+    from cpipe.runtime import hermes_api as h
+    from cpipe.delivery.workers import observe_implementation
+    tid = b.schedule('d1')
+    h.claim_task(b.conn, tid, claimer=claimer, ttl_seconds=60)
+    b.bind_claim('d1', tid, claimer=claimer, worker_session='check-red')
+    assert b.observe_checks('d1', tid, claimer=claimer, checks=(spec,),
+                            evidence_root=tmp_path / 'evidence').activity == 'implement'
+    state = observe_implementation(b, 'd1', b.schedule('d1'), claimer=claimer, execute=fixed(repo))
+    assert state.activity == 'checks'
+    return state
+
+
 def execute(state, spec, tmp_path):
     from cpipe.delivery.check_runner import observe_pytest
     return observe_pytest(state, spec, evidence_root=tmp_path / 'evidence')

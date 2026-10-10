@@ -73,7 +73,7 @@ def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute):
     revalidates the native lease throughout the bounded worker invocation.
     """
     state = bridge._state(delivery_id)
-    if not state.approved or state.activity != 'implement' or state.run_id:
+    if not state.approved or state.activity not in {'write_tests', 'implement'} or state.run_id:
         raise ValueError('implementation must be an approved unclaimed activity')
     before = validate_worktree(state.plan)
     if before.digest != state.artifact:
@@ -111,7 +111,7 @@ def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute):
             raise ValueError('worker result session does not match native claim')
         if result.payload != {'status': 'done'}:
             raise ValueError('worker did not return a valid implementation result')
-        record_usage(bridge.service, state, 'implement', result)
+        record_usage(bridge.service, state, state.activity, result)
         after = validate_worktree(state.plan)
         _scope(before, after, state.plan)
         event = bridge.result_event(delivery_id, task_id, claimer=claimer,

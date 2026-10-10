@@ -15,7 +15,7 @@ from ..runtime import hermes_api as h
 from .journal import encoded
 from .service import Event, apply
 
-RUNNABLE = frozenset({'tests', 'checks', 'implement', 'review', 'publish'})
+RUNNABLE = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 RESULT_KINDS = frozenset({'activity_observed', 'review_received', 'publication_observed'})
 
 
