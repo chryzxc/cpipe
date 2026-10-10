@@ -202,6 +202,14 @@ def test_budget_and_expiry_stop_without_new_worker():
     assert stopped.phase == "stopped" and not intents
 
 
+def test_execution_budget_starts_at_approval_not_at_freeze():
+    state = start()
+    approved, _ = step(state, "envelope_approved", "tests", now=state.started_at + 200)
+    assert approved.started_at == state.started_at + 200
+    claimed, _ = step(approved, "activity_claimed", now=approved.started_at + 250, run_id="run-1")
+    assert claimed.phase != "stopped"
+
+
 def test_illegal_events_do_not_mutate_existing_snapshot():
     state = start()
     old = state.to_dict()

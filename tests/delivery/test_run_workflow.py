@@ -184,7 +184,8 @@ def test_review_time_does_not_use_frozen_execution_budget(run_context, monkeypat
     now = int(time.time()) + 3600
     monkeypatch.setattr(time, 'time', lambda: now)
     result = call(run_context[1], 'plan', {'draft_revision': 1})
-    assert result['plan']['expires_at'] == now + 300
+    from cpipe.delivery.controller import APPROVAL_WINDOW
+    assert result['plan']['expires_at'] == now + APPROVAL_WINDOW + 300
 
 
 def test_changed_source_needs_a_new_investigation_revision(run_context, repo):
@@ -292,3 +293,10 @@ def test_sparse_execution_plans_keep_existing_digest_identity():
     changed = replace(before, approach='# Reviewed approach\n')
     assert changed.digest() != before.digest()
     assert ExecutionPlan.from_dict(changed.to_dict()) == changed
+
+
+def test_missing_behavior_check_fails_at_prepare_not_after_approval(run_context):
+    run_context[2]['checks'][0]['obligation'] = 'unit'
+    out = prepare(run_context)
+    assert 'behavior' in json.dumps(out)
+    assert out.get('phase') != 'approach_review'

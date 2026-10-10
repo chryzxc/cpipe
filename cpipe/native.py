@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 import hashlib
 import json
+from pathlib import Path
 import secrets
 import time
 
@@ -19,7 +20,9 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'evidence, steps, decisions, risks are string lists. Bugs need evidence; feature/high-risk work needs detailed decisions. '
                 'spec: worktree, repo, base, goal, acceptance, '
                 'non_goals, write_paths, forbidden_paths, builder, reviewer, seconds and checks. Each check has '
-                'obligation, targets (relative .py files), criteria (exact pytest classname::name), timeout_seconds. '
+                'obligation, targets (relative .py files), criteria (exact pytest classname::name), timeout_seconds, '
+                'optional python (absolute project interpreter with pytest; defaults to <worktree>/.venv/bin/python). '
+                'Exactly one check has obligation behavior: the test proving the change, run before implementing. '
                 'For /cp-run, plan: {draft_revision} freezes the reviewed draft; build: {delivery_id} from that plan after native approval. '
                 'Run status: {}. Existing plan receipts accept their full spec. Other operations: only delivery_id.')),
         required=['token', 'operation', 'arguments']))
@@ -208,7 +211,15 @@ def execute(args, **kwargs):
             return json.dumps(out)
     except Exception as exc:
         # Never retain parameters, provider output or credential-bearing errors.
+        # cpipe's own ValueErrors carry only static labels, so the coordinator
+        # may see them and fix its spec; anything raised elsewhere stays opaque.
+        tb = exc.__traceback__
+        while tb and tb.tb_next:
+            tb = tb.tb_next
+        own = (type(exc) is ValueError and tb is not None
+               and Path(tb.tb_frame.f_code.co_filename).is_relative_to(Path(__file__).parent))
         return json.dumps({'error': 'cpipe operation failed: ' + type(exc).__name__ +
+            (' (' + str(exc)[:300] + ')' if own else '') +
             '. No authority inferred; inspect the current draft or /cp-status before retrying.'})
 
 

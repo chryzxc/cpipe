@@ -317,7 +317,8 @@ def apply(snapshot, event):
     if event.kind == "envelope_approved":
         if state.phase != "proposal" or event.activity_id != state.active_intent:
             raise ValueError("approval does not match pending proposal")
-        return continue_with(replace(state, approved=True), "tests", "checking")
+        # The execution budget starts at consent, not while the plan awaits it.
+        return continue_with(replace(state, approved=True, started_at=event.now), "tests", "checking")
     if event.kind == "activity_claimed":
         if (state.activity not in {"tests", "implement", "checks", "review", "publish"}
                 or event.activity_id != state.active_intent or state.run_id or not event.run_id):
