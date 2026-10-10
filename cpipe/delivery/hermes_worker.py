@@ -70,6 +70,7 @@ def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     session = ''
     final = None
+    usage = None
     buffer = b''
     count = 0
     offset = 0
@@ -133,6 +134,10 @@ def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
                                     or event['exit_code'] != 0 or event.get('error')):
                                 raise ValueError('worker terminal result session/status mismatch')
                             final = structured(event.get('text'))
+                            tokens = event.get('tokens')
+                            if type(tokens) is dict and all(type(v) is int for v in tokens.values()):
+                                usage = {k: tokens.get(k, 0) for k in
+                                         ('input', 'output', 'total', 'cache_read', 'cache_write')}
                     if len(buffer) > MAX_LINE:
                         raise ValueError('worker record bound exceeded')
             try:
@@ -142,18 +147,71 @@ def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
         if rc != 0 or final is None:
             raise ValueError('worker exited without a successful observed result')
         heartbeat()
-        return WorkerResult(session, final)
+        return WorkerResult(session, final, usage)
     finally:
         # Includes children that keep stdout open after the parent exits. No
         # unattended server processes are part of this worker contract.
         try:
             os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):  # macOS: EPERM once only zombies remain
             pass
         proc.wait()
         for stream in (proc.stdin, proc.stdout):
             if stream and not stream.closed:
                 stream.close()
+
+
+def _delta(state):
+    """What changed since the worker last looked: failing checks and open findings."""
+    from .contracts import Outcome
+    from .review import NOTES
+    lines = []
+    failed = sorted({r.obligation for r in state.receipts
+                     if r.outcome is Outcome.FAIL and r.artifact == state.artifact and r.obligation != 'review'})
+    if failed:
+        lines.append('Failing checks on the current tree: ' + ', '.join(failed)
+                     + '. Run them yourself with the commands in the approach to see the failure.')
+    open_ = [r.finding for r in state.findings if r.finding.disposition == 'open' and r.finding.in_scope]
+    if open_:
+        lines.append('Open review findings to resolve:')
+        lines += [f'- {f.id} [{f.severity}] ' + NOTES.get(f.root_cause, '(text unavailable; re-inspect all review axes)')
+                  for f in open_]
+    return '\n'.join(lines) + '\n' if lines else ''
+
+
+def _prompt(state, resume):
+    """Stable contract on a fresh session; on resume only the delta, since the session holds the rest."""
+    if state.activity == 'implement':
+        task = ('Make the minimum authorized correction for the failing checks and open findings, '
+                'then return only {"status":"done"}. Passing checks and completion are the controller’s '
+                'job, not a prose assertion.')
+        if resume:
+            return 'Same delivery, next round. Activity: implement.\n' + _delta(state) + task
+    prompt = ('You are a directly executing worker in an explicitly selected cpipe v2 workflow. '
+        'Do the assigned work with your own tools; do not delegate, invoke external coding CLIs, '
+        'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
+        'Do not commit, push, open PRs, or modify files outside write_paths. '
+        'Follow project instructions such as AGENTS.md; use installed skills only when clearly relevant. '
+        'Credentials must never be written; replace any encountered values with [REDACTED].\n'
+        'Frozen contract:\n' + encoded(state.plan.to_dict()) + '\n'
+        'Current activity: ' + state.activity + '\n' + _delta(state))
+    if state.activity != 'review':
+        return prompt + task
+    from .review import REVIEW_AXES
+    schema = dict(status='approved|changes_requested', artifact=state.artifact,
+        reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES),
+        findings=[], verified_ids=[])
+    return prompt + ('Read-only independent review: inspect the complete frozen base-to-candidate '
+        'range, goal, acceptance, preserved behavior and evidence. Do not edit anything. '
+        'Every coverage axis requires actual inspection, not a checkbox assertion. '
+        'Review all listed axes and report all findings in one verdict. For each prior finding ID '
+        'listed above, confirm it is resolved before putting it in verified_ids; otherwise leave it unresolved. '
+        'Return exactly the following JSON schema, replacing status with approved or '
+        'changes_requested; each new finding has exactly id (empty string), criterion '
+        '(review), root_cause (nonempty description, no credentials), severity '
+        '(low/medium/high/critical), in_scope (boolean), disposition (open). '
+        'Only existing prior IDs may appear in verified_ids. Do not add fields.\n'
+        + encoded(schema))
 
 
 class HermesWorker:
@@ -163,39 +221,7 @@ class HermesWorker:
         if actor.engine != 'hermes':
             raise ValueError('unsupported v2 execution engine')
         resume = state.builder_session if state.activity == 'implement' else ''
-        prompt = ('You are a directly executing worker in an explicitly selected cpipe v2 workflow. '
-            'Do the assigned work with your own tools; do not delegate, invoke external coding CLIs, '
-            'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
-            'Do not commit, push, open PRs, or modify files outside write_paths. '
-            'Follow project instructions such as AGENTS.md and discover/load relevant installed skills '
-            'using skills_list and skill_view. Superpowers is optional, not a dependency. '
-            'Credentials must never be written; replace any encountered values with [REDACTED].\n'
-            'Frozen contract:\n' + encoded(state.plan.to_dict()) + '\n'
-            'Current activity: ' + state.activity + '\n'
-            'Prior findings: ' + encoded([r.to_dict() for r in state.findings]) + '\n')
-        if state.activity == 'review':
-            from .review import REVIEW_AXES
-            schema = dict(status='approved|changes_requested', artifact=state.artifact,
-                reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES),
-                findings=[], verified_ids=[])
-            prompt += ('Read-only independent review: inspect the complete frozen base-to-candidate '
-                'range, goal, acceptance, preserved behavior and evidence. Do not edit anything. '
-                'Every coverage axis requires actual inspection, not a checkbox assertion. '
-                'Review all listed axes and report all findings in one verdict. Existing root-cause '
-                'identities are hashes for privacy; never claim a prior ID verified unless the '
-                'current complete inspection supports its resolution. Otherwise leave it unresolved. '
-                'Return exactly the following JSON schema, replacing status with approved or '
-                'changes_requested; each new finding has exactly id (empty string), criterion '
-                '(review), root_cause (nonempty description, no credentials), severity '
-                '(low/medium/high/critical), in_scope (boolean), disposition (open). '
-                'Only existing prior IDs may appear in verified_ids. Do not add fields.\n'
-                + encoded(schema))
-        else:
-            prompt += ('For implement: inspect the failing frozen check and acceptance; when '
-                'prior findings are hashed, independently re-inspect all review axes to identify '
-                'the in-scope correction. Make the minimum authorized correction, then return '
-                'only {"status":"done"}. Passing checks and completion are the controller’s '
-                'job, not a prose assertion.')
+        prompt = _prompt(state, resume)
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(('HERMES_KANBAN_', 'GIT_')) and k != 'PYTHONPATH'}
         return execute_stream(command(actor, state.plan.worktree, resume, timeout_seconds),

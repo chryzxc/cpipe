@@ -106,3 +106,29 @@ def test_reviewer_gets_read_only_full_range_structured_contract(monkeypatch):
     for field in ['Read-only independent review', 'verified_ids', 'changes_requested',
                   state.artifact, state.plan.base_commit, *REVIEW_AXES]:
         assert field in captured['prompt']
+
+
+def test_host_reported_tokens_are_kept_for_usage():
+    tokens = dict(input=1200, output=40, total=1240, cache_read=900, cache_write=0)
+    out, _ = run(events(init(), result(tokens=tokens)))
+    assert out.tokens == tokens
+    out, _ = run(events(init(), result(tokens={'input': 'many'})))
+    assert out.tokens is None
+
+
+def test_resumed_builder_gets_only_the_delta_with_finding_text():
+    from dataclasses import replace
+    from cpipe.delivery.findings import Finding, FindingRecord
+    from cpipe.delivery.hermes_worker import _prompt
+    from cpipe.delivery import review
+    from .test_service import candidate
+    state = candidate()
+    finding = Finding('REV-001', 'review', 'cause-abc', 'high', True, 'open')
+    state = replace(state, activity='implement', findings=(FindingRecord(finding),))
+    review.NOTES['cause-abc'] = 'off-by-one in double for negatives'
+    fresh = _prompt(state, '')
+    assert 'Frozen contract' in fresh and 'off-by-one' in fresh
+    resumed = _prompt(state, 'builder-session')
+    assert 'Frozen contract' not in resumed and 'skills_list' not in resumed
+    assert 'REV-001 [high] off-by-one in double for negatives' in resumed
+    assert len(resumed) < len(fresh) / 2

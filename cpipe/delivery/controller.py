@@ -16,7 +16,7 @@ from .schema import ExecutionPlan
 from .service import Service, Event
 from .native_bridge import NativeBridge
 from .hermes_worker import HermesWorker
-from .workers import observe_implementation
+from .workers import observe_implementation, usage
 from .review import observe_review, review_identity
 from .approval import arguments
 from .journal import encoded
@@ -26,7 +26,7 @@ from ..runtime import hermes_api as h
 APPROVAL_WINDOW = 3600
 
 
-def summary(state):
+def summary(state, service=None):
     result = dict(engine_version=2, delivery_id=state.plan.envelope.delivery_id,
         phase=state.phase, activity=state.activity, artifact=state.artifact,
         approved=state.approved, review_cycles=state.review_cycles,
@@ -35,6 +35,8 @@ def summary(state):
     if state.phase == 'proposal' and not state.approved:
         result['approval_arguments'] = arguments(state)
         result['plan'] = state.plan.to_dict()
+    if service is not None:
+        result['tokens'] = usage(service, state.plan.envelope.delivery_id)
     return result
 
 
@@ -206,6 +208,6 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         task = h.get_task(conn, tid)
         steps.append(dict(activity=action, task_id=tid, native_status=task.status,
                           phase=state.phase, outcomes=[r.outcome.value for r in state.receipts]))
-    result = summary(owned(service, delivery_id, session_id, profile_id))
+    result = summary(owned(service, delivery_id, session_id, profile_id), service)
     result['steps'] = steps
     return result

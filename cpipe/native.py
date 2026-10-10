@@ -65,11 +65,11 @@ def dispatch(ctx, name, raw=''):
                 if op == 'status' and not raw.strip():
                     rows = service.journal.db.execute('SELECT snapshot FROM delivery').fetchall()
                     states = [State.from_dict(json.loads(row[0])) for row in rows]
-                    return json.dumps({'engine_version': 2, 'deliveries': [controller.summary(s) for s in states
+                    return json.dumps({'engine_version': 2, 'deliveries': [controller.summary(s, service) for s in states
                         if (s.plan.envelope.session_id, s.plan.envelope.profile_id) == (sid, profile)]})
                 if op == 'stop':
                     return json.dumps(controller.cancel(service, raw.strip(), session_id=sid, profile_id=profile))
-                return json.dumps(controller.summary(controller.owned(service, raw.strip(), sid, profile)))
+                return json.dumps(controller.summary(controller.owned(service, raw.strip(), sid, profile), service))
         except Exception as exc:
             return json.dumps({'error': 'state lookup failed: ' + type(exc).__name__})
     if op not in {'run', 'plan', 'build'} or not hasattr(ctx, 'inject_message'):
@@ -204,7 +204,7 @@ def execute(args, **kwargs):
                 elif op == 'stop':
                     out = controller.cancel(service, payload['delivery_id'], session_id=sid, profile_id=profile)
                 else:
-                    out = controller.summary(controller.owned(service, payload['delivery_id'], sid, profile))
+                    out = controller.summary(controller.owned(service, payload['delivery_id'], sid, profile), service)
             if op != 'status':
                 record.update(state='complete', result=out)
                 db.execute('UPDATE intent SET payload=? WHERE id=?', (encoded(record), _intent_key(token)))

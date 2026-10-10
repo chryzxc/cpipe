@@ -90,9 +90,10 @@ def test_controller_uses_real_red_green_and_independent_review(repo, tmp_path):
         on_session(session)
         if state.activity == 'implement':
             (repo / 'double.py').write_text('def double(n): return n * 2\n')
-            return WorkerResult(session, {'status': 'done'})
+            return WorkerResult(session, {'status': 'done'}, dict(input=100, output=10, total=110, cache_read=80))
         return WorkerResult(session, dict(status='approved', artifact=state.artifact,
-            reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
+            reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]),
+            dict(input=50, output=5, total=55, cache_read=0))
     try:
         with Journal(tmp_path / 'controller.db') as journal:
             service = Service(journal)
@@ -109,5 +110,6 @@ def test_controller_uses_real_red_green_and_independent_review(repo, tmp_path):
             assert result['steps'][0]['outcomes'] == ['fail']
             assert result['steps'][-1]['outcomes'][-2:] == ['pass', 'pass']
             assert all(step['native_status'] == 'done' for step in result['steps'])
+            assert result['tokens'] == dict(steps=2, input=150, output=15, total=165, cache_read=80, cache_write=0)
     finally:
         conn.close()

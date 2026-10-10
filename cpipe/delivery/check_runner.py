@@ -148,7 +148,7 @@ def _run(spec, worktree, env, timeout):
             # are outside this observer's boundary (no confinement is claimed).
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):  # macOS: EPERM once only zombies remain
                 pass
             process.wait(timeout=5)
         os.close(read_fd)
