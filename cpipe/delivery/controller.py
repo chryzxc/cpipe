@@ -6,6 +6,7 @@ from contextlib import closing
 import json
 from pathlib import Path
 import subprocess
+import sys
 import time
 import uuid
 
@@ -35,6 +36,22 @@ FAILURES = 3
 ACTIVE_STEPS = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review'})
 BACKOFF = 15
 WORKER_STEPS = frozenset({'write_tests', 'implement', 'review'})
+
+
+STEP_LINES = {'write_tests': '{who} is writing the failing test', 'tests': 'running the new test (it must fail first)',
+              'implement': '{who} is implementing', 'checks': 'running the checks', 'review': '{who} is reviewing'}
+
+
+def tell(session_id, delivery_id, text, done=False):
+    """One display-only line for the originating chat in the desktop app: no model turn, never fatal."""
+    if 'tui_gateway.server' not in sys.modules:
+        return  # no app attached here; importing it would take over this process's stdout
+    try:
+        from hermes_cli.plugin_events import broadcast_plugin_event
+        broadcast_plugin_event('cpipe', 'progress', dict(session_id=session_id, delivery_id=delivery_id,
+                                                         text=text, done=done))
+    except Exception:
+        pass
 
 
 def inside(name, paths):
@@ -262,7 +279,11 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             return run(service, delivery_id, session_id=session_id, profile_id=profile_id,
                        conn=conn, execute=execute, evidence_root=evidence_root)
     bridge = NativeBridge(service, conn, session_id=session_id, profile_id=profile_id)
-    worker, steps, recoveries, strikes, baselined = execute or HermesWorker(), [], [], {}, False
+    worker, steps, recoveries, strikes, baselined, shown = execute or HermesWorker(), [], [], {}, False, ''
+
+    def note(text):
+        recoveries.append(text)
+        tell(session_id, delivery_id, text)
     store = Path(evidence_root) / 'good' / delivery_id
     claimer = h.new_claimer()
     bridge.abandon(delivery_id)  # recover a run left bound by a crashed build
@@ -282,9 +303,12 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         try:
             state = settle(state, store, service)
             action = state.activity
+            line = STEP_LINES[action].format(who=bridge._actor(state).profile if action in WORKER_STEPS else '')
+            if line != shown:
+                tell(session_id, delivery_id, shown := line)
             tid = bridge.schedule(delivery_id, claimer)
             if bridge.replaced:
-                recoveries.append(f'{action}: replaced {len(bridge.replaced)} card(s) that something outside '
+                note(f'{action}: replaced {len(bridge.replaced)} card(s) that something outside '
                                   'cpipe had taken, changed or left behind')
                 bridge.replaced.clear()
             if tid is None:
@@ -301,7 +325,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                             take_baseline(state, tuple(c for c in checks if c.obligation != 'behavior'),
                                           evidence_root=Path(evidence_root))
                     except Exception as exc:
-                        recoveries.append(f'could not record which checks already failed ({type(exc).__name__}); '
+                        note(f'could not record which checks already failed ({type(exc).__name__}); '
                                           'every failure counts')
                 # tests proves the behavior check before implementing; checks runs everything.
                 due = checks if action == 'checks' else tuple(c for c in checks if c.obligation == 'behavior')
@@ -314,7 +338,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                                        evidence_root=Path(evidence_root))
         except WorkerRefused as exc:
             # Not a crash: the next approved actor takes over, or the run waits for the user.
-            recoveries.append(f'{bridge._actor(state).profile} declined {action}: {exc}')
+            note(f'{bridge._actor(state).profile} declined {action}: {exc}')
             bridge.abandon(delivery_id, claimer, kind='activity_refused')
             continue
         except Exception as exc:
@@ -326,7 +350,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             if action not in WORKER_STEPS or not current.run_id:
                 # Not the worker's doing (checks, or preparing the step): retry a few times, then report.
                 strikes[action] = n = strikes.get(action, 0) + 1
-                recoveries.append(f'{action} failed ({reason}); ' + ('retrying' if n < FAILURES else 'giving up'))
+                note(f'{action} failed ({reason}); ' + ('retrying' if n < FAILURES else 'giving up'))
                 if current.run_id:
                     bridge.abandon(delivery_id, claimer)
                 if n >= FAILURES:
@@ -334,7 +358,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             else:
                 who = bridge._actor(state).profile
                 strikes[who] = n = strikes.get(who, 0) + 1
-                recoveries.append(f'{who} failed {action} ({reason}); '
+                note(f'{who} failed {action} ({reason}); '
                                   + ('retrying' if n < FAILURES else 'handing over'))
                 worker.note = (f'Your previous attempt at this step failed: {reason}. Its changes were undone. '
                                'Do the step again and finish with exactly the requested JSON.')

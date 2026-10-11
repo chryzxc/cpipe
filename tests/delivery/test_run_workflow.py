@@ -391,7 +391,11 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
         'run-fixture', 'once', request_id=payload['request_id']))
     route = set_current_session_key('run-fixture')
     h.kb.init_db()
-    told, workers, declining = [], [], [True]
+    told, workers, declining, lines = [], [], [True], []
+    from hermes_cli import plugin_events
+    monkeypatch.setitem(sys.modules, 'tui_gateway.server', object())  # as inside the desktop backend
+    monkeypatch.setattr(plugin_events, 'broadcast_plugin_event', lambda plugin, event, payload: lines.append(
+        (plugin, event, payload['session_id'], payload['delivery_id'], payload['text'], payload['done'])))
     ctx.inject_message = lambda text, **kw: told.append(text) or True
     def worker(state, *, on_session, **kw):
         workers.append(state.activity)
@@ -432,6 +436,12 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
         native._RUNS[delivery_id].join(60)
         assert call(token, 'status', {})['phase'] == 'locally_ready'
         assert workers == ['implement', 'implement', 'review']
+        # The chat sees each handover and recovery as a display-only line, never a model turn.
+        assert {(p, e, sid, d) for p, e, sid, d, _, _ in lines} == {('cpipe', 'progress', 's1', delivery_id)}
+        texts = [text for *_, text, _ in lines]
+        assert texts[:2] == ['running the new test (it must fail first)', 'builder is implementing']
+        assert texts[2].startswith('builder declined implement')
+        assert 'reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
         assert 'error' in call(token, 'prepare', {})  # still no new work on an expired receipt
     finally:
         approval.unregister_gateway_notify('run-fixture')

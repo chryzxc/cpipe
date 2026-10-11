@@ -68,6 +68,8 @@ A run only stops for you when nothing it was approved to do can move it forward.
 
 ### Monitoring
 
+- **Progress line in the desktop app:** a single line above the chat input shows what the run is doing (`forge is implementing`, `running the checks`, `sentry is reviewing`) and every handover or recovery as it happens. It is display only: no model turn, no tokens. Enable **cpipe** under **Capabilities → Plugins** (use **Rescan** after installing or updating). Runs hosted outside the desktop app (gateway, terminal chat) skip it.
+
 - Every message to the chat is stored until the chat accepts it; the watchdog and the next chat turn redeliver it.
 - `/cp-status` shows whether anything is actually working on a delivery (`background`), when a parked run retries and why, and any message not yet delivered.
 - Starts, crashes, parking, resumes and deliveries are logged to the Hermes agent log under `cpipe`.

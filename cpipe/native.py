@@ -198,6 +198,7 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
                         record.update(retry_at=int(time.time()) + PARK, error=error, parks=record.get('parks', 0) + 1)
                         _record(_runner(delivery_id), record)
                         log.warning('cpipe: run %s parked for %ss after repeated crashes', delivery_id, PARK)
+                        controller.tell(session_id, delivery_id, f'hit a problem; retrying every {PARK // 60} minutes')
                         if record['parks'] == 1:
                             notify(delivery_id, chat_key, f'[cpipe] Delivery {delivery_id} hit a problem it could not '
                                    f'fix right away ({error or "unknown error"}). It retries on its own every '
@@ -220,6 +221,7 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
             log.exception('cpipe: could not clear the runner record of %s', delivery_id)
         head, text = _settled(delivery_id, result, error)
         log.info('cpipe: run %s is %s', delivery_id, head)
+        controller.tell(session_id, delivery_id, f'{delivery_id} is {head}', done=True)
         with lock:
             if not box.get('detached'):
                 box['result'] = dict(result or {}, message=f'The run is already {head}.')
