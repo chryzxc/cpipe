@@ -20,7 +20,7 @@ def test_native_observed_red_schedules_a_distinct_builder_activity(repo, tmp_pat
         assert h.get_task(board, tid).status == 'done'
         native = h.kb.latest_run(board, tid)
         assert native.id == claim.current_run_id and native.outcome == 'completed'
-        assert native.metadata['cpipe_v2_event']['receipts'][0]['outcome'] == 'fail'
+        assert native.metadata['cpipe_event']['receipts'][0]['outcome'] == 'fail'
         next_tid = b.schedule('d1')
         assert next_tid != tid and h.get_task(board, next_tid).status == 'ready'
         assert b.schedule('d1') == next_tid

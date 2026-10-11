@@ -1,4 +1,4 @@
-"""Trusted v2 worker observations using native claims and Git readback.
+"""Trusted worker observations using native claims and Git readback.
 
 Prompts and post-run scope checks are not isolation. Local Hermes execution is
 unsandboxed; a successful worker status is never test evidence.
@@ -125,6 +125,6 @@ def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute):
         if (current and current.status == 'running' and current.claim_lock == claimer
                 and current.current_run_id is not None):
             h.block(bridge.conn, task_id, run_id=current.current_run_id,
-                    reason='v2 implementation observation unavailable; local edits preserved',
+                    reason='implementation observation unavailable; local edits preserved',
                     kind='needs_input')
         raise

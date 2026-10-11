@@ -55,7 +55,7 @@ def scope():
 
 
 def _intent_key(token):
-    return 'slash-v2:' + hashlib.sha256(token.encode()).hexdigest()
+    return 'slash:' + hashlib.sha256(token.encode()).hexdigest()
 
 
 def dispatch(ctx, name, raw=''):
@@ -71,7 +71,7 @@ def dispatch(ctx, name, raw=''):
                 if op == 'status' and not raw.strip():
                     rows = service.journal.db.execute('SELECT snapshot FROM delivery').fetchall()
                     states = [State.from_dict(json.loads(row[0])) for row in rows]
-                    return json.dumps({'engine_version': 2, 'deliveries': [controller.summary(s, service) for s in states
+                    return json.dumps({'deliveries': [controller.summary(s, service) for s in states
                         if (s.plan.envelope.session_id, s.plan.envelope.profile_id) == (sid, profile)]})
                 if op == 'stop':
                     return json.dumps(controller.cancel(service, raw.strip(), session_id=sid, profile_id=profile))
@@ -85,7 +85,7 @@ def dispatch(ctx, name, raw=''):
     import os
     token = secrets.token_urlsafe(24)
     with scope() as (service, profile, _):
-        record = dict(kind='slash_v2', operation=op, session_id=sid, session_key=key,
+        record = dict(kind='slash', operation=op, session_id=sid, session_key=key,
                       profile_id=profile, expires=time.time() + (86400 if op == 'run' else 900), state='pending', result=None)
         service.journal.db.execute('INSERT INTO intent(id,payload,acknowledged) VALUES (?,?,1)',
                                   (_intent_key(token), encoded(record)))
@@ -160,7 +160,7 @@ def execute(args, **kwargs):
             row = db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()
             run_record = json.loads(row[0]) if row else None
             if run_record and run_record.get('operation') == 'run':
-                if (run_record.get('kind') != 'slash_v2' or run_record['expires'] <= time.time()
+                if (run_record.get('kind') != 'slash' or run_record['expires'] <= time.time()
                     or (run_record['session_id'], run_record['profile_id'], run_record['session_key']) != (sid, profile, key)):
                     raise ValueError('missing, expired or wrong-session run receipt')
                 from .delivery.approach import execute as execute_run
@@ -170,7 +170,7 @@ def execute(args, **kwargs):
             try:
                 row = db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()
                 record = json.loads(row[0]) if row else None
-                if (not record or record.get('kind') != 'slash_v2' or record['expires'] <= time.time()
+                if (not record or record.get('kind') != 'slash' or record['expires'] <= time.time()
                     or (record['session_id'], record['profile_id'], record['session_key']) != (sid, profile, key)):
                     raise ValueError('missing, expired or wrong-session receipt')
                 continuation = (record['operation'] == 'plan' and op == 'build' and record['state'] == 'complete'
@@ -204,7 +204,7 @@ def execute(args, **kwargs):
                     raise ValueError('only delivery_id is accepted')
                 if op == 'build':
                     out = controller.run(service, payload['delivery_id'], session_id=sid, profile_id=profile,
-                                         evidence_root=home / 'cpipe-v2' / 'evidence')
+                                         evidence_root=home / 'cpipe-deliveries' / 'evidence')
                 elif op == 'stop':
                     out = controller.cancel(service, payload['delivery_id'], session_id=sid, profile_id=profile)
                 else:

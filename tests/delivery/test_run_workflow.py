@@ -13,7 +13,7 @@ from cpipe.delivery.journal import Journal
 from cpipe.delivery.service import Service
 from cpipe.delivery.schema import Actor, ExecutionPlan
 from .test_artifact import repo
-from .test_v2_entrypoints import Context
+from .test_entrypoints import Context
 
 
 @pytest.fixture

@@ -192,7 +192,7 @@ def _prompt(state, resume):
                 'job, not a prose assertion.')
     if state.activity in {'write_tests', 'implement'} and resume:
         return 'Same delivery, next round. Activity: ' + state.activity + '.\n' + _delta(state) + task
-    prompt = ('You are a directly executing worker in an explicitly selected cpipe v2 workflow. '
+    prompt = ('You are a directly executing worker in an explicitly selected cpipe workflow. '
         'Do the assigned work with your own tools; do not delegate, invoke external coding CLIs, '
         'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
         'Do not commit, push, open PRs, or modify files outside write_paths. '
@@ -224,7 +224,7 @@ class HermesWorker:
         actor = next(a for a in state.plan.actors if a.role == (
             'reviewer' if state.activity == 'review' else 'builder'))
         if actor.engine != 'hermes':
-            raise ValueError('unsupported v2 execution engine')
+            raise ValueError('unsupported execution engine')
         resume = state.builder_session if state.activity in {'write_tests', 'implement'} else ''
         prompt = _prompt(state, resume)
         env = {k: v for k, v in os.environ.items()

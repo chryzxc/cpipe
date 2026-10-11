@@ -1,4 +1,4 @@
-"""v2 is the only installed lifecycle; no legacy fallbacks."""
+"""One installed lifecycle; old entry points are rejected."""
 import json
 import time
 from dataclasses import replace
@@ -24,7 +24,7 @@ class Context:
         self.cli[kw['name']] = kw
 
 
-def test_registration_is_v2_only():
+def test_registration_exposes_only_current_tools():
     import cpipe
     ctx = Context()
     cpipe.register(ctx)
@@ -36,23 +36,23 @@ def test_registration_is_v2_only():
 
 
 @pytest.mark.parametrize('old', ['run', 'once', 'round', 'configure'])
-def test_legacy_daemon_cli_is_not_available(old):
+def test_old_daemon_cli_is_not_available(old):
     from cpipe.runtime.cli import main
     with pytest.raises(SystemExit) as exc:
         main([old])
     assert exc.value.code == 2
 
 
-def test_execute_intent_rejects_legacy_payload():
+def test_execute_intent_rejects_old_payload():
     from cpipe import native
     ctx = Context()
     native.register(ctx)
     out = json.loads(ctx.tools['cpipe_execute_intent']['handler'](
-        {'token': 'old', 'operation': 'build', 'arguments': {'task_id': 'legacy'}}, session_id='s1'))
+        {'token': 'old', 'operation': 'build', 'arguments': {'task_id': 'old'}}, session_id='s1'))
     assert 'error' in out
 
 
-def test_slash_status_reads_v2_journal(repo, tmp_path, hermes_home, monkeypatch):
+def test_slash_status_reads_journal(repo, tmp_path, hermes_home, monkeypatch):
     from cpipe import native
     from gateway import session_context
     journal, service, state, spec = setup_check(repo, tmp_path)
@@ -66,7 +66,6 @@ def test_slash_status_reads_v2_journal(repo, tmp_path, hermes_home, monkeypatch)
     out = json.loads(ctx.commands['cp-status']('d1'))
     assert out['delivery_id'] == 'd1'
     assert out['phase'] == 'proposal'
-    assert out['engine_version'] == 2
 
 
 def test_controller_uses_real_red_green_and_independent_review(repo, tmp_path):

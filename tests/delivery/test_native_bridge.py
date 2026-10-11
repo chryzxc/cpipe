@@ -112,7 +112,7 @@ def test_observed_checks_complete_native_run_and_emit_one_successor(tmp_path, bo
         assert h.get_task(board, tid).status == 'done'
         run = h.kb.latest_run(board, tid)
         assert run.id == task.current_run_id and run.outcome == 'completed'
-        assert run.metadata['cpipe_v2_event'] == event.to_dict()
+        assert run.metadata['cpipe_event'] == event.to_dict()
         assert b.finish(event, tid, claimer='owner', summary='Observed behavioral RED') == after
         next_tid = b.schedule('d1')
         assert next_tid != tid and b.schedule('d1') == next_tid

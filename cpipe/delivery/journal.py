@@ -84,7 +84,7 @@ class Journal:
         root = Path(home).resolve(strict=True)
         if not root.is_dir():
             raise ValueError("profile home must be a directory")
-        directory = root / "delivery-v2"
+        directory = root / "cpipe-deliveries"
         directory.mkdir(mode=0o700, exist_ok=True)
         info = directory.lstat()
         if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()

@@ -1,4 +1,4 @@
-"""Real offline v2 CLI exercise, not a model or native worker simulation."""
+"""Real offline CLI exercise, not a model or native worker simulation."""
 import json
 import sys
 

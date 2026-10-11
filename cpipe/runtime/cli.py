@@ -27,7 +27,7 @@ def handle(args):
             ready = all(callable(getattr(PluginContext, name, None)) for name in
                         ('register_tool', 'register_command', 'register_cli_command', 'inject_message'))
             ready = ready and callable(getattr(kanban_db, 'claim_task', None))
-            print(json.dumps(dict(version=__version__, engine_version=2, native_interfaces=ready,
+            print(json.dumps(dict(version=__version__, native_interfaces=ready,
                 completion_target='local_only', sandboxed=False)))
             return 0 if ready else 1
         if command == 'status':
@@ -35,14 +35,14 @@ def handle(args):
             from ..delivery.journal import Journal
             from ..delivery.service import State
             from ..delivery.controller import summary
-            path = get_hermes_home() / 'delivery-v2' / 'facts.db'
+            path = get_hermes_home() / 'cpipe-deliveries' / 'facts.db'
             if not path.exists():
-                print(json.dumps(dict(engine_version=2, deliveries=[])))
+                print(json.dumps(dict(deliveries=[])))
                 return 0
             with Journal.for_profile(get_hermes_home()) as journal:
                 states = [State.from_dict(json.loads(row[0])) for row in
                           journal.db.execute('SELECT snapshot FROM delivery')]
-                print(json.dumps(dict(engine_version=2, deliveries=[summary(s) for s in states])))
+                print(json.dumps(dict(deliveries=[summary(s) for s in states])))
             return 0
         if command == 'smoke':
             from ..delivery.smoke import run

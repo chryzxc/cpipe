@@ -54,9 +54,9 @@ def test_real_gateway_accept_or_reject_and_restart_does_not_reprompt(repo, tmp_p
         assert '"schema"' not in payload['description']
         for item in state.plan.acceptance + state.plan.non_goals + state.plan.write_paths:
             assert item in payload['description']
-        assert approval.resolve_gateway_approval('v2-fixture', choice, request_id=payload['request_id'])
-    approval.register_gateway_notify('v2-fixture', notify)
-    token = set_current_session_key('v2-fixture')
+        assert approval.resolve_gateway_approval('cp-fixture', choice, request_id=payload['request_id'])
+    approval.register_gateway_notify('cp-fixture', notify)
+    token = set_current_session_key('cp-fixture')
     try:
         args = arguments(state)
         result = request(service, args, state)
@@ -67,7 +67,7 @@ def test_real_gateway_accept_or_reject_and_restart_does_not_reprompt(repo, tmp_p
             assert request(Service(reopened), args, state) == result
         assert len(seen) == 1
     finally:
-        approval.unregister_gateway_notify('v2-fixture')
+        approval.unregister_gateway_notify('cp-fixture')
         reset_current_session_key(token)
 
 
@@ -165,7 +165,7 @@ def test_transport_exception_is_redacted_and_does_not_retry_implicitly(repo, tmp
 
 
 @pytest.mark.parametrize('choice', ['once', 'deny'])
-def test_registered_tool_calls_native_gateway_for_profile_scoped_v2_plan(repo, tmp_path, hermes_home, monkeypatch, choice):
+def test_registered_tool_calls_native_gateway_for_profile_scoped_plan(repo, tmp_path, hermes_home, monkeypatch, choice):
     from cpipe import native, plan_approval
     from tools import approval
     from tools.approval_context import set_current_session_key, reset_current_session_key
@@ -178,9 +178,9 @@ def test_registered_tool_calls_native_gateway_for_profile_scoped_v2_plan(repo, t
     seen = []
     def notify(payload):
         seen.append(payload)
-        assert approval.resolve_gateway_approval('v2-tool-fixture', choice, request_id=payload['request_id'])
-    approval.register_gateway_notify('v2-tool-fixture', notify)
-    token = set_current_session_key('v2-tool-fixture')
+        assert approval.resolve_gateway_approval('cp-tool-fixture', choice, request_id=payload['request_id'])
+    approval.register_gateway_notify('cp-tool-fixture', notify)
+    token = set_current_session_key('cp-tool-fixture')
     try:
         import model_tools
         from tools.registry import registry
@@ -203,5 +203,5 @@ def test_registered_tool_calls_native_gateway_for_profile_scoped_v2_plan(repo, t
             current = Service(scoped).read(state.plan.envelope.delivery_id)
             assert current.approved is (choice == 'once')
     finally:
-        approval.unregister_gateway_notify('v2-tool-fixture')
+        approval.unregister_gateway_notify('cp-tool-fixture')
         reset_current_session_key(token)
