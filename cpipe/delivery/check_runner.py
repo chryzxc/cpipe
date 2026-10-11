@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import importlib.metadata
+import json
 import os
 from pathlib import Path
 import select
@@ -35,7 +36,28 @@ def _digest(value):
     return hashlib.sha256(encoded(value).encode()).hexdigest()
 
 
-def _environment():
+# Run by the project's interpreter, never Hermes', so its own packages are hashed.
+_PROBE = ('import importlib.metadata as m, importlib.util as u, json, sys; print(json.dumps([sys.prefix, '
+          'sys.version, sys.platform, u.find_spec("pytest") is not None, '
+          'sorted({(d.metadata["Name"], d.version) for d in m.distributions()})]))')
+
+
+def _interpreter(python, env):
+    if not python:
+        packages = sorted({(d.metadata['Name'], d.version) for d in importlib.metadata.distributions()})
+        return [sys.executable, sys.prefix, sys.version, sys.platform, packages]
+    try:
+        out = subprocess.run([python, '-I', '-c', _PROBE], env=env, stdin=subprocess.DEVNULL,
+                             capture_output=True, timeout=30, check=True).stdout
+        prefix, version, platform, has_pytest, packages = json.loads(out)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        raise ValueError('check interpreter is unavailable') from None
+    if not has_pytest:
+        raise ValueError('check interpreter has no pytest installed')
+    return [python, prefix, version, platform, [tuple(p) for p in packages]]
+
+
+def _environment(python=''):
     # Checks deliberately do not inherit arbitrary settings or credentials.
     # Hash only the safe, explicitly selected subprocess definition. Secret
     # values must never enter persisted identities, even through a hash.
@@ -45,9 +67,7 @@ def _environment():
     env = {name: os.environ[name] for name in safe if name in os.environ
            and redact(os.environ[name]) == os.environ[name]}
     env.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', PYTEST_ADDOPTS='')
-    packages = sorted({(d.metadata['Name'], d.version) for d in importlib.metadata.distributions()})
-    return env, _digest([sys.executable, sys.prefix, sys.version, sys.platform,
-                         packages, sorted(env.items())])
+    return env, _digest([*_interpreter(python, env), sorted(env.items())])
 
 
 @dataclass(frozen=True)
@@ -56,6 +76,7 @@ class PytestCheck:
     targets: tuple[str, ...]
     criteria: tuple[str, ...]
     timeout_seconds: int = 120
+    python: str = ''  # project interpreter; empty means the host's own
 
     def __post_init__(self):
         identity(self.obligation, 'obligation')
@@ -69,14 +90,16 @@ class PytestCheck:
                 raise ValueError('pytest targets must be explicit relative Python files')
         if type(self.timeout_seconds) is not int or not 0 < self.timeout_seconds <= 600:
             raise ValueError('invalid pytest timeout')
+        if type(self.python) is not str or (self.python and not os.path.isabs(self.python)):
+            raise ValueError('check interpreter must be an absolute path')
 
     def argv(self, report):
-        return [sys.executable, '-m', 'pytest', *self.targets, '-q', '-o', 'addopts=',
+        return [self.python or sys.executable, '-m', 'pytest', *self.targets, '-q', '-o', 'addopts=',
                 '-o', 'junit_family=xunit2', f'--junitxml={report}']
 
     def identity(self):
         return CheckIdentity(self.obligation, _digest([self.targets, self.criteria]),
-            _environment()[1], _digest([self.argv('<private-report-pipe>'), self.timeout_seconds]))
+            _environment(self.python)[1], _digest([self.argv('<private-report-pipe>'), self.timeout_seconds]))
 
 
 def _run(spec, worktree, env, timeout):
@@ -125,7 +148,7 @@ def _run(spec, worktree, env, timeout):
             # are outside this observer's boundary (no confinement is claimed).
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):  # macOS: EPERM once only zombies remain
                 pass
             process.wait(timeout=5)
         os.close(read_fd)
@@ -192,14 +215,14 @@ def observe_pytest(state, spec, *, evidence_root):
     root = Path(evidence_root).absolute()
     if root.resolve() != root or root.is_relative_to(Path(state.plan.worktree)):
         raise ValueError('evidence must be outside source in a non-symlink directory')
-    env, environment = _environment()
+    env, environment = _environment(spec.python)
     if environment != definition.environment:
         raise ValueError('environment changed before check execution')
     code, raw = _run(spec, state.plan.worktree, env, min(spec.timeout_seconds, remaining))
     after = fingerprint(state.plan.worktree)
     if after != before:
         raise ValueError('artifact changed during read-only check')
-    if _environment()[1] != environment:
+    if _environment(spec.python)[1] != environment:
         raise ValueError('environment changed during check execution')
     outcome = _outcome(spec, code, raw)
     raw = None  # Never persist report text or test output.

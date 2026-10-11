@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 import hashlib
 import json
+from pathlib import Path
 import secrets
 import time
 
@@ -19,7 +20,10 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'evidence, steps, decisions, risks are string lists. Bugs need evidence; feature/high-risk work needs detailed decisions. '
                 'spec: worktree, repo, base, goal, acceptance, '
                 'non_goals, write_paths, forbidden_paths, builder, reviewer, seconds and checks. Each check has '
-                'obligation, targets (relative .py files), criteria (exact pytest classname::name), timeout_seconds. '
+                'obligation, targets (relative .py files), criteria (exact pytest classname::name), timeout_seconds, '
+                'optional python (absolute project interpreter with pytest; defaults to <worktree>/.venv/bin/python). '
+                'Exactly one check has obligation behavior: the test proving the change; it must fail before implementing, '
+                'and the builder writes it first, so its file must be inside write_paths. '
                 'For /cp-run, plan: {draft_revision} freezes the reviewed draft; build: {delivery_id} from that plan after native approval. '
                 'Run status: {}. Existing plan receipts accept their full spec. Other operations: only delivery_id.')),
         required=['token', 'operation', 'arguments']))
@@ -62,11 +66,11 @@ def dispatch(ctx, name, raw=''):
                 if op == 'status' and not raw.strip():
                     rows = service.journal.db.execute('SELECT snapshot FROM delivery').fetchall()
                     states = [State.from_dict(json.loads(row[0])) for row in rows]
-                    return json.dumps({'engine_version': 2, 'deliveries': [controller.summary(s) for s in states
+                    return json.dumps({'engine_version': 2, 'deliveries': [controller.summary(s, service) for s in states
                         if (s.plan.envelope.session_id, s.plan.envelope.profile_id) == (sid, profile)]})
                 if op == 'stop':
                     return json.dumps(controller.cancel(service, raw.strip(), session_id=sid, profile_id=profile))
-                return json.dumps(controller.summary(controller.owned(service, raw.strip(), sid, profile)))
+                return json.dumps(controller.summary(controller.owned(service, raw.strip(), sid, profile), service))
         except Exception as exc:
             return json.dumps({'error': 'state lookup failed: ' + type(exc).__name__})
     if op not in {'run', 'plan', 'build'} or not hasattr(ctx, 'inject_message'):
@@ -201,14 +205,22 @@ def execute(args, **kwargs):
                 elif op == 'stop':
                     out = controller.cancel(service, payload['delivery_id'], session_id=sid, profile_id=profile)
                 else:
-                    out = controller.summary(controller.owned(service, payload['delivery_id'], sid, profile))
+                    out = controller.summary(controller.owned(service, payload['delivery_id'], sid, profile), service)
             if op != 'status':
                 record.update(state='complete', result=out)
                 db.execute('UPDATE intent SET payload=? WHERE id=?', (encoded(record), _intent_key(token)))
             return json.dumps(out)
     except Exception as exc:
         # Never retain parameters, provider output or credential-bearing errors.
+        # cpipe's own ValueErrors carry only static labels, so the coordinator
+        # may see them and fix its spec; anything raised elsewhere stays opaque.
+        tb = exc.__traceback__
+        while tb and tb.tb_next:
+            tb = tb.tb_next
+        own = (type(exc) is ValueError and tb is not None
+               and Path(tb.tb_frame.f_code.co_filename).is_relative_to(Path(__file__).parent))
         return json.dumps({'error': 'cpipe operation failed: ' + type(exc).__name__ +
+            (' (' + str(exc)[:300] + ')' if own else '') +
             '. No authority inferred; inspect the current draft or /cp-status before retrying.'})
 
 

@@ -130,6 +130,6 @@ class Sandbox:
             # A forked daemon must not outlive the activity, even after natural exit.
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
                 pass
             proc.wait()

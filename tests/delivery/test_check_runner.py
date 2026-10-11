@@ -14,13 +14,13 @@ from .test_execution_plan import plan
 
 
 def setup_check(repo, tmp_path, source=None, *, timeout=20,
-                criteria=('test_behavior::test_double',), write_paths=None):
+                criteria=('test_behavior::test_double',), write_paths=None, python=''):
     from cpipe.delivery.artifact import fingerprint
     from cpipe.delivery.check_runner import PytestCheck
     (repo / 'test_behavior.py').write_text(source or
         'from double import double\ndef test_double():\n    assert double(2) == 4\n')
     spec = PytestCheck('behavior', ('test_behavior.py',),
-                       criteria, timeout_seconds=timeout)
+                       criteria, timeout_seconds=timeout, python=python)
     now = int(time.time())
     p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
              base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=now + 300,
@@ -36,6 +36,31 @@ def setup_check(repo, tmp_path, source=None, *, timeout=20,
     return journal, service, state, spec
 
 
+def fixed(repo):
+    """Fake builder that applies the fix to the seeded double() bug."""
+    from cpipe.delivery.workers import WorkerResult
+    def execute(state, *, on_session, heartbeat, **kw):
+        on_session('builder-session')
+        heartbeat()
+        (repo / 'double.py').write_text('def double(n): return n * 2\n')
+        return WorkerResult('builder-session', {'status': 'done'})
+    return execute
+
+
+def red_then_implemented(b, repo, tmp_path, spec, claimer='controller'):
+    """Observe the behavior RED, then one in-scope builder fix; checks are next."""
+    from cpipe.runtime import hermes_api as h
+    from cpipe.delivery.workers import observe_implementation
+    tid = b.schedule('d1')
+    h.claim_task(b.conn, tid, claimer=claimer, ttl_seconds=60)
+    b.bind_claim('d1', tid, claimer=claimer, worker_session='check-red')
+    assert b.observe_checks('d1', tid, claimer=claimer, checks=(spec,),
+                            evidence_root=tmp_path / 'evidence').activity == 'implement'
+    state = observe_implementation(b, 'd1', b.schedule('d1'), claimer=claimer, execute=fixed(repo))
+    assert state.activity == 'checks'
+    return state
+
+
 def execute(state, spec, tmp_path):
     from cpipe.delivery.check_runner import observe_pytest
     return observe_pytest(state, spec, evidence_root=tmp_path / 'evidence')
@@ -49,6 +74,31 @@ def test_real_assertion_failure_produces_behavioral_red_receipt(repo, tmp_path):
         assert observed.observed is True
         assert observed.artifact == state.artifact
         assert observed.command == spec.identity().command
+
+
+def test_checks_run_under_the_project_interpreter(repo, tmp_path):
+    marker = tmp_path / 'used'
+    python = tmp_path / 'bin' / 'python'
+    python.parent.mkdir()
+    python.write_text(f'#!/bin/sh\ntouch {marker}\nexec {sys.executable} "$@"\n')
+    python.chmod(0o755)
+    journal, service, state, spec = setup_check(repo, tmp_path, python=str(python))
+    with journal:
+        assert spec.argv('r')[0] == str(python)
+        assert execute(state, spec, tmp_path).outcome is Outcome.FAIL
+    assert marker.exists()
+
+
+def test_interpreter_without_pytest_is_rejected_before_any_run(tmp_path):
+    import subprocess
+    from cpipe.delivery.check_runner import PytestCheck
+    subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(tmp_path / 'bare')], check=True)
+    spec = PytestCheck('behavior', ('test_behavior.py',), ('test_behavior::test_double',),
+                       python=str(tmp_path / 'bare' / 'bin' / 'python'))
+    with pytest.raises(ValueError, match='no pytest'):
+        spec.identity()
+    with pytest.raises(ValueError, match='absolute'):
+        PytestCheck('behavior', ('t.py',), ('t::x',), python='.venv/bin/python')
 
 
 def test_real_behavior_pass_on_new_artifact_produces_green(repo, tmp_path):

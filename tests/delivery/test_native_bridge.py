@@ -117,7 +117,7 @@ def test_observed_checks_complete_native_run_and_emit_one_successor(tmp_path, bo
         next_tid = b.schedule('d1')
         assert next_tid != tid and b.schedule('d1') == next_tid
         next_task = h.get_task(board, next_tid)
-        assert next_task.assignee == 'forge'
+        assert next_task.assignee == 'cp:forge'
 
 
 def test_lost_or_reclaimed_native_run_cannot_advance_journal(tmp_path, board):
@@ -187,7 +187,7 @@ def test_native_completion_is_reconciled_after_journal_write_interruption(tmp_pa
         assert h.get_task(board, tid).status == 'done'
         assert service.read('d1') == state
         after = b.finish(event, tid, claimer='owner', summary='Observed behavior PASS')
-        assert after.activity == 'checks'
+        assert after.activity == 'write_tests'  # a first-run PASS is not a RED
         assert len(h.kb.list_runs(board, tid)) == 1
         assert b.finish(event, tid, claimer='owner', summary='Observed behavior PASS') == after
 

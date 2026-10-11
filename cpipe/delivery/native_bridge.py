@@ -15,7 +15,7 @@ from ..runtime import hermes_api as h
 from .journal import encoded
 from .service import Event, apply
 
-RUNNABLE = frozenset({'tests', 'checks', 'implement', 'review', 'publish'})
+RUNNABLE = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 RESULT_KINDS = frozenset({'activity_observed', 'review_received', 'publication_observed'})
 
 
@@ -50,6 +50,12 @@ class NativeBridge:
         role = 'reviewer' if state.activity == 'review' else 'builder'
         return next(a for a in state.plan.actors if a.role == role)
 
+    @staticmethod
+    def _lane(profile):
+        # A non-profile assignee: Hermes' dispatcher never spawns it, so only
+        # cpipe claims these cards (Hermes stores assignees lowercased).
+        return 'cp:' + profile.lower()
+
     def _packet(self, state):
         return {'schema': 1, 'delivery_id': state.plan.envelope.delivery_id,
                 'plan_digest': state.plan.digest(), 'intent_id': state.active_intent,
@@ -61,7 +67,7 @@ class NativeBridge:
         actor = self._actor(state)
         if (not task or task.created_by != 'cpipe'
                 or task.idempotency_key != self._key(state)
-                or task.session_id != self.session_id or task.assignee != actor.profile
+                or task.session_id != self.session_id or task.assignee != self._lane(actor.profile)
                 or task.model_override != actor.model or task.provider_override != actor.provider
                 or task.workspace_kind != 'dir' or task.workspace_path != state.plan.worktree
                 or task.body != self._body(state)):
@@ -89,7 +95,7 @@ class NativeBridge:
         # nesting, but its standalone pre-check is otherwise subject to a race.
         with h.kb.write_txn(self.conn):
             tid = h.kb.create_task(self.conn, title=f'cpipe v2: {state.activity}',
-                body=self._body(state), assignee=actor.profile, created_by='cpipe',
+                body=self._body(state), assignee=self._lane(actor.profile), created_by='cpipe',
                 workspace_kind='dir', workspace_path=state.plan.worktree,
                 project_id='', session_id=self.session_id,
                 idempotency_key=self._key(state), max_runtime_seconds=math.ceil(remaining),
@@ -146,7 +152,7 @@ class NativeBridge:
                 raise ValueError('native run/session differs from bound claim')
             return state
         event = self._event(state, 'activity_claimed', run_id=run_id,
-                            worker_session=worker_session, actor_id=task.assignee)
+                            worker_session=worker_session, actor_id=self._actor(state).profile)
         return self.service.accept(event)[0]
 
     def result_event(self, delivery_id, task_id, *, claimer, kind, **result):
@@ -161,7 +167,7 @@ class NativeBridge:
         task = self._owned(state, task_id, claimer)
         if state.run_id != f'{task.id}:{task.current_run_id}':
             raise ValueError('native run was not bound to this activity')
-        return self._event(state, kind, actor_id=task.assignee, **result)
+        return self._event(state, kind, actor_id=self._actor(state).profile, **result)
 
     def observe_checks(self, delivery_id, task_id, *, claimer, checks, evidence_root):
         """Execute frozen checks and reconcile observations, never worker prose."""
@@ -205,7 +211,7 @@ class NativeBridge:
         recorded = self.service.recorded(event)
         task = h.get_task(self.conn, task_id)
         run = h.kb.latest_run(self.conn, task_id)
-        if not task or event.actor_id != task.assignee:
+        if not task or task.assignee != self._lane(event.actor_id):
             raise ValueError('native result actor mismatch')
         native_recorded = bool(task and run and task.status == 'done'
             and run.outcome == 'completed' and run.claim_lock == claimer
