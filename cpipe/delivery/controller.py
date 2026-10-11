@@ -16,14 +16,17 @@ from .schema import ExecutionPlan
 from .service import Service, Event
 from .native_bridge import NativeBridge
 from .hermes_worker import HermesWorker
-from .workers import observe_implementation
+from .workers import observe_implementation, usage
 from .review import observe_review, review_identity
 from .approval import arguments
 from .journal import encoded
 from ..runtime import hermes_api as h
 
+# Time a frozen plan may wait for consent; the execution budget starts at approval.
+APPROVAL_WINDOW = 3600
 
-def summary(state):
+
+def summary(state, service=None):
     result = dict(engine_version=2, delivery_id=state.plan.envelope.delivery_id,
         phase=state.phase, activity=state.activity, artifact=state.artifact,
         approved=state.approved, review_cycles=state.review_cycles,
@@ -32,6 +35,8 @@ def summary(state):
     if state.phase == 'proposal' and not state.approved:
         result['approval_arguments'] = arguments(state)
         result['plan'] = state.plan.to_dict()
+    if service is not None:
+        result['tokens'] = usage(service, state.plan.envelope.delivery_id)
     return result
 
 
@@ -51,7 +56,8 @@ def propose(service, plan, checks):
     # Specs are frozen alongside the projection; replay may never change them.
     key = 'check-spec:' + plan.digest()
     payload = encoded([dict(obligation=c.obligation, targets=list(c.targets), criteria=list(c.criteria),
-                          timeout_seconds=c.timeout_seconds) for c in checks])
+                          timeout_seconds=c.timeout_seconds, **({'python': c.python} if c.python else {}))
+                       for c in checks])
     row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?', (key,)).fetchone()
     if row and row[0] != payload:
         raise ValueError('check definition changed')
@@ -78,13 +84,24 @@ def validate_spec(spec):
         raise ValueError('worktree must be an absolute non-symlink directory')
     artifact = fingerprint(root)
     checks = []
+    venv = root / '.venv' / 'bin' / 'python'
     for item in spec['checks']:
-        if type(item) is not dict or set(item) != {'obligation', 'targets', 'criteria', 'timeout_seconds'}:
+        fields = {'obligation', 'targets', 'criteria', 'timeout_seconds'}
+        if type(item) is not dict or not fields <= set(item) <= fields | {'python'}:
             raise ValueError('invalid frozen pytest specification')
         if type(item['targets']) is not list or type(item['criteria']) is not list:
             raise ValueError('invalid frozen pytest test lists')
-        checks.append(PytestCheck(item['obligation'], tuple(item['targets']), tuple(item['criteria']), item['timeout_seconds']))
+        python = item.get('python', str(venv) if venv.exists() else '')
+        checks.append(PytestCheck(item['obligation'], tuple(item['targets']), tuple(item['criteria']),
+                                  item['timeout_seconds'], python))
     checks = tuple(checks)
+    if not any(c.obligation == 'behavior' for c in checks):
+        raise ValueError('one check must have obligation "behavior": the test proving this change, run before implementing')
+    import importlib.util
+    if any(not c.python for c in checks) and importlib.util.find_spec('pytest') is None:
+        raise ValueError('no project interpreter with pytest; set checks[].python (e.g. <worktree>/.venv/bin/python)')
+    for c in checks:
+        c.identity()  # probes the interpreter now, not after approval
     actors = (observe_actor('builder', spec['builder']), observe_actor('reviewer', spec['reviewer']))
     if len({a.profile for a in actors}) != 2 or not checks:
         raise ValueError('distinct builder/reviewer profiles and checks are required')
@@ -120,7 +137,7 @@ def from_spec(service, spec, *, session_id, profile_id, approach=''):
         forbidden_paths=tuple(spec['forbidden_paths']), actors=actors, budget=Budget(spec['seconds'], 8),
         policy_id='v2-local-only', check_definition='v2-frozen-pytest',
         checks=tuple(c.identity() for c in checks) + (review_identity(),), interactive=False,
-        repair_allowed=False, transient_retries=0, completion_target='local_only', expires_at=now + spec['seconds'],
+        repair_allowed=False, transient_retries=0, completion_target='local_only', expires_at=now + APPROVAL_WINDOW + spec['seconds'],
         approach=approach)
     return propose(service, p, checks)
 
@@ -155,8 +172,8 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                                     ('check-spec:' + state.plan.digest(),)).fetchone()
     if not row:
         raise ValueError('missing frozen check specifications')
-    checks = tuple(PytestCheck(c['obligation'], tuple(c['targets']), tuple(c['criteria']), c['timeout_seconds'])
-                   for c in json.loads(row[0]))
+    checks = tuple(PytestCheck(c['obligation'], tuple(c['targets']), tuple(c['criteria']), c['timeout_seconds'],
+                               c.get('python', '')) for c in json.loads(row[0]))
     if tuple(c.identity() for c in checks) + (review_identity(),) != state.plan.checks:
         raise ValueError('frozen check environment changed')
     if conn is None:
@@ -169,7 +186,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
     claimer = h.new_claimer()
     for _ in range(max(4, state.plan.budget.calls * 4)):
         state = owned(service, delivery_id, session_id, profile_id)
-        if not state.activity or state.activity not in {'tests', 'checks', 'implement', 'review'}:
+        if not state.activity or state.activity not in {'tests', 'checks', 'write_tests', 'implement', 'review'}:
             break
         action = state.activity
         tid = bridge.schedule(delivery_id)
@@ -179,9 +196,11 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             if h.claim_task(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
                 raise ValueError('v2 task owned by another launcher; no worker started')
             bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='check-' + uuid.uuid4().hex)
+            # tests proves the behavior check before implementing; checks runs everything.
+            due = checks if action == 'checks' else tuple(c for c in checks if c.obligation == 'behavior')
             state = bridge.observe_checks(delivery_id, tid, claimer=claimer,
-                                          checks=checks, evidence_root=Path(evidence_root))
-        elif action == 'implement':
+                                          checks=due, evidence_root=Path(evidence_root))
+        elif action in {'write_tests', 'implement'}:
             state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker)
         else:
             state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
@@ -189,6 +208,6 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         task = h.get_task(conn, tid)
         steps.append(dict(activity=action, task_id=tid, native_status=task.status,
                           phase=state.phase, outcomes=[r.outcome.value for r in state.receipts]))
-    result = summary(owned(service, delivery_id, session_id, profile_id))
+    result = summary(owned(service, delivery_id, session_id, profile_id), service)
     result['steps'] = steps
     return result

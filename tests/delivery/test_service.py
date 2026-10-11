@@ -154,10 +154,16 @@ def test_missing_observation_or_setup_failure_never_creates_red_or_green():
     state = claim(state)
     with pytest.raises(ValueError, match="observations"):
         apply(state, event(state, "activity_observed"))
-    unavailable, intents = step(state, "activity_observed", "diagnose",
+    unavailable, intents = step(state, "activity_observed", "write_tests",
                                 receipts=(receipt(state, outcome=Outcome.UNAVAILABLE),))
-    assert unavailable.phase == "waiting"
+    assert unavailable.phase == "implementing"
     assert unavailable.receipts[-1].outcome is Outcome.UNAVAILABLE
+    written = claim(unavailable, actor_id="forge", worker_session="builder-1")
+    retest, _ = step(written, "activity_observed", "tests", actor_id="forge", result_artifact="tree2")
+    retest = claim(retest)
+    again, _ = step(retest, "activity_observed", "diagnose",
+                    receipts=(receipt(retest, outcome=Outcome.PASS),))
+    assert again.phase == "diagnosis"  # still no RED after writing tests
 
 
 def test_reviewer_cannot_use_builder_session_or_old_partial_range():
@@ -200,6 +206,14 @@ def test_budget_and_expiry_stop_without_new_worker():
     stopped, intents = step(exhausted, "feedback_received", action="change",
                             evidence_ref="feedback/change.json")
     assert stopped.phase == "stopped" and not intents
+
+
+def test_execution_budget_starts_at_approval_not_at_freeze():
+    state = start()
+    approved, _ = step(state, "envelope_approved", "tests", now=state.started_at + 200)
+    assert approved.started_at == state.started_at + 200
+    claimed, _ = step(approved, "activity_claimed", now=approved.started_at + 250, run_id="run-1")
+    assert claimed.phase != "stopped"
 
 
 def test_illegal_events_do_not_mutate_existing_snapshot():

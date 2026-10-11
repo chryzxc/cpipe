@@ -200,7 +200,7 @@ def green(state, include_review=True):
 
 
 def continue_with(state, action, phase, feedback_ref=""):
-    calls = state.calls_used + int(action in {"implement", "review"})
+    calls = state.calls_used + int(action in {"write_tests", "implement", "review"})
     if calls > state.plan.budget.calls:
         return replace(state, phase="stopped", activity="", active_intent="", run_id=""), ()
     role = "reviewer" if action == "review" else "builder"
@@ -226,7 +226,7 @@ def check_result_identity(state, event):
     if (not state.approved or not state.run_id or event.run_id != state.run_id
             or event.activity_id != state.active_intent or event.worker_session != state.worker_session):
         raise ValueError("result does not match claimed activity")
-    if state.activity in {"implement", "review"}:
+    if state.activity in {"write_tests", "implement", "review"}:
         role = "reviewer" if state.activity == "review" else "builder"
         if event.actor_id != next(a.profile for a in state.plan.actors if a.role == role):
             raise ValueError("result actor mismatch")
@@ -317,13 +317,14 @@ def apply(snapshot, event):
     if event.kind == "envelope_approved":
         if state.phase != "proposal" or event.activity_id != state.active_intent:
             raise ValueError("approval does not match pending proposal")
-        return continue_with(replace(state, approved=True), "tests", "checking")
+        # The execution budget starts at consent, not while the plan awaits it.
+        return continue_with(replace(state, approved=True, started_at=event.now), "tests", "checking")
     if event.kind == "activity_claimed":
-        if (state.activity not in {"tests", "implement", "checks", "review", "publish"}
+        if (state.activity not in {"tests", "write_tests", "implement", "checks", "review", "publish"}
                 or event.activity_id != state.active_intent or state.run_id or not event.run_id):
             raise ValueError("claim does not match pending activity")
         builder, digest = state.builder_session, state.builder_digest
-        if state.activity in {"implement", "review"}:
+        if state.activity in {"write_tests", "implement", "review"}:
             role = "reviewer" if state.activity == "review" else "builder"
             if event.actor_id != next(a.profile for a in state.plan.actors if a.role == role) or not event.worker_session:
                 raise ValueError("claim actor/session mismatch")
@@ -339,21 +340,27 @@ def apply(snapshot, event):
     if event.kind in {"activity_observed", "review_received", "publication_observed"}:
         check_result_identity(state, event)
     if event.kind == "activity_observed":
-        if state.activity == "implement":
+        if state.activity in {"write_tests", "implement"}:
             if not event.result_artifact:
                 raise ValueError("implementation needs an observed successor artifact")
-            return continue_with(replace(state, artifact=event.result_artifact), "checks", "checking")
+            after = "tests" if state.activity == "write_tests" else "checks"
+            return continue_with(replace(state, artifact=event.result_artifact), after, "checking")
         if state.activity not in {"tests", "checks"} or not event.receipts:
             raise ValueError("check activity requires command observations")
         if any(not current(state, r) or r.obligation == "review" for r in event.receipts):
             raise ValueError("stale or misconfigured check receipt")
+        earlier = any(r.obligation == "behavior" for r in state.receipts)
         state = replace(state, receipts=state.receipts + event.receipts)
+        if state.activity == "tests" and not any(r.outcome is Outcome.FAIL for r in event.receipts):
+            # Only an observed RED proves the behavior test covers the change. A
+            # missing or already-passing test gets one builder pass to write it.
+            if not earlier:
+                return continue_with(state, "write_tests", "implementing")
+            return continue_with(state, "diagnose", "diagnosis")
         if any(r.outcome is Outcome.UNAVAILABLE for r in event.receipts):
             return continue_with(state, "diagnose", "waiting")
         if any(r.outcome is Outcome.FAIL for r in event.receipts):
             return continue_with(state, "implement", "implementing")
-        if state.activity == "tests":
-            return continue_with(state, "checks", "checking")
         if not green(state, include_review=False):
             return continue_with(state, "diagnose", "waiting")
         if state.readiness_requested or not state.plan.interactive:

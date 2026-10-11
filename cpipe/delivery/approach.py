@@ -139,7 +139,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id):
             return {'phase': 'claimed', 'operation': record['claimed_operation'], 'approved': False,
                     'next_step': 'A stage is in progress or interrupted; do not infer completion or automatically relaunch.'}
         if record.get('delivery_id'):
-            return controller.summary(controller.owned(service, record['delivery_id'], session_id, profile_id))
+            return controller.summary(controller.owned(service, record['delivery_id'], session_id, profile_id), service)
         return record.get('result') or {'phase': record['state'], 'approved': False}
     if op == 'prepare':
         if set(payload) != {'spec', 'approach', 'expected_revision'} or type(payload['expected_revision']) is not int:

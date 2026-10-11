@@ -20,7 +20,7 @@ from .findings import Finding
 from .journal import encoded
 from .schema import CheckIdentity
 from .service import Verification
-from .workers import WorkerResult, _remaining
+from .workers import WorkerResult, _remaining, record_usage
 from ..runtime import hermes_api as h
 
 REVIEW_AXES = ('goal_alignment', 'correctness', 'regressions', 'integration',
@@ -42,6 +42,22 @@ def _receipt(state, outcome):
     check = review_identity()
     return Receipt('review', state.artifact, state.plan.envelope.scope,
                    check.inputs, check.environment, check.command, outcome, True)
+
+
+# Redacted finding text by hashed root cause, for the builder's next turn only.
+# Process memory, never journal or evidence: after a restart the builder falls
+# back to re-inspecting the hash-only findings.
+NOTES = {}
+
+
+def remember(payload):
+    from agent.redact import redact_sensitive_text
+    from ..runtime.envpolicy import Redactor
+    redact = Redactor(os.environ)
+    if len(NOTES) > 500:
+        NOTES.clear()
+    for value in payload['findings']:
+        NOTES['cause-' + _hash(value['root_cause'])] = redact(redact_sensitive_text(value['root_cause']))[:1000]
 
 
 def _parse(state, payload):
@@ -127,7 +143,9 @@ def observe_review(bridge, delivery_id, task_id, *, claimer, execute, evidence_r
             raise ValueError('review result does not match observed native session')
         if validate_worktree(state.plan) != before:
             raise ValueError('artifact changed during read-only review')
+        record_usage(bridge.service, state, 'review', result)
         findings, ids, outcome = _parse(state, result.payload)
+        remember(result.payload)
         # Arbitrary text/diagnostics/credential values never enter durable evidence.
         result = None
         root.mkdir(parents=True, exist_ok=True, mode=0o700)

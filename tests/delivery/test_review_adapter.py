@@ -14,12 +14,12 @@ from cpipe.delivery.service import Event, Service
 from cpipe.delivery.workers import WorkerResult
 from cpipe.runtime import hermes_api as h
 from .test_artifact import repo, git
+from .test_check_runner import red_then_implemented
 from .test_execution_plan import plan
 
 
 def reviewing(repo, tmp_path, board):
     from cpipe.delivery.review import review_identity
-    (repo / 'double.py').write_text('def double(n): return n * 2\n')
     (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
     spec = PytestCheck('behavior', ('test_behavior.py',), ('test_behavior::test_double',))
     now = int(time.time())
@@ -35,12 +35,12 @@ def reviewing(repo, tmp_path, board):
         state.artifact, state.version, now, session_id='s1', profile_id='default',
         activity_id=state.active_intent))
     b = NativeBridge(s, board, session_id='s1', profile_id='default')
-    for _ in range(2):
-        tid = b.schedule('d1')
-        h.claim_task(board, tid, claimer='controller', ttl_seconds=60)
-        b.bind_claim('d1', tid, claimer='controller', worker_session='checks')
-        b.observe_checks('d1', tid, claimer='controller', checks=(spec,),
-                         evidence_root=tmp_path / 'evidence')
+    red_then_implemented(b, repo, tmp_path, spec)
+    tid = b.schedule('d1')
+    h.claim_task(board, tid, claimer='controller', ttl_seconds=60)
+    b.bind_claim('d1', tid, claimer='controller', worker_session='checks')
+    b.observe_checks('d1', tid, claimer='controller', checks=(spec,),
+                     evidence_root=tmp_path / 'evidence')
     assert s.read('d1').activity == 'review'
     return journal, s, b, b.schedule('d1')
 
