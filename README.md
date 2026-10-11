@@ -54,6 +54,7 @@ A run only stops for you when nothing it was approved to do can move it forward.
 - **A loop is stuck** (no valid failing test after 3 rounds, or review findings that stop converging): the next approved builder gets the same rounds in a fresh session before the run reports `diagnosis`.
 - **A worker hangs:** each step is capped at a third of the budget (at least 10 minutes).
 - **Leftover edits with nothing to roll back to** (e.g. a crash before cpipe had verified anything): if they stay inside `write_paths`, cpipe continues from them and runs the checks again before any review.
+- **The repository already fails a check** (lint picking up other worktrees, someone's unrelated failing test): before any change, cpipe runs every check once and remembers what already fails. A check that later fails only on those counts as passed and says so in the report; any new failure still goes back to the builder. The behavior test never gets this pass.
 - **A check run or step setup crashes:** retried with backoff; the run reports only after 3 failures in a row.
 - **The run itself crashes:** it restarts in the background as long as it keeps making progress. After repeated crashes at the same point it is parked and retried every 10 minutes until it works or its budget ends; the chat is told once.
 - **Hermes restarts or crashes:** a watchdog in every long-running Hermes process (and the next chat turn) resumes the run from its last step. Exactly one process resumes it.

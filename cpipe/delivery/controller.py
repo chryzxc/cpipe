@@ -10,7 +10,7 @@ import time
 import uuid
 
 from .artifact import validate_worktree
-from .check_runner import CommandCheck
+from .check_runner import CommandCheck, take_baseline
 from .contracts import Envelope, Budget, UNAVAILABLE_REASONS
 from .schema import ExecutionPlan
 from .service import Service, Event
@@ -270,6 +270,13 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 if h.take(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
                     raise ValueError('task owned by another launcher; no worker started')
                 bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='check-' + uuid.uuid4().hex)
+                if action == 'tests' and not state.calls_used:
+                    try:  # before any worker: what already fails is not this change's doing
+                        take_baseline(state, tuple(c for c in checks if c.obligation != 'behavior'),
+                                      evidence_root=Path(evidence_root))
+                    except Exception as exc:
+                        recoveries.append(f'could not record which checks already failed ({type(exc).__name__}); '
+                                          'every failure counts')
                 # tests proves the behavior check before implementing; checks runs everything.
                 due = checks if action == 'checks' else tuple(c for c in checks if c.obligation == 'behavior')
                 state = bridge.observe_checks(delivery_id, tid, claimer=claimer,

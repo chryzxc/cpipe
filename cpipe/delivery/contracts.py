@@ -81,6 +81,7 @@ UNAVAILABLE_REASONS = {
     "test_crashed": "a watched test crashed (import/type/runtime error) instead of failing an assertion",
     "other_failures": "the watched tests passed but the command still failed (other tests, lint or build errors)",
     "criteria_not_in_output": "the criteria did not appear in the command output",
+    "pre_existing": "it still fails, but only on failures that were there before the change",
 }
 
 
