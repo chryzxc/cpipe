@@ -183,8 +183,9 @@ def _prompt(state, resume):
     """Stable contract on a fresh session; on resume only the delta, since the session holds the rest."""
     if state.activity == 'write_tests':
         task = ('Write or fix only the behavior check\'s test (its exact command and criteria are in the '
-                'approach) so it fails on the current code for the reason the change addresses. Do not '
-                'implement the change yet. Return only {"status":"done"}; the controller observes RED.')
+                'approach) so it fails on the current code for the reason the change addresses. It must fail on an '
+                'assertion, not a crash: if the code under test does not exist yet, add only a minimal stub '
+                '(right signature, wrong result). Do not implement the change yet. Return only {"status":"done"}; the controller observes RED.')
     elif state.activity == 'implement':
         task = ('Make the minimum authorized correction for the failing checks and open findings, '
                 'then return only {"status":"done"}. Passing checks and completion are the controller’s '

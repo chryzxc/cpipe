@@ -70,8 +70,13 @@ def validate_spec(spec):
     from .artifact import fingerprint
     expected = {'worktree', 'repo', 'base', 'goal', 'acceptance', 'non_goals', 'write_paths',
                 'forbidden_paths', 'builder', 'reviewer', 'seconds', 'checks'}
-    if type(spec) is not dict or set(spec) != expected:
-        raise ValueError('provide the exact specification fields; unsupported arguments are rejected')
+    if type(spec) is not dict:
+        raise ValueError('spec must be an object')
+    if set(spec) != expected:
+        # Field names are fixed schema labels, never user values.
+        missing, extra = sorted(expected - set(spec)), sorted(set(spec) - expected)
+        raise ValueError('spec fields: missing ' + (', '.join(missing) or 'none')
+                         + '; unsupported ' + (', '.join(k for k in extra if k.isidentifier()) or 'none'))
     if type(spec['seconds']) is not int or not 30 <= spec['seconds'] <= 1800:
         raise ValueError('cpipe requires a bounded 30..1800 second budget')
     for key in ('acceptance', 'non_goals', 'write_paths', 'forbidden_paths', 'checks'):
@@ -181,6 +186,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
     bridge = NativeBridge(service, conn, session_id=session_id, profile_id=profile_id)
     worker, steps = execute or HermesWorker(), []
     claimer = h.new_claimer()
+    bridge.abandon(delivery_id)  # recover a run left bound by a crashed build
     for _ in range(max(4, state.plan.budget.calls * 4)):
         state = owned(service, delivery_id, session_id, profile_id)
         if not state.activity or state.activity not in {'tests', 'checks', 'write_tests', 'implement', 'review'}:
@@ -189,19 +195,23 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         tid = bridge.schedule(delivery_id)
         if tid is None:
             raise ValueError('missing runnable v2 native task')
-        if action in {'tests', 'checks'}:
-            if h.claim_task(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
-                raise ValueError('v2 task owned by another launcher; no worker started')
-            bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='check-' + uuid.uuid4().hex)
-            # tests proves the behavior check before implementing; checks runs everything.
-            due = checks if action == 'checks' else tuple(c for c in checks if c.obligation == 'behavior')
-            state = bridge.observe_checks(delivery_id, tid, claimer=claimer,
-                                          checks=due, evidence_root=Path(evidence_root))
-        elif action in {'write_tests', 'implement'}:
-            state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker)
-        else:
-            state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
-                                   evidence_root=Path(evidence_root))
+        try:
+            if action in {'tests', 'checks'}:
+                if h.claim_task(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
+                    raise ValueError('v2 task owned by another launcher; no worker started')
+                bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='check-' + uuid.uuid4().hex)
+                # tests proves the behavior check before implementing; checks runs everything.
+                due = checks if action == 'checks' else tuple(c for c in checks if c.obligation == 'behavior')
+                state = bridge.observe_checks(delivery_id, tid, claimer=claimer,
+                                              checks=due, evidence_root=Path(evidence_root))
+            elif action in {'write_tests', 'implement'}:
+                state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker)
+            else:
+                state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
+                                       evidence_root=Path(evidence_root))
+        except Exception:
+            bridge.abandon(delivery_id, claimer)
+            raise
         task = h.get_task(conn, tid)
         steps.append(dict(activity=action, task_id=tid, native_status=task.status,
                           phase=state.phase, outcomes=[r.outcome.value for r in state.receipts]))

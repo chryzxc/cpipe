@@ -94,7 +94,7 @@ class NativeBridge:
         # Serialize native idempotency lookup/create. Hermes create_task supports
         # nesting, but its standalone pre-check is otherwise subject to a race.
         with h.kb.write_txn(self.conn):
-            tid = h.kb.create_task(self.conn, title=f'cpipe v2: {state.activity}',
+            tid = h.kb.create_task(self.conn, title=f'cpipe v2: {state.activity} · {actor.profile}',
                 body=self._body(state), assignee=self._lane(actor.profile), created_by='cpipe',
                 workspace_kind='dir', workspace_path=state.plan.worktree,
                 project_id='', session_id=self.session_id,
@@ -154,6 +154,19 @@ class NativeBridge:
         event = self._event(state, 'activity_claimed', run_id=run_id,
                             worker_session=worker_session, actor_id=self._actor(state).profile)
         return self.service.accept(event)[0]
+
+    def abandon(self, delivery_id, claimer=None):
+        """Release a bound run whose step crashed, so the next build re-issues it."""
+        state = self._state(delivery_id)
+        if not state.run_id:
+            return state
+        task = h.get_task(self.conn, state.run_id.split(':')[0])
+        if task and task.status == 'running':
+            if task.claim_lock != claimer and (task.claim_expires or 0) > time.time():
+                raise ValueError('v2 step is still running')
+            h.block(self.conn, task.id, run_id=task.current_run_id,
+                    reason='v2 step abandoned; re-issued on a new card', kind='needs_input')
+        return self.service.accept(self._event(state, 'activity_abandoned'))[0]
 
     def result_event(self, delivery_id, task_id, *, claimer, kind, **result):
         if kind not in RESULT_KINDS:

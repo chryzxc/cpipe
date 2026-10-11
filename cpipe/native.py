@@ -105,9 +105,8 @@ def dispatch(ctx, name, raw=''):
         'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
     if op == 'run':
         prompt = ('The user explicitly chose cpipe with /cp-run. Resolve the actual task, repository and worktree '
-            'from this session using tools. Read project instructions such as AGENTS.md, inspect the relevant code '
-            'and available installed capabilities using skills_list and skill_view. Follow relevant installed skills '
-            'and project rules. Superpowers is optional, not a dependency; if absent, use a basic evidence-backed workflow. '
+            'from this session using tools. Read project instructions such as AGENTS.md and inspect only the code the '
+            'task touches; use installed skills only when clearly relevant. '
             'Do not alter user configuration, profiles, skills or plugins. Do not guess models/providers: Hermes resolves '
             'saved distinct builder/reviewer profiles. Preserve unrelated edits.\n'
             'Choose kind bug, feature or change; risk normal or high; depth focused or detailed. For bugs, investigate '
@@ -225,6 +224,7 @@ def execute(args, **kwargs):
                and Path(tb.tb_frame.f_code.co_filename).is_relative_to(Path(__file__).parent))
         return json.dumps({'error': 'cpipe operation failed: ' + type(exc).__name__ +
             (' (' + str(exc)[:300] + ')' if own else '') +
+            (' cpipe was updated while this chat was open; start a new chat.' if isinstance(exc, ImportError) else '') +
             '. No authority inferred; inspect the current draft or /cp-status before retrying.'})
 
 
