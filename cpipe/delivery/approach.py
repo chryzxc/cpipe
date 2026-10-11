@@ -250,7 +250,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
             raise ValueError('native frozen-plan approval is required before execution')
         validate_document(service, state.plan)
         if record['state'] == 'complete':
-            return record['result']
+            return launch(record['delivery_id'], again=True)  # the real state, never the reply cached at launch
     else:
         raise ValueError('unsupported run stage')
     # Reserve exactly once. No database lock is held during the controller/worker.

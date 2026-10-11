@@ -14,7 +14,8 @@ PHASES = frozenset({"proposal", "checking", "implementing", "testable", "reviewi
 KINDS = frozenset({"proposal_created", "envelope_approved", "activity_claimed",
                    "activity_observed", "review_received", "feedback_received",
                    "clarification_answered", "publication_observed", "cancelled",
-                   "activity_abandoned", "activity_refused", "worktree_adopted"})
+                   "activity_abandoned", "activity_refused", "worktree_adopted",
+                   "deadline_reached"})
 
 
 # Attempts to get a behavior test that fails on an assertion before implementing.
@@ -355,6 +356,8 @@ def apply(snapshot, event):
         return quiescent(state, "cancelled")
     if event.now >= state.plan.expires_at or event.now - state.started_at >= state.plan.budget.seconds:
         return quiescent(state, "stopped")
+    if event.kind == "deadline_reached":
+        raise ValueError("the budget has not run out")
     if event.kind == "envelope_approved":
         if state.phase != "proposal" or event.activity_id != state.active_intent:
             raise ValueError("approval does not match pending proposal")

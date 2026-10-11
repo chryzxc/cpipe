@@ -248,15 +248,26 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         state = owned(service, delivery_id, session_id, profile_id)
         if state.activity not in ACTIVE_STEPS:
             break
+        if time.time() >= min(state.plan.expires_at, state.started_at + state.plan.budget.seconds):
+            # Record the stop instead of failing every step on the expired budget.
+            e = state.plan.envelope
+            service.accept(Event('deadline:' + state.active_intent, 'deadline_reached', delivery_id,
+                state.plan.digest(), state.artifact, state.version, max(state.last_at, int(time.time())),
+                session_id=e.session_id, profile_id=e.profile_id))
+            break
         action = state.activity
         try:
             state = settle(state, store, service)
             action = state.activity
-            tid = bridge.schedule(delivery_id)
+            tid = bridge.schedule(delivery_id, claimer)
+            if bridge.replaced:
+                recoveries.append(f'{action}: replaced {len(bridge.replaced)} card(s) that something outside '
+                                  'cpipe had taken, changed or left behind')
+                bridge.replaced.clear()
             if tid is None:
                 raise ValueError('missing runnable native task')
             if action in {'tests', 'checks'}:
-                if h.claim_task(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
+                if h.take(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
                     raise ValueError('task owned by another launcher; no worker started')
                 bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='check-' + uuid.uuid4().hex)
                 # tests proves the behavior check before implementing; checks runs everything.

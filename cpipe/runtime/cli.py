@@ -27,8 +27,22 @@ def handle(args):
             ready = all(callable(getattr(PluginContext, name, None)) for name in
                         ('register_tool', 'register_command', 'register_cli_command', 'inject_message'))
             ready = ready and callable(getattr(kanban_db, 'claim_task', None))
+            warnings = []
+            try:  # cards cpipe owns must stay with cpipe; anything else taking them stalls runs
+                from contextlib import closing
+                from . import hermes_api as h
+                with closing(h.connect(None)) as conn:
+                    taken = conn.execute("SELECT count(*) FROM tasks WHERE created_by='cpipe' AND status!='archived' "
+                        "AND (assignee NOT LIKE 'cp:%' OR (status='running' AND claim_lock NOT LIKE '%:cpipe-%'))"
+                        ).fetchone()[0]
+                if taken:
+                    warnings.append(f'{taken} cpipe card(s) were reassigned or claimed by something else, such as an '
+                                    'older cpipe background service or a board automation; stop it, or exclude '
+                                    "cards created by cpipe (assignee cp:*) from it")
+            except Exception as exc:
+                warnings.append('could not inspect the board: ' + type(exc).__name__)
             print(json.dumps(dict(version=__version__, native_interfaces=ready,
-                completion_target='local_only', sandboxed=False)))
+                completion_target='local_only', sandboxed=False, warnings=warnings)))
             return 0 if ready else 1
         if command == 'status':
             from hermes_constants import get_hermes_home

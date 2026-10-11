@@ -307,6 +307,35 @@ def test_a_builder_that_keeps_failing_is_retried_then_replaced(repo, tmp_path, m
         conn.close()
 
 
+def test_a_run_past_its_budget_records_the_stop_instead_of_crashing(repo, tmp_path, monkeypatch):
+    from cpipe.delivery import controller
+    from cpipe.delivery.controller import propose, run
+    from cpipe.delivery.review import review_identity
+    from cpipe.runtime import hermes_api as h
+    from .test_execution_plan import plan
+    spec = pytest_check(timeout=20)
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
+        base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=int(time.time()) + 300,
+        envelope=replace(plan().envelope, required=('behavior', 'review')),
+        checks=(spec.identity(), review_identity()), write_paths=('double.py',), interactive=False,
+        transient_retries=0)
+    h.kb.init_db(tmp_path / 'native.db')
+    conn = h.kbc.connect(tmp_path / 'native.db')
+    try:
+        with Journal(tmp_path / 'controller.db') as journal:
+            service = Service(journal)
+            state = propose(service, p, (spec,))
+            service.accept(Event('approval', 'envelope_approved', 'd1', p.digest(), state.artifact,
+                state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
+            later = time.time() + 3600  # e.g. the run was parked or Hermes was down meanwhile
+            monkeypatch.setattr(controller.time, 'time', lambda: later)
+            result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn,
+                         execute=lambda *a, **kw: 1 / 0, evidence_root=tmp_path / 'evidence')
+            assert result['phase'] == 'stopped' and result['steps'] == [] and 'recoveries' not in result
+    finally:
+        conn.close()
+
+
 def test_roll_back_restores_files_index_branch_and_commits(repo, tmp_path):
     from cpipe.delivery.hermes_worker import keep, roll_back
     from .test_execution_plan import plan

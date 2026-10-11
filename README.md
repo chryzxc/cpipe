@@ -55,17 +55,28 @@ A run only stops for you when nothing it was approved to do can move it forward.
 - **A worker hangs:** each step is capped at a third of the budget (at least 10 minutes).
 - **Leftover edits with nothing to roll back to** (e.g. a crash before cpipe had verified anything): if they stay inside `write_paths`, cpipe continues from them and runs the checks again before any review.
 - **A check run or step setup crashes:** retried with backoff; the run reports only after 3 failures in a row.
-- **The run itself crashes:** it restarts in the background as long as it keeps making progress, and gives up only after repeated crashes at the same point.
-- **Hermes restarts or crashes:** the next Hermes chat (any session) resumes the run from its last step. Exactly one process resumes it.
+- **The run itself crashes:** it restarts in the background as long as it keeps making progress. After repeated crashes at the same point it is parked and retried every 10 minutes until it works or its budget ends; the chat is told once.
+- **Hermes restarts or crashes:** a watchdog in every long-running Hermes process (and the next chat turn) resumes the run from its last step. Exactly one process resumes it.
+- **Something else takes cpipe's cards** (a board automation, an older background service): a card that was reassigned, claimed by something else or left behind is archived and replaced. Cards are claimed the moment they are queued, and released cards are archived so nothing picks them up again. `hermes cpipe doctor` warns when this happens.
+- **The budget runs out while nothing runs:** the next resume records the stop and reports it, instead of failing every step.
+- **"Continue" in the chat:** asking the coordinator to continue calls build again, which restarts a run nothing is working on and returns its real state, never a stale "running".
+
+### Monitoring
+
+- Every message to the chat is stored until the chat accepts it; the watchdog and the next chat turn redeliver it.
+- `/cp-status` shows whether anything is actually working on a delivery (`background`), when a parked run retries and why, and any message not yet delivered.
+- Starts, crashes, parking, resumes and deliveries are logged to the Hermes agent log under `cpipe`.
+- If a run ends within seconds of approval, the build reply reports the result directly.
+- One-shot queries (`-z`, `-q`, `--query-file`, `--oneshot`) and kanban workers never host or resume runs. Only one run works in a worktree at a time.
 
 What still stops the run, on purpose:
 - the approved time or turn budget runs out (you set it);
 - every approved builder or reviewer declined or kept failing (add another profile and rerun);
 - the test command is not installed (an environment problem cpipe should not fix);
 - files outside `write_paths` were changed and cpipe cannot restore them (it never deletes work it cannot attribute);
-- the same step keeps crashing in place (a bug, reported with the error).
+- the delivery can no longer run (cancelled, expired, or its plan document changed).
 
-The completion message is best effort; `/cp-status` always shows the result.
+`/cp-status` always shows the result, even before the message arrives.
 
 ## Builder and reviewer
 
@@ -138,7 +149,8 @@ Prefer commands that provision their own dependencies; otherwise install first (
 - **Not sandboxed.** Builders, reviewers and checks are trusted local processes. Scope and artifact checks detect violations; they do not prevent file or network access.
 - **Dispatcher unchanged.** cpipe's cards are assigned to `cp:<profile>`, so the normal Hermes dispatcher does not pick them up. The dispatcher itself is not modified.
 - **No credentials kept.** Credentials must be written as `[REDACTED]`. Worker prose is never treated as evidence; only observed test results and validated review verdicts are.
-- **Runs inside Hermes.** A background run lives in the Hermes process. If Hermes restarts mid-run, the next Hermes chat resumes it.
+- **Runs inside Hermes.** A background run lives in a long-running Hermes process (the app, TUI or gateway). If Hermes restarts mid-run, the watchdog or the next chat resumes it; while no Hermes process is running, nothing runs, but the budget clock keeps going.
+- **Shared provider limits.** All builders and reviewers on one provider share its rate limits; a fallback on another provider makes the ladder more robust.
 - **No publication.** There is no publication adapter. `locally_ready` means verified in the worktree, not pushed.
 
 ## Diagnostics and development
