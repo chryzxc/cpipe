@@ -5,6 +5,7 @@ import pytest
 
 from cpipe.delivery.hermes_worker import execute_stream, command
 from .test_service import plan
+from .test_artifact import repo  # noqa: F401  (fixture)
 
 
 def events(*values):
@@ -132,3 +133,24 @@ def test_resumed_builder_gets_only_the_delta_with_finding_text():
     assert 'Frozen contract' not in resumed and 'skills_list' not in resumed
     assert 'REV-001 [high] off-by-one in double for negatives' in resumed
     assert len(resumed) < len(fresh) / 2
+
+
+def test_snapshot_sees_new_files_without_touching_the_index(repo):
+    from cpipe.delivery.artifact import fingerprint
+    from cpipe.delivery.hermes_worker import snapshot, _git
+    first = snapshot(repo)
+    (repo / 'new.py').write_text('x = 1\n')
+    before = fingerprint(repo)
+    second = snapshot(repo)
+    assert second != first and fingerprint(repo) == before
+    assert _git(repo, 'diff', '--name-only', first, second) == 'new.py'
+    assert _git(repo, 'status', '--porcelain') == '?? new.py'  # still untracked
+
+
+def test_re_review_is_scoped_to_the_fix_diff(monkeypatch):
+    from cpipe.delivery.hermes_worker import _prompt
+    from .test_service import candidate, ready_for_review
+    state = ready_for_review(candidate())
+    assert 'report all findings in one verdict' in _prompt(state, '')
+    focused = _prompt(state, '', 'aaa bbb')
+    assert '`git diff aaa bbb`' in focused and 'report all findings in one verdict' not in focused

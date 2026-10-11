@@ -144,7 +144,11 @@ def blocking(findings):
                for f in findings)
 
 
+REVIEW_ROUNDS = 5  # review -> fix -> review rounds before asking the user
+
+
 def needs_diagnosis(cycles, before, after):
     if type(cycles) is not int or cycles < 0:
         raise ValueError("invalid review cycle count")
-    return cycles >= 3 or (cycles >= 2 and bool(after) and set(after) == set(before))
+    # Stop early when a fix round left exactly the same findings open.
+    return cycles >= REVIEW_ROUNDS or (cycles >= 2 and bool(after) and set(after) == set(before))
