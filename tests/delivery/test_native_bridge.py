@@ -235,3 +235,54 @@ def test_finish_rejects_wrong_controller_actor(tmp_path, board):
             b.finish(replace(event, actor_id='impostor'), tid, claimer='owner', summary='forged actor')
         assert h.get_task(board, tid).status == 'running'
         assert service.read('d1') == state
+
+
+def test_schedule_claims_its_card_at_once(tmp_path, board):
+    journal, service, state = approved(tmp_path)
+    with journal:
+        approve(service, state)
+        claimer = h.new_claimer()
+        b = bridge(service, board)
+        tid = b.schedule('d1', claimer)
+        task = h.get_task(board, tid)
+        assert task.status == 'running' and task.claim_lock == claimer
+        assert b.schedule('d1', claimer) == tid and not b.replaced  # still ours
+        assert h.take(board, tid, claimer=claimer, ttl_seconds=60)
+
+
+@pytest.mark.parametrize('takeover', ['reassigned', 'foreign_claim', 'dead_claim'])
+def test_a_card_something_else_took_or_changed_is_replaced(tmp_path, board, takeover):
+    import subprocess
+    journal, service, state = approved(tmp_path)
+    with journal:
+        approve(service, state)
+        b = bridge(service, board)
+        tid = b.schedule('d1')
+        if takeover == 'reassigned':  # e.g. another service re-routing cpipe's cards to a real profile
+            h.kb.assign_task(board, tid, 'forge')
+        elif takeover == 'foreign_claim':
+            h.claim_task(board, tid, claimer='otherhost:1:wr-x', ttl_seconds=600)
+        else:
+            gone = subprocess.Popen(['true'])
+            gone.wait()
+            import socket
+            h.claim_task(board, tid, claimer=f'{socket.gethostname() or "unknown"}:{gone.pid}:cpipe-x',
+                         ttl_seconds=600)
+        claimer = h.new_claimer()
+        fresh = b.schedule('d1', claimer)
+        assert fresh != tid and b.replaced == [tid]
+        assert h.get_task(board, tid).status == 'archived'
+        assert h.get_task(board, fresh).claim_lock == claimer
+
+
+def test_a_released_card_is_archived_so_nothing_picks_it_up_again(tmp_path, board):
+    journal, service, state = approved(tmp_path)
+    with journal:
+        approve(service, state)
+        claimer = h.new_claimer()
+        b = bridge(service, board)
+        tid = b.schedule('d1', claimer)
+        b.bind_claim('d1', tid, claimer=claimer, worker_session='checks')
+        b.abandon('d1', claimer)
+        assert h.get_task(board, tid).status == 'archived'
+        assert b.schedule('d1', claimer) != tid

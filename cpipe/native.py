@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import contextvars
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -60,8 +61,12 @@ def scope():
 
 _CTX = None  # plugin context, to message the originating chat when a run settles
 _RUNS = {}  # delivery_id -> background thread
-CRASH_RETRIES = 2  # a run that crashes again without any progress is given up after this many retries
+CRASH_RETRIES = 2  # a run that crashes again without any progress is parked after this many retries
 RETRY_PAUSE = 30  # seconds, grows with each retry without progress
+PARK = 600  # seconds a parked run waits before the watchdog tries it again
+WATCH = 60  # seconds between watchdog passes
+SETTLE = 15  # seconds build waits, so a run that fails at once is reported in the reply itself
+log = logging.getLogger('cpipe')
 
 HEADLINES = {'locally_ready': 'done and ready for your review',
              'stopped': 'stopped: its time or turn budget ran out',
@@ -74,26 +79,103 @@ def _runner(delivery_id):
     return 'runner:' + delivery_id
 
 
-def launch(delivery_id, *, session_id, profile_id, chat_key):
-    """Run an approved delivery in the background; message the chat once it settles."""
+def _here():
     import socket
+    return f'{socket.gethostname() or "unknown"}:{os.getpid()}:run'
+
+
+def short_lived(argv, env):
+    """One-shot queries, kanban workers and cpipe's own workers must not host or resume runs."""
+    return bool(env.get('HERMES_KANBAN_TASK')) or any(
+        a in {'-z', '--oneshot', '-q', '--query', '--query-file'} or a.startswith(('--oneshot=', '--query=', '--query-file='))
+        for a in argv[1:])
+
+
+def _short_lived():
+    import sys
+    return short_lived(sys.argv, os.environ)
+
+
+def _record(key, value=None, delete=False):
+    """Read, write or delete one row of cpipe's own intent table."""
+    with scope() as (service, _, _home):
+        db = service.journal.db
+        if delete:
+            db.execute('DELETE FROM intent WHERE id=?', (key,))
+        elif value is not None:
+            db.execute('INSERT OR REPLACE INTO intent(id,payload,acknowledged) VALUES (?,?,1)', (key, encoded(value)))
+        else:
+            row = db.execute('SELECT payload FROM intent WHERE id=?', (key,)).fetchone()
+            return json.loads(row[0]) if row else None
+
+
+def notify(delivery_id, chat_key, text):
+    """Keep the message until the chat accepts it; the watchdog and hooks retry delivery."""
+    try:
+        _record('notice:' + delivery_id, dict(chat_key=chat_key, text=text, at=int(time.time())))
+    except Exception:
+        log.exception('cpipe: could not store the message for %s', delivery_id)
+    deliver()
+
+
+def deliver():
+    try:
+        with scope() as (service, _, _home):
+            rows = service.journal.db.execute("SELECT id, payload FROM intent WHERE id LIKE 'notice:%'").fetchall()
+        for key, payload in rows:
+            notice = json.loads(payload)
+            try:
+                sent = _CTX is not None and _CTX.inject_message(notice['text'], role='user', session_key=notice['chat_key'])
+            except Exception:
+                sent = False
+            if sent:
+                _record(key, delete=True)
+                log.info('cpipe: delivered the message for %s', key[len('notice:'):])
+            else:
+                log.warning('cpipe: the chat for %s is not reachable yet; retrying later', key[len('notice:'):])
+    except Exception:
+        log.exception('cpipe: message delivery failed')
+
+
+def _settled(delivery_id, result, error):
+    phase = (result or {}).get('phase', '')
+    head = HEADLINES.get(phase, 'stopped unexpectedly' + (f' ({error})' if error else ''))
+    return head, (f'[cpipe] Delivery {delivery_id} is {head}.\n' + json.dumps(result or {}, sort_keys=True) +
+        '\nTell the user this result in a few short lines: what was done, each check result, tokens used, '
+        'and the worktree to review. If it stopped, say why and what they can do. Do not call cpipe tools.')
+
+
+def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
+    """Run an approved delivery in the background; message the chat once it settles."""
     with scope() as (service, _, _home):
         controller.ready(service, delivery_id, session_id, profile_id)  # refuse before anything starts
-        # Lets a later Hermes process resume the run if this one dies (see resume_orphans).
-        service.journal.db.execute('INSERT OR REPLACE INTO intent(id,payload,acknowledged) VALUES (?,?,1)', (
-            _runner(delivery_id), encoded(dict(claimer=f'{socket.gethostname() or "unknown"}:{os.getpid()}:run',
-                session_id=session_id, profile_id=profile_id, chat_key=chat_key))))
+        state = service.read(delivery_id)
+        for (key,) in service.journal.db.execute("SELECT id FROM intent WHERE id LIKE 'runner:%'").fetchall():
+            other = service.read(key[len('runner:'):])
+            if (state and key != _runner(delivery_id) and other and other.approved
+                    and other.activity in controller.ACTIVE_STEPS and other.plan.worktree == state.plan.worktree):
+                raise ValueError('another cpipe run is working in this worktree; wait for it or stop it first')
+        # Lets the watchdog or a later Hermes process resume the run if this one dies (see resume_orphans).
+        previous = _record(_runner(delivery_id)) or {}
+        _record(_runner(delivery_id), dict(previous, claimer=_here(), session_id=session_id, profile_id=profile_id,
+                                           chat_key=chat_key, retry_at=0))
+    lock, box = threading.Lock(), {}
+
     def work():
         result, error, stalls = None, '', 0
+
         def progress():
             try:
                 with scope() as (service, _, _home):
                     state = controller.owned(service, delivery_id, session_id, profile_id)
                     return state.version, state.activity in controller.ACTIVE_STEPS and state.approved
+            except ValueError:
+                return None, False  # gone or not ours
             except Exception:
-                return None, False
-        # Keep going while the run moves forward; give up only when it crashes again and again in place.
-        while stalls <= CRASH_RETRIES:
+                return None, True  # unreadable for now: treat as still running
+        log.info('cpipe: run %s started', delivery_id)
+        # Keep going while the run moves forward; park it when it crashes again and again in place.
+        while True:
             before, _ = progress()
             try:
                 with scope() as (service, _, home):
@@ -103,12 +185,28 @@ def launch(delivery_id, *, session_id, profile_id, chat_key):
             except Exception as exc:
                 # cpipe's own ValueErrors are static labels; anything else stays a type name.
                 error = type(exc).__name__ + (': ' + str(exc)[:200] if type(exc) is ValueError else '')
+                log.warning('cpipe: run %s crashed: %s', delivery_id, error, exc_info=True)
             after, active = progress()
             if not active:
                 break  # settled: done, waiting, stuck, out of budget or cancelled
-            stalls = 0 if after != before else stalls + 1
-            if stalls:
-                time.sleep(RETRY_PAUSE * stalls)
+            stalls = 0 if after is not None and after != before else stalls + 1
+            if stalls > CRASH_RETRIES:
+                try:
+                    record = _record(_runner(delivery_id))
+                    if record:  # the watchdog tries again later, until it works, the budget ends or /cp-stop
+                        record.update(retry_at=int(time.time()) + PARK, error=error, parks=record.get('parks', 0) + 1)
+                        _record(_runner(delivery_id), record)
+                        log.warning('cpipe: run %s parked for %ss after repeated crashes', delivery_id, PARK)
+                        if record['parks'] == 1:
+                            notify(delivery_id, chat_key, f'[cpipe] Delivery {delivery_id} hit a problem it could not '
+                                   f'fix right away ({error or "unknown error"}). It retries on its own every '
+                                   f'{PARK // 60} minutes until it works or its budget ends. Tell the user in one line; '
+                                   'they can /cp-stop it. Do not call cpipe tools.')
+                        return
+                except Exception:
+                    log.exception('cpipe: could not park %s', delivery_id)
+                break
+            time.sleep(RETRY_PAUSE * stalls)
         try:
             with scope() as (service, _, _home):
                 state = controller.owned(service, delivery_id, session_id, profile_id)
@@ -116,25 +214,26 @@ def launch(delivery_id, *, session_id, profile_id, chat_key):
         except Exception:
             pass
         try:
-            with scope() as (service, _, _home):
-                service.journal.db.execute('DELETE FROM intent WHERE id=?', (_runner(delivery_id),))
+            _record(_runner(delivery_id), delete=True)
         except Exception:
-            pass
-        phase = (result or {}).get('phase', '')
-        head = HEADLINES.get(phase, 'stopped unexpectedly' + (f' ({error})' if error else ''))
-        text = (f'[cpipe] Delivery {delivery_id} is {head}.\n' + json.dumps(result or {}, sort_keys=True) +
-                '\nTell the user this result in a few short lines: what was done, each check result, tokens used, '
-                'and the worktree to review. If it stopped, say why and what they can do. Do not call cpipe tools.')
-        try:
-            if _CTX is not None:
-                _CTX.inject_message(text, role='user', session_key=chat_key)
-        except Exception:
-            pass  # /cp-status still shows the result
+            log.exception('cpipe: could not clear the runner record of %s', delivery_id)
+        head, text = _settled(delivery_id, result, error)
+        log.info('cpipe: run %s is %s', delivery_id, head)
+        with lock:
+            if not box.get('detached'):
+                box['result'] = dict(result or {}, message=f'The run is already {head}.')
+                return
+        notify(delivery_id, chat_key, text)
     # Copy the session/profile context into the thread.
     thread = threading.Thread(target=contextvars.copy_context().run, args=(work,),
                               name='cpipe-' + delivery_id, daemon=True)
     _RUNS[delivery_id] = thread
     thread.start()
+    thread.join(wait)
+    with lock:
+        box['detached'] = True
+        if 'result' in box:
+            return box['result']
     return dict(delivery_id=delivery_id, phase='running',
                 message='Building in the background. This chat gets a message when it is done; nothing to watch.')
 
@@ -143,12 +242,10 @@ _SCANNED = [0.0]
 
 
 def resume_orphans(**_):
-    """Hook: relaunch approved runs whose Hermes process died (restart, crash), once per minute."""
+    """Hook and watchdog: relaunch runs whose host died or whose retry is due; redeliver messages."""
     import socket
-    import sys
-    if ('--oneshot' in sys.argv or os.environ.get('HERMES_KANBAN_TASK')
-            or time.time() - _SCANNED[0] < 60):
-        return None  # short-lived worker processes never host a background run
+    if _short_lived() or time.time() - _SCANNED[0] < WATCH - 5:
+        return None
     _SCANNED[0] = time.time()
     from .delivery.native_bridge import alive
     try:
@@ -157,22 +254,77 @@ def resume_orphans(**_):
         for key, payload in rows:
             record, delivery_id = json.loads(payload), key[len('runner:'):]
             thread = _RUNS.get(delivery_id)
-            if alive(record['claimer']) or (thread and thread.is_alive()):
+            if thread and thread.is_alive() or record.get('retry_at', 0) > time.time():
                 continue
-            mine = encoded({**record, 'claimer': f'{socket.gethostname() or "unknown"}:{os.getpid()}:run'})
+            # A claim from this very process is only alive while its thread is.
+            if record['claimer'] != _here() and alive(record['claimer']) and not record.get('retry_at'):
+                continue
             with scope() as (service, _, _home):  # compare-and-swap: one process resumes it
                 if service.journal.db.execute('UPDATE intent SET payload=? WHERE id=? AND payload=?',
-                                              (mine, key, payload)).rowcount != 1:
+                        (encoded({**record, 'claimer': _here()}), key, payload)).rowcount != 1:
                     continue
+            log.info('cpipe: resuming run %s', delivery_id)
             try:
                 launch(delivery_id, session_id=record['session_id'], profile_id=record['profile_id'],
                        chat_key=record['chat_key'])
-            except ValueError:  # no longer runnable (finished, cancelled, expired)
-                with scope() as (service, _, _home):
-                    service.journal.db.execute('DELETE FROM intent WHERE id=?', (key,))
+            except ValueError as exc:  # no longer runnable (finished, cancelled, expired)
+                _record(key, delete=True)
+                log.info('cpipe: run %s not resumed: %s', delivery_id, exc)
+                try:
+                    with scope() as (service, _, _home):
+                        state = controller.owned(service, delivery_id, record['session_id'], record['profile_id'])
+                        result = {**controller.summary(state, service), 'worktree': state.plan.worktree}
+                    notify(delivery_id, record['chat_key'], _settled(delivery_id, result, str(exc)[:200])[1])
+                except Exception:
+                    pass
     except Exception:
-        pass  # never disturb the user's turn
+        log.exception('cpipe: resume scan failed')  # never disturb the user's turn
+    deliver()
     return None
+
+
+def ensure_running(delivery_id, *, session_id, profile_id, chat_key, wait=0):
+    """A repeated build: restart the run if nothing works on it any more, then report its real state."""
+    with scope() as (service, _, _home):
+        state = controller.owned(service, delivery_id, session_id, profile_id)
+    thread, record = _RUNS.get(delivery_id), _record(_runner(delivery_id))
+    if state.approved and state.activity in controller.ACTIVE_STEPS and not (thread and thread.is_alive()):
+        if not record:
+            return launch(delivery_id, session_id=session_id, profile_id=profile_id, chat_key=chat_key, wait=wait)
+        if record.get('retry_at'):
+            _record(_runner(delivery_id), {**record, 'retry_at': 1})  # retry a parked run now
+        _SCANNED[0] = 0.0
+        resume_orphans()  # takes over a dead or parked run exactly once
+    with scope() as (service, _, _home):
+        return _status(service, controller.owned(service, delivery_id, session_id, profile_id))
+
+
+def watchdog():
+    """Resume dead or parked runs and redeliver messages even when nobody is chatting."""
+    def watch():
+        while True:
+            time.sleep(WATCH)
+            resume_orphans()
+    if not _short_lived() and not any(t.name == 'cpipe-watchdog' for t in threading.enumerate()):
+        threading.Thread(target=contextvars.copy_context().run, args=(watch,),
+                         name='cpipe-watchdog', daemon=True).start()
+
+
+def _status(service, state):
+    """The delivery summary plus whether anything is actually working on it."""
+    out = controller.summary(state, service)
+    record = _record(_runner(state.plan.envelope.delivery_id))
+    if record:
+        thread = _RUNS.get(state.plan.envelope.delivery_id)
+        out['background'] = ('running' if not record.get('retry_at') or thread and thread.is_alive() else
+                             f"retrying at {time.strftime('%H:%M', time.localtime(record['retry_at']))} "
+                             f"after: {record.get('error') or 'an error'}")
+    elif state.approved and state.activity in controller.ACTIVE_STEPS:
+        out['background'] = 'not running; the next Hermes chat resumes it if it can, otherwise run it again'
+    notice = _record('notice:' + state.plan.envelope.delivery_id)
+    if notice:
+        out['undelivered_message'] = notice['text']
+    return out
 
 
 def _intent_key(token):
@@ -192,11 +344,11 @@ def dispatch(ctx, name, raw=''):
                 if op == 'status' and not raw.strip():
                     rows = service.journal.db.execute('SELECT snapshot FROM delivery').fetchall()
                     states = [State.from_dict(json.loads(row[0])) for row in rows]
-                    return json.dumps({'deliveries': [controller.summary(s, service) for s in states
+                    return json.dumps({'deliveries': [_status(service, s) for s in states
                         if (s.plan.envelope.session_id, s.plan.envelope.profile_id) == (sid, profile)]})
                 if op == 'stop':
                     return json.dumps(controller.cancel(service, raw.strip(), session_id=sid, profile_id=profile))
-                return json.dumps(controller.summary(controller.owned(service, raw.strip(), sid, profile), service))
+                return json.dumps(_status(service, controller.owned(service, raw.strip(), sid, profile)))
         except Exception as exc:
             return json.dumps({'error': 'state lookup failed: ' + type(exc).__name__})
     if op not in {'run', 'plan', 'build'} or not hasattr(ctx, 'inject_message'):
@@ -272,8 +424,11 @@ def dispatch(ctx, name, raw=''):
             'scope and call cpipe_approve_plan with the exact returned approval_arguments. Only if its status is approved, '
             'continue automatically using the SAME token, operation build, arguments {delivery_id: returned_delivery_id}. '
             'No second slash command or copied ID is needed. Denial, unavailable approval or dismissal starts nothing. '
-            'build returns at once and runs in the background, repairing failing or broken checks itself; tell the user '
-            'in one line that it started and they will get a message here when it is done. Do not poll status. '
+            'build returns within seconds and runs in the background, repairing failing or broken checks itself. If its '
+            'phase is running, tell the user in one line that it started and they will get a message here when it is '
+            'done; otherwise report the result it returned. Do not poll status. If the user later asks to continue, '
+            'resume or finish this delivery, call build again with the same token and delivery_id at once: it restarts '
+            'the run if nothing is working on it and returns its real state. Never run cpipe code or scripts yourself. '
             'Execution is local-only, unsandboxed; no publication adapter.\n'
             'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
     try:
@@ -306,7 +461,8 @@ def execute(args, **kwargs):
                 from .delivery.approach import execute as execute_run
                 return json.dumps(execute_run(service, run_record, _intent_key(token), op, payload,
                     home=home, session_id=sid, profile_id=profile,
-                    launch=lambda d: launch(d, session_id=sid, profile_id=profile, chat_key=key)))
+                    launch=lambda d, again=False: (ensure_running if again else launch)(
+                        d, session_id=sid, profile_id=profile, chat_key=key, wait=SETTLE)))
             db.execute('BEGIN IMMEDIATE')
             try:
                 row = db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()
@@ -344,11 +500,11 @@ def execute(args, **kwargs):
                 if set(payload) != {'delivery_id'} or type(payload['delivery_id']) is not str:
                     raise ValueError('only delivery_id is accepted')
                 if op == 'build':
-                    out = launch(payload['delivery_id'], session_id=sid, profile_id=profile, chat_key=key)
+                    out = launch(payload['delivery_id'], session_id=sid, profile_id=profile, chat_key=key, wait=SETTLE)
                 elif op == 'stop':
                     out = controller.cancel(service, payload['delivery_id'], session_id=sid, profile_id=profile)
                 else:
-                    out = controller.summary(controller.owned(service, payload['delivery_id'], sid, profile), service)
+                    out = _status(service, controller.owned(service, payload['delivery_id'], sid, profile))
             if op != 'status':
                 record.update(state='complete', result=out)
                 db.execute('UPDATE intent SET payload=? WHERE id=?', (encoded(record), _intent_key(token)))
@@ -374,9 +530,17 @@ def register(ctx):
     from . import plan_approval
     plan_approval.register(ctx)
     ctx.register_tool(name=SCHEMA['name'], toolset='cpipe', schema=SCHEMA, handler=execute)
+    # Load every module a run needs now, so a plugin update mid-run never mixes versions.
+    import importlib
+    for name in ('approach', 'approval', 'artifact', 'check_runner', 'contracts', 'hermes_worker', 'live_probe',
+                 'native_bridge', 'review', 'workers'):
+        importlib.import_module('.delivery.' + name, __package__)
+    for name in ('routing', 'runtime.envpolicy', 'runtime.launcher'):
+        importlib.import_module('.' + name, __package__)
     if hasattr(ctx, 'register_hook'):
         for hook in ('on_session_start', 'pre_llm_call'):
             ctx.register_hook(hook, resume_orphans)
+    watchdog()
     if hasattr(ctx, 'register_command'):
         for name in ('cp-run', 'cp-status', 'cp-stop'):
             ctx.register_command(name, lambda raw='', _name=name: dispatch(ctx, _name, raw),
