@@ -12,7 +12,7 @@ import time
 
 from .artifact import validate_worktree
 from .journal import encoded
-from .service import State
+from .service import State, deadline
 from ..runtime import hermes_api as h
 
 
@@ -59,8 +59,7 @@ def _step_seconds(state):
 
 def _remaining(state):
     now = time.time()
-    remaining = min(state.plan.expires_at - now,
-                    state.plan.budget.seconds - (now - state.started_at))
+    remaining = deadline(state) - now
     if remaining <= 0:
         raise ValueError('worker authority expired or budget exhausted')
     return remaining

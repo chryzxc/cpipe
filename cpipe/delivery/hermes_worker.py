@@ -6,6 +6,7 @@ adapter does not claim to constrain the child's filesystem or network access.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import math
 import os
@@ -317,6 +318,59 @@ def roll_back(plan, store):
     else:
         index.unlink(missing_ok=True)
     return True
+
+
+def _put(cwd, tree, names):
+    """Make these worktree files match tree (absent there: removed). The index is untouched."""
+    listed = _git(cwd, 'ls-tree', '-r', '-z', '--name-only', tree, '--', *names).split('\0')[:-1]
+    for name in set(names) - set(listed):
+        (Path(cwd) / name).unlink(missing_ok=True)
+    if listed:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+            env['GIT_INDEX_FILE'] = os.path.join(tmp, 'index')
+            _git(cwd, 'read-tree', tree, env=env)
+            _git(cwd, 'checkout-index', '-f', '--', *listed, env=env)
+
+
+def _hold(plan):
+    return 'refs/cpipe/hold/' + plan.envelope.delivery_id
+
+
+def _diff(cwd, a, b):
+    return set(_git(cwd, 'diff-tree', '-r', '-z', '--no-renames', '--name-only', a, b).split('\0')[:-1])
+
+
+def release(plan):
+    """Put back files moved aside by at_base, also after a crash in the middle of it."""
+    cwd = plan.worktree
+    held = _git(cwd, 'rev-parse', '-q', '--verify', _hold(plan) + '^{tree}', check=False)
+    if not held:
+        return
+    # Only the files at_base moved: never another edit made meanwhile.
+    names = _diff(cwd, held, snapshot(cwd)) & _diff(cwd, plan.base_commit + '^{tree}', held)
+    if names:
+        _put(cwd, held, sorted(names))
+    _git(cwd, 'update-ref', '-d', _hold(plan))
+
+
+@contextmanager
+def at_base(plan, names):
+    """Run with these files as they are at the approved base, then put them back."""
+    release(plan)
+    if names:  # held: the base plus these files as they are, so release knows exactly what moved
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+            env['GIT_INDEX_FILE'] = os.path.join(tmp, 'index')
+            _git(plan.worktree, 'read-tree', plan.base_commit + '^{tree}', env=env)
+            _git(plan.worktree, 'add', '-A', '--', *names, env=env)
+            _git(plan.worktree, 'update-ref', _hold(plan), _git(plan.worktree, 'write-tree', env=env))
+    try:
+        if names:
+            _put(plan.worktree, plan.base_commit + '^{tree}', names)
+        yield
+    finally:
+        release(plan)
 
 
 def _ref(state):

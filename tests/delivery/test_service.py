@@ -382,3 +382,41 @@ def test_a_stuck_test_writer_hands_over_to_the_next_builder_before_diagnosis():
         state, _ = step(state, "activity_observed", receipts=(receipt(state, outcome=Outcome.PASS),))
     assert writers == ["forge"] * WRITE_TEST_ROUNDS + ["atlas"] * WRITE_TEST_ROUNDS
     assert state.phase == "diagnosis"  # every builder had its rounds; only now the user is asked
+
+
+def test_continue_picks_a_waiting_run_up_with_every_builder_again():
+    from cpipe.delivery.schema import Actor
+    actors = (Actor("builder", "hermes", "sentry", "m", "p"), Actor("builder", "hermes", "forge", "m", "p"),
+              Actor("reviewer", "hermes", "aegis", "m", "p"))
+    state, _ = step(start(actors=actors), "envelope_approved", "tests")
+    state = claim(state)
+    state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
+    for builder in ("sentry", "forge"):
+        state = claim(state, builder, f"{builder}-session")
+        state, _ = step(state, "activity_refused")
+    assert state.phase == "waiting"
+    # The failing test was proven, so it re-observes the code as it is now; the ladder starts over.
+    state, _ = step(state, "resumed", "checks", result_artifact="tree-now")
+    assert state.artifact == "tree-now" and state.builder == "" and state.builder_session == ""
+    with pytest.raises(ValueError, match="resumed"):
+        step(state, "resumed")  # only a stopped or waiting run
+
+
+def test_continue_after_the_budget_ran_out_needs_approval_for_a_fresh_one():
+    state = candidate()
+    stopped, _ = step(state, "feedback_received", now=state.plan.expires_at, action="change")
+    assert stopped.phase == "stopped"
+    with pytest.raises(ValueError, match="terminal"):
+        step(stopped, "feedback_received", action="change")
+    renewal, _ = step(stopped, "resumed", "approve_envelope")
+    assert renewal.phase == "proposal" and not renewal.approved and renewal.renewals == 1
+    assert renewal.calls_used == 0
+    later = renewal.last_at + 50
+    resumed, _ = step(renewal, "envelope_approved", "checks", now=later)
+    claimed, _ = step(resumed, "activity_claimed", now=later + 299, run_id="run-1")
+    assert claimed.phase != "stopped"  # past the plan's own expiry, inside the new budget
+
+
+def test_a_proposal_that_was_never_approved_cannot_be_resumed():
+    with pytest.raises(ValueError, match="resumed"):
+        step(start(), "resumed")

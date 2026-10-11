@@ -10,7 +10,7 @@ import time
 
 from .artifact import validate_worktree
 from .journal import encoded
-from .service import Event
+from .service import Event, deadline
 
 
 def arguments(state):
@@ -32,8 +32,7 @@ def _fresh(service, args, session_id, profile_id):
             or state.phase != 'proposal' or state.approved
             or state.activity != 'approve_envelope' or not state.active_intent
             or arguments(state) != args or now < state.last_at
-            or now >= state.plan.expires_at
-            or now - state.started_at >= state.plan.budget.seconds
+            or now >= deadline(state)
             or validate_worktree(state.plan).digest != state.artifact):
         raise ValueError('unbound, changed or expired proposal')
     return state

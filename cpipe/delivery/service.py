@@ -13,7 +13,7 @@ PHASES = frozenset({"proposal", "checking", "implementing", "testable", "reviewi
                     "cancelled", "stopped"})
 KINDS = frozenset({"proposal_created", "envelope_approved", "activity_claimed",
                    "activity_observed", "review_received", "feedback_received",
-                   "clarification_answered", "publication_observed", "cancelled",
+                   "clarification_answered", "publication_observed", "cancelled", "resumed",
                    "activity_abandoned", "activity_refused", "worktree_adopted",
                    "deadline_reached"})
 
@@ -65,13 +65,14 @@ class State(Versioned):
     reviewer: str = ""
     handover_tests: int = 0
     handover_reviews: int = 0
+    renewals: int = 0  # times the user granted a fresh budget to continue
 
     def __post_init__(self):
         if type(self.plan) is not ExecutionPlan or self.phase not in PHASES:
             raise ValueError("invalid snapshot plan or phase")
         identity(self.artifact, "artifact")
         for name in ("version", "review_cycles", "calls_used", "started_at", "last_at",
-                     "handover_tests", "handover_reviews"):
+                     "handover_tests", "handover_reviews", "renewals"):
             nonnegative(getattr(self, name), name)
         if self.last_at < self.started_at:
             raise ValueError("time moved backwards")
@@ -238,6 +239,18 @@ def takeover(state, role):
                    handover_reviews=state.review_cycles)
 
 
+def deadline(state):
+    """When the approved time runs out. A renewal restarts the budget past the plan's own expiry."""
+    end = state.started_at + state.plan.budget.seconds
+    return end if state.renewals else min(state.plan.expires_at, end)
+
+
+def resume_point(state):
+    """Where a resumed run picks up: re-observe the code, or prove the failing test first."""
+    proved = any(r.obligation == "behavior" and r.outcome is Outcome.FAIL for r in state.receipts)
+    return continue_with(state, "checks" if proved else "tests", "checking")
+
+
 def continue_with(state, action, phase, feedback_ref=""):
     calls = state.calls_used + int(action in {"write_tests", "implement", "review"})
     if calls > state.plan.budget.calls:
@@ -349,12 +362,27 @@ def apply(snapshot, event):
             or event.session_id != e.session_id or event.profile_id != e.profile_id
             or event.now < snapshot.last_at):
         raise ValueError("stale or unbound event")
-    if snapshot.phase in {"completed", "cancelled", "stopped"}:
+    if snapshot.phase in {"completed", "cancelled"} or snapshot.phase == "stopped" and event.kind != "resumed":
         raise ValueError("terminal delivery cannot continue")
     state = replace(snapshot, version=snapshot.version + 1, last_at=event.now)
     if event.kind == "cancelled":
         return quiescent(state, "cancelled")
-    if event.now >= state.plan.expires_at or event.now - state.started_at >= state.plan.budget.seconds:
+    if event.kind == "resumed":
+        # "Continue" after a stop: every approved builder and reviewer gets its full rounds again,
+        # from the code as it is now (result_artifact). Within budget it just runs; more time
+        # or calls need the same native approval as the first time, for a fresh budget.
+        if (not state.approved or state.phase not in {"waiting", "diagnosis", "stopped"}
+                or state.activity not in {"", "diagnose", "clarify"}):
+            raise ValueError("only an approved delivery that stopped or waits can be resumed")
+        state = replace(state, artifact=event.result_artifact or state.artifact, builder="", reviewer="",
+                        builder_session="", builder_digest="",
+                        handover_tests=sum(r.obligation == "behavior" for r in state.receipts),
+                        handover_reviews=state.review_cycles)
+        if event.now >= deadline(state) or state.calls_used >= state.plan.budget.calls:
+            return continue_with(replace(state, approved=False, started_at=event.now, calls_used=0,
+                                         renewals=state.renewals + 1), "approve_envelope", "proposal")
+        return resume_point(state)
+    if event.now >= deadline(state):
         return quiescent(state, "stopped")
     if event.kind == "deadline_reached":
         raise ValueError("the budget has not run out")
@@ -362,7 +390,7 @@ def apply(snapshot, event):
         if state.phase != "proposal" or event.activity_id != state.active_intent:
             raise ValueError("approval does not match pending proposal")
         # The execution budget starts at consent, not while the plan awaits it.
-        return continue_with(replace(state, approved=True, started_at=event.now), "tests", "checking")
+        return resume_point(replace(state, approved=True, started_at=event.now))
     if event.kind == "activity_claimed":
         if (state.activity not in {"tests", "write_tests", "implement", "checks", "review", "publish"}
                 or event.activity_id != state.active_intent or state.run_id or not event.run_id):
