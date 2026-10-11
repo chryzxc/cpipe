@@ -6,6 +6,7 @@ preview and annotations are chat context, not native execution consent.
 """
 import hashlib
 import json
+import shlex
 import os
 from pathlib import Path
 import stat
@@ -63,7 +64,7 @@ def render(spec, approach, revision):
     section('Acceptance', spec['acceptance'])
     section('Scope', ['Allowed files: ' + ', '.join(spec['write_paths']),
                       'Excluded files: ' + ', '.join(spec['forbidden_paths']), *spec['non_goals']])
-    section('Verification', [c['obligation'] + ': ' + ', '.join(c['targets']) + ' → ' + ', '.join(c['criteria'])
+    section('Verification', [c['obligation'] + ': `' + shlex.join(c['argv']) + '`' + (' → ' + ', '.join(c['criteria']) if c.get('criteria') else '')
                               for c in spec['checks']] + ['Independent review by the saved ' + spec['reviewer'] + ' profile.'])
     if approach['risks']:
         section('Risks and preserved behavior', approach['risks'])
