@@ -1,8 +1,8 @@
-"""Human consent for v2 envelopes only; there is no legacy task approval path."""
+"""Human consent for frozen delivery envelopes."""
 import json
 
 NAME = 'cpipe_approve_plan'
-SCHEMA = dict(name=NAME, description='Show native one-operation human approval for the exact frozen v2 envelope. '
+SCHEMA = dict(name=NAME, description='Show native one-operation human approval for the exact frozen envelope. '
     'Use delivery_id and plan_revision from the proposal in its originating session. '
     'Consent is never supplied by the model. Approval does not itself launch workers or authorize publication.',
     parameters=dict(type='object', additionalProperties=False,
@@ -61,7 +61,7 @@ def request(args, session_id=None):
     from .delivery.approval import request as approve
     sid = session(session_id)
     if not sid:
-        return {'error': 'Native v2 approval requires its originating session.'}
+        return {'error': 'Native approval requires its originating session.'}
     with Journal.for_profile(get_hermes_home()) as journal:
         return approve(Service(journal), args, session_id=sid, profile_id=get_active_profile_name())
 
@@ -71,6 +71,6 @@ def register(ctx):
         try:
             return json.dumps(request(args, kwargs.get('session_id')))
         except Exception as exc:
-            return json.dumps({'error': 'Native v2 approval failed: ' + type(exc).__name__ +
+            return json.dumps({'error': 'Native approval failed: ' + type(exc).__name__ +
                                '. No consent inferred; inspect the proposal before retrying.'})
     ctx.register_tool(name=NAME, toolset='cpipe', schema=SCHEMA, handler=handler)

@@ -1,4 +1,4 @@
-"""Observe saved Hermes profiles; no legacy stage routing or external CLIs."""
+"""Observe saved Hermes profiles; no external CLIs."""
 
 
 def profile_home(profile):

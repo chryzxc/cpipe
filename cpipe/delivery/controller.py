@@ -1,7 +1,6 @@
-"""v2-only production local controller, sharing the receipt-aware native adapters.
+"""Production local controller, sharing the receipt-aware native adapters.
 
-Trusted local workers are not sandboxed. Publication is deliberately unavailable
-rather than falling back to the removed legacy delivery pipeline.
+Trusted local workers are not sandboxed. Publication is deliberately unavailable.
 """
 from contextlib import closing
 import json
@@ -27,7 +26,7 @@ APPROVAL_WINDOW = 3600
 
 
 def summary(state, service=None):
-    result = dict(engine_version=2, delivery_id=state.plan.envelope.delivery_id,
+    result = dict(delivery_id=state.plan.envelope.delivery_id,
         phase=state.phase, activity=state.activity, artifact=state.artifact,
         approved=state.approved, review_cycles=state.review_cycles,
         outcomes=[r.outcome.value for r in state.receipts],
@@ -70,8 +69,13 @@ def validate_spec(spec):
     from .artifact import fingerprint
     expected = {'worktree', 'repo', 'base', 'goal', 'acceptance', 'non_goals', 'write_paths',
                 'forbidden_paths', 'builder', 'reviewer', 'seconds', 'checks'}
-    if type(spec) is not dict or set(spec) != expected:
-        raise ValueError('provide the exact specification fields; unsupported arguments are rejected')
+    if type(spec) is not dict:
+        raise ValueError('spec must be an object')
+    if set(spec) != expected:
+        # Field names are fixed schema labels, never user values.
+        missing, extra = sorted(expected - set(spec)), sorted(set(spec) - expected)
+        raise ValueError('spec fields: missing ' + (', '.join(missing) or 'none')
+                         + '; unsupported ' + (', '.join(k for k in extra if k.isidentifier()) or 'none'))
     if type(spec['seconds']) is not int or not 30 <= spec['seconds'] <= 1800:
         raise ValueError('cpipe requires a bounded 30..1800 second budget')
     for key in ('acceptance', 'non_goals', 'write_paths', 'forbidden_paths', 'checks'):
@@ -126,13 +130,13 @@ def from_spec(service, spec, *, session_id, profile_id, approach=''):
     artifact, checks, actors = validate_spec(spec)
     root = Path(spec['worktree'])
     now = int(time.time())
-    e = Envelope('v2-' + uuid.uuid4().hex, session_id, profile_id, spec['repo'], artifact.branch,
+    e = Envelope('cp-' + uuid.uuid4().hex, session_id, profile_id, spec['repo'], artifact.branch,
         spec['base'], 'scope-' + uuid.uuid4().hex, tuple(c.obligation for c in checks) + ('review',), frozenset({'local'}))
     p = ExecutionPlan(envelope=e, worktree=str(root), common_git_dir=artifact.common_git_dir,
         base_commit=artifact.head, goal=spec['goal'], acceptance=tuple(spec['acceptance']),
         non_goals=tuple(spec['non_goals']), write_paths=tuple(spec['write_paths']),
         forbidden_paths=tuple(spec['forbidden_paths']), actors=actors, budget=Budget(spec['seconds'], 8),
-        policy_id='v2-local-only', check_definition='v2-frozen-command',
+        policy_id='local-only', check_definition='frozen-command',
         checks=tuple(c.identity() for c in checks) + (review_identity(),), interactive=False,
         repair_allowed=False, transient_retries=0, completion_target='local_only', expires_at=now + APPROVAL_WINDOW + spec['seconds'],
         approach=approach)
@@ -142,7 +146,7 @@ def from_spec(service, spec, *, session_id, profile_id, approach=''):
 def owned(service, delivery_id, session_id, profile_id):
     state = service.read(delivery_id)
     if state is None or (state.plan.envelope.session_id, state.plan.envelope.profile_id) != (session_id, profile_id):
-        raise ValueError('missing or wrong-session/profile v2 delivery')
+        raise ValueError('missing or wrong-session/profile delivery')
     return state
 
 
@@ -160,11 +164,11 @@ def cancel(service, delivery_id, *, session_id, profile_id):
 def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None, evidence_root):
     state = owned(service, delivery_id, session_id, profile_id)
     if not state.approved:
-        raise ValueError('v2 execution requires an approved frozen envelope')
+        raise ValueError('execution requires an approved frozen envelope')
     from .approach import validate_document
     validate_document(service, state.plan)
     if state.plan.completion_target != 'local_only':
-        raise ValueError('v2 publication adapter is not installed')
+        raise ValueError('publication adapter is not installed')
     row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?',
                                     ('check-spec:' + state.plan.digest(),)).fetchone()
     if not row:
@@ -181,6 +185,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
     bridge = NativeBridge(service, conn, session_id=session_id, profile_id=profile_id)
     worker, steps = execute or HermesWorker(), []
     claimer = h.new_claimer()
+    bridge.abandon(delivery_id)  # recover a run left bound by a crashed build
     for _ in range(max(4, state.plan.budget.calls * 4)):
         state = owned(service, delivery_id, session_id, profile_id)
         if not state.activity or state.activity not in {'tests', 'checks', 'write_tests', 'implement', 'review'}:
@@ -188,20 +193,24 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         action = state.activity
         tid = bridge.schedule(delivery_id)
         if tid is None:
-            raise ValueError('missing runnable v2 native task')
-        if action in {'tests', 'checks'}:
-            if h.claim_task(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
-                raise ValueError('v2 task owned by another launcher; no worker started')
-            bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='check-' + uuid.uuid4().hex)
-            # tests proves the behavior check before implementing; checks runs everything.
-            due = checks if action == 'checks' else tuple(c for c in checks if c.obligation == 'behavior')
-            state = bridge.observe_checks(delivery_id, tid, claimer=claimer,
-                                          checks=due, evidence_root=Path(evidence_root))
-        elif action in {'write_tests', 'implement'}:
-            state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker)
-        else:
-            state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
-                                   evidence_root=Path(evidence_root))
+            raise ValueError('missing runnable native task')
+        try:
+            if action in {'tests', 'checks'}:
+                if h.claim_task(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
+                    raise ValueError('task owned by another launcher; no worker started')
+                bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='check-' + uuid.uuid4().hex)
+                # tests proves the behavior check before implementing; checks runs everything.
+                due = checks if action == 'checks' else tuple(c for c in checks if c.obligation == 'behavior')
+                state = bridge.observe_checks(delivery_id, tid, claimer=claimer,
+                                              checks=due, evidence_root=Path(evidence_root))
+            elif action in {'write_tests', 'implement'}:
+                state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker)
+            else:
+                state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
+                                       evidence_root=Path(evidence_root))
+        except Exception:
+            bridge.abandon(delivery_id, claimer)
+            raise
         task = h.get_task(conn, tid)
         steps.append(dict(activity=action, task_id=tid, native_status=task.status,
                           phase=state.phase, outcomes=[r.outcome.value for r in state.receipts]))

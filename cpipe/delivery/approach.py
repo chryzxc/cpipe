@@ -83,7 +83,7 @@ def render(spec, approach, revision):
 
 
 def _directory(home):
-    path = Path(home).absolute() / 'delivery-v2' / 'approaches'
+    path = Path(home).absolute() / 'cpipe-deliveries' / 'approaches'
     if path.resolve() != path:
         raise ValueError('symlink approach directory')
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -238,7 +238,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id):
         record.update(state='proposal', delivery_id=result['delivery_id'], result=result)
     else:
         result = controller.run(service, record['delivery_id'], session_id=session_id, profile_id=profile_id,
-                                evidence_root=Path(home) / 'cpipe-v2' / 'evidence')
+                                evidence_root=Path(home) / 'cpipe-deliveries' / 'evidence')
         record.update(state='complete', result=result)
     _save(db, key, record)
     return result

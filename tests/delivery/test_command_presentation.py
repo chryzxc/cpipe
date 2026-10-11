@@ -6,7 +6,7 @@ import pytest
 
 from cpipe import native
 from cpipe.runtime.cli import main, setup_parser
-from .test_v2_entrypoints import Context
+from .test_entrypoints import Context
 
 
 def plain(text):

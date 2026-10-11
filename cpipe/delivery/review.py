@@ -171,5 +171,5 @@ def observe_review(bridge, delivery_id, task_id, *, claimer, execute, evidence_r
         if (current and current.status == 'running' and current.claim_lock == claimer
                 and current.current_run_id is not None):
             h.block(bridge.conn, task_id, run_id=current.current_run_id,
-                    reason='v2 review observation unavailable; artifact preserved', kind='needs_input')
+                    reason='review observation unavailable; artifact preserved', kind='needs_input')
         raise

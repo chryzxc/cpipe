@@ -1,4 +1,4 @@
-"""Offline fixture exercise of the v2 reducer, journal and real OS boundary.
+"""Offline fixture exercise of the reducer, journal and real OS boundary.
 
 No native tasks, model calls, user repositories, independent reviews or publication.
 A successful run is a testable fixture, NOT a ready live delivery.
@@ -34,7 +34,7 @@ def digest(value: bytes) -> str:
 
 def run() -> dict:
     # Explicit dir avoids tempfile's cached default ignoring a changed TMPDIR.
-    with tempfile.TemporaryDirectory(prefix="cpipe-v2-smoke-", dir=os.environ.get("TMPDIR")) as directory:
+    with tempfile.TemporaryDirectory(prefix="cpipe-smoke-", dir=os.environ.get("TMPDIR")) as directory:
         scratch = Path(directory).resolve()
         root = scratch / "fixture"
         root.mkdir()
