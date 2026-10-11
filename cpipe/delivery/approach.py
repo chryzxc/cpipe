@@ -129,7 +129,7 @@ def _save(db, key, record):
     db.execute('UPDATE intent SET payload=? WHERE id=?', (encoded(record), key))
 
 
-def execute(service, record, key, op, payload, *, home, session_id, profile_id):
+def execute(service, record, key, op, payload, *, home, session_id, profile_id, launch):
     """Run-only stage machine; caller has checked token/session/profile/expiry."""
     db = service.journal.db
     _safe(payload)
@@ -237,8 +237,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id):
                       draft_revision=record['draft_revision'])
         record.update(state='proposal', delivery_id=result['delivery_id'], result=result)
     else:
-        result = controller.run(service, record['delivery_id'], session_id=session_id, profile_id=profile_id,
-                                evidence_root=Path(home) / 'cpipe-deliveries' / 'evidence')
+        result = launch(record['delivery_id'])
         record.update(state='complete', result=result)
     _save(db, key, record)
     return result

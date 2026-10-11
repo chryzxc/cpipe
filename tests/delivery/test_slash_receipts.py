@@ -68,3 +68,17 @@ def test_cli_status_uses_the_same_store(repo, tmp_path, hermes_home, capsys):
     assert main(['status']) == 0
     out = json.loads(capsys.readouterr().out)
     assert [d['delivery_id'] for d in out['deliveries']] == ['d1']
+
+
+def test_crashed_background_run_retries_then_still_tells_the_chat(hermes_home, monkeypatch):
+    calls, told = [], []
+    monkeypatch.setattr(native.controller, 'ready', lambda *a: None)
+    monkeypatch.setattr(native.controller, 'run', lambda *a, **kw: calls.append(1) or 1 / 0)
+    ctx = Context()
+    ctx.inject_message = lambda text, **kw: told.append((text, kw)) or True
+    native.register(ctx)
+    assert native.launch('d9', session_id='s1', profile_id='default', chat_key='chat-one')['phase'] == 'running'
+    native._RUNS['d9'].join(30)
+    assert len(calls) == native.CRASH_RETRIES + 1
+    assert told == [(told[0][0], {'role': 'user', 'session_key': 'chat-one'})]
+    assert told[0][0].startswith('[cpipe] Delivery d9 is stopped unexpectedly (ZeroDivisionError).')

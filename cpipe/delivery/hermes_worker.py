@@ -163,14 +163,21 @@ def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
 
 def _delta(state):
     """What changed since the worker last looked: failing checks and open findings."""
-    from .contracts import Outcome
+    from .contracts import Outcome, UNAVAILABLE_REASONS
     from .review import NOTES
     lines = []
-    failed = sorted({r.obligation for r in state.receipts
-                     if r.outcome is Outcome.FAIL and r.artifact == state.artifact and r.obligation != 'review'})
+    latest = {r.obligation: r for r in state.receipts if r.artifact == state.artifact and r.obligation != 'review'}
+    failed = sorted(o for o, r in latest.items() if r.outcome is Outcome.FAIL)
     if failed:
         lines.append('Failing checks on the current tree: ' + ', '.join(failed)
                      + '. Run them yourself with the commands in the approach to see the failure.')
+    broken = sorted((o, r.reason) for o, r in latest.items() if r.outcome is Outcome.UNAVAILABLE)
+    if broken:
+        lines.append('Checks that produced no pass/fail result (run them yourself to see why, then fix the code '
+                     'or tests inside write_paths; never change the approved commands or criteria):')
+        lines += [f'- {o}: ' + UNAVAILABLE_REASONS.get(reason, 'no result') for o, reason in broken]
+    if state.activity == 'write_tests':
+        lines.append('The behavior test names must match the approved criteria exactly (describe prefixes are fine).')
     open_ = [r.finding for r in state.findings if r.finding.disposition == 'open' and r.finding.in_scope]
     if open_:
         lines.append('Open review findings to resolve:')
