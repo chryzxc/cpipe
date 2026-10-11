@@ -233,6 +233,9 @@ def test_one_receipt_through_real_native_consent_and_red_green_review(
     from cpipe.delivery.workers import WorkerResult
     from cpipe.runtime import hermes_api as h
     ctx, token, _, _, _, _ = run_context
+    # Already failing before the change (another worktree's lint): never blocks the run.
+    run_context[2]['checks'].append(dict(obligation='lint', argv=['sh', '-c', 'echo "other/x.js 1:1 error"; exit 1'],
+                                         timeout_seconds=20))
     prepare(run_context)
     frozen = call(token, 'plan', {'draft_revision': 1})
     delivery_id = frozen['delivery_id']
@@ -286,7 +289,8 @@ def test_one_receipt_through_real_native_consent_and_red_green_review(
             assert out['phase'] == 'locally_ready'
             assert [s['activity'] for s in out['steps']] == ['tests', 'implement', 'checks', 'review']
             assert out['steps'][0]['outcomes'] == ['fail']
-            assert out['outcomes'] == ['fail', 'pass', 'pass']
+            assert out['outcomes'] == ['fail', 'pass', 'pass', 'pass']
+            assert out['checks']['lint'].startswith('pass: it still fails, but only on failures')
             assert workers == ['implement', 'review']
             again = call(token, 'build', {'delivery_id': delivery_id})  # the real state, not the cached 'running'
             assert again['phase'] == 'locally_ready' and 'background' not in again
