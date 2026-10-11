@@ -359,6 +359,32 @@ def test_roll_back_restores_files_index_branch_and_commits(repo, tmp_path):
     assert git(repo, 'diff', '--cached', '--name-only') == staged == 'kept.py'
 
 
+def test_a_baseline_runs_on_the_base_code_and_survives_a_crash_in_the_middle(repo, monkeypatch):
+    from cpipe.delivery.hermes_worker import at_base, release
+    from .test_execution_plan import plan
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'), base_commit=git(repo, 'rev-parse', 'HEAD'))
+    (repo / 'double.py').write_text('def double(n): return n * 2\n')
+    (repo / 'test_new.py').write_text('new\n')
+    (repo / 'mine.txt').write_text('the user\'s\n')
+    with at_base(p, ['double.py', 'test_new.py']):
+        assert (repo / 'double.py').read_text() == 'def double(n): return n\n'
+        assert not (repo / 'test_new.py').exists() and (repo / 'mine.txt').exists()
+    assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'
+    assert (repo / 'test_new.py').read_text() == 'new\n'
+    from cpipe.delivery import hermes_worker
+    with pytest.raises(KeyboardInterrupt):
+        with at_base(p, ['double.py', 'test_new.py']):
+            monkeypatch.setattr(hermes_worker, 'release', lambda plan: None)  # the process dies here
+            raise KeyboardInterrupt
+    monkeypatch.undo()
+    assert (repo / 'double.py').read_text() == 'def double(n): return n\n'
+    (repo / 'mine.txt').write_text('edited meanwhile\n')
+    release(p)  # the next run or resume puts them back, and nothing else
+    assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'
+    assert (repo / 'test_new.py').read_text() == 'new\n'
+    assert (repo / 'mine.txt').read_text() == 'edited meanwhile\n'
+
+
 @pytest.mark.parametrize('drift, adopted', [('double.py', True), ('outside.py', False)])
 def test_leftovers_with_nothing_to_roll_back_to_are_adopted_only_inside_the_approved_paths(
         repo, tmp_path, monkeypatch, drift, adopted):

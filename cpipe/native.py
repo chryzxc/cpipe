@@ -142,7 +142,8 @@ def _settled(delivery_id, result, error):
     head = HEADLINES.get(phase, 'stopped unexpectedly' + (f' ({error})' if error else ''))
     return head, (f'[cpipe] Delivery {delivery_id} is {head}.\n' + json.dumps(result or {}, sort_keys=True) +
         '\nTell the user this result in a few short lines: what was done, each check result, tokens used, '
-        'and the worktree to review. If it stopped, say why and what they can do. Do not call cpipe tools.')
+        'and the worktree to review. If it stopped, say why and that they can fix the cause and say "continue" '
+        '(it picks up where it stopped, asking approval again only for more time). Do not call cpipe tools.')
 
 
 def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
@@ -197,6 +198,7 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
                         record.update(retry_at=int(time.time()) + PARK, error=error, parks=record.get('parks', 0) + 1)
                         _record(_runner(delivery_id), record)
                         log.warning('cpipe: run %s parked for %ss after repeated crashes', delivery_id, PARK)
+                        controller.tell(session_id, delivery_id, f'hit a problem; retrying every {PARK // 60} minutes')
                         if record['parks'] == 1:
                             notify(delivery_id, chat_key, f'[cpipe] Delivery {delivery_id} hit a problem it could not '
                                    f'fix right away ({error or "unknown error"}). It retries on its own every '
@@ -219,6 +221,7 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
             log.exception('cpipe: could not clear the runner record of %s', delivery_id)
         head, text = _settled(delivery_id, result, error)
         log.info('cpipe: run %s is %s', delivery_id, head)
+        controller.tell(session_id, delivery_id, f'{delivery_id} is {head}', done=True)
         with lock:
             if not box.get('detached'):
                 box['result'] = dict(result or {}, message=f'The run is already {head}.')
@@ -287,6 +290,10 @@ def ensure_running(delivery_id, *, session_id, profile_id, chat_key, wait=0):
     """A repeated build: restart the run if nothing works on it any more, then report its real state."""
     with scope() as (service, _, _home):
         state = controller.owned(service, delivery_id, session_id, profile_id)
+    if state.approved and state.phase in controller.RESUMABLE:
+        with scope() as (service, _, _home):
+            state = controller.resume(service, delivery_id, session_id=session_id, profile_id=profile_id)
+        log.info('cpipe: run %s resumed from %s', delivery_id, 'approval' if not state.approved else state.activity)
     thread, record = _RUNS.get(delivery_id), _record(_runner(delivery_id))
     if state.approved and state.activity in controller.ACTIVE_STEPS and not (thread and thread.is_alive()):
         if not record:
@@ -428,7 +435,9 @@ def dispatch(ctx, name, raw=''):
             'phase is running, tell the user in one line that it started and they will get a message here when it is '
             'done; otherwise report the result it returned. Do not poll status. If the user later asks to continue, '
             'resume or finish this delivery, call build again with the same token and delivery_id at once: it restarts '
-            'the run if nothing is working on it and returns its real state. Never run cpipe code or scripts yourself. '
+            'the run, or picks a stopped one up where it stopped, and returns its real state. If that result has '
+            'approval_arguments, the budget ran out: call cpipe_approve_plan with them, then build again. '
+            'Never run cpipe code or scripts yourself. '
             'Execution is local-only, unsandboxed; no publication adapter.\n'
             'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
     try:
@@ -455,7 +464,10 @@ def execute(args, **kwargs):
             row = db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()
             run_record = json.loads(row[0]) if row else None
             if run_record and run_record.get('operation') == 'run':
-                if (run_record.get('kind') != 'slash' or run_record['expires'] <= time.time()
+                # The receipt's expiry bounds starting work; a frozen delivery can always be continued.
+                lapsed = run_record['expires'] <= time.time() and not (
+                    op in {'build', 'status'} and run_record.get('delivery_id'))
+                if (run_record.get('kind') != 'slash' or lapsed
                     or (run_record['session_id'], run_record['profile_id'], run_record['session_key']) != (sid, profile, key)):
                     raise ValueError('missing, expired or wrong-session run receipt')
                 from .delivery.approach import execute as execute_run

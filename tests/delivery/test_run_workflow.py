@@ -366,3 +366,83 @@ def test_a_read_only_builder_is_refused_before_approval_and_fallbacks_are_shown(
                                       approach=approach_, expected_revision=0))
     assert out['phase'] == 'approach_review'
     assert 'builder: builder (then, if it refuses or keeps failing: builder2)' in Path(out['document_path']).read_text()
+
+
+def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_context, repo, hermes_home, monkeypatch):
+    import model_tools
+    from tools import approval
+    from tools.registry import registry
+    from tools.approval_context import set_current_session_key, reset_current_session_key
+    from cpipe.delivery import controller
+    from cpipe.delivery.review import REVIEW_AXES
+    from cpipe.delivery.workers import WorkerResult
+    from cpipe.runtime import hermes_api as h
+    ctx, token, _, _, _, _ = run_context
+    run_context[2]['checks'].append(dict(obligation='lint', argv=['sh', '-c', 'echo "other/x.js 1:1 error"; exit 1'],
+                                         timeout_seconds=20))
+    prepare(run_context)
+    frozen = call(token, 'plan', {'draft_revision': 1})
+    delivery_id = frozen['delivery_id']
+    monkeypatch.setenv('HERMES_GATEWAY_SESSION', '1')
+    monkeypatch.delenv('HERMES_SINGLE_QUERY_SESSION', raising=False)
+    monkeypatch.delenv('HERMES_CRON_SESSION', raising=False)
+    monkeypatch.setattr(registry, 'dispatch', lambda name, args, **kw: ctx.tools[name]['handler'](args, **kw))
+    approval.register_gateway_notify('run-fixture', lambda payload: approval.resolve_gateway_approval(
+        'run-fixture', 'once', request_id=payload['request_id']))
+    route = set_current_session_key('run-fixture')
+    h.kb.init_db()
+    told, workers, declining, lines = [], [], [True], []
+    from hermes_cli import plugin_events
+    monkeypatch.setitem(sys.modules, 'tui_gateway.server', object())  # as inside the desktop backend
+    monkeypatch.setattr(plugin_events, 'broadcast_plugin_event', lambda plugin, event, payload: lines.append(
+        (plugin, event, payload['session_id'], payload['delivery_id'], payload['text'], payload['done'])))
+    ctx.inject_message = lambda text, **kw: told.append(text) or True
+    def worker(state, *, on_session, **kw):
+        workers.append(state.activity)
+        session = state.activity + '-fixture'
+        on_session(session)
+        if state.activity == 'implement':
+            if declining[0]:
+                return WorkerResult(session, {'status': 'blocked'})
+            (repo / 'double.py').write_text('def double(n): return n * 2\n')
+            return WorkerResult(session, {'status': 'done'})
+        return WorkerResult(session, dict(status='approved', artifact=state.artifact,
+            reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
+    original_run = controller.run
+    def controlled(service, delivery_id, **kw):
+        with closing(h.connect(None)) as conn:
+            return original_run(service, delivery_id, conn=conn, execute=worker, **kw)
+    monkeypatch.setattr(controller, 'run', controlled)
+    monkeypatch.setattr(native, 'SETTLE', 0)
+    def build():
+        return json.loads(model_tools.handle_function_call('cpipe_execute_intent',
+            dict(token=token, operation='build', arguments={'delivery_id': delivery_id}),
+            session_id='s1', skip_pre_tool_call_hook=True))
+    try:
+        model_tools.handle_function_call('cpipe_approve_plan', frozen['approval_arguments'],
+                                         session_id='s1', skip_pre_tool_call_hook=True)
+        build()
+        native._RUNS[delivery_id].join(60)
+        assert call(token, 'status', {})['phase'] == 'waiting'  # the only builder declined
+        with Journal.for_profile(hermes_home) as store:  # a day later: the receipt no longer starts work
+            row = store.db.execute('SELECT payload FROM intent WHERE id=?', (native._intent_key(token),)).fetchone()
+            store.db.execute('UPDATE intent SET payload=? WHERE id=?',
+                             (json.dumps({**json.loads(row[0]), 'expires': 0}), native._intent_key(token)))
+        kept = list(hermes_home.rglob('baseline/*.json'))
+        assert len(kept) == 1
+        kept[0].unlink()  # a run from before failures were recorded up front
+        declining[0] = False  # the user fixed the cause and says "continue"
+        assert build()['phase'] == 'running'
+        native._RUNS[delivery_id].join(60)
+        assert call(token, 'status', {})['phase'] == 'locally_ready'
+        assert workers == ['implement', 'implement', 'review']
+        # The chat sees each handover and recovery as a display-only line, never a model turn.
+        assert {(p, e, sid, d) for p, e, sid, d, _, _ in lines} == {('cpipe', 'progress', 's1', delivery_id)}
+        texts = [text for *_, text, _ in lines]
+        assert texts[:2] == ['running the new test (it must fail first)', 'builder is implementing']
+        assert texts[2].startswith('builder declined implement')
+        assert 'reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
+        assert 'error' in call(token, 'prepare', {})  # still no new work on an expired receipt
+    finally:
+        approval.unregister_gateway_notify('run-fixture')
+        reset_current_session_key(route)
