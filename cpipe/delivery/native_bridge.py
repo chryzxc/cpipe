@@ -13,7 +13,7 @@ import time
 
 from ..runtime import hermes_api as h
 from .journal import encoded
-from .service import Event, apply
+from .service import Event, apply, actor as active
 
 RUNNABLE = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 RESULT_KINDS = frozenset({'activity_observed', 'review_received', 'publication_observed'})
@@ -47,8 +47,7 @@ class NativeBridge:
 
     @staticmethod
     def _actor(state):
-        role = 'reviewer' if state.activity == 'review' else 'builder'
-        return next(a for a in state.plan.actors if a.role == role)
+        return active(state, 'reviewer' if state.activity == 'review' else 'builder')
 
     @staticmethod
     def _lane(profile):
@@ -155,8 +154,8 @@ class NativeBridge:
                             worker_session=worker_session, actor_id=self._actor(state).profile)
         return self.service.accept(event)[0]
 
-    def abandon(self, delivery_id, claimer=None):
-        """Release a bound run whose step crashed, so the next build re-issues it."""
+    def abandon(self, delivery_id, claimer=None, kind='activity_abandoned'):
+        """Release a bound run whose step crashed (or was refused), so it is re-issued."""
         state = self._state(delivery_id)
         if not state.run_id:
             return state
@@ -166,7 +165,7 @@ class NativeBridge:
                 raise ValueError('step is still running')
             h.block(self.conn, task.id, run_id=task.current_run_id,
                     reason='step abandoned; re-issued on a new card', kind='needs_input')
-        return self.service.accept(self._event(state, 'activity_abandoned'))[0]
+        return self.service.accept(self._event(state, kind))[0]
 
     def result_event(self, delivery_id, task_id, *, claimer, kind, **result):
         if kind not in RESULT_KINDS:

@@ -154,6 +154,54 @@ def test_controller_writes_a_missing_behavior_test_then_goes_red_green(repo, tmp
         conn.close()
 
 
+def test_a_refusing_builder_is_replaced_without_stopping_the_run(repo, tmp_path):
+    """A builder whose profile forbids edits declines; the next approved builder finishes the job."""
+    from cpipe.delivery.controller import propose, run
+    from cpipe.delivery.schema import Actor
+    from cpipe.delivery.workers import WorkerResult
+    from cpipe.delivery.review import REVIEW_AXES, review_identity
+    from cpipe.runtime import hermes_api as h
+    from .test_execution_plan import plan
+    spec = pytest_check(timeout=20)
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
+        base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=int(time.time()) + 300,
+        envelope=replace(plan().envelope, required=('behavior', 'review')),
+        checks=(spec.identity(), review_identity()),
+        actors=(Actor('builder', 'hermes', 'sentry', 'm', 'p'), Actor('builder', 'hermes', 'forge', 'm', 'p'),
+                Actor('reviewer', 'hermes', 'aegis', 'm', 'p')),
+        write_paths=('double.py', 'test_behavior.py'), interactive=False, transient_retries=0)
+    h.kb.init_db(tmp_path / 'native.db')
+    conn = h.kbc.connect(tmp_path / 'native.db')
+    calls = []
+    def execute(state, *, on_session, **kw):
+        calls.append(state.activity)  # builders resume their bound session, like HermesWorker
+        session = (state.activity != 'review' and state.builder_session) or f'{state.activity}-{len(calls)}'
+        on_session(session)
+        if state.activity == 'review':
+            return WorkerResult(session, dict(status='approved', artifact=state.artifact,
+                reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
+        if calls.count('write_tests') == 1:
+            return WorkerResult(session, {'status': 'blocked', 'reason': 'my profile is read-only'})
+        if state.activity == 'write_tests':
+            (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
+        else:
+            (repo / 'double.py').write_text('def double(n): return n * 2\n')
+        return WorkerResult(session, {'status': 'done'})
+    try:
+        with Journal(tmp_path / 'controller.db') as journal:
+            service = Service(journal)
+            state = propose(service, p, (spec,))
+            service.accept(Event('approval', 'envelope_approved', 'd1', p.digest(), state.artifact,
+                state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
+            result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn, execute=execute,
+                evidence_root=tmp_path / 'evidence')
+            assert result['phase'] == 'locally_ready'
+            assert result['refusals'] == ['sentry declined write_tests: my profile is read-only']
+            assert service.read('d1').builder == 'forge'
+    finally:
+        conn.close()
+
+
 def test_controller_recovers_a_step_that_crashed(repo, tmp_path):
     """A crashed step must not leave the delivery bound to a dead card forever."""
     from cpipe.delivery.controller import owned, propose, run

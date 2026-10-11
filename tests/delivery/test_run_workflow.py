@@ -327,17 +327,37 @@ def test_roles_are_asked_once_then_remembered_and_never_guessed(hermes_home, mon
             raise ValueError('no model')
         return Actor(role, 'hermes', name, name + '-model', 'p')
     monkeypatch.setattr(live_probe, 'observe_actor', observe)
+    from cpipe import routing
+    souls = {'sentry': ('You are Sentry, the reviewer', True), 'forge': ('You are Forge, the coder', False)}
+    monkeypatch.setattr(routing, 'soul', lambda name: souls.get(name, ('', False)))
     ctx, queued = Context(), []
     ctx.inject_message = lambda text, **kw: queued.append(text) or True
     native.register(ctx)
     ctx.commands['cp-run']('Fix it')
-    assert 'No cpipe roles are saved yet' in queued[-1] and 'forge (forge-model)' in queued[-1]
+    assert 'No cpipe roles are saved yet' in queued[-1] and 'forge (forge-model; You are Forge, the coder)' in queued[-1]
+    assert 'sentry (sentry-model; read-only, review only; You are Sentry' in queued[-1]
     assert 'blank' not in queued[-1]  # cannot run without a saved model
+    approach.remember_roles(hermes_home, {'builder': 'sentry', 'reviewer': 'forge'})
+    ctx.commands['cp-run']('Fix it')
+    assert 'No cpipe roles are saved yet' in queued[-1]  # a read-only builder is never reused
     approach.remember_roles(hermes_home, {'builder': 'forge', 'reviewer': 'sentry'})
     ctx.commands['cp-run']('Fix it')
-    assert 'Use builder forge and reviewer sentry' in queued[-1]
+    assert 'Use builder ["forge"] and reviewer sentry' in queued[-1]
     names.remove('sentry')  # a remembered profile disappears: ask again rather than fail later
     ctx.commands['cp-run']('Fix it')
     assert 'No cpipe roles are saved yet' in queued[-1]
     names[:] = ['default', 'blank']
     assert 'two Hermes profiles' in ctx.commands['cp-run']('Fix it')
+
+
+def test_a_read_only_builder_is_refused_before_approval_and_fallbacks_are_shown(run_context, monkeypatch):
+    from cpipe import routing
+    monkeypatch.setattr(routing, 'soul', lambda name: ('', name == 'reviewer2'))
+    ctx, token, spec, approach_, values, _ = run_context
+    out = call(token, 'prepare', dict(spec={**spec, 'builder': ['reviewer2', 'builder']},
+                                      approach=approach_, expected_revision=0))
+    assert 'reviewer2 is read-only' in out['error']
+    out = call(token, 'prepare', dict(spec={**spec, 'builder': ['builder', 'builder2']},
+                                      approach=approach_, expected_revision=0))
+    assert out['phase'] == 'approach_review'
+    assert 'Builder: builder (takes over if it refuses: builder2)' in Path(out['document_path']).read_text()

@@ -68,7 +68,7 @@ def render(spec, approach, revision):
                               for c in spec['checks']] + ['Independent review by the saved ' + spec['reviewer'] + ' profile.'])
     if approach['risks']:
         section('Risks and preserved behavior', approach['risks'])
-    section('Execution limits', [f"Builder: {spec['builder']}; reviewer: {spec['reviewer']}. Saved models/providers are resolved by Hermes.",
+    section('Execution limits', [builders_line(spec['builder']) + f"; reviewer: {spec['reviewer']}. Saved models/providers are resolved by Hermes.",
         f"Execution budget: {spec['seconds']} seconds. Draft review time is not execution time.",
         'Local development only; no commits, pushes, PRs, merging, deployment or credential changes.',
         'Workers are trusted local processes, not sandboxed. Scope checks detect violations; they do not prevent access.'])
@@ -125,23 +125,34 @@ def validate_document(service, plan):
         raise ValueError('reviewed approach document changed or is unavailable')
 
 
+def builders_line(builder):
+    first, *rest = builder if type(builder) is list else [builder]
+    return f'Builder: {first}' + (f" (takes over if it refuses: {', '.join(rest)})" if rest else '')
+
+
 def roles(home):
-    """(saved builder/reviewer or None, {profile: model} of profiles that can run as workers)."""
+    """(saved {builder: [profiles], reviewer} or None, {profile: "model; role"} of profiles that can run)."""
     from hermes_cli.profiles import list_profile_names
     from .live_probe import observe_actor
-    usable = {}
+    from ..routing import soul
+    usable, read_only = {}, set()
     for name in list_profile_names():
         try:
-            usable[name] = observe_actor('builder', name).model
+            model = observe_actor('builder', name).model
         except ValueError:
-            pass  # no saved model/provider: cannot run unattended
+            continue  # no saved model/provider: cannot run unattended
+        line, ro = soul(name)
+        usable[name] = model + ('; read-only, review only' if ro else '') + (f'; {line}' if line else '')
+        read_only |= {name} if ro else set()
     try:
         saved = json.loads((Path(home) / 'cpipe-deliveries' / 'roles.json').read_text())
-        saved = {'builder': saved['builder'], 'reviewer': saved['reviewer']}
+        builders = saved['builder'] if type(saved['builder']) is list else [saved['builder']]
+        saved = {'builder': builders, 'reviewer': saved['reviewer']}
     except (OSError, ValueError, KeyError, TypeError):
         saved = None
-    if saved and (saved['builder'] == saved['reviewer'] or not set(saved.values()) <= set(usable)):
-        saved = None  # a remembered profile was removed or lost its model
+    if saved and (saved['reviewer'] in saved['builder'] or not builders
+                  or not set(builders) | {saved['reviewer']} <= set(usable) or set(builders) & read_only):
+        saved = None  # a remembered profile was removed, lost its model, or cannot edit
     return saved, usable
 
 
