@@ -53,13 +53,17 @@ A run only stops for you when nothing it was approved to do can move it forward.
 - **A profile declines** (`{"status":"blocked"}`): rolled back the same way, and the next approved profile takes over at once.
 - **A loop is stuck** (no valid failing test after 3 rounds, or review findings that stop converging): the next approved builder gets the same rounds in a fresh session before the run reports `diagnosis`.
 - **A worker hangs:** each step is capped at a third of the budget (at least 10 minutes).
+- **Leftover edits with nothing to roll back to** (e.g. a crash before cpipe had verified anything): if they stay inside `write_paths`, cpipe continues from them and runs the checks again before any review.
+- **A check run or step setup crashes:** retried with backoff; the run reports only after 3 failures in a row.
+- **The run itself crashes:** it restarts in the background as long as it keeps making progress, and gives up only after repeated crashes at the same point.
 - **Hermes restarts or crashes:** the next Hermes chat (any session) resumes the run from its last step. Exactly one process resumes it.
 
 What still stops the run, on purpose:
 - the approved time or turn budget runs out (you set it);
 - every approved builder or reviewer declined or kept failing (add another profile and rerun);
 - the test command is not installed (an environment problem cpipe should not fix);
-- the worktree was changed outside cpipe in a way it cannot restore.
+- files outside `write_paths` were changed and cpipe cannot restore them (it never deletes work it cannot attribute);
+- the same step keeps crashing in place (a bug, reported with the error).
 
 The completion message is best effort; `/cp-status` always shows the result.
 

@@ -14,7 +14,7 @@ PHASES = frozenset({"proposal", "checking", "implementing", "testable", "reviewi
 KINDS = frozenset({"proposal_created", "envelope_approved", "activity_claimed",
                    "activity_observed", "review_received", "feedback_received",
                    "clarification_answered", "publication_observed", "cancelled",
-                   "activity_abandoned", "activity_refused"})
+                   "activity_abandoned", "activity_refused", "worktree_adopted"})
 
 
 # Attempts to get a behavior test that fails on an assertion before implementing.
@@ -378,6 +378,16 @@ def apply(snapshot, event):
                 builder, digest = event.worker_session, state.plan.digest()
         return replace(state, run_id=event.run_id, worker_session=event.worker_session,
                        builder_session=builder, builder_digest=digest), ()
+    if event.kind == "worktree_adopted":
+        # The worktree drifted and could not be restored, but stays inside the approved scope:
+        # continue from it and prove it again with the checks before any review.
+        if (not state.approved or state.run_id or not event.result_artifact
+                or state.activity not in {"write_tests", "tests", "implement", "checks", "review"}):
+            raise ValueError("only an unclaimed approved step can adopt the worktree")
+        state = replace(state, artifact=event.result_artifact)
+        if state.activity == "review":
+            return continue_with(state, "checks", "checking")
+        return continue_with(state, state.activity, state.phase)
     if event.kind == "activity_abandoned":
         if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
             raise ValueError("abandon does not match claimed activity")
