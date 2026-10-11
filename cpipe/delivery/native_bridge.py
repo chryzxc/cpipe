@@ -15,7 +15,7 @@ import time
 
 from ..runtime import hermes_api as h
 from .journal import encoded
-from .service import Event, apply, actor as active
+from .service import Event, apply, actor as active, deadline
 
 RUNNABLE = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 RESULT_KINDS = frozenset({'activity_observed', 'review_received', 'publication_observed'})
@@ -99,8 +99,7 @@ class NativeBridge:
         if not state.approved or state.activity not in RUNNABLE or state.run_id:
             return None
         now = int(time.time())
-        remaining = min(state.plan.expires_at - now,
-                        state.plan.budget.seconds - (now - state.started_at))
+        remaining = deadline(state) - now
         if remaining <= 0:
             raise ValueError('execution authority expired or budget exhausted')
         if self.require_notify and not self.notify_target:

@@ -32,6 +32,7 @@ from .artifact import fingerprint, validate_worktree
 from .contracts import Outcome, Receipt, identity, string_tuple
 from .journal import encoded
 from .schema import CheckIdentity
+from .service import deadline
 
 MAX_REPORT = 2 * 1024 * 1024
 REPORT = '{report}'
@@ -226,27 +227,23 @@ def _marks(spec, observed):
                     if c.find('failure') is not None or c.find('error') is not None}
         except ET.ParseError:
             return set()
-    # ponytail: a new error matching an old line except for its numbers is missed; JUnit has no such gap.
+    # A new error matching an old line except for its numbers is missed; JUnit reports have no such gap.
     lines = (re.sub(rb'\d+', b'#', line.strip()) for line in output.splitlines())
     return {_digest(line.decode(errors='replace')) for line in lines if line}
 
 
-def _baseline_path(root, state):
+def baseline_path(root, state):
     return Path(root).absolute() / 'baseline' / f'{state.plan.envelope.delivery_id}.json'
 
 
 def take_baseline(state, specs, *, evidence_root):
-    """Record each check's failures before any change, so failures the repository
-    already had (other worktrees, someone's unrelated tests) never block the run."""
-    path = _baseline_path(evidence_root, state)
-    if path.exists():
-        return
-    before = validate_worktree(state.plan)
-    if before.digest != state.artifact:
-        raise ValueError('artifact differs from scheduled revision')
+    """Record each check's failures on the code before the change (see hermes_worker.at_base), so
+    failures the repository already had (other worktrees, someone's unrelated tests) never block the run."""
+    path = baseline_path(evidence_root, state)
+    before = fingerprint(state.plan.worktree)
     known = {}
     for spec in specs:
-        remaining = state.plan.budget.seconds - (time.time() - state.started_at)
+        remaining = deadline(state) - time.time()
         observed = _run(spec, state.plan.worktree, _environment(spec.argv[0])[0],
                         min(spec.timeout_seconds, remaining))
         if observed and observed[0] > 0 and observed[0] not in _NOT_RUN:
@@ -266,7 +263,7 @@ def _pre_existing(root, state, spec, observed, outcome, reason):
             or not (reason == 'other_failures' or (outcome is Outcome.FAIL and not spec.reported))):
         return False
     try:
-        known = json.loads(_baseline_path(root, state).read_text()).get(spec.obligation)
+        known = json.loads(baseline_path(root, state).read_text()).get(spec.obligation)
     except (OSError, ValueError):
         return False
     marks = _marks(spec, observed)
@@ -279,8 +276,7 @@ def observe_check(state, spec, *, evidence_root):
     if state.activity not in {'tests', 'checks'}:
         raise ValueError('not a check activity')
     now = time.time()
-    remaining = min(state.plan.expires_at - now,
-                    state.plan.budget.seconds - (now - state.started_at))
+    remaining = deadline(state) - now
     if remaining <= 0:
         raise ValueError('execution authority expired or budget exhausted')
     definition = spec.identity()

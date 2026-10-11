@@ -60,7 +60,11 @@ A run only stops for you when nothing it was approved to do can move it forward.
 - **Hermes restarts or crashes:** a watchdog in every long-running Hermes process (and the next chat turn) resumes the run from its last step. Exactly one process resumes it.
 - **Something else takes cpipe's cards** (a board automation, an older background service): a card that was reassigned, claimed by something else or left behind is archived and replaced. Cards are claimed the moment they are queued, and released cards are archived so nothing picks them up again. `hermes cpipe doctor` warns when this happens.
 - **The budget runs out while nothing runs:** the next resume records the stop and reports it, instead of failing every step.
-- **"Continue" in the chat:** asking the coordinator to continue calls build again, which restarts a run nothing is working on and returns its real state, never a stale "running".
+- **"Continue" in the chat:** asking the coordinator to continue calls build again, which restarts a run nothing is working on and returns its real state, never a stale "running". This also works for a run that stopped, waits or reports `diagnosis`, at any later time:
+  - it picks up from the code as it is now, so fix the cause first if it was yours (e.g. install the test command);
+  - every approved builder and reviewer gets its full rounds again;
+  - if the time or turn budget ran out, the same native approval asks you for a fresh budget, and the run continues after you accept.
+- **A run started before failures were recorded up front:** the first check run records them on the base code, with cpipe's own edits put aside and restored afterwards (even after a crash).
 
 ### Monitoring
 
@@ -70,12 +74,13 @@ A run only stops for you when nothing it was approved to do can move it forward.
 - If a run ends within seconds of approval, the build reply reports the result directly.
 - One-shot queries (`-z`, `-q`, `--query-file`, `--oneshot`) and kanban workers never host or resume runs. Only one run works in a worktree at a time.
 
-What still stops the run, on purpose:
-- the approved time or turn budget runs out (you set it);
-- every approved builder or reviewer declined or kept failing (add another profile and rerun);
+What still stops the run, on purpose (say "continue" once it is resolved):
+- the approved time or turn budget runs out (you set it; continuing asks for a fresh one);
+- every approved builder or reviewer declined or kept failing;
 - the test command is not installed (an environment problem cpipe should not fix);
-- files outside `write_paths` were changed and cpipe cannot restore them (it never deletes work it cannot attribute);
-- the delivery can no longer run (cancelled, expired, or its plan document changed).
+- files outside `write_paths` were changed and cpipe cannot restore them (it never deletes work it cannot attribute).
+
+Only a cancelled delivery or a changed plan document cannot continue.
 
 `/cp-status` always shows the result, even before the message arrives.
 

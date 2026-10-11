@@ -10,12 +10,12 @@ import time
 import uuid
 
 from .artifact import validate_worktree
-from .check_runner import CommandCheck, take_baseline
+from .check_runner import CommandCheck, baseline_path, take_baseline
 from .contracts import Envelope, Budget, UNAVAILABLE_REASONS
 from .schema import ExecutionPlan
-from .service import Service, Event
+from .service import Service, Event, deadline
 from .native_bridge import NativeBridge
-from .hermes_worker import changed_since_base, reattach, HermesWorker, keep, roll_back
+from .hermes_worker import at_base, changed_since_base, reattach, release, HermesWorker, keep, roll_back
 from .workers import observe_implementation, usage, WorkerRefused
 from .review import observe_review, review_identity
 from .approval import arguments
@@ -37,6 +37,10 @@ BACKOFF = 15
 WORKER_STEPS = frozenset({'write_tests', 'implement', 'review'})
 
 
+def inside(name, paths):
+    return any(name == p or name.startswith(p + '/') for p in paths)
+
+
 def settle(state, store, service):
     """Before each step: remember a verified worktree, roll a failed step's leftovers back, or adopt it."""
     try:
@@ -55,7 +59,6 @@ def settle(state, store, service):
     # stays inside the approved paths. The checks prove it again before any review.
     reattach(state.plan)
     plan = state.plan
-    inside = lambda name, paths: any(name == p or name.startswith(p + '/') for p in paths)
     if any(not inside(n, plan.write_paths) or inside(n, plan.forbidden_paths) for n in changed_since_base(plan)):
         raise ValueError('the worktree was changed outside the approved paths and could not be restored')
     digest = validate_worktree(plan).digest
@@ -73,7 +76,11 @@ def summary(state, service=None):
                 for r in state.receipts})
     if state.phase == 'proposal' and not state.approved:
         result['approval_arguments'] = arguments(state)
-        result['plan'] = state.plan.to_dict()
+        if state.renewals:  # the plan is unchanged; only the budget needs consent again
+            result['message'] = ('The approved time or calls ran out. To continue, call cpipe_approve_plan with '
+                                 'approval_arguments (the user approves a fresh budget), then build again.')
+        else:
+            result['plan'] = state.plan.to_dict()
     if service is not None:
         result['tokens'] = usage(service, state.plan.envelope.delivery_id)
     return result
@@ -212,6 +219,21 @@ def cancel(service, delivery_id, *, session_id, profile_id):
     return summary(state)
 
 
+RESUMABLE = {'waiting', 'diagnosis', 'stopped'}
+
+
+def resume(service, delivery_id, *, session_id, profile_id):
+    """Continue a delivery that stopped or waits, from the code as it is now. Out of time or
+    calls, it goes back to native approval for a fresh budget instead."""
+    state = owned(service, delivery_id, session_id, profile_id)
+    release(state.plan)  # files a crashed baseline moved aside
+    e = state.plan.envelope
+    state, _ = service.accept(Event('resume:' + uuid.uuid4().hex, 'resumed', delivery_id,
+        state.plan.digest(), state.artifact, state.version, max(state.last_at, int(time.time())),
+        session_id=e.session_id, profile_id=e.profile_id, result_artifact=validate_worktree(state.plan).digest))
+    return state
+
+
 def ready(service, delivery_id, session_id, profile_id):
     """Refuse execution unless the delivery is approved, unchanged and runnable; return its frozen checks."""
     state = owned(service, delivery_id, session_id, profile_id)
@@ -240,15 +262,16 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             return run(service, delivery_id, session_id=session_id, profile_id=profile_id,
                        conn=conn, execute=execute, evidence_root=evidence_root)
     bridge = NativeBridge(service, conn, session_id=session_id, profile_id=profile_id)
-    worker, steps, recoveries, strikes = execute or HermesWorker(), [], [], {}
+    worker, steps, recoveries, strikes, baselined = execute or HermesWorker(), [], [], {}, False
     store = Path(evidence_root) / 'good' / delivery_id
     claimer = h.new_claimer()
     bridge.abandon(delivery_id)  # recover a run left bound by a crashed build
+    release(state.plan)  # and files its baseline moved aside
     for _ in range(max(4, state.plan.budget.calls * 6)):
         state = owned(service, delivery_id, session_id, profile_id)
         if state.activity not in ACTIVE_STEPS:
             break
-        if time.time() >= min(state.plan.expires_at, state.started_at + state.plan.budget.seconds):
+        if time.time() >= deadline(state):
             # Record the stop instead of failing every step on the expired budget.
             e = state.plan.envelope
             service.accept(Event('deadline:' + state.active_intent, 'deadline_reached', delivery_id,
@@ -270,10 +293,13 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 if h.take(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
                     raise ValueError('task owned by another launcher; no worker started')
                 bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='check-' + uuid.uuid4().hex)
-                if action == 'tests' and not state.calls_used:
-                    try:  # before any worker: what already fails is not this change's doing
-                        take_baseline(state, tuple(c for c in checks if c.obligation != 'behavior'),
-                                      evidence_root=Path(evidence_root))
+                if action in {'tests', 'checks'} and not baselined and not baseline_path(evidence_root, state).exists():
+                    baselined = True  # once per run: a failing baseline must not double every check
+                    try:  # what already failed before this change is not its doing; runs on the base code
+                        with at_base(state.plan, [n for n in changed_since_base(state.plan)
+                                                  if inside(n, state.plan.write_paths)]):
+                            take_baseline(state, tuple(c for c in checks if c.obligation != 'behavior'),
+                                          evidence_root=Path(evidence_root))
                     except Exception as exc:
                         recoveries.append(f'could not record which checks already failed ({type(exc).__name__}); '
                                           'every failure counts')
@@ -317,7 +343,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 else:
                     worker.note = ''
                     bridge.abandon(delivery_id, claimer, kind='activity_refused')
-            time.sleep(min(BACKOFF * n, max(0, state.plan.budget.seconds - (time.time() - state.started_at)) / 4))
+            time.sleep(min(BACKOFF * n, max(0, deadline(state) - time.time()) / 4))
             continue
         strikes.pop(bridge._actor(state).profile if action in WORKER_STEPS else action, None)  # the ladder restarts
         task = h.get_task(conn, tid)

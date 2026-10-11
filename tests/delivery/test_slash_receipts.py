@@ -203,7 +203,7 @@ def test_a_second_run_in_the_same_worktree_is_refused(hermes_home, monkeypatch):
 
 def test_a_repeated_build_restarts_a_run_nothing_is_working_on(hermes_home, monkeypatch):
     runs = []
-    active = type('S', (), dict(version=1, activity='implement', approved=True))()
+    active = type('S', (), dict(version=1, phase='implementing', activity='implement', approved=True))()
     monkeypatch.setattr(native.controller, 'owned', lambda *a: active)
     monkeypatch.setattr(native.controller, 'summary', lambda state, service=None: {'phase': 'implementing'})
     monkeypatch.setattr(native.controller, 'ready', lambda *a: None)
