@@ -16,6 +16,7 @@ import tempfile
 import time
 
 from .workers import WorkerResult
+from .service import actor as active
 from .journal import encoded
 
 MAX_LINE = 256 * 1024
@@ -207,7 +208,9 @@ def _prompt(state, resume, since=''):
         'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
         'Do not commit, push, open PRs, or modify files outside write_paths. '
         'Follow project instructions such as AGENTS.md; use installed skills only when clearly relevant. '
-        'Credentials must never be written; replace any encountered values with [REDACTED].\n'
+        'Credentials must never be written; replace any encountered values with [REDACTED]. '
+        'If your own instructions forbid this work, return only {"status":"blocked","reason":"<one line>"} '
+        'without changing files; another approved worker takes over.\n'
         'Frozen contract:\n' + encoded(state.plan.to_dict()) + '\n'
         'Current activity: ' + state.activity + '\n' + _delta(state))
     if state.activity != 'review':
@@ -260,8 +263,7 @@ def _ref(state):
 
 class HermesWorker:
     def __call__(self, state, *, on_session, heartbeat, timeout_seconds):
-        actor = next(a for a in state.plan.actors if a.role == (
-            'reviewer' if state.activity == 'review' else 'builder'))
+        actor = active(state, 'reviewer' if state.activity == 'review' else 'builder')
         if actor.engine != 'hermes':
             raise ValueError('unsupported execution engine')
         resume = state.builder_session if state.activity in {'write_tests', 'implement'} else ''

@@ -15,7 +15,7 @@ from .schema import ExecutionPlan
 from .service import Service, Event
 from .native_bridge import NativeBridge
 from .hermes_worker import HermesWorker
-from .workers import observe_implementation, usage
+from .workers import observe_implementation, usage, WorkerRefused
 from .review import observe_review, review_identity
 from .approval import arguments
 from .journal import encoded
@@ -49,7 +49,7 @@ def propose(service, plan, checks):
     if (plan.completion_target != 'local_only' or plan.envelope.capabilities != frozenset({'local'})
             or plan.interactive or plan.repair_allowed or plan.transient_retries
             or any(a.engine != 'hermes' for a in plan.actors)
-            or len({a.profile for a in plan.actors}) != 2
+            or len({a.profile for a in plan.actors}) != len(plan.actors)
             or len(checks) == 0 or any(type(c) is not CommandCheck for c in checks)
             or tuple(c.identity() for c in checks) + (review_identity(),) != plan.checks):
         raise ValueError('cpipe supports explicit local-only Hermes execution with frozen checks and independent review')
@@ -72,6 +72,7 @@ def propose(service, plan, checks):
 def validate_spec(spec):
     """Preflight a draft without saving a proposal or starting its budget."""
     from .live_probe import observe_actor
+    from ..routing import soul
     from .artifact import fingerprint
     expected = {'worktree', 'repo', 'base', 'goal', 'acceptance', 'non_goals', 'write_paths',
                 'forbidden_paths', 'builder', 'reviewer', 'seconds', 'checks'}
@@ -109,8 +110,15 @@ def validate_spec(spec):
         raise ValueError('the behavior check needs criteria naming the test that proves the change')
     for c in checks:
         c.identity()  # resolves the program now, not after approval
-    actors = (observe_actor('builder', spec['builder']), observe_actor('reviewer', spec['reviewer']))
-    if len({a.profile for a in actors}) != 2 or not checks:
+    builders = spec['builder'] if type(spec['builder']) is list else [spec['builder']]
+    if not 1 <= len(builders) <= 3 or any(type(b) is not str for b in builders):
+        raise ValueError('builder is a profile name or an ordered list of up to 3 (fallbacks take over on refusal)')
+    for name in builders:
+        if soul(name)[1]:
+            raise ValueError(f'profile {name} is read-only (its SOUL.md forbids edits) and cannot build; '
+                             'choose a profile that edits code')
+    actors = tuple(observe_actor('builder', b) for b in builders) + (observe_actor('reviewer', spec['reviewer']),)
+    if len({a.profile for a in actors}) != len(actors) or not checks:
         raise ValueError('distinct builder/reviewer profiles and checks are required')
     from .contracts import identity, relative_path, string_tuple
     for name in ('repo', 'base', 'goal'):
@@ -195,7 +203,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             return run(service, delivery_id, session_id=session_id, profile_id=profile_id,
                        conn=conn, execute=execute, evidence_root=evidence_root)
     bridge = NativeBridge(service, conn, session_id=session_id, profile_id=profile_id)
-    worker, steps = execute or HermesWorker(), []
+    worker, steps, refusals = execute or HermesWorker(), [], []
     claimer = h.new_claimer()
     bridge.abandon(delivery_id)  # recover a run left bound by a crashed build
     for _ in range(max(4, state.plan.budget.calls * 4)):
@@ -220,6 +228,11 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             else:
                 state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
                                        evidence_root=Path(evidence_root))
+        except WorkerRefused as exc:
+            # Not a crash: the next approved builder takes over, or the run waits for the user.
+            refusals.append(f'{bridge._actor(state).profile} declined {action}: {exc}')
+            bridge.abandon(delivery_id, claimer, kind='activity_refused')
+            continue
         except Exception:
             bridge.abandon(delivery_id, claimer)
             raise
@@ -228,4 +241,6 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                           phase=state.phase, outcomes=[r.outcome.value for r in state.receipts]))
     result = summary(owned(service, delivery_id, session_id, profile_id), service)
     result['steps'] = steps
+    if refusals:
+        result['refusals'] = refusals
     return result

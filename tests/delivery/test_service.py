@@ -322,3 +322,30 @@ def test_broken_checks_go_back_to_the_builder_but_a_missing_command_waits():
     first = claim(step(start(), "envelope_approved", "tests")[0])
     assert step(first, "activity_observed", "diagnose", receipts=(receipt(
         first, outcome=Outcome.UNAVAILABLE, observed=False, reason="command_not_found"),))[0].phase == "waiting"
+
+
+def test_a_refusing_builder_hands_over_to_the_next_approved_one_then_the_run_waits():
+    from cpipe.delivery.schema import Actor
+    actors = (Actor("builder", "hermes", "sentry", "m", "p"), Actor("builder", "hermes", "forge", "m", "p"),
+              Actor("reviewer", "hermes", "aegis", "m", "p"))
+    state = start(actors=actors)
+    state, _ = step(state, "envelope_approved", "tests")
+    state = claim(state)
+    state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
+    state = claim(state, "sentry", "sentry-session")
+    state, intents = step(state, "activity_refused", "implement")
+    # Fresh session for the new builder; the old one is never resumed.
+    assert intents[0][1]["actor"]["profile"] == "forge" and intents[0][1]["resume"] == ""
+    assert state.builder == "forge" and state.builder_session == ""
+    with pytest.raises(ValueError, match="actor"):
+        claim(state, "sentry", "sentry-again")
+    state = claim(state, "forge", "forge-session")
+    assert State.from_dict(json.loads(json.dumps(state.to_dict()))) == state
+    state, intents = step(state, "activity_refused")
+    assert state.phase == "waiting" and not intents  # no builder left: tell the user
+
+
+def test_snapshots_saved_before_builder_takeover_still_load():
+    data = start().to_dict()
+    del data["builder"]
+    assert State.from_dict(data).builder == ""

@@ -43,15 +43,17 @@ cpipe never commits, pushes, opens PRs, merges or deploys. You review the result
    - **waiting on you**, e.g. the test command is not installed;
    - **out of budget.**
 
-   The message includes the check results, token usage and the worktree to review. A crashed step is retried twice before reporting.
+   The message includes the check results, token usage and the worktree to review. A crashed step is retried twice before reporting; a builder that declines is replaced by the next approved builder instead.
 
 ## Builder and reviewer
 
-cpipe uses two of your saved Hermes profiles: a **builder** and a different **reviewer**. Models and providers always come from the profiles; cpipe never guesses them.
+cpipe uses your saved Hermes profiles: a **builder** (optionally followed by fallback builders) and a different **reviewer**. Models and providers always come from the profiles; cpipe never guesses them.
 
-- **First run:** if no roles are saved, the coordinator asks which profiles to use, in its single question. It offers only profiles that have a saved model and provider.
+- **First run:** if no roles are saved, the coordinator asks which profiles to use, in its single question. It offers only profiles that have a saved model and provider, each with the role line from its `SOUL.md`.
+- **Read-only profiles never build:** a profile whose `SOUL.md` declares it read-only is marked review-only in the offer and rejected as builder before approval.
+- **Fallback builders:** `builder` can be an ordered list, shown in the approach and covered by the one approval. If a builder declines a step (it answers `{"status":"blocked"}`), the next one takes over in a fresh session and the run continues. If none is left, the run waits and the chat message says who declined and why.
 - **After that:** the choice is remembered in `cpipe-deliveries/roles.json` and reused without asking.
-- **Removed profile:** if a remembered profile is removed or loses its model, cpipe asks again.
+- **Removed or unusable profile:** if a remembered profile is removed, loses its model or turns read-only as builder, cpipe asks again.
 - **Too few profiles:** with fewer than two usable profiles, `/cp-run` stops immediately and explains why.
 
 Use your strongest model as the reviewer: a reviewer that finds everything in round one keeps the loop short. The builder can be a cheaper model.
@@ -87,7 +89,7 @@ The coordinator fills in the spec; it is shown in the preview and frozen at appr
 | `worktree`, `repo`, `base` | Where the work happens. A dedicated worktree is recommended. |
 | `goal`, `acceptance`, `non_goals` | What done means. |
 | `write_paths`, `forbidden_paths` | Edits outside `write_paths` are rejected. |
-| `builder`, `reviewer` | Distinct saved Hermes profiles (see above). |
+| `builder`, `reviewer` | Distinct saved Hermes profiles; `builder` may be an ordered list of up to 3 (see above). |
 | `seconds` | Execution budget, 30–7200 (3600 suggested for features). Up to 24 builder/reviewer turns. |
 | `checks` | The repository's own test commands (see below). |
 

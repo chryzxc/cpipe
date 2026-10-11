@@ -23,6 +23,17 @@ class WorkerResult:
     tokens: dict | None = None  # host-reported usage: input/output/total/cache_read/cache_write
 
 
+class WorkerRefused(ValueError):
+    """The worker declined the step (e.g. its profile forbids edits); retrying it is pointless."""
+
+
+def refused(result):
+    """Raise WorkerRefused for a {"status":"blocked","reason":...} answer."""
+    payload = getattr(result, 'payload', None)
+    if type(payload) is dict and payload.get('status') == 'blocked':
+        raise WorkerRefused(str(payload.get('reason') or 'no reason given')[:300])
+
+
 def record_usage(service, state, activity, result):
     """Keep per-step token usage beside the journal; it never grants authority."""
     tokens = getattr(result, 'tokens', None)
@@ -109,9 +120,10 @@ def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute):
         if (type(result) is not WorkerResult or bound is None
                 or result.session_id != bound.worker_session):
             raise ValueError('worker result session does not match native claim')
+        record_usage(bridge.service, state, state.activity, result)
+        refused(result)
         if result.payload != {'status': 'done'}:
             raise ValueError('worker did not return a valid implementation result')
-        record_usage(bridge.service, state, state.activity, result)
         after = validate_worktree(state.plan)
         _scope(before, after, state.plan)
         event = bridge.result_event(delivery_id, task_id, claimer=claimer,
