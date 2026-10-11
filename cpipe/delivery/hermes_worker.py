@@ -10,10 +10,12 @@ import json
 import math
 import os
 import selectors
+import shutil
 import signal
 import subprocess
 import tempfile
 import time
+from pathlib import Path
 
 from .workers import WorkerResult
 from .service import actor as active
@@ -257,6 +259,55 @@ def snapshot(cwd):
         return _git(cwd, 'write-tree', env=env)
 
 
+def _good(plan):
+    return 'refs/cpipe/good/' + plan.envelope.delivery_id
+
+
+def _index(cwd):
+    return Path(_git(cwd, 'rev-parse', '--path-format=absolute', '--git-path', 'index'))
+
+
+def keep(plan, store):
+    """Remember the worktree (files and index) as the last verified state."""
+    _git(plan.worktree, 'update-ref', _good(plan), snapshot(plan.worktree))
+    store.mkdir(parents=True, exist_ok=True, mode=0o700)
+    index = _index(plan.worktree)
+    if index.exists():
+        shutil.copyfile(index, store / 'index')
+    else:
+        (store / 'index').unlink(missing_ok=True)
+
+
+def roll_back(plan, store):
+    """Undo a failed step's edits, staging, commits or branch switch; False if nothing was kept."""
+    cwd = plan.worktree
+    tree = _git(cwd, 'rev-parse', '-q', '--verify', _good(plan) + '^{tree}', check=False)
+    if not tree:
+        return False
+    _git(cwd, 'symbolic-ref', 'HEAD', 'refs/heads/' + plan.envelope.branch)
+    _git(cwd, 'reset', '-q', '--soft', plan.base_commit)  # workers never commit; undo any that did
+    now = snapshot(cwd)
+    if now != tree:
+        parts = _git(cwd, 'diff-tree', '-r', '-z', '--no-renames', '--name-status', tree, now).split('\0')
+        changed = list(zip(parts[::2], parts[1::2]))
+        for status, name in changed:
+            if status == 'A':
+                (Path(cwd) / name).unlink(missing_ok=True)
+        restore = [name for status, name in changed if status != 'A']
+        if restore:
+            with tempfile.TemporaryDirectory() as tmp:
+                env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+                env['GIT_INDEX_FILE'] = os.path.join(tmp, 'index')
+                _git(cwd, 'read-tree', tree, env=env)
+                _git(cwd, 'checkout-index', '-f', '--', *restore, env=env)
+    index = _index(cwd)
+    if (store / 'index').exists():
+        shutil.copyfile(store / 'index', index)
+    else:
+        index.unlink(missing_ok=True)
+    return True
+
+
 def _ref(state):
     return 'refs/cpipe/reviewed/' + state.plan.envelope.delivery_id
 
@@ -276,6 +327,9 @@ class HermesWorker:
             except (OSError, subprocess.SubprocessError):
                 now = ''
         prompt = _prompt(state, resume, since)
+        note, self.note = getattr(self, 'note', ''), ''
+        if note:  # the controller's reason the previous attempt failed (a fixed label, never worker text)
+            prompt += '\n' + note
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(('HERMES_KANBAN_', 'GIT_')) and k != 'PYTHONPATH'}
         result = execute_stream(command(actor, state.plan.worktree, resume, timeout_seconds),

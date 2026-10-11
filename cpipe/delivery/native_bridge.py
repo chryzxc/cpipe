@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
+import socket
 import time
 
 from ..runtime import hermes_api as h
@@ -17,6 +19,21 @@ from .service import Event, apply, actor as active
 
 RUNNABLE = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 RESULT_KINDS = frozenset({'activity_observed', 'review_received', 'publication_observed'})
+
+
+def alive(claimer):
+    """False when the claim belongs to a process on this host that no longer exists."""
+    host, _, rest = (claimer or '').partition(':')
+    pid = rest.partition(':')[0]
+    if host != (socket.gethostname() or 'unknown') or not pid.isdigit():
+        return True
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
 
 
 class NativeBridge:
@@ -154,18 +171,18 @@ class NativeBridge:
                             worker_session=worker_session, actor_id=self._actor(state).profile)
         return self.service.accept(event)[0]
 
-    def abandon(self, delivery_id, claimer=None, kind='activity_abandoned'):
+    def abandon(self, delivery_id, claimer=None, kind='activity_abandoned', action=''):
         """Release a bound run whose step crashed (or was refused), so it is re-issued."""
         state = self._state(delivery_id)
         if not state.run_id:
             return state
         task = h.get_task(self.conn, state.run_id.split(':')[0])
         if task and task.status == 'running':
-            if task.claim_lock != claimer and (task.claim_expires or 0) > time.time():
+            if task.claim_lock != claimer and (task.claim_expires or 0) > time.time() and alive(task.claim_lock):
                 raise ValueError('step is still running')
             h.block(self.conn, task.id, run_id=task.current_run_id,
                     reason='step abandoned; re-issued on a new card', kind='needs_input')
-        return self.service.accept(self._event(state, kind))[0]
+        return self.service.accept(self._event(state, kind, action=action))[0]
 
     def result_event(self, delivery_id, task_id, *, claimer, kind, **result):
         if kind not in RESULT_KINDS:

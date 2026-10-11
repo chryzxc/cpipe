@@ -29,7 +29,7 @@ def test_registration_exposes_only_current_tools():
     ctx = Context()
     cpipe.register(ctx)
     assert set(ctx.tools) == {'cpipe_execute_intent', 'cpipe_approve_plan'}
-    assert not ctx.hooks
+    assert set(ctx.hooks) == {'on_session_start', 'pre_llm_call'}
     params = ctx.tools['cpipe_approve_plan']['schema']['parameters']
     assert set(params['properties']) == {'delivery_id', 'plan_revision'}
     assert set(ctx.commands) == {'cp-run', 'cp-status', 'cp-stop'}
@@ -180,7 +180,10 @@ def test_a_refusing_builder_is_replaced_without_stopping_the_run(repo, tmp_path)
         if state.activity == 'review':
             return WorkerResult(session, dict(status='approved', artifact=state.artifact,
                 reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
-        if calls.count('write_tests') == 1:
+        if calls.count('write_tests') == 1:  # edits, then declines: its leftovers must not survive
+            (repo / 'double.py').write_text('broken(\n')
+            (repo / 'scratch.py').write_text('junk\n')
+            git(repo, 'add', 'scratch.py')
             return WorkerResult(session, {'status': 'blocked', 'reason': 'my profile is read-only'})
         if state.activity == 'write_tests':
             (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
@@ -196,15 +199,17 @@ def test_a_refusing_builder_is_replaced_without_stopping_the_run(repo, tmp_path)
             result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn, execute=execute,
                 evidence_root=tmp_path / 'evidence')
             assert result['phase'] == 'locally_ready'
-            assert result['refusals'] == ['sentry declined write_tests: my profile is read-only']
+            assert result['recoveries'] == ['sentry declined write_tests: my profile is read-only']
             assert service.read('d1').builder == 'forge'
+            assert not (repo / 'scratch.py').exists() and 'n * 2' in (repo / 'double.py').read_text()
+            assert git(repo, 'diff', '--cached', '--name-only') == ''
     finally:
         conn.close()
 
 
-def test_controller_recovers_a_step_that_crashed(repo, tmp_path):
+def test_controller_recovers_a_step_that_crashed(repo, tmp_path, monkeypatch):
     """A crashed step must not leave the delivery bound to a dead card forever."""
-    from cpipe.delivery.controller import owned, propose, run
+    from cpipe.delivery.controller import propose, run
     from cpipe.delivery.workers import WorkerResult
     from cpipe.delivery.review import REVIEW_AXES, review_identity
     from cpipe.runtime import hermes_api as h
@@ -218,11 +223,15 @@ def test_controller_recovers_a_step_that_crashed(repo, tmp_path):
         write_paths=('double.py',), interactive=False, transient_retries=0)
     h.kb.init_db(tmp_path / 'native.db')
     conn = h.kbc.connect(tmp_path / 'native.db')
-    crashes = [RuntimeError('worker died')]
+    from cpipe.delivery import controller
+    monkeypatch.setattr(controller, 'BACKOFF', 0)
+    crashes, seen_notes = [RuntimeError('worker died')], []
     def execute(state, *, on_session, **kw):
         session = 'review-session' if state.activity == 'review' else 'builder-session'
         on_session(session)
         if state.activity == 'implement':
+            if getattr(execute, 'note', ''):
+                seen_notes.append(execute.note)
             if crashes:
                 raise crashes.pop()
             (repo / 'double.py').write_text('def double(n): return n * 2\n')
@@ -236,11 +245,86 @@ def test_controller_recovers_a_step_that_crashed(repo, tmp_path):
             state = propose(service, p, (spec,))
             service.accept(Event('approval', 'envelope_approved', 'd1', p.digest(), state.artifact,
                 state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
-            with pytest.raises(RuntimeError):
-                run(service, 'd1', **kw)
-            assert not owned(service, 'd1', 's1', 'default').run_id
-            result = run(service, 'd1', **kw)
+            result = run(service, 'd1', **kw)  # recovered inside the same run, no restart needed
             assert result['phase'] == 'locally_ready'
-            assert [s['activity'] for s in result['steps']] == ['implement', 'checks', 'review']
+            assert [s['activity'] for s in result['steps']] == ['tests', 'implement', 'checks', 'review']
+            assert result['recoveries'] == ['forge failed implement (RuntimeError); retrying']
+            assert 'previous attempt at this step failed: RuntimeError' in seen_notes[0]
     finally:
         conn.close()
+
+
+def test_a_builder_that_keeps_failing_is_retried_then_replaced(repo, tmp_path, monkeypatch):
+    """resume with the reason -> fresh session -> next approved builder; the run never stops."""
+    from cpipe.delivery import controller
+    from cpipe.delivery.controller import propose, run
+    from cpipe.delivery.schema import Actor
+    from cpipe.delivery.workers import WorkerResult
+    from cpipe.delivery.review import REVIEW_AXES, review_identity
+    from cpipe.runtime import hermes_api as h
+    from .test_execution_plan import plan
+    monkeypatch.setattr(controller, 'BACKOFF', 0)
+    spec = pytest_check(timeout=20)
+    (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
+        base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=int(time.time()) + 300,
+        envelope=replace(plan().envelope, required=('behavior', 'review')),
+        checks=(spec.identity(), review_identity()),
+        actors=(Actor('builder', 'hermes', 'forge', 'm', 'p'), Actor('builder', 'hermes', 'atlas', 'm', 'p'),
+                Actor('reviewer', 'hermes', 'aegis', 'm', 'p')),
+        write_paths=('double.py',), interactive=False, transient_retries=0)
+    h.kb.init_db(tmp_path / 'native.db')
+    conn = h.kbc.connect(tmp_path / 'native.db')
+    resumed = []
+    def execute(state, *, on_session, **kw):
+        if state.activity == 'review':
+            on_session('review-session')
+            return WorkerResult('review-session', dict(status='approved', artifact=state.artifact,
+                reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
+        resumed.append(state.builder_session)
+        session = state.builder_session or f'{state.builder or "forge"}-{len(resumed)}'
+        on_session(session)
+        if state.builder != 'atlas':
+            (repo / 'double.py').write_text('half done\n')  # every failed attempt is undone
+            return WorkerResult(session, {'status': 'done', 'note': 'not json the controller can use'}
+                                ) if len(resumed) == 1 else 1 / 0
+        (repo / 'double.py').write_text('def double(n): return n * 2\n')
+        return WorkerResult(session, {'status': 'done'})
+    try:
+        with Journal(tmp_path / 'controller.db') as journal:
+            service = Service(journal)
+            state = propose(service, p, (spec,))
+            service.accept(Event('approval', 'envelope_approved', 'd1', p.digest(), state.artifact,
+                state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
+            result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn, execute=execute,
+                         evidence_root=tmp_path / 'evidence')
+            assert result['phase'] == 'locally_ready', result
+            assert [r.split(' (')[0] for r in result['recoveries']] == ['forge failed implement'] * 3
+            assert result['recoveries'][-1].endswith('handing over')
+            assert resumed == ['', 'forge-1', '', '']  # resume, then fresh, then atlas in a new session
+            assert service.read('d1').builder == 'atlas'
+    finally:
+        conn.close()
+
+
+def test_roll_back_restores_files_index_branch_and_commits(repo, tmp_path):
+    from cpipe.delivery.hermes_worker import keep, roll_back
+    from .test_execution_plan import plan
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'), base_commit=git(repo, 'rev-parse', 'HEAD'))
+    (repo / 'double.py').write_text('def double(n): return n * 2\n')
+    (repo / 'kept.py').write_text('kept\n')
+    git(repo, 'add', 'kept.py')
+    keep(p, tmp_path / 'good')
+    staged = git(repo, 'diff', '--cached', '--name-only')
+    (repo / 'double.py').write_text('broken\n')
+    (repo / 'kept.py').unlink()
+    (repo / 'junk.py').write_text('junk\n')
+    git(repo, 'add', '-A')
+    git(repo, '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'worker commit')
+    git(repo, 'checkout', '-qb', 'elsewhere')
+    assert roll_back(p, tmp_path / 'good')
+    assert git(repo, 'symbolic-ref', '--short', 'HEAD') == p.envelope.branch
+    assert git(repo, 'rev-parse', 'HEAD') == p.base_commit
+    assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'
+    assert (repo / 'kept.py').read_text() == 'kept\n' and not (repo / 'junk.py').exists()
+    assert git(repo, 'diff', '--cached', '--name-only') == staged == 'kept.py'
