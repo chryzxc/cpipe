@@ -10,7 +10,7 @@ import uuid
 
 from .artifact import validate_worktree
 from .check_runner import CommandCheck
-from .contracts import Envelope, Budget
+from .contracts import Envelope, Budget, UNAVAILABLE_REASONS
 from .schema import ExecutionPlan
 from .service import Service, Event
 from .native_bridge import NativeBridge
@@ -25,12 +25,18 @@ from ..runtime import hermes_api as h
 APPROVAL_WINDOW = 3600
 
 
+# Builder/reviewer turns per delivery: room for test, fix and review rounds plus self-repair.
+CALLS = 16
+
+
 def summary(state, service=None):
     result = dict(delivery_id=state.plan.envelope.delivery_id,
         phase=state.phase, activity=state.activity, artifact=state.artifact,
         approved=state.approved, review_cycles=state.review_cycles,
         outcomes=[r.outcome.value for r in state.receipts],
-        completion_target=state.plan.completion_target)
+        completion_target=state.plan.completion_target,
+        checks={r.obligation: r.outcome.value + (': ' + UNAVAILABLE_REASONS[r.reason] if r.reason else '')
+                for r in state.receipts})
     if state.phase == 'proposal' and not state.approved:
         result['approval_arguments'] = arguments(state)
         result['plan'] = state.plan.to_dict()
@@ -76,8 +82,8 @@ def validate_spec(spec):
         missing, extra = sorted(expected - set(spec)), sorted(set(spec) - expected)
         raise ValueError('spec fields: missing ' + (', '.join(missing) or 'none')
                          + '; unsupported ' + (', '.join(k for k in extra if k.isidentifier()) or 'none'))
-    if type(spec['seconds']) is not int or not 30 <= spec['seconds'] <= 1800:
-        raise ValueError('cpipe requires a bounded 30..1800 second budget')
+    if type(spec['seconds']) is not int or not 30 <= spec['seconds'] <= 7200:
+        raise ValueError('cpipe requires a bounded 30..7200 second budget')
     for key in ('acceptance', 'non_goals', 'write_paths', 'forbidden_paths', 'checks'):
         if type(spec[key]) is not list:
             raise ValueError('cpipe requires explicit list fields')
@@ -135,7 +141,7 @@ def from_spec(service, spec, *, session_id, profile_id, approach=''):
     p = ExecutionPlan(envelope=e, worktree=str(root), common_git_dir=artifact.common_git_dir,
         base_commit=artifact.head, goal=spec['goal'], acceptance=tuple(spec['acceptance']),
         non_goals=tuple(spec['non_goals']), write_paths=tuple(spec['write_paths']),
-        forbidden_paths=tuple(spec['forbidden_paths']), actors=actors, budget=Budget(spec['seconds'], 8),
+        forbidden_paths=tuple(spec['forbidden_paths']), actors=actors, budget=Budget(spec['seconds'], CALLS),
         policy_id='local-only', check_definition='frozen-command',
         checks=tuple(c.identity() for c in checks) + (review_identity(),), interactive=False,
         repair_allowed=False, transient_retries=0, completion_target='local_only', expires_at=now + APPROVAL_WINDOW + spec['seconds'],
@@ -161,7 +167,8 @@ def cancel(service, delivery_id, *, session_id, profile_id):
     return summary(state)
 
 
-def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None, evidence_root):
+def ready(service, delivery_id, session_id, profile_id):
+    """Refuse execution unless the delivery is approved, unchanged and runnable; return its frozen checks."""
     state = owned(service, delivery_id, session_id, profile_id)
     if not state.approved:
         raise ValueError('execution requires an approved frozen envelope')
@@ -177,6 +184,11 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                    for c in json.loads(row[0]))
     if tuple(c.identity() for c in checks) + (review_identity(),) != state.plan.checks:
         raise ValueError('frozen check environment changed')
+    return state, checks
+
+
+def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None, evidence_root):
+    state, checks = ready(service, delivery_id, session_id, profile_id)
     if conn is None:
         h.kb.init_db()
         with closing(h.connect(None)) as conn:

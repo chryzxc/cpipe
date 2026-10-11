@@ -4,7 +4,7 @@ import pytest
 from cpipe.delivery.contracts import Outcome, Receipt
 from cpipe.delivery.findings import Finding
 from cpipe.delivery.schema import ExecutionPlan
-from cpipe.delivery.service import Event, State, Verification, apply
+from cpipe.delivery.service import WRITE_TEST_ROUNDS, Event, State, Verification, apply
 from .test_execution_plan import plan
 
 
@@ -158,12 +158,15 @@ def test_missing_observation_or_setup_failure_never_creates_red_or_green():
                                 receipts=(receipt(state, outcome=Outcome.UNAVAILABLE),))
     assert unavailable.phase == "implementing"
     assert unavailable.receipts[-1].outcome is Outcome.UNAVAILABLE
-    written = claim(unavailable, actor_id="forge", worker_session="builder-1")
-    retest, _ = step(written, "activity_observed", "tests", actor_id="forge", result_artifact="tree2")
-    retest = claim(retest)
-    again, _ = step(retest, "activity_observed", "diagnose",
-                    receipts=(receipt(retest, outcome=Outcome.PASS),))
-    assert again.phase == "diagnosis"  # still no RED after writing tests
+    again = unavailable
+    for round_ in range(2, WRITE_TEST_ROUNDS + 2):
+        written = claim(again, actor_id="forge", worker_session="builder-1")
+        retest, _ = step(written, "activity_observed", "tests", actor_id="forge", result_artifact=f"tree{round_}")
+        retest = claim(retest)
+        last = round_ == WRITE_TEST_ROUNDS + 1
+        again, _ = step(retest, "activity_observed", "diagnose" if last else "write_tests",
+                        receipts=(receipt(retest, outcome=Outcome.PASS),))
+    assert again.phase == "diagnosis"  # still no RED after every write_tests round
 
 
 def test_reviewer_cannot_use_builder_session_or_old_partial_range():
@@ -300,3 +303,22 @@ def test_event_roundtrip_keeps_complete_provenance_and_rejects_unknown_authority
     serialized["approve_merge"] = True
     with pytest.raises(ValueError):
         Event.from_dict(serialized)
+
+
+def test_broken_checks_go_back_to_the_builder_but_a_missing_command_waits():
+    state = start()
+    state, _ = step(state, "envelope_approved", "tests")
+    state = claim(state)
+    state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
+    state = claim(state, "forge", "builder-session")
+    state, _ = step(state, "activity_observed", "checks", actor_id="forge", result_artifact="tree2")
+    checking = claim(state)
+    crashed, _ = step(checking, "activity_observed", "implement",
+                      receipts=(receipt(checking, outcome=Outcome.UNAVAILABLE, observed=False, reason="test_crashed"),))
+    assert crashed.phase == "implementing"
+    missing, _ = step(checking, "activity_observed", "diagnose",
+                      receipts=(receipt(checking, outcome=Outcome.UNAVAILABLE, observed=False, reason="command_not_found"),))
+    assert missing.phase == "waiting"
+    first = claim(step(start(), "envelope_approved", "tests")[0])
+    assert step(first, "activity_observed", "diagnose", receipts=(receipt(
+        first, outcome=Outcome.UNAVAILABLE, observed=False, reason="command_not_found"),))[0].phase == "waiting"

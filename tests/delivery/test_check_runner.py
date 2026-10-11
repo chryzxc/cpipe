@@ -226,3 +226,33 @@ def test_credentials_and_test_output_are_not_retained_in_evidence(repo, tmp_path
         assert evidence and all(p.suffix != '.xml' for p in evidence)
         assert not any('DO_NOT_RETAIN_TEST_VALUE' in p.read_text() for p in evidence if p.is_file())
         assert '[REDACTED]' in next(p for p in evidence if p.suffix == '.json').read_text()
+
+
+VITEST = ('<testsuites><testsuite name="tests/price.test.js" tests="2">'
+          '<testcase classname="tests/price.test.js" name="price &gt; rounds up">{case}</testcase>'
+          '<testcase classname="tests/price.test.js" name="price &gt; keeps cents"/></testsuite></testsuites>')
+
+
+@pytest.mark.parametrize('criterion, case, code, outcome, reason', [
+    # vitest names cases "describe > title"; the bare title is the approved criterion.
+    ('rounds up', '<failure message="expected 2 to be 3" type="AssertionError"/>', 1, Outcome.FAIL, ''),
+    ('price > rounds up', '', 0, Outcome.PASS, ''),
+    ('rounds up', '<failure message="price is not a function" type="TypeError"/>', 1,
+     Outcome.UNAVAILABLE, 'test_crashed'),
+    ('rounds down', '', 0, Outcome.UNAVAILABLE, 'criterion_not_found'),
+    ('s up', '', 0, Outcome.UNAVAILABLE, 'criterion_not_found'),  # whole words only
+])
+def test_vitest_reports_match_titles_and_say_why_unavailable(repo, tmp_path, criterion, case, code, outcome, reason):
+    report = tmp_path / 'junit.xml'
+    report.write_text(VITEST.format(case=case))
+    spec = sh(f'cp {report} "$1"; exit {code}', (criterion,), report=True)
+    journal, service, state, spec = setup_check(repo, tmp_path, spec=spec)
+    with journal:
+        receipt = execute(state, spec, tmp_path)
+        assert (receipt.outcome, receipt.reason) == (outcome, reason)
+
+
+def test_missing_command_says_so(repo, tmp_path):
+    journal, service, state, spec = setup_check(repo, tmp_path, spec=sh('exit 127'))
+    with journal:
+        assert execute(state, spec, tmp_path).reason == 'command_not_found'

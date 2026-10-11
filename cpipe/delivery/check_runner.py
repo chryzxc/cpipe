@@ -148,57 +148,70 @@ _EXCEPTION = re.compile(r'([\w.]*?)(?:Error|Exception)\b')
 
 
 def _harness(failure):
-    match = _EXCEPTION.match(failure.attrib.get('message') or (failure.text or '').strip())
+    # vitest/jest put the error class in type=; pytest leads the message with it.
+    kind = failure.attrib.get('type') or failure.attrib.get('message') or (failure.text or '').strip()
+    match = _EXCEPTION.match(kind)
     return bool(match) and match.group(1).rsplit('.', 1)[-1] not in {'', 'Assertion'}
 
 
+def _named(case, criterion):
+    name = case.attrib['name']
+    # vitest ("describe > test") and jest ("describe test") prefix describe titles.
+    return criterion in (name, f"{case.attrib.get('classname', '')}::{name}") or name.endswith(' ' + criterion)
+
+
 def _junit(spec, code, raw):
+    """(outcome, reason); reason is a fixed label, never report text."""
     if not raw or b'<!DOCTYPE' in raw or b'<!ENTITY' in raw:
-        return Outcome.UNAVAILABLE
+        return Outcome.UNAVAILABLE, 'no_report'
     try:
         root = ET.fromstring(raw)
         if root.tag not in {'testsuites', 'testsuite'}:
-            return Outcome.UNAVAILABLE
+            return Outcome.UNAVAILABLE, 'no_report'
         cases = list(root.iter('testcase'))
         if not cases:
-            return Outcome.UNAVAILABLE
-        # A criterion names exactly one reported case, as classname::name or name.
-        # Missing, duplicate or skipped criteria cannot stand in for a behavioral test.
+            return Outcome.UNAVAILABLE, 'no_test_cases'
+        # A criterion names exactly one reported case. Missing, duplicate or
+        # skipped criteria cannot stand in for a behavioral test.
         watched = []
         for criterion in spec.criteria:
-            hits = [c for c in cases if criterion in
-                    (f"{c.attrib.get('classname', '')}::{c.attrib['name']}", c.attrib['name'])]
+            hits = [c for c in cases if _named(c, criterion)]
             if len(hits) != 1:
-                return Outcome.UNAVAILABLE
+                return Outcome.UNAVAILABLE, 'criterion_not_found' if not hits else 'criterion_ambiguous'
             watched.append(hits[0])
         watched = watched or cases
-        if any(c.find('skipped') is not None or c.find('error') is not None for c in watched):
-            return Outcome.UNAVAILABLE
+        if any(c.find('skipped') is not None for c in watched):
+            return Outcome.UNAVAILABLE, 'test_skipped'
+        if any(c.find('error') is not None for c in watched):
+            return Outcome.UNAVAILABLE, 'test_crashed'
         mine = [c.find('failure') for c in watched if c.find('failure') is not None]
         if any(_harness(f) for f in mine):
-            return Outcome.UNAVAILABLE
+            return Outcome.UNAVAILABLE, 'test_crashed'
         if code == 0 and not any(c.find('failure') is not None for c in cases):
-            return Outcome.PASS
+            return Outcome.PASS, ''
         if code != 0 and mine:
-            return Outcome.FAIL
+            return Outcome.FAIL, ''
+        return Outcome.UNAVAILABLE, 'other_failures'
     except (ET.ParseError, KeyError, ValueError, TypeError):
-        pass
-    return Outcome.UNAVAILABLE
+        return Outcome.UNAVAILABLE, 'no_report'
 
 
 def _outcome(spec, observed):
+    """(outcome, reason); see contracts.UNAVAILABLE_REASONS."""
     if observed is None:
-        return Outcome.UNAVAILABLE
+        return Outcome.UNAVAILABLE, 'timed_out'
     code, output, raw = observed
-    if code < 0 or code in _NOT_RUN:
-        return Outcome.UNAVAILABLE
+    if code in _NOT_RUN:
+        return Outcome.UNAVAILABLE, 'command_not_found'
+    if code < 0:
+        return Outcome.UNAVAILABLE, 'killed'
     if spec.reported:
         return _junit(spec, code, raw)
     # Exit code alone cannot tell a failing test from one that never ran
     # (compile/import error), so every criterion must appear in the output.
     if not all(c.encode() in output for c in spec.criteria):
-        return Outcome.UNAVAILABLE
-    return Outcome.PASS if code == 0 else Outcome.FAIL
+        return Outcome.UNAVAILABLE, 'criteria_not_in_output'
+    return (Outcome.PASS if code == 0 else Outcome.FAIL), ''
 
 
 def observe_check(state, spec, *, evidence_root):
@@ -229,12 +242,12 @@ def observe_check(state, spec, *, evidence_root):
         raise ValueError('artifact changed during read-only check')
     if _environment(spec.argv[0])[1] != environment:
         raise ValueError('environment changed during check execution')
-    outcome = _outcome(spec, observed)
+    outcome, reason = _outcome(spec, observed)
     code = observed[0] if observed else None
     observed = None  # Never persist report text or test output.
     receipt = Receipt(spec.obligation, before.digest, state.plan.envelope.scope,
                       definition.inputs, environment, definition.command, outcome,
-                      outcome in {Outcome.PASS, Outcome.FAIL})
+                      outcome in {Outcome.PASS, Outcome.FAIL}, reason)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     # Parameterized IDs can embed credentials even in an approved criterion.
     # Persist their identity hashes, never the raw criterion strings.
