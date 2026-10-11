@@ -1,5 +1,6 @@
 """Task-oriented receipt, editable approach, and actual approval boundaries."""
 import json
+import sys
 import re
 import stat
 import time
@@ -32,7 +33,8 @@ def run_context(repo, hermes_home, monkeypatch):
     spec = dict(worktree=str(repo), repo='local/fixture', base='feature', goal='Fix double returning the input',
                 acceptance=['double returns n * 2'], non_goals=['No publication'], write_paths=['double.py'],
                 forbidden_paths=['.git', 'internal'], builder='builder', reviewer='reviewer', seconds=300,
-                checks=[dict(obligation='behavior', targets=['test_behavior.py'],
+                checks=[dict(obligation='behavior', argv=[sys.executable, '-m', 'pytest', 'test_behavior.py', '-q',
+                             '-p', 'no:cacheprovider', '--junitxml={report}'],
                              criteria=['test_behavior::test_double'], timeout_seconds=20)])
     approach = dict(kind='bug', depth='focused', risk='normal', summary='Return twice the input.',
                     evidence=['double(2) returns 2; expected 4.'], steps=['Change the return expression.'],

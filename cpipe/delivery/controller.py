@@ -10,7 +10,7 @@ import time
 import uuid
 
 from .artifact import validate_worktree
-from .check_runner import PytestCheck
+from .check_runner import CommandCheck
 from .contracts import Envelope, Budget
 from .schema import ExecutionPlan
 from .service import Service, Event
@@ -45,9 +45,9 @@ def propose(service, plan, checks):
             or plan.interactive or plan.repair_allowed or plan.transient_retries
             or any(a.engine != 'hermes' for a in plan.actors)
             or len({a.profile for a in plan.actors}) != 2
-            or len(checks) == 0 or any(type(c) is not PytestCheck for c in checks)
+            or len(checks) == 0 or any(type(c) is not CommandCheck for c in checks)
             or tuple(c.identity() for c in checks) + (review_identity(),) != plan.checks):
-        raise ValueError('cpipe supports explicit local-only Hermes execution with pytest and independent review')
+        raise ValueError('cpipe supports explicit local-only Hermes execution with frozen checks and independent review')
     artifact = validate_worktree(plan)
     now = int(time.time())
     e = plan.envelope
@@ -55,9 +55,8 @@ def propose(service, plan, checks):
         plan.digest(), artifact.digest, 0, now, session_id=e.session_id, profile_id=e.profile_id, plan=plan))
     # Specs are frozen alongside the projection; replay may never change them.
     key = 'check-spec:' + plan.digest()
-    payload = encoded([dict(obligation=c.obligation, targets=list(c.targets), criteria=list(c.criteria),
-                          timeout_seconds=c.timeout_seconds, **({'python': c.python} if c.python else {}))
-                       for c in checks])
+    payload = encoded([dict(obligation=c.obligation, argv=list(c.argv), criteria=list(c.criteria),
+                          timeout_seconds=c.timeout_seconds) for c in checks])
     row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?', (key,)).fetchone()
     if row and row[0] != payload:
         raise ValueError('check definition changed')
@@ -84,24 +83,22 @@ def validate_spec(spec):
         raise ValueError('worktree must be an absolute non-symlink directory')
     artifact = fingerprint(root)
     checks = []
-    venv = root / '.venv' / 'bin' / 'python'
     for item in spec['checks']:
-        fields = {'obligation', 'targets', 'criteria', 'timeout_seconds'}
-        if type(item) is not dict or not fields <= set(item) <= fields | {'python'}:
-            raise ValueError('invalid frozen pytest specification')
-        if type(item['targets']) is not list or type(item['criteria']) is not list:
-            raise ValueError('invalid frozen pytest test lists')
-        python = item.get('python', str(venv) if venv.exists() else '')
-        checks.append(PytestCheck(item['obligation'], tuple(item['targets']), tuple(item['criteria']),
-                                  item['timeout_seconds'], python))
+        fields = {'obligation', 'argv', 'timeout_seconds'}
+        if type(item) is not dict or not fields <= set(item) <= fields | {'criteria'}:
+            raise ValueError('each check needs obligation, argv, timeout_seconds and optional criteria')
+        if type(item['argv']) is not list or type(item.get('criteria', [])) is not list:
+            raise ValueError('check argv and criteria must be lists')
+        checks.append(CommandCheck(item['obligation'], tuple(item['argv']), tuple(item.get('criteria', [])),
+                                   item['timeout_seconds']))
     checks = tuple(checks)
-    if not any(c.obligation == 'behavior' for c in checks):
+    behavior = [c for c in checks if c.obligation == 'behavior']
+    if not behavior:
         raise ValueError('one check must have obligation "behavior": the test proving this change, run before implementing')
-    import importlib.util
-    if any(not c.python for c in checks) and importlib.util.find_spec('pytest') is None:
-        raise ValueError('no project interpreter with pytest; set checks[].python (e.g. <worktree>/.venv/bin/python)')
+    if not behavior[0].criteria:
+        raise ValueError('the behavior check needs criteria naming the test that proves the change')
     for c in checks:
-        c.identity()  # probes the interpreter now, not after approval
+        c.identity()  # resolves the program now, not after approval
     actors = (observe_actor('builder', spec['builder']), observe_actor('reviewer', spec['reviewer']))
     if len({a.profile for a in actors}) != 2 or not checks:
         raise ValueError('distinct builder/reviewer profiles and checks are required')
@@ -135,7 +132,7 @@ def from_spec(service, spec, *, session_id, profile_id, approach=''):
         base_commit=artifact.head, goal=spec['goal'], acceptance=tuple(spec['acceptance']),
         non_goals=tuple(spec['non_goals']), write_paths=tuple(spec['write_paths']),
         forbidden_paths=tuple(spec['forbidden_paths']), actors=actors, budget=Budget(spec['seconds'], 8),
-        policy_id='v2-local-only', check_definition='v2-frozen-pytest',
+        policy_id='v2-local-only', check_definition='v2-frozen-command',
         checks=tuple(c.identity() for c in checks) + (review_identity(),), interactive=False,
         repair_allowed=False, transient_retries=0, completion_target='local_only', expires_at=now + APPROVAL_WINDOW + spec['seconds'],
         approach=approach)
@@ -172,8 +169,8 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                                     ('check-spec:' + state.plan.digest(),)).fetchone()
     if not row:
         raise ValueError('missing frozen check specifications')
-    checks = tuple(PytestCheck(c['obligation'], tuple(c['targets']), tuple(c['criteria']), c['timeout_seconds'],
-                               c.get('python', '')) for c in json.loads(row[0]))
+    checks = tuple(CommandCheck(c['obligation'], tuple(c['argv']), tuple(c['criteria']), c['timeout_seconds'])
+                   for c in json.loads(row[0]))
     if tuple(c.identity() for c in checks) + (review_identity(),) != state.plan.checks:
         raise ValueError('frozen check environment changed')
     if conn is None:

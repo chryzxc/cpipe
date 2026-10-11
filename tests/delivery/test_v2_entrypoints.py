@@ -8,7 +8,7 @@ import pytest
 from cpipe.delivery.journal import Journal
 from cpipe.delivery.service import Event, Service
 from .test_artifact import repo, git
-from .test_check_runner import setup_check
+from .test_check_runner import setup_check, pytest_check
 
 
 class Context:
@@ -71,12 +71,11 @@ def test_slash_status_reads_v2_journal(repo, tmp_path, hermes_home, monkeypatch)
 
 def test_controller_uses_real_red_green_and_independent_review(repo, tmp_path):
     from cpipe.delivery.controller import propose, run
-    from cpipe.delivery.check_runner import PytestCheck
     from cpipe.delivery.workers import WorkerResult
     from cpipe.delivery.review import REVIEW_AXES
     from cpipe.runtime import hermes_api as h
     from .test_execution_plan import plan
-    spec = PytestCheck('behavior', ('test_behavior.py',), ('test_behavior::test_double',), 20)
+    spec = pytest_check(timeout=20)
     (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
     p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
         base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=int(time.time()) + 300,

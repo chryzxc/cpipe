@@ -1,9 +1,12 @@
-"""Trusted, local pytest observation adapter; no model-authored green receipts.
+"""Trusted, local check observation adapter; no model-authored green receipts.
 
-The approved command and exact criterion IDs are frozen. Pytest's JUnit report
-travels through a bounded in-memory pipe: raw assertion text, credentials and
-captured output never enter an evidence file or journal. Saved evidence contains
-only approved criterion identity hashes, outcomes and ``[REDACTED]`` detail markers.
+A check is the repository's own test command (any language), run in the
+worktree. The approved argv and criteria are frozen. Outcomes come from a JUnit
+report when the argv names ``{report}``, else from the exit code plus the
+criteria appearing in the output. Report and output stay in memory or a private
+temporary directory: raw assertion text, credentials and captured output never
+enter an evidence file or journal. Saved evidence contains only criterion
+identity hashes, outcomes and ``[REDACTED]`` detail markers.
 
 This adapter observes an unsandboxed subprocess. Before/after source fingerprints
 are regression fences, not prevention of arbitrary filesystem/network access.
@@ -12,191 +15,193 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-import importlib.metadata
-import json
 import os
 from pathlib import Path
+import re
 import select
+import shutil
 import signal
 import subprocess
-import sys
+import tempfile
 import time
 import uuid
 import xml.etree.ElementTree as ET
 
 from .artifact import fingerprint, validate_worktree
-from .contracts import Outcome, Receipt, identity, relative_path, string_tuple
+from .contracts import Outcome, Receipt, identity, string_tuple
 from .journal import encoded
 from .schema import CheckIdentity
 
 MAX_REPORT = 2 * 1024 * 1024
+REPORT = '{report}'
+# Shell conventions: cannot execute / not found. Never behavioral RED.
+_NOT_RUN = {126, 127}
 
 
 def _digest(value):
     return hashlib.sha256(encoded(value).encode()).hexdigest()
 
 
-# Run by the project's interpreter, never Hermes', so its own packages are hashed.
-_PROBE = ('import importlib.metadata as m, importlib.util as u, json, sys; print(json.dumps([sys.prefix, '
-          'sys.version, sys.platform, u.find_spec("pytest") is not None, '
-          'sorted({(d.metadata["Name"], d.version) for d in m.distributions()})]))')
-
-
-def _interpreter(python, env):
-    if not python:
-        packages = sorted({(d.metadata['Name'], d.version) for d in importlib.metadata.distributions()})
-        return [sys.executable, sys.prefix, sys.version, sys.platform, packages]
-    try:
-        out = subprocess.run([python, '-I', '-c', _PROBE], env=env, stdin=subprocess.DEVNULL,
-                             capture_output=True, timeout=30, check=True).stdout
-        prefix, version, platform, has_pytest, packages = json.loads(out)
-    except (OSError, ValueError, subprocess.SubprocessError):
-        raise ValueError('check interpreter is unavailable') from None
-    if not has_pytest:
-        raise ValueError('check interpreter has no pytest installed')
-    return [python, prefix, version, platform, [tuple(p) for p in packages]]
-
-
-def _environment(python=''):
+def _environment(program):
     # Checks deliberately do not inherit arbitrary settings or credentials.
     # Hash only the safe, explicitly selected subprocess definition. Secret
     # values must never enter persisted identities, even through a hash.
+    # ponytail: the resolved program is hashed, not the project's installed
+    # dependencies; lockfiles are already in the artifact fingerprint.
     from ..runtime.envpolicy import Redactor
     safe = ('PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TMPDIR')
     redact = Redactor(os.environ)
     env = {name: os.environ[name] for name in safe if name in os.environ
            and redact(os.environ[name]) == os.environ[name]}
-    env.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', PYTEST_ADDOPTS='')
-    return env, _digest([*_interpreter(python, env), sorted(env.items())])
+    env['CI'] = '1'  # Non-interactive: no watch modes or prompts.
+    path = program if os.path.isabs(program) else shutil.which(program, path=env.get('PATH'))
+    if not path or not os.access(path, os.X_OK):
+        raise ValueError('check program is not installed or not on PATH')
+    return env, _digest([os.path.realpath(path), sorted(env.items())])
 
 
 @dataclass(frozen=True)
-class PytestCheck:
+class CommandCheck:
     obligation: str
-    targets: tuple[str, ...]
-    criteria: tuple[str, ...]
+    argv: tuple[str, ...]
+    criteria: tuple[str, ...] = ()
     timeout_seconds: int = 120
-    python: str = ''  # project interpreter; empty means the host's own
 
     def __post_init__(self):
         identity(self.obligation, 'obligation')
-        string_tuple(self.targets, 'pytest targets')
-        string_tuple(self.criteria, 'pytest criteria')
-        if not self.targets or not self.criteria:
-            raise ValueError('exact test targets and criteria are required')
-        for target in self.targets:
-            relative_path(target)
-            if not target.endswith('.py') or target.startswith('-'):
-                raise ValueError('pytest targets must be explicit relative Python files')
-        if type(self.timeout_seconds) is not int or not 0 < self.timeout_seconds <= 600:
-            raise ValueError('invalid pytest timeout')
-        if type(self.python) is not str or (self.python and not os.path.isabs(self.python)):
-            raise ValueError('check interpreter must be an absolute path')
+        if type(self.argv) is not tuple or not self.argv:
+            raise ValueError('check command must be a non-empty argv list')
+        for arg in self.argv:
+            if type(arg) is not str or '\0' in arg:
+                raise ValueError('invalid check command')
+        identity(self.argv[0], 'check program')
+        if '/' in self.argv[0] and not os.path.isabs(self.argv[0]):
+            raise ValueError('check program must be on PATH or an absolute path')
+        if sum(REPORT in arg for arg in self.argv) > 1:
+            raise ValueError('check command may name {report} once')
+        string_tuple(self.criteria, 'check criteria')
+        if type(self.timeout_seconds) is not int or not 0 < self.timeout_seconds <= 1800:
+            raise ValueError('invalid check timeout')
 
-    def argv(self, report):
-        return [self.python or sys.executable, '-m', 'pytest', *self.targets, '-q', '-o', 'addopts=',
-                '-o', 'junit_family=xunit2', f'--junitxml={report}']
+    @property
+    def reported(self):
+        return any(REPORT in arg for arg in self.argv)
+
+    def command(self, report):
+        return [arg.replace(REPORT, report) for arg in self.argv]
 
     def identity(self):
-        return CheckIdentity(self.obligation, _digest([self.targets, self.criteria]),
-            _environment(self.python)[1], _digest([self.argv('<private-report-pipe>'), self.timeout_seconds]))
+        return CheckIdentity(self.obligation, _digest([self.argv, self.criteria]),
+            _environment(self.argv[0])[1], _digest([self.argv, self.timeout_seconds]))
 
 
 def _run(spec, worktree, env, timeout):
-    # /dev/fd is supported on the macOS/Linux native runtimes targeted here.
-    # No shell, raw report file, inherited stdin, or raw process output log.
-    if os.name != 'posix' or not Path('/dev/fd').is_dir():
-        return None, None
-    read_fd, write_fd = os.pipe()
-    os.set_blocking(read_fd, False)
+    """Return (exit code, output tail, report) or None when the run was not observed."""
+    output = bytearray()
     process = None
-    data = bytearray()
-    oversized = False
-    timed_out = False
-    try:
-        process = subprocess.Popen(spec.argv(f'/dev/fd/{write_fd}'), cwd=worktree, env=env,
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            pass_fds=(write_fd,), start_new_session=True)
-        os.close(write_fd)
-        write_fd = None
-        deadline = time.monotonic() + timeout
-        while True:
-            if time.monotonic() >= deadline:
-                timed_out = True
-                break
-            readable, _, _ = select.select([read_fd], [], [], min(.1, max(0, deadline - time.monotonic())))
-            if readable:
-                chunk = os.read(read_fd, 65536)
-                if not chunk:
+    with tempfile.TemporaryDirectory(prefix='cpipe-check-') as private:
+        report = os.path.join(private, 'report.xml')
+        try:
+            process = subprocess.Popen(spec.command(report), cwd=worktree, env=env,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                start_new_session=True)
+            fd = process.stdout.fileno()
+            os.set_blocking(fd, False)
+            deadline = time.monotonic() + timeout
+            while True:
+                if time.monotonic() >= deadline:
+                    return None
+                readable, _, _ = select.select([fd], [], [], min(.1, max(0, deadline - time.monotonic())))
+                if readable:
+                    chunk = os.read(fd, 65536)
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+                    del output[:-MAX_REPORT]  # Keep the tail; criteria are searched in memory only.
+                elif process.poll() is not None:
                     break
-                if len(data) + len(chunk) > MAX_REPORT:
-                    oversized = True
-                    data.clear()
-                elif not oversized:
-                    data.extend(chunk)
-            elif process.poll() is not None:
-                break
-        if timed_out:
-            os.killpg(process.pid, signal.SIGKILL)
-        code = process.wait(timeout=max(.1, deadline - time.monotonic()) if not timed_out else 5)
-        return (None, None) if timed_out or oversized else (code, bytes(data))
-    except (OSError, subprocess.TimeoutExpired):
-        return None, None
-    finally:
-        if process is not None:
-            # Terminate any same-group descendants too; escaping descendants
-            # are outside this observer's boundary (no confinement is claimed).
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):  # macOS: EPERM once only zombies remain
-                pass
-            process.wait(timeout=5)
-        os.close(read_fd)
-        if write_fd is not None:
-            os.close(write_fd)
-        data.clear()
+            code = process.wait(timeout=max(.1, deadline - time.monotonic()))
+            raw = None
+            if spec.reported and os.path.isfile(report) and os.path.getsize(report) <= MAX_REPORT:
+                raw = Path(report).read_bytes()
+            return code, bytes(output), raw
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        finally:
+            if process is not None:
+                # Terminate any same-group descendants too; escaping descendants
+                # are outside this observer's boundary (no confinement is claimed).
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):  # macOS: EPERM once only zombies remain
+                    pass
+                process.wait(timeout=5)
+                process.stdout.close()
+            output.clear()
 
 
-def _outcome(spec, code, raw):
-    if code not in {0, 1} or not raw or b'<!DOCTYPE' in raw or b'<!ENTITY' in raw:
+# "RuntimeError: ...", "TypeError: ..." are harness/runtime failures, not behavioral
+# RED. Assertion messages ("assert ...", "AssertionError", jest's bare "Error: expect(...)") are.
+# ponytail: only runners that lead the message with the exception type (pytest, vitest, jest)
+# are told apart; node:test hides it in the trace, so its crashes count as RED.
+_EXCEPTION = re.compile(r'([\w.]*?)(?:Error|Exception)\b')
+
+
+def _harness(failure):
+    match = _EXCEPTION.match(failure.attrib.get('message') or (failure.text or '').strip())
+    return bool(match) and match.group(1).rsplit('.', 1)[-1] not in {'', 'Assertion'}
+
+
+def _junit(spec, code, raw):
+    if not raw or b'<!DOCTYPE' in raw or b'<!ENTITY' in raw:
         return Outcome.UNAVAILABLE
     try:
         root = ET.fromstring(raw)
         if root.tag not in {'testsuites', 'testsuite'}:
             return Outcome.UNAVAILABLE
-        suites = list(root.iter('testsuite'))
         cases = list(root.iter('testcase'))
-        if not suites or not cases:
+        if not cases:
             return Outcome.UNAVAILABLE
-        if sum(int(s.attrib['tests']) for s in suites) != len(cases):
-            return Outcome.UNAVAILABLE
-        names = [f"{c.attrib['classname']}::{c.attrib['name']}" for c in cases]
-        # Exact expected coverage; duplicate, skipped, extra or missing criteria
-        # cannot stand in for an approved behavioral test.
-        if len(set(names)) != len(names) or set(names) != set(spec.criteria):
-            return Outcome.UNAVAILABLE
-        failures = []
-        for case in cases:
-            if case.find('skipped') is not None or case.find('error') is not None:
+        # A criterion names exactly one reported case, as classname::name or name.
+        # Missing, duplicate or skipped criteria cannot stand in for a behavioral test.
+        watched = []
+        for criterion in spec.criteria:
+            hits = [c for c in cases if criterion in
+                    (f"{c.attrib.get('classname', '')}::{c.attrib['name']}", c.attrib['name'])]
+            if len(hits) != 1:
                 return Outcome.UNAVAILABLE
-            failure = case.find('failure')
-            if failure is not None:
-                message = failure.attrib.get('message', '')
-                # Harness/runtime exceptions are unavailable, not behavioral RED.
-                if not (message.startswith('assert ') or message == 'AssertionError'
-                        or message.startswith('AssertionError:')):
-                    return Outcome.UNAVAILABLE
-                failures.append(failure)
-        if code == 0 and not failures:
+            watched.append(hits[0])
+        watched = watched or cases
+        if any(c.find('skipped') is not None or c.find('error') is not None for c in watched):
+            return Outcome.UNAVAILABLE
+        mine = [c.find('failure') for c in watched if c.find('failure') is not None]
+        if any(_harness(f) for f in mine):
+            return Outcome.UNAVAILABLE
+        if code == 0 and not any(c.find('failure') is not None for c in cases):
             return Outcome.PASS
-        if code == 1 and failures:
+        if code != 0 and mine:
             return Outcome.FAIL
     except (ET.ParseError, KeyError, ValueError, TypeError):
         pass
     return Outcome.UNAVAILABLE
 
 
-def observe_pytest(state, spec, *, evidence_root):
+def _outcome(spec, observed):
+    if observed is None:
+        return Outcome.UNAVAILABLE
+    code, output, raw = observed
+    if code < 0 or code in _NOT_RUN:
+        return Outcome.UNAVAILABLE
+    if spec.reported:
+        return _junit(spec, code, raw)
+    # Exit code alone cannot tell a failing test from one that never ran
+    # (compile/import error), so every criterion must appear in the output.
+    if not all(c.encode() in output for c in spec.criteria):
+        return Outcome.UNAVAILABLE
+    return Outcome.PASS if code == 0 else Outcome.FAIL
+
+
+def observe_check(state, spec, *, evidence_root):
     if not state.approved:
         raise ValueError('check requires approved execution authority')
     if state.activity not in {'tests', 'checks'}:
@@ -215,17 +220,18 @@ def observe_pytest(state, spec, *, evidence_root):
     root = Path(evidence_root).absolute()
     if root.resolve() != root or root.is_relative_to(Path(state.plan.worktree)):
         raise ValueError('evidence must be outside source in a non-symlink directory')
-    env, environment = _environment(spec.python)
+    env, environment = _environment(spec.argv[0])
     if environment != definition.environment:
         raise ValueError('environment changed before check execution')
-    code, raw = _run(spec, state.plan.worktree, env, min(spec.timeout_seconds, remaining))
+    observed = _run(spec, state.plan.worktree, env, min(spec.timeout_seconds, remaining))
     after = fingerprint(state.plan.worktree)
     if after != before:
         raise ValueError('artifact changed during read-only check')
-    if _environment(spec.python)[1] != environment:
+    if _environment(spec.argv[0])[1] != environment:
         raise ValueError('environment changed during check execution')
-    outcome = _outcome(spec, code, raw)
-    raw = None  # Never persist report text or test output.
+    outcome = _outcome(spec, observed)
+    code = observed[0] if observed else None
+    observed = None  # Never persist report text or test output.
     receipt = Receipt(spec.obligation, before.digest, state.plan.envelope.scope,
                       definition.inputs, environment, definition.command, outcome,
                       outcome in {Outcome.PASS, Outcome.FAIL})
