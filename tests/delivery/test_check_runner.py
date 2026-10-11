@@ -28,7 +28,7 @@ def setup_check(repo, tmp_path, source=None, *, timeout=20,
     now = int(time.time())
     p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
              base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=now + 300,
-             envelope=replace(plan().envelope, required=('behavior',)),
+             envelope=replace(plan().envelope, required=(spec.obligation,)),
              checks=(spec.identity(),), write_paths=write_paths or plan().write_paths)
     journal = Journal(tmp_path / 'checks.db')
     service = Service(journal)
@@ -256,3 +256,32 @@ def test_missing_command_says_so(repo, tmp_path):
     journal, service, state, spec = setup_check(repo, tmp_path, spec=sh('exit 127'))
     with journal:
         assert execute(state, spec, tmp_path).reason == 'command_not_found'
+
+
+def test_failures_already_there_before_the_change_do_not_block(repo, tmp_path):
+    from dataclasses import replace as swap
+    from cpipe.delivery.check_runner import take_baseline
+    out = tmp_path / 'out'
+    out.write_text('other/app.vue\n  1:1  error  name should be multi-word\n')
+    lint = swap(sh(f'cat {out}; exit 1', ()), obligation='lint')
+    report = tmp_path / 'junit.xml'
+    report.write_text(JUNIT.format(case='').replace('<testcase classname="src/price.test.ts" name="price keeps cents"/>',
+        '<testcase classname="src/price.test.ts" name="price keeps cents"><failure/></testcase>'))
+    unit = swap(sh(f'cp {report} "$1"; exit 1', ('price rounds up',), report=True), obligation='regression')
+    for spec, new in ((lint, 'mine.vue\n  3:1  error  unused variable\n'),
+                      (unit, '<testcase classname="src/x.test.ts" name="x"><failure/></testcase></testsuite>')):
+        journal, service, state, spec = setup_check(repo, tmp_path, spec=spec)
+        with journal:
+            before = execute(state, spec, tmp_path)
+            assert before.outcome is not Outcome.PASS  # no baseline yet: every failure counts
+            take_baseline(state, (spec,), evidence_root=tmp_path / 'evidence')
+            if spec is lint:
+                out.write_text(out.read_text().replace('1:1', '2:7'))  # same error, moved
+            assert (execute(state, spec, tmp_path).outcome, execute(state, spec, tmp_path).reason) == (
+                Outcome.PASS, 'pre_existing')
+            target = out if spec is lint else report
+            target.write_text(target.read_text() + new if spec is lint
+                              else target.read_text().replace('</testsuite>', new, 1))
+            assert execute(state, spec, tmp_path).outcome is not Outcome.PASS  # a new failure blocks
+        (tmp_path / 'evidence' / 'baseline').joinpath('d1.json').unlink()
+        (tmp_path / 'checks.db').unlink()

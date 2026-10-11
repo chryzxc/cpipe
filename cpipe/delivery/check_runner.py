@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -214,6 +215,64 @@ def _outcome(spec, observed):
     return (Outcome.PASS if code == 0 else Outcome.FAIL), ''
 
 
+def _marks(spec, observed):
+    """Hashes of what failed: JUnit case IDs, else the output's lines with numbers
+    masked (timings, counts). Never the text itself."""
+    code, output, raw = observed
+    if spec.reported:
+        try:
+            cases = ET.fromstring(raw).iter('testcase') if raw and b'<!DOCTYPE' not in raw and b'<!ENTITY' not in raw else ()
+            return {_digest(f"{c.attrib.get('classname', '')}::{c.attrib.get('name', '')}") for c in cases
+                    if c.find('failure') is not None or c.find('error') is not None}
+        except ET.ParseError:
+            return set()
+    # ponytail: a new error matching an old line except for its numbers is missed; JUnit has no such gap.
+    lines = (re.sub(rb'\d+', b'#', line.strip()) for line in output.splitlines())
+    return {_digest(line.decode(errors='replace')) for line in lines if line}
+
+
+def _baseline_path(root, state):
+    return Path(root).absolute() / 'baseline' / f'{state.plan.envelope.delivery_id}.json'
+
+
+def take_baseline(state, specs, *, evidence_root):
+    """Record each check's failures before any change, so failures the repository
+    already had (other worktrees, someone's unrelated tests) never block the run."""
+    path = _baseline_path(evidence_root, state)
+    if path.exists():
+        return
+    before = validate_worktree(state.plan)
+    if before.digest != state.artifact:
+        raise ValueError('artifact differs from scheduled revision')
+    known = {}
+    for spec in specs:
+        remaining = state.plan.budget.seconds - (time.time() - state.started_at)
+        observed = _run(spec, state.plan.worktree, _environment(spec.argv[0])[0],
+                        min(spec.timeout_seconds, remaining))
+        if observed and observed[0] > 0 and observed[0] not in _NOT_RUN:
+            known[spec.obligation] = sorted(_marks(spec, observed))
+        observed = None
+    if fingerprint(state.plan.worktree) != before:
+        raise ValueError('artifact changed during read-only check')
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temp = path.with_suffix('.tmp')
+    temp.write_text(encoded(known))
+    os.replace(temp, path)
+
+
+def _pre_existing(root, state, spec, observed, outcome, reason):
+    """Failures all already there before the change (never the behavior check)."""
+    if (spec.obligation == 'behavior' or not observed or observed[0] <= 0
+            or not (reason == 'other_failures' or (outcome is Outcome.FAIL and not spec.reported))):
+        return False
+    try:
+        known = json.loads(_baseline_path(root, state).read_text()).get(spec.obligation)
+    except (OSError, ValueError):
+        return False
+    marks = _marks(spec, observed)
+    return bool(known and marks) and marks <= set(known)
+
+
 def observe_check(state, spec, *, evidence_root):
     if not state.approved:
         raise ValueError('check requires approved execution authority')
@@ -243,6 +302,8 @@ def observe_check(state, spec, *, evidence_root):
     if _environment(spec.argv[0])[1] != environment:
         raise ValueError('environment changed during check execution')
     outcome, reason = _outcome(spec, observed)
+    if _pre_existing(evidence_root, state, spec, observed, outcome, reason):
+        outcome, reason = Outcome.PASS, 'pre_existing'
     code = observed[0] if observed else None
     observed = None  # Never persist report text or test output.
     receipt = Receipt(spec.obligation, before.digest, state.plan.envelope.scope,
