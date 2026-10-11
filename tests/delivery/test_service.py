@@ -349,3 +349,36 @@ def test_snapshots_saved_before_builder_takeover_still_load():
     data = start().to_dict()
     del data["builder"]
     assert State.from_dict(data).builder == ""
+
+
+def test_a_refusing_reviewer_hands_over_to_the_next_approved_reviewer():
+    from cpipe.delivery.schema import Actor
+    actors = (Actor("builder", "hermes", "forge", "m", "p"), Actor("reviewer", "hermes", "sentry", "m", "p"),
+              Actor("reviewer", "hermes", "aegis", "m", "p"))
+    state = ready_for_review(candidate(actors=actors))
+    state, intents = step(state, "activity_refused", "review")
+    assert intents[0][1]["actor"]["profile"] == "aegis" and state.reviewer == "aegis"
+    state = claim(state, "aegis", "aegis-session")
+    state, _ = reviewed(state, actor_id="aegis")
+    assert state.phase == "locally_ready"
+
+
+def test_a_stuck_test_writer_hands_over_to_the_next_builder_before_diagnosis():
+    from cpipe.delivery.schema import Actor
+    from cpipe.delivery.service import actor
+    actors = (Actor("builder", "hermes", "forge", "m", "p"), Actor("builder", "hermes", "atlas", "m", "p"),
+              Actor("reviewer", "hermes", "sentry", "m", "p"))
+    from cpipe.delivery.contracts import Budget
+    state, _ = step(start(actors=actors, budget=Budget(300, 12)), "envelope_approved", "tests")
+    state = claim(state)
+    state, _ = step(state, "activity_observed", "write_tests", receipts=(receipt(state, outcome=Outcome.PASS),))
+    writers = []
+    for round_ in range(2 * WRITE_TEST_ROUNDS):
+        builder = actor(state, "builder").profile
+        writers.append(builder)
+        state = claim(state, builder, state.builder_session or f"{builder}-session")
+        state, _ = step(state, "activity_observed", "tests", actor_id=builder, result_artifact=f"tree{round_}")
+        state = claim(state)
+        state, _ = step(state, "activity_observed", receipts=(receipt(state, outcome=Outcome.PASS),))
+    assert writers == ["forge"] * WRITE_TEST_ROUNDS + ["atlas"] * WRITE_TEST_ROUNDS
+    assert state.phase == "diagnosis"  # every builder had its rounds; only now the user is asked

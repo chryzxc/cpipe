@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import contextvars
 import hashlib
 import json
+import os
 from pathlib import Path
 import secrets
 import threading
@@ -21,7 +22,7 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'approach: kind (bug|feature|change), depth (focused|detailed), risk (normal|high), summary; '
                 'evidence, steps, decisions, risks are string lists. Bugs need evidence; feature/high-risk work needs detailed decisions. '
                 'spec: worktree, repo, base, goal, acceptance, '
-                'non_goals, write_paths, forbidden_paths, builder (a profile, or an ordered list: the next takes over if one refuses), reviewer, '
+                'non_goals, write_paths, forbidden_paths, builder and reviewer (each a profile, or an ordered list: the next takes over if one refuses or keeps failing), '
                 'seconds and checks. Each check has '
                 'obligation, argv (the repository\'s own test command as a list, run in the worktree, any language; '
                 'argv[0] on PATH or absolute), timeout_seconds and criteria (test names). If argv contains {report}, '
@@ -63,15 +64,24 @@ CRASH_RETRIES = 2  # a crashed step is re-issued on a fresh card this many times
 
 HEADLINES = {'locally_ready': 'done and ready for your review',
              'stopped': 'stopped: its time or turn budget ran out',
-             'diagnosis': 'stopped: it got stuck (no valid failing test, or review findings it could not resolve)',
-             'waiting': 'stopped: it needs you',
+             'diagnosis': 'stopped: every approved builder got stuck (no valid failing test, or review findings none could resolve)',
+             'waiting': 'stopped: it needs you (every approved builder or reviewer declined or kept failing, or the environment is missing something)',
              'cancelled': 'cancelled'}
+
+
+def _runner(delivery_id):
+    return 'runner:' + delivery_id
 
 
 def launch(delivery_id, *, session_id, profile_id, chat_key):
     """Run an approved delivery in the background; message the chat once it settles."""
+    import socket
     with scope() as (service, _, _home):
         controller.ready(service, delivery_id, session_id, profile_id)  # refuse before anything starts
+        # Lets a later Hermes process resume the run if this one dies (see resume_orphans).
+        service.journal.db.execute('INSERT OR REPLACE INTO intent(id,payload,acknowledged) VALUES (?,?,1)', (
+            _runner(delivery_id), encoded(dict(claimer=f'{socket.gethostname() or "unknown"}:{os.getpid()}:run',
+                session_id=session_id, profile_id=profile_id, chat_key=chat_key))))
     def work():
         result, error = None, ''
         for _ in range(CRASH_RETRIES + 1):
@@ -88,6 +98,11 @@ def launch(delivery_id, *, session_id, profile_id, chat_key):
             with scope() as (service, _, _home):
                 state = controller.owned(service, delivery_id, session_id, profile_id)
                 result = {**(result or {}), **controller.summary(state, service), 'worktree': state.plan.worktree}
+        except Exception:
+            pass
+        try:
+            with scope() as (service, _, _home):
+                service.journal.db.execute('DELETE FROM intent WHERE id=?', (_runner(delivery_id),))
         except Exception:
             pass
         phase = (result or {}).get('phase', '')
@@ -107,6 +122,42 @@ def launch(delivery_id, *, session_id, profile_id, chat_key):
     thread.start()
     return dict(delivery_id=delivery_id, phase='running',
                 message='Building in the background. This chat gets a message when it is done; nothing to watch.')
+
+
+_SCANNED = [0.0]
+
+
+def resume_orphans(**_):
+    """Hook: relaunch approved runs whose Hermes process died (restart, crash), once per minute."""
+    import socket
+    import sys
+    if ('--oneshot' in sys.argv or os.environ.get('HERMES_KANBAN_TASK')
+            or time.time() - _SCANNED[0] < 60):
+        return None  # short-lived worker processes never host a background run
+    _SCANNED[0] = time.time()
+    from .delivery.native_bridge import alive
+    try:
+        with scope() as (service, _, _home):
+            rows = service.journal.db.execute("SELECT id, payload FROM intent WHERE id LIKE 'runner:%'").fetchall()
+        for key, payload in rows:
+            record, delivery_id = json.loads(payload), key[len('runner:'):]
+            thread = _RUNS.get(delivery_id)
+            if alive(record['claimer']) or (thread and thread.is_alive()):
+                continue
+            mine = encoded({**record, 'claimer': f'{socket.gethostname() or "unknown"}:{os.getpid()}:run'})
+            with scope() as (service, _, _home):  # compare-and-swap: one process resumes it
+                if service.journal.db.execute('UPDATE intent SET payload=? WHERE id=? AND payload=?',
+                                              (mine, key, payload)).rowcount != 1:
+                    continue
+            try:
+                launch(delivery_id, session_id=record['session_id'], profile_id=record['profile_id'],
+                       chat_key=record['chat_key'])
+            except ValueError:  # no longer runnable (finished, cancelled, expired)
+                with scope() as (service, _, _home):
+                    service.journal.db.execute('DELETE FROM intent WHERE id=?', (key,))
+    except Exception:
+        pass  # never disturb the user's turn
+    return None
 
 
 def _intent_key(token):
@@ -147,12 +198,13 @@ def dispatch(ctx, name, raw=''):
             return ('cpipe needs two Hermes profiles with a saved model and provider: one builds, a different one '
                     'reviews. Set them up in Hermes, then run /cp-run again; no work started.')
         offer = '; '.join(f'{n} ({m})' for n, m in sorted(usable.items()))
-        roles_text = (f"Use builder {json.dumps(saved['builder'])} and reviewer {saved['reviewer']} (the user's saved "
-            'cpipe roles). ' if saved else
+        roles_text = (f"Use builder {json.dumps(saved['builder'])} and reviewer {json.dumps(saved['reviewer'])} "
+            "(the user's saved cpipe roles, in order). " if saved else
             'No cpipe roles are saved yet. Include in your one clarify question which profiles build and which '
             'different one reviews, offering only: ' + offer + '. The builder edits code: never offer a read-only or '
-            'review-only profile as builder. Ask for builders in order (the next takes over if one refuses); '
-            'suggest the strongest model as reviewer. The answer is remembered for later runs. ')
+            'review-only profile as builder. Ask for builders and reviewers in order (the next takes over if one '
+            'refuses or keeps failing); propose at least one fallback for each and the strongest model as first '
+            'reviewer. The answer is remembered for later runs. ')
     token = secrets.token_urlsafe(24)
     with scope() as (service, profile, _):
         record = dict(kind='slash', operation=op, session_id=sid, session_key=key,
@@ -307,6 +359,9 @@ def register(ctx):
     from . import plan_approval
     plan_approval.register(ctx)
     ctx.register_tool(name=SCHEMA['name'], toolset='cpipe', schema=SCHEMA, handler=execute)
+    if hasattr(ctx, 'register_hook'):
+        for hook in ('on_session_start', 'pre_llm_call'):
+            ctx.register_hook(hook, resume_orphans)
     if hasattr(ctx, 'register_command'):
         for name in ('cp-run', 'cp-status', 'cp-stop'):
             ctx.register_command(name, lambda raw='', _name=name: dispatch(ctx, _name, raw),

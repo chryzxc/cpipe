@@ -52,6 +52,11 @@ def usage(service, delivery_id):
     return dict(steps=len(steps), **total)
 
 
+def _step_seconds(state):
+    """One worker step's wall clock: a hung worker cannot spend the whole budget."""
+    return min(_remaining(state), max(600, state.plan.budget.seconds / 3))
+
+
 def _remaining(state):
     now = time.time()
     remaining = min(state.plan.expires_at - now,
@@ -89,7 +94,7 @@ def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute):
     before = validate_worktree(state.plan)
     if before.digest != state.artifact:
         raise ValueError('artifact differs from pending implementation')
-    timeout = _remaining(state)
+    timeout = _step_seconds(state)
     task = bridge._task(state, task_id)
     if not h.claim_task(bridge.conn, task_id, claimer=claimer,
                         ttl_seconds=math.ceil(timeout) + 5):
