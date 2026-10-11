@@ -2,7 +2,7 @@
 
 Drafting never grants worker authority. A frozen plan includes the exact reviewed
 text, and approval/build revalidate its private immutable-revision file. Herm's
-preview and annotations are chat context, not native execution consent.
+preview and comments are chat context, not native execution consent.
 """
 import hashlib
 import json
@@ -72,8 +72,8 @@ def render(spec, approach, revision):
         f"Execution budget: {spec['seconds']} seconds. Draft review time is not execution time.",
         'Local development only; no commits, pushes, PRs, merging, deployment or credential changes.',
         'Workers are trusted local processes, not sandboxed. Scope checks detect violations; they do not prevent access.'])
-    section('Approval boundary', ['Use Open preview to review or annotate this document, then send that context in the originating chat.',
-        'Annotations revise the approach. Preview approval means the approach looks good; it does not grant execution authority.',
+    section('Approval boundary', ['Use Open preview to review this document, then reply in the originating chat with any comments or changes.',
+        'Comments revise the approach. Preview approval means the approach looks good; it does not grant execution authority.',
         'After review, cpipe freezes this exact approach and requests native execution approval.',
         'Only native approval of the current frozen plan can launch workers.'])
     text = '\n'.join(lines) + '\n'
@@ -180,7 +180,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id):
                           document_path=str(path), preview_link=f'[Open preview]({path.as_uri()})',
                           preview_attachment='MEDIA:' + delimiter + str(path) + delimiter,
                           next_step='Present preview_attachment on its own line in the assistant reply for the clickable Open preview card. '
-                          'Plain file links may be disabled. Wait for review/annotations. '
+                          'Plain file links may be disabled. Wait for the user\'s comments or proceed. '
                           'Revise using prepare with expected_revision; after the user is ready, plan with draft_revision. '
                           'Preview approval is not execution consent.')
             record.update(state='draft', spec=spec, approach=approach, text=text,
