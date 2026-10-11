@@ -62,7 +62,7 @@ CRASH_RETRIES = 2  # a crashed step is re-issued on a fresh card this many times
 
 HEADLINES = {'locally_ready': 'done and ready for your review',
              'stopped': 'stopped: its time or turn budget ran out',
-             'diagnosis': 'stopped: it could not get a valid failing test',
+             'diagnosis': 'stopped: it got stuck (no valid failing test, or review findings it could not resolve)',
              'waiting': 'stopped: it needs you',
              'cancelled': 'cancelled'}
 
