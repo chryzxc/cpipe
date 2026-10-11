@@ -65,12 +65,12 @@ def test_lost_native_claim_after_real_check_cannot_apply_observation(repo, tmp_p
         tid = b.schedule('d1')
         claim = h.claim_task(board, tid, claimer='controller', ttl_seconds=60)
         bound = b.bind_claim('d1', tid, claimer='controller', worker_session='check-worker')
-        original = check_runner.observe_pytest
+        original = check_runner.observe_check
         def lose_claim(*a, **kw):
             receipt = original(*a, **kw)
             h.block(board, tid, run_id=claim.current_run_id, reason='lease ended', kind='transient')
             return receipt
-        monkeypatch.setattr(check_runner, 'observe_pytest', lose_claim)
+        monkeypatch.setattr(check_runner, 'observe_check', lose_claim)
         with pytest.raises(ValueError, match='ownership'):
             b.observe_checks('d1', tid, claimer='controller', checks=(spec,),
                              evidence_root=tmp_path / 'evidence')

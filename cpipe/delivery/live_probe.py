@@ -11,12 +11,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
 
 from .artifact import fingerprint
-from .check_runner import PytestCheck
+from .check_runner import CommandCheck, REPORT
 from .contracts import Budget, Envelope
 from .schema import Actor, ExecutionPlan
 from .journal import Journal
@@ -75,7 +76,8 @@ def run(*, actors, scratch=None, execute=None, seconds=480, on_progress=None):
     git('commit', '-m', 'test: establish failing fixture')
     git('switch', '-c', 'fixture')
     now = int(time.time())
-    spec = PytestCheck('behavior', ('test_behavior.py',), ('test_behavior::test_double',))
+    spec = CommandCheck('behavior', (sys.executable, '-m', 'pytest', 'test_behavior.py', '-q', '-p', 'no:cacheprovider',
+                         '--junitxml=' + REPORT), ('test_behavior::test_double',))
     session = 'probe-' + uuid.uuid4().hex
     envelope = Envelope('live-probe', session, 'default', 'local/fixture', 'fixture', 'main',
                         'double-only', ('behavior', 'review'), frozenset({'local'}))
@@ -84,7 +86,7 @@ def run(*, actors, scratch=None, execute=None, seconds=480, on_progress=None):
         acceptance=('double returns twice positive, negative, and zero inputs; frozen behavior check passes',),
         non_goals=('No dependencies, no test changes, no publication, no delegation',),
         write_paths=('double.py',), forbidden_paths=('.git', 'internal'), actors=actors,
-        budget=Budget(seconds, 4), policy_id='fixture-only', check_definition='pytest-fixture',
+        budget=Budget(seconds, 4), policy_id='fixture-only', check_definition='command-fixture',
         checks=(spec.identity(), review_identity()), interactive=False, repair_allowed=False,
         transient_retries=0, completion_target='local_only', expires_at=now + seconds)
     h.kb.init_db(root / 'native.db')

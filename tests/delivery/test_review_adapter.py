@@ -6,7 +6,6 @@ import time
 import pytest
 
 from cpipe.delivery.artifact import fingerprint
-from cpipe.delivery.check_runner import PytestCheck
 from cpipe.delivery.contracts import Outcome
 from cpipe.delivery.journal import Journal
 from cpipe.delivery.native_bridge import NativeBridge
@@ -14,14 +13,14 @@ from cpipe.delivery.service import Event, Service
 from cpipe.delivery.workers import WorkerResult
 from cpipe.runtime import hermes_api as h
 from .test_artifact import repo, git
-from .test_check_runner import red_then_implemented
+from .test_check_runner import red_then_implemented, pytest_check
 from .test_execution_plan import plan
 
 
 def reviewing(repo, tmp_path, board):
     from cpipe.delivery.review import review_identity
     (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
-    spec = PytestCheck('behavior', ('test_behavior.py',), ('test_behavior::test_double',))
+    spec = pytest_check()
     now = int(time.time())
     p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
              base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=now + 300,

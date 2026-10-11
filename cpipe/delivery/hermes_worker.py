@@ -182,7 +182,7 @@ def _delta(state):
 def _prompt(state, resume):
     """Stable contract on a fresh session; on resume only the delta, since the session holds the rest."""
     if state.activity == 'write_tests':
-        task = ('Write or fix only the behavior check\'s test (its exact targets and criteria are in the '
+        task = ('Write or fix only the behavior check\'s test (its exact command and criteria are in the '
                 'approach) so it fails on the current code for the reason the change addresses. Do not '
                 'implement the change yet. Return only {"status":"done"}; the controller observes RED.')
     elif state.activity == 'implement':

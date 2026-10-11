@@ -171,7 +171,7 @@ class NativeBridge:
 
     def observe_checks(self, delivery_id, task_id, *, claimer, checks, evidence_root):
         """Execute frozen checks and reconcile observations, never worker prose."""
-        from .check_runner import observe_pytest
+        from .check_runner import observe_check
         state = self._state(delivery_id)
         task = self._owned(state, task_id, claimer)
         if state.activity not in {'tests', 'checks'} or state.run_id != f'{task.id}:{task.current_run_id}':
@@ -186,7 +186,7 @@ class NativeBridge:
             if self._state(delivery_id) != state:
                 raise ValueError('engineering authority changed during checks')
             self._owned(state, task_id, claimer)
-            receipts.append(observe_pytest(state, spec, evidence_root=evidence_root))
+            receipts.append(observe_check(state, spec, evidence_root=evidence_root))
         if self._state(delivery_id) != state:
             raise ValueError('engineering authority changed during checks')
         self._owned(state, task_id, claimer)

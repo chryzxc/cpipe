@@ -1,4 +1,4 @@
-"""Observed pytest receipts: exit zero alone is not proof of green behavior."""
+"""Observed check receipts: exit zero alone is not proof of green behavior."""
 from dataclasses import replace
 from pathlib import Path
 import sys
@@ -13,14 +13,18 @@ from .test_artifact import repo, git
 from .test_execution_plan import plan
 
 
+def pytest_check(criteria=('test_behavior::test_double',), timeout=120, python=''):
+    from cpipe.delivery.check_runner import CommandCheck, REPORT
+    return CommandCheck('behavior', (python or sys.executable, '-m', 'pytest', 'test_behavior.py', '-q',
+                                     '-p', 'no:cacheprovider', '--junitxml=' + REPORT), criteria, timeout)
+
+
 def setup_check(repo, tmp_path, source=None, *, timeout=20,
-                criteria=('test_behavior::test_double',), write_paths=None, python=''):
+                criteria=('test_behavior::test_double',), write_paths=None, python='', spec=None):
     from cpipe.delivery.artifact import fingerprint
-    from cpipe.delivery.check_runner import PytestCheck
     (repo / 'test_behavior.py').write_text(source or
         'from double import double\ndef test_double():\n    assert double(2) == 4\n')
-    spec = PytestCheck('behavior', ('test_behavior.py',),
-                       criteria, timeout_seconds=timeout, python=python)
+    spec = spec or pytest_check(criteria, timeout, python)
     now = int(time.time())
     p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
              base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=now + 300,
@@ -62,8 +66,8 @@ def red_then_implemented(b, repo, tmp_path, spec, claimer='controller'):
 
 
 def execute(state, spec, tmp_path):
-    from cpipe.delivery.check_runner import observe_pytest
-    return observe_pytest(state, spec, evidence_root=tmp_path / 'evidence')
+    from cpipe.delivery.check_runner import observe_check
+    return observe_check(state, spec, evidence_root=tmp_path / 'evidence')
 
 
 def test_real_assertion_failure_produces_behavioral_red_receipt(repo, tmp_path):
@@ -76,7 +80,7 @@ def test_real_assertion_failure_produces_behavioral_red_receipt(repo, tmp_path):
         assert observed.command == spec.identity().command
 
 
-def test_checks_run_under_the_project_interpreter(repo, tmp_path):
+def test_checks_run_the_projects_own_command(repo, tmp_path):
     marker = tmp_path / 'used'
     python = tmp_path / 'bin' / 'python'
     python.parent.mkdir()
@@ -84,21 +88,57 @@ def test_checks_run_under_the_project_interpreter(repo, tmp_path):
     python.chmod(0o755)
     journal, service, state, spec = setup_check(repo, tmp_path, python=str(python))
     with journal:
-        assert spec.argv('r')[0] == str(python)
+        assert spec.command('r')[0] == str(python)
         assert execute(state, spec, tmp_path).outcome is Outcome.FAIL
     assert marker.exists()
 
 
-def test_interpreter_without_pytest_is_rejected_before_any_run(tmp_path):
-    import subprocess
-    from cpipe.delivery.check_runner import PytestCheck
-    subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(tmp_path / 'bare')], check=True)
-    spec = PytestCheck('behavior', ('test_behavior.py',), ('test_behavior::test_double',),
-                       python=str(tmp_path / 'bare' / 'bin' / 'python'))
-    with pytest.raises(ValueError, match='no pytest'):
-        spec.identity()
-    with pytest.raises(ValueError, match='absolute'):
-        PytestCheck('behavior', ('t.py',), ('t::x',), python='.venv/bin/python')
+def test_missing_program_is_rejected_before_any_run():
+    from cpipe.delivery.check_runner import CommandCheck
+    with pytest.raises(ValueError, match='not installed'):
+        CommandCheck('behavior', ('cpipe-no-such-runner', 'test'), ('t',)).identity()
+    with pytest.raises(ValueError, match='PATH or an absolute'):
+        CommandCheck('behavior', ('node_modules/.bin/vitest',), ('t',))
+
+
+def sh(script, criteria=('price rounds up',), report=False):
+    """A non-Python runner stand-in; $1 is the private report path when requested."""
+    from cpipe.delivery.check_runner import CommandCheck, REPORT
+    return CommandCheck('behavior', ('sh', '-c', script, 'check') + ((REPORT,) if report else ()), criteria, 20)
+
+
+@pytest.mark.parametrize('script, outcome', [
+    ('echo "FAIL price rounds up"; exit 1', Outcome.FAIL),
+    ('echo "ok price rounds up"; exit 0', Outcome.PASS),
+    ('echo "error TS2304: cannot find name"; exit 1', Outcome.UNAVAILABLE),  # never ran: not RED
+    ('echo "ok"; exit 0', Outcome.UNAVAILABLE),
+    ('echo "price rounds up"; exit 127', Outcome.UNAVAILABLE),
+])
+def test_exit_code_checks_need_their_criteria_in_the_output(repo, tmp_path, script, outcome):
+    journal, service, state, spec = setup_check(repo, tmp_path, spec=sh(script))
+    with journal:
+        assert execute(state, spec, tmp_path).outcome is outcome
+
+
+JUNIT = ('<testsuites><testsuite name="src/price.test.ts" tests="2">'
+         '<testcase classname="src/price.test.ts" name="price rounds up">{case}</testcase>'
+         '<testcase classname="src/price.test.ts" name="price keeps cents"/></testsuite></testsuites>')
+
+
+@pytest.mark.parametrize('case, code, outcome', [
+    ('<failure message="expected 2 to be 3"/>', 1, Outcome.FAIL),
+    ('<failure>Error: expect(received).toBe(expected)</failure>', 1, Outcome.FAIL),
+    ('', 0, Outcome.PASS),
+    ('<failure message="TypeError: price is not a function"/>', 1, Outcome.UNAVAILABLE),
+    ('<skipped/>', 0, Outcome.UNAVAILABLE),
+])
+def test_any_runner_junit_report_decides_the_outcome(repo, tmp_path, case, code, outcome):
+    report = tmp_path / 'junit.xml'
+    report.write_text(JUNIT.format(case=case))
+    spec = sh(f'cp {report} "$1"; exit {code}', ('src/price.test.ts::price rounds up',), report=True)
+    journal, service, state, spec = setup_check(repo, tmp_path, spec=spec)
+    with journal:
+        assert execute(state, spec, tmp_path).outcome is outcome
 
 
 def test_real_behavior_pass_on_new_artifact_produces_green(repo, tmp_path):
@@ -145,7 +185,6 @@ def test_check_cannot_mutate_git_visible_artifact(repo, tmp_path):
 def test_stale_artifact_or_changed_definition_does_not_execute(repo, tmp_path):
     journal, service, state, spec = setup_check(repo, tmp_path)
     with journal:
-        from cpipe.delivery.check_runner import PytestCheck
         with pytest.raises(ValueError, match='definition'):
             execute(state, replace(spec, criteria=('test_behavior::not_approved',)), tmp_path)
         (repo / 'double.py').write_text('stale edit')
