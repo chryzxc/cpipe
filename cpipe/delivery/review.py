@@ -114,7 +114,7 @@ def observe_review(bridge, delivery_id, task_id, *, claimer, execute, evidence_r
         raise ValueError('review evidence must be outside source in a non-symlink directory')
     timeout = _step_seconds(state)
     bridge._task(state, task_id)
-    if not h.claim_task(bridge.conn, task_id, claimer=claimer,
+    if not h.take(bridge.conn, task_id, claimer=claimer,
                         ttl_seconds=math.ceil(timeout) + 5):
         raise ValueError('native review already claimed')
     bound = None

@@ -51,6 +51,10 @@ def hermes_home(tmp_path, tmp_path_factory, monkeypatch):
     monkeypatch.setenv("HERMES_KANBAN_CRASH_GRACE_SECONDS", "0")
     monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
     monkeypatch.delenv("HERMES_KANBAN_DB", raising=False)
+    # pytest's own flags (-q) look like a one-shot Hermes query; and no watchdog may outlive a test home.
+    from cpipe import native
+    monkeypatch.setattr(native, "_short_lived", lambda: False)
+    monkeypatch.setattr(native, "watchdog", lambda: None)
     return home
 
 

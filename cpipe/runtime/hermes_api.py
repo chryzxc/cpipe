@@ -33,3 +33,15 @@ def complete(conn, task_id, *, run_id, summary, metadata):
 
 def block(conn, task_id, *, run_id, reason, kind):
     return bool(kb.block_task(conn, task_id, reason=reason, kind=kind, expected_run_id=run_id))
+
+
+def take(conn, task_id, *, claimer, ttl_seconds):
+    """Claim a ready card, or keep one this claimer already holds."""
+    task = kb.get_task(conn, task_id)
+    if task and task.status == 'running' and task.claim_lock == claimer:
+        return task if kb.heartbeat_claim(conn, task_id, claimer=claimer, ttl_seconds=ttl_seconds) else None
+    return kb.claim_task(conn, task_id, claimer=claimer, ttl_seconds=ttl_seconds)
+
+
+def archive(conn, task_id):
+    return kb.archive_task(conn, task_id)

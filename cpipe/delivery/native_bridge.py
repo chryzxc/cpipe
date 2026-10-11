@@ -45,6 +45,7 @@ class NativeBridge:
         self.profile_id = profile_id
         self.notify_target = notify_target
         self.require_notify = require_notify
+        self.replaced = []  # cards retired because something else took or changed them
 
     def _state(self, delivery_id):
         state = self.service.read(delivery_id)
@@ -93,7 +94,7 @@ class NativeBridge:
     def _body(self, state):
         return 'cpipe activity contract (trusted execution adapter required):\n' + encoded(self._packet(state))
 
-    def schedule(self, delivery_id):
+    def schedule(self, delivery_id, claimer=None):
         state = self._state(delivery_id)
         if not state.approved or state.activity not in RUNNABLE or state.run_id:
             return None
@@ -107,17 +108,27 @@ class NativeBridge:
         actor = self._actor(state)
         if actor.engine != 'hermes':
             raise ValueError('native bridge requires a Hermes actor')
-        # Serialize native idempotency lookup/create. Hermes create_task supports
-        # nesting, but its standalone pre-check is otherwise subject to a race.
-        with h.kb.write_txn(self.conn):
-            tid = h.kb.create_task(self.conn, title=f'cpipe: {state.activity} · {actor.profile}',
-                body=self._body(state), assignee=self._lane(actor.profile), created_by='cpipe',
-                workspace_kind='dir', workspace_path=state.plan.worktree,
-                project_id='', session_id=self.session_id,
-                idempotency_key=self._key(state), max_runtime_seconds=math.ceil(remaining),
-                max_retries=state.plan.transient_retries,
-                model_override=actor.model, provider_override=actor.provider,
-                initial_status='blocked', completion_contract='local-only')
+        for _ in range(3):
+            # Serialize native idempotency lookup/create. Hermes create_task supports
+            # nesting, but its standalone pre-check is otherwise subject to a race.
+            with h.kb.write_txn(self.conn):
+                tid = h.kb.create_task(self.conn, title=f'cpipe: {state.activity} · {actor.profile}',
+                    body=self._body(state), assignee=self._lane(actor.profile), created_by='cpipe',
+                    workspace_kind='dir', workspace_path=state.plan.worktree,
+                    project_id='', session_id=self.session_id,
+                    idempotency_key=self._key(state), max_runtime_seconds=math.ceil(remaining),
+                    max_retries=state.plan.transient_retries,
+                    model_override=actor.model, provider_override=actor.provider,
+                    initial_status='blocked', completion_contract='local-only')
+            if self._usable(state, tid, claimer):
+                break
+            # Reassigned, edited, finished or held by a dead or foreign claimer
+            # (another service taking cpipe's cards): retire it; the next lookup
+            # creates a fresh card for the same step.
+            h.archive(self.conn, tid)
+            self.replaced.append(tid)
+        else:
+            raise ValueError('native activity is not queueable')
         task = self._task(state, tid)
         # Commit and read back subscriptions before making a card dispatchable.
         # If this fails the card stays blocked; rerunning schedule repairs it.
@@ -129,18 +140,32 @@ class NativeBridge:
             expected = {**target, 'thread_id': target.get('thread_id') or ''}
             if not any(all(s.get(k) == v for k, v in expected.items()) for s in subs):
                 raise RuntimeError('native wake subscription readback failed')
-        if task.status == 'blocked':
-            # No old claim exists for a newly scheduled activity. Do not resume
-            # an existing blocked/failed run by accident on an outbox replay.
-            if task.current_run_id is not None:
-                raise ValueError('native run requires explicit recovery')
-            if not h.kb.unblock_task(self.conn, tid):
-                raise RuntimeError('native task could not be queued')
+        if task.status == 'blocked' and not h.kb.unblock_task(self.conn, tid):
+            raise RuntimeError('native task could not be queued')
+        # Claim at once, so nothing else picks up a ready cpipe card in between.
+        if claimer and not h.take(self.conn, tid, claimer=claimer, ttl_seconds=120):
+            raise ValueError('native activity already claimed')
         fresh = self._task(state, tid)
         if fresh.status not in {'ready', 'running'}:
             raise ValueError('native activity is not queueable')
         self.service.journal.ack(state.active_intent)
         return tid
+
+    def _usable(self, state, task_id, claimer):
+        try:
+            task = self._task(state, task_id)
+        except ValueError:
+            return False
+        if task.status == 'blocked':
+            # A card left blocked by a run is never resumed by accident.
+            return task.current_run_id is None
+        if task.status == 'running':
+            lock = task.claim_lock or ''
+            if lock == claimer:
+                return True
+            return ((task.claim_expires or 0) > time.time() and alive(lock)
+                    and not (claimer and ':cpipe-' not in lock))
+        return task.status == 'ready'
 
     def _owned(self, state, task_id, claimer):
         task = self._task(state, task_id)
@@ -182,6 +207,8 @@ class NativeBridge:
                 raise ValueError('step is still running')
             h.block(self.conn, task.id, run_id=task.current_run_id,
                     reason='step abandoned; re-issued on a new card', kind='needs_input')
+        if task and task.status != 'archived':
+            h.archive(self.conn, task.id)  # nothing else may pick a released card up again
         return self.service.accept(self._event(state, kind, action=action))[0]
 
     def result_event(self, delivery_id, task_id, *, claimer, kind, **result):

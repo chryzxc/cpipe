@@ -109,7 +109,7 @@ def run(*, actors, scratch=None, execute=None, seconds=480, on_progress=None):
                 state.artifact, state.version, now, session_id=session, profile_id='default',
                 activity_id=state.active_intent))
             bridge = NativeBridge(service, conn, session_id=session, profile_id='default')
-            worker = execute or HermesWorker()
+            worker, claimer = execute or HermesWorker(), h.new_claimer()
             for _ in range(5):
                 state = service.read('live-probe')
                 if state is None:
@@ -121,14 +121,14 @@ def run(*, actors, scratch=None, execute=None, seconds=480, on_progress=None):
                 if tid is None:
                     raise ValueError('missing native probe task')
                 if action in {'tests', 'checks'}:
-                    h.claim_task(conn, tid, claimer='probe-controller', ttl_seconds=seconds)
-                    bridge.bind_claim('live-probe', tid, claimer='probe-controller', worker_session='probe-checks')
-                    state = bridge.observe_checks('live-probe', tid, claimer='probe-controller',
+                    h.take(conn, tid, claimer=claimer, ttl_seconds=seconds)
+                    bridge.bind_claim('live-probe', tid, claimer=claimer, worker_session='probe-checks')
+                    state = bridge.observe_checks('live-probe', tid, claimer=claimer,
                         checks=(spec,), evidence_root=root / 'evidence')
                 elif action == 'implement':
-                    state = observe_implementation(bridge, 'live-probe', tid, claimer='probe-controller', execute=worker)
+                    state = observe_implementation(bridge, 'live-probe', tid, claimer=claimer, execute=worker)
                 elif action == 'review':
-                    state = observe_review(bridge, 'live-probe', tid, claimer='probe-controller',
+                    state = observe_review(bridge, 'live-probe', tid, claimer=claimer,
                                            execute=worker, evidence_root=root / 'evidence')
                 else:
                     raise ValueError('unsupported probe activity')

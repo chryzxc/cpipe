@@ -265,6 +265,7 @@ def test_one_receipt_through_real_native_consent_and_red_green_review(
         with closing(h.connect(None)) as conn:  # the build runs on its own thread
             return original_run(service, delivery_id, conn=conn, execute=worker, **kw)
     monkeypatch.setattr(controller, 'run', controlled)
+    monkeypatch.setattr(native, 'SETTLE', 0)  # exercise the background path
     try:
         consent = json.loads(model_tools.handle_function_call('cpipe_approve_plan', frozen['approval_arguments'],
             session_id='s1', skip_pre_tool_call_hook=True))
@@ -281,14 +282,14 @@ def test_one_receipt_through_real_native_consent_and_red_green_review(
             native._RUNS[delivery_id].join(60)
             assert len(told) == 1 and told[0][1] == {'role': 'user', 'session_key': 'chat-one'}
             assert told[0][0].startswith(f'[cpipe] Delivery {delivery_id} is done and ready for your review.')
-            first = out
             out = json.loads(told[0][0].split('\n')[1])
             assert out['phase'] == 'locally_ready'
             assert [s['activity'] for s in out['steps']] == ['tests', 'implement', 'checks', 'review']
             assert out['steps'][0]['outcomes'] == ['fail']
             assert out['outcomes'] == ['fail', 'pass', 'pass']
             assert workers == ['implement', 'review']
-            assert call(token, 'build', {'delivery_id': delivery_id}) == first
+            again = call(token, 'build', {'delivery_id': delivery_id})  # the real state, not the cached 'running'
+            assert again['phase'] == 'locally_ready' and 'background' not in again
             assert workers == ['implement', 'review']  # No duplicate launches on retry.
             assert call(token, 'status', {})['phase'] == 'locally_ready'
     finally:

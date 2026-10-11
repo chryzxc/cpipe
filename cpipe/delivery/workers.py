@@ -96,7 +96,7 @@ def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute):
         raise ValueError('artifact differs from pending implementation')
     timeout = _step_seconds(state)
     task = bridge._task(state, task_id)
-    if not h.claim_task(bridge.conn, task_id, claimer=claimer,
+    if not h.take(bridge.conn, task_id, claimer=claimer,
                         ttl_seconds=math.ceil(timeout) + 5):
         raise ValueError('native activity already claimed')
     bound = None
