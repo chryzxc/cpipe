@@ -17,6 +17,9 @@ KINDS = frozenset({"proposal_created", "envelope_approved", "activity_claimed",
                    "activity_abandoned"})
 
 
+# Attempts to get a behavior test that fails on an assertion before implementing.
+WRITE_TEST_ROUNDS = 3
+
 def nonnegative(value, name):
     if type(value) is not int or value < 0:
         raise ValueError(f"invalid {name}")
@@ -363,17 +366,18 @@ def apply(snapshot, event):
         if any(not matches(state, r) or r.obligation == "review"
                or (r.outcome is not Outcome.UNAVAILABLE and not r.observed) for r in event.receipts):
             raise ValueError("stale or misconfigured check receipt")
-        earlier = any(r.obligation == "behavior" for r in state.receipts)
+        earlier = sum(r.obligation == "behavior" for r in state.receipts)
         state = replace(state, receipts=state.receipts + event.receipts)
+        if any(r.reason == "command_not_found" for r in event.receipts):
+            return continue_with(state, "diagnose", "waiting")  # the environment, not the code
         if state.activity == "tests" and not any(r.outcome is Outcome.FAIL for r in event.receipts):
             # Only an observed RED proves the behavior test covers the change. A
-            # missing or already-passing test gets one builder pass to write it.
-            if not earlier:
+            # missing, passing or broken test goes back to the builder with the reason.
+            if earlier < WRITE_TEST_ROUNDS:
                 return continue_with(state, "write_tests", "implementing")
             return continue_with(state, "diagnose", "diagnosis")
-        if any(r.outcome is Outcome.UNAVAILABLE for r in event.receipts):
-            return continue_with(state, "diagnose", "waiting")
-        if any(r.outcome is Outcome.FAIL for r in event.receipts):
+        if any(r.outcome in {Outcome.FAIL, Outcome.UNAVAILABLE} for r in event.receipts):
+            # Crashes, timeouts and build errors are code problems the builder can repair.
             return continue_with(state, "implement", "implementing")
         if not green(state, include_review=False):
             return continue_with(state, "diagnose", "waiting")

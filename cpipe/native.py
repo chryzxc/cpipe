@@ -1,9 +1,11 @@
 """Session-bound task commands with explicit frozen-plan consent."""
 from contextlib import contextmanager
+import contextvars
 import hashlib
 import json
 from pathlib import Path
 import secrets
+import threading
 import time
 
 from .delivery.journal import Journal, encoded
@@ -52,6 +54,58 @@ def scope():
     from hermes_cli.profiles import get_active_profile_name
     with Journal.for_profile(get_hermes_home()) as journal:
         yield Service(journal), get_active_profile_name(), get_hermes_home()
+
+
+_CTX = None  # plugin context, to message the originating chat when a run settles
+_RUNS = {}  # delivery_id -> background thread
+CRASH_RETRIES = 2  # a crashed step is re-issued on a fresh card this many times
+
+HEADLINES = {'locally_ready': 'done and ready for your review',
+             'stopped': 'stopped: its time or turn budget ran out',
+             'diagnosis': 'stopped: it could not get a valid failing test',
+             'waiting': 'stopped: it needs you',
+             'cancelled': 'cancelled'}
+
+
+def launch(delivery_id, *, session_id, profile_id, chat_key):
+    """Run an approved delivery in the background; message the chat once it settles."""
+    with scope() as (service, _, _home):
+        controller.ready(service, delivery_id, session_id, profile_id)  # refuse before anything starts
+    def work():
+        result, error = None, ''
+        for _ in range(CRASH_RETRIES + 1):
+            try:
+                with scope() as (service, _, home):
+                    result = controller.run(service, delivery_id, session_id=session_id, profile_id=profile_id,
+                                            evidence_root=home / 'cpipe-deliveries' / 'evidence')
+                error = ''
+                break
+            except Exception as exc:
+                # cpipe's own ValueErrors are static labels; anything else stays a type name.
+                error = type(exc).__name__ + (': ' + str(exc)[:200] if type(exc) is ValueError else '')
+        try:
+            with scope() as (service, _, _home):
+                state = controller.owned(service, delivery_id, session_id, profile_id)
+                result = {**(result or {}), **controller.summary(state, service), 'worktree': state.plan.worktree}
+        except Exception:
+            pass
+        phase = (result or {}).get('phase', '')
+        head = HEADLINES.get(phase, 'stopped unexpectedly' + (f' ({error})' if error else ''))
+        text = (f'[cpipe] Delivery {delivery_id} is {head}.\n' + json.dumps(result or {}, sort_keys=True) +
+                '\nTell the user this result in a few short lines: what was done, each check result, tokens used, '
+                'and the worktree to review. If it stopped, say why and what they can do. Do not call cpipe tools.')
+        try:
+            if _CTX is not None:
+                _CTX.inject_message(text, role='user', session_key=chat_key)
+        except Exception:
+            pass  # /cp-status still shows the result
+    # Copy the session/profile context into the thread.
+    thread = threading.Thread(target=contextvars.copy_context().run, args=(work,),
+                              name='cpipe-' + delivery_id, daemon=True)
+    _RUNS[delivery_id] = thread
+    thread.start()
+    return dict(delivery_id=delivery_id, phase='running',
+                message='Building in the background. This chat gets a message when it is done; nothing to watch.')
 
 
 def _intent_key(token):
@@ -119,7 +173,7 @@ def dispatch(ctx, name, raw=''):
             'Call cpipe_execute_intent using token ' + token + ', operation prepare, arguments {spec, approach, expected_revision: 0}. '
             'The tool schema describes the exact fields. Use real evidence, explicit paths/acceptance and the '
             'repository\'s own test commands (from its scripts, Makefile, CI config or docs), not invented tests or identities. '
-            'seconds is a bounded execution budget 30..1800; draft review time does not consume it. '
+            'seconds is a bounded execution budget 30..7200 (prefer 3600 for features); draft review time does not consume it. '
             'Do not put credentials in any field; replace them with [REDACTED].\n'
             'Present the returned preview_attachment (MEDIA: path) on its own line in the assistant reply. '
             'Herm renders a clickable file card with Open preview; ordinary file:// Markdown links may be disabled. '
@@ -135,7 +189,9 @@ def dispatch(ctx, name, raw=''):
             'scope and call cpipe_approve_plan with the exact returned approval_arguments. Only if its status is approved, '
             'continue automatically using the SAME token, operation build, arguments {delivery_id: returned_delivery_id}. '
             'No second slash command or copied ID is needed. Denial, unavailable approval or dismissal starts nothing. '
-            'Report canonical results, not worker prose. Execution is local-only, unsandboxed; no publication adapter.\n'
+            'build returns at once and runs in the background, repairing failing or broken checks itself; tell the user '
+            'in one line that it started and they will get a message here when it is done. Do not poll status. '
+            'Execution is local-only, unsandboxed; no publication adapter.\n'
             'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
     try:
         queued = ctx.inject_message(prompt, role='user', session_key=key)
@@ -166,7 +222,8 @@ def execute(args, **kwargs):
                     raise ValueError('missing, expired or wrong-session run receipt')
                 from .delivery.approach import execute as execute_run
                 return json.dumps(execute_run(service, run_record, _intent_key(token), op, payload,
-                    home=home, session_id=sid, profile_id=profile))
+                    home=home, session_id=sid, profile_id=profile,
+                    launch=lambda d: launch(d, session_id=sid, profile_id=profile, chat_key=key)))
             db.execute('BEGIN IMMEDIATE')
             try:
                 row = db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()
@@ -204,8 +261,7 @@ def execute(args, **kwargs):
                 if set(payload) != {'delivery_id'} or type(payload['delivery_id']) is not str:
                     raise ValueError('only delivery_id is accepted')
                 if op == 'build':
-                    out = controller.run(service, payload['delivery_id'], session_id=sid, profile_id=profile,
-                                         evidence_root=home / 'cpipe-deliveries' / 'evidence')
+                    out = launch(payload['delivery_id'], session_id=sid, profile_id=profile, chat_key=key)
                 elif op == 'stop':
                     out = controller.cancel(service, payload['delivery_id'], session_id=sid, profile_id=profile)
                 else:
@@ -230,6 +286,8 @@ def execute(args, **kwargs):
 
 
 def register(ctx):
+    global _CTX
+    _CTX = ctx
     from . import plan_approval
     plan_approval.register(ctx)
     ctx.register_tool(name=SCHEMA['name'], toolset='cpipe', schema=SCHEMA, handler=execute)

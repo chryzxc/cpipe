@@ -68,6 +68,22 @@ class Versioned:
         return {name: data[name] for name in names}
 
 
+# Why a check produced no PASS/FAIL. Hints are safe to show workers and users.
+UNAVAILABLE_REASONS = {
+    "timed_out": "the command did not finish within its timeout",
+    "command_not_found": "the command could not be executed (not installed or not on PATH)",
+    "killed": "the command was killed by a signal",
+    "no_report": "no readable JUnit report was written to the {report} path",
+    "no_test_cases": "the report contains no test cases (wrong file or filter?)",
+    "criterion_not_found": "no reported test is named like an approved criterion; name the test exactly as the criterion",
+    "criterion_ambiguous": "several reported tests match one criterion; make test names unique",
+    "test_skipped": "a watched test was skipped",
+    "test_crashed": "a watched test crashed (import/type/runtime error) instead of failing an assertion",
+    "other_failures": "the watched tests passed but the command still failed (other tests, lint or build errors)",
+    "criteria_not_in_output": "the criteria did not appear in the command output",
+}
+
+
 class Outcome(str, Enum):
     PASS = "pass"
     FAIL = "fail"
@@ -117,15 +133,20 @@ class Receipt(Versioned):
     command: str
     outcome: Outcome
     observed: bool
+    reason: str = ""  # why a result is unavailable; a fixed label, never output
 
     def __post_init__(self):
         for name in ("obligation", "artifact", "scope", "inputs", "environment", "command"):
             identity(getattr(self, name), name)
         if type(self.outcome) is not Outcome or type(self.observed) is not bool:
             raise ValueError("invalid outcome or observed flag")
+        if self.reason not in UNAVAILABLE_REASONS and self.reason != "":
+            raise ValueError("invalid receipt reason")
 
     @classmethod
     def from_dict(cls, data):
+        if type(data) is dict:
+            data = {"reason": "", **data}  # receipts journaled before reasons existed
         values = cls._payload(data)
         if type(values["outcome"]) is not str:
             raise ValueError("invalid outcome")
