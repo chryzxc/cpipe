@@ -20,7 +20,7 @@ from .findings import Finding
 from .journal import encoded
 from .schema import CheckIdentity
 from .service import Verification
-from .workers import WorkerResult, _remaining, record_usage
+from .workers import WorkerResult, _remaining, record_usage, refused
 from ..runtime import hermes_api as h
 
 REVIEW_AXES = ('goal_alignment', 'correctness', 'regressions', 'integration',
@@ -144,6 +144,7 @@ def observe_review(bridge, delivery_id, task_id, *, claimer, execute, evidence_r
         if validate_worktree(state.plan) != before:
             raise ValueError('artifact changed during read-only review')
         record_usage(bridge.service, state, 'review', result)
+        refused(result)
         findings, ids, outcome = _parse(state, result.payload)
         remember(result.payload)
         # Arbitrary text/diagnostics/credential values never enter durable evidence.

@@ -21,7 +21,8 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'approach: kind (bug|feature|change), depth (focused|detailed), risk (normal|high), summary; '
                 'evidence, steps, decisions, risks are string lists. Bugs need evidence; feature/high-risk work needs detailed decisions. '
                 'spec: worktree, repo, base, goal, acceptance, '
-                'non_goals, write_paths, forbidden_paths, builder, reviewer, seconds and checks. Each check has '
+                'non_goals, write_paths, forbidden_paths, builder (a profile, or an ordered list: the next takes over if one refuses), reviewer, '
+                'seconds and checks. Each check has '
                 'obligation, argv (the repository\'s own test command as a list, run in the worktree, any language; '
                 'argv[0] on PATH or absolute), timeout_seconds and criteria (test names). If argv contains {report}, '
                 'it is replaced by a private JUnit XML path (e.g. --junitxml={report}, --reporter=junit '
@@ -145,12 +146,13 @@ def dispatch(ctx, name, raw=''):
         if len(usable) < 2:
             return ('cpipe needs two Hermes profiles with a saved model and provider: one builds, a different one '
                     'reviews. Set them up in Hermes, then run /cp-run again; no work started.')
-        offer = ', '.join(f'{n} ({m})' for n, m in sorted(usable.items()))
-        roles_text = (f"Use builder {saved['builder']} and reviewer {saved['reviewer']} (the user's saved cpipe roles). "
-            if saved else
-            'No cpipe roles are saved yet. Include in your one clarify question which profile builds and which '
-            'different one reviews, offering only: ' + offer + '. Suggest the strongest model as reviewer. '
-            'The answer is remembered for later runs. ')
+        offer = '; '.join(f'{n} ({m})' for n, m in sorted(usable.items()))
+        roles_text = (f"Use builder {json.dumps(saved['builder'])} and reviewer {saved['reviewer']} (the user's saved "
+            'cpipe roles). ' if saved else
+            'No cpipe roles are saved yet. Include in your one clarify question which profiles build and which '
+            'different one reviews, offering only: ' + offer + '. The builder edits code: never offer a read-only or '
+            'review-only profile as builder. Ask for builders in order (the next takes over if one refuses); '
+            'suggest the strongest model as reviewer. The answer is remembered for later runs. ')
     token = secrets.token_urlsafe(24)
     with scope() as (service, profile, _):
         record = dict(kind='slash', operation=op, session_id=sid, session_key=key,

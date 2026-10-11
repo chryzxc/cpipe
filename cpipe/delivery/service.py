@@ -14,7 +14,7 @@ PHASES = frozenset({"proposal", "checking", "implementing", "testable", "reviewi
 KINDS = frozenset({"proposal_created", "envelope_approved", "activity_claimed",
                    "activity_observed", "review_received", "feedback_received",
                    "clarification_answered", "publication_observed", "cancelled",
-                   "activity_abandoned"})
+                   "activity_abandoned", "activity_refused"})
 
 
 # Attempts to get a behavior test that fails on an assertion before implementing.
@@ -58,6 +58,7 @@ class State(Versioned):
     calls_used: int
     started_at: int
     last_at: int
+    builder: str = ""  # the builder that took over after a refusal; "" = the first
 
     def __post_init__(self):
         if type(self.plan) is not ExecutionPlan or self.phase not in PHASES:
@@ -70,7 +71,7 @@ class State(Versioned):
         if type(self.approved) is not bool or type(self.readiness_requested) is not bool:
             raise ValueError("invalid snapshot flags")
         for name in ("activity", "active_intent", "run_id", "worker_session", "builder_session",
-                     "builder_digest", "last_reviewed_artifact"):
+                     "builder_digest", "last_reviewed_artifact", "builder"):
             optional_id(getattr(self, name), name)
         typed_tuple(self.receipts, Receipt, "receipts")
         typed_tuple(self.findings, FindingRecord, "findings")
@@ -85,6 +86,8 @@ class State(Versioned):
 
     @classmethod
     def from_dict(cls, data):
+        if type(data) is dict and "builder" not in data:
+            data = {**data, "builder": ""}  # snapshots saved before builder takeover existed
         values = cls._payload(data)
         values["plan"] = ExecutionPlan.from_dict(values["plan"])
         for name in ("receipts", "findings"):
@@ -208,17 +211,23 @@ def green(state, include_review=True):
                                   and latest[name].outcome is Outcome.PASS for name in required)
 
 
+def actor(state, role):
+    """The reviewer, or the builder in charge: the first, until one refuses."""
+    return next(a for a in state.plan.actors if a.role == role
+                and (role == "reviewer" or a.profile == state.builder or not state.builder))
+
+
 def continue_with(state, action, phase, feedback_ref=""):
     calls = state.calls_used + int(action in {"write_tests", "implement", "review"})
     if calls > state.plan.budget.calls:
         return replace(state, phase="stopped", activity="", active_intent="", run_id=""), ()
     role = "reviewer" if action == "review" else "builder"
-    actor = next(a for a in state.plan.actors if a.role == role)
+    worker = actor(state, role)
     key = f"{state.plan.envelope.delivery_id}:{state.version}:{action}"
     resume = state.builder_session if role == "builder" and state.builder_digest == state.plan.digest() else ""
     intent = {"schema": 1, "delivery": state.plan.envelope.delivery_id,
               "action": action, "artifact": state.artifact, "plan_digest": state.plan.digest(),
-              "role": role, "actor": actor.to_dict(), "resume": resume,
+              "role": role, "actor": worker.to_dict(), "resume": resume,
               "review_from": state.last_reviewed_artifact or state.plan.base_commit,
               "requires_full_coverage": True}
     if feedback_ref:
@@ -237,7 +246,7 @@ def check_result_identity(state, event):
         raise ValueError("result does not match claimed activity")
     if state.activity in {"write_tests", "implement", "review"}:
         role = "reviewer" if state.activity == "review" else "builder"
-        if event.actor_id != next(a.profile for a in state.plan.actors if a.role == role):
+        if event.actor_id != actor(state, role).profile:
             raise ValueError("result actor mismatch")
 
 
@@ -335,7 +344,7 @@ def apply(snapshot, event):
         builder, digest = state.builder_session, state.builder_digest
         if state.activity in {"write_tests", "implement", "review"}:
             role = "reviewer" if state.activity == "review" else "builder"
-            if event.actor_id != next(a.profile for a in state.plan.actors if a.role == role) or not event.worker_session:
+            if event.actor_id != actor(state, role).profile or not event.worker_session:
                 raise ValueError("claim actor/session mismatch")
             if role == "reviewer" and event.worker_session == state.builder_session:
                 raise ValueError("reviewer cannot inherit builder session")
@@ -351,6 +360,16 @@ def apply(snapshot, event):
             raise ValueError("abandon does not match claimed activity")
         # A crashed step is re-issued on a fresh card; builder steps spend a call.
         return continue_with(state, state.activity, state.phase)
+    if event.kind == "activity_refused":
+        if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
+            raise ValueError("refusal does not match claimed activity")
+        builders = [a.profile for a in state.plan.actors if a.role == "builder"]
+        later = builders[builders.index(actor(state, "builder").profile) + 1:]
+        if state.activity not in {"write_tests", "implement"} or not later:
+            return quiescent(state, "waiting")
+        # The next approved builder takes over in a fresh session; the flow continues.
+        return continue_with(replace(state, builder=later[0], builder_session="", builder_digest=""),
+                             state.activity, state.phase)
     if event.kind in {"activity_observed", "review_received", "publication_observed"}:
         check_result_identity(state, event)
     if event.kind == "activity_observed":
