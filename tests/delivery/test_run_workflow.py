@@ -54,7 +54,7 @@ def prepare(data, revision=0):
 def test_one_task_entry_and_adaptive_installed_capabilities(run_context):
     ctx, _, _, _, _, prompt = run_context
     assert set(ctx.commands) == {'cp-run', 'cp-status', 'cp-stop'}
-    for text in ('investigate', 'AGENTS.md', 'annotations', 'cpipe_approve_plan'):
+    for text in ('investigate', 'AGENTS.md', 'reply with any comments or changes', 'cpipe_approve_plan'):
         assert text in prompt
     assert 'skills_list' not in prompt
     assert 'Human consent cannot be inferred' in prompt
@@ -83,7 +83,7 @@ def test_draft_generates_private_preview_file_without_execution(run_context, rep
     assert prepare(run_context) == out
 
 
-def test_annotations_create_revision_without_mutating_old_document(run_context):
+def test_comments_create_revision_without_mutating_old_document(run_context):
     first = prepare(run_context)
     old_text = Path(first['document_path']).read_text()
     run_context[3]['steps'].append('Preserve negative and zero inputs.')
