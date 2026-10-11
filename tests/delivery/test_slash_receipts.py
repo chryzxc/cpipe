@@ -7,7 +7,7 @@ from cpipe.delivery.journal import Journal
 from cpipe.delivery.service import Event, Service
 from .test_artifact import repo
 from .test_check_runner import setup_check
-from .test_v2_entrypoints import Context
+from .test_entrypoints import Context
 
 
 def test_slash_receipt_routes_plan_and_fences_session(repo, tmp_path, hermes_home, monkeypatch):
@@ -58,7 +58,7 @@ def test_failed_injection_leaves_no_receipt(hermes_home, monkeypatch):
         assert store.db.execute('SELECT COUNT(*) FROM intent').fetchone()[0] == 0
 
 
-def test_cli_status_uses_the_same_v2_store(repo, tmp_path, hermes_home, capsys):
+def test_cli_status_uses_the_same_store(repo, tmp_path, hermes_home, capsys):
     from cpipe.runtime.cli import main
     journal, _, _, _ = setup_check(repo, tmp_path)
     proposal = Event.from_dict(journal.event('d1', 'proposal')['fact'])
@@ -67,5 +67,4 @@ def test_cli_status_uses_the_same_v2_store(repo, tmp_path, hermes_home, capsys):
         Service(store).accept(proposal)
     assert main(['status']) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out['engine_version'] == 2
     assert [d['delivery_id'] for d in out['deliveries']] == ['d1']

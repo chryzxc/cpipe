@@ -79,7 +79,7 @@ class Sandbox:
         if self._temp is not None:
             raise RuntimeError("sandbox already entered")
         # Respect the operator's existing TMPDIR, never write under system /tmp.
-        self._temp = tempfile.TemporaryDirectory(prefix="cpipe-v2-sandbox-")
+        self._temp = tempfile.TemporaryDirectory(prefix="cpipe-sandbox-")
         self.scratch = Path(self._temp.name).resolve()
         return self
 

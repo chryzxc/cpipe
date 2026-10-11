@@ -13,7 +13,8 @@ PHASES = frozenset({"proposal", "checking", "implementing", "testable", "reviewi
                     "cancelled", "stopped"})
 KINDS = frozenset({"proposal_created", "envelope_approved", "activity_claimed",
                    "activity_observed", "review_received", "feedback_received",
-                   "clarification_answered", "publication_observed", "cancelled"})
+                   "clarification_answered", "publication_observed", "cancelled",
+                   "activity_abandoned"})
 
 
 def nonnegative(value, name):
@@ -183,8 +184,13 @@ class Event(Versioned):
 
 
 def current(state, receipt):
+    return receipt.observed and matches(state, receipt)
+
+
+def matches(state, receipt):
+    """The receipt is for this artifact and frozen check, whatever its outcome."""
     check = next((c for c in state.plan.checks if c.obligation == receipt.obligation), None)
-    return bool(check and receipt.observed and receipt.artifact == state.artifact
+    return bool(check and receipt.artifact == state.artifact
                 and receipt.scope == state.plan.envelope.scope
                 and (receipt.inputs, receipt.environment, receipt.command)
                 == (check.inputs, check.environment, check.command))
@@ -337,6 +343,11 @@ def apply(snapshot, event):
                 builder, digest = event.worker_session, state.plan.digest()
         return replace(state, run_id=event.run_id, worker_session=event.worker_session,
                        builder_session=builder, builder_digest=digest), ()
+    if event.kind == "activity_abandoned":
+        if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
+            raise ValueError("abandon does not match claimed activity")
+        # A crashed step is re-issued on a fresh card; builder steps spend a call.
+        return continue_with(state, state.activity, state.phase)
     if event.kind in {"activity_observed", "review_received", "publication_observed"}:
         check_result_identity(state, event)
     if event.kind == "activity_observed":
@@ -347,7 +358,10 @@ def apply(snapshot, event):
             return continue_with(replace(state, artifact=event.result_artifact), after, "checking")
         if state.activity not in {"tests", "checks"} or not event.receipts:
             raise ValueError("check activity requires command observations")
-        if any(not current(state, r) or r.obligation == "review" for r in event.receipts):
+        # UNAVAILABLE receipts are unobserved by design (e.g. the test does not exist yet);
+        # a PASS/FAIL must have been observed.
+        if any(not matches(state, r) or r.obligation == "review"
+               or (r.outcome is not Outcome.UNAVAILABLE and not r.observed) for r in event.receipts):
             raise ValueError("stale or misconfigured check receipt")
         earlier = any(r.obligation == "behavior" for r in state.receipts)
         state = replace(state, receipts=state.receipts + event.receipts)

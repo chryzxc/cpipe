@@ -89,8 +89,8 @@ def test_private_store_and_profile_paths_are_distinct(tmp_path):
         b.append("d1", 0, "one", {"origin": "custom"})
         assert a.read("d1")[1] != b.read("d1")[1]
     for home in (default, named):
-        assert stat.S_IMODE((home / "delivery-v2").stat().st_mode) == 0o700
-        path = home / "delivery-v2" / "facts.db"
+        assert stat.S_IMODE((home / "cpipe-deliveries").stat().st_mode) == 0o700
+        path = home / "cpipe-deliveries" / "facts.db"
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
         with sqlite3.connect(path) as db:
             assert db.execute("PRAGMA user_version").fetchone()[0] == 1

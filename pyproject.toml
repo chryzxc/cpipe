@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cpipe"
 version = "2.0.0"
-description = "V2-only local development with frozen approval, observed tests and independent review."
+description = "Local development with frozen approval, observed tests and independent review."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}

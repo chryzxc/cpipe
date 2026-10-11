@@ -183,15 +183,16 @@ def _prompt(state, resume):
     """Stable contract on a fresh session; on resume only the delta, since the session holds the rest."""
     if state.activity == 'write_tests':
         task = ('Write or fix only the behavior check\'s test (its exact command and criteria are in the '
-                'approach) so it fails on the current code for the reason the change addresses. Do not '
-                'implement the change yet. Return only {"status":"done"}; the controller observes RED.')
+                'approach) so it fails on the current code for the reason the change addresses. It must fail on an '
+                'assertion, not a crash: if the code under test does not exist yet, add only a minimal stub '
+                '(right signature, wrong result). Do not implement the change yet. Return only {"status":"done"}; the controller observes RED.')
     elif state.activity == 'implement':
         task = ('Make the minimum authorized correction for the failing checks and open findings, '
                 'then return only {"status":"done"}. Passing checks and completion are the controller’s '
                 'job, not a prose assertion.')
     if state.activity in {'write_tests', 'implement'} and resume:
         return 'Same delivery, next round. Activity: ' + state.activity + '.\n' + _delta(state) + task
-    prompt = ('You are a directly executing worker in an explicitly selected cpipe v2 workflow. '
+    prompt = ('You are a directly executing worker in an explicitly selected cpipe workflow. '
         'Do the assigned work with your own tools; do not delegate, invoke external coding CLIs, '
         'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
         'Do not commit, push, open PRs, or modify files outside write_paths. '
@@ -223,7 +224,7 @@ class HermesWorker:
         actor = next(a for a in state.plan.actors if a.role == (
             'reviewer' if state.activity == 'review' else 'builder'))
         if actor.engine != 'hermes':
-            raise ValueError('unsupported v2 execution engine')
+            raise ValueError('unsupported execution engine')
         resume = state.builder_session if state.activity in {'write_tests', 'implement'} else ''
         prompt = _prompt(state, resume)
         env = {k: v for k, v in os.environ.items()

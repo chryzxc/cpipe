@@ -1,4 +1,4 @@
-"""Small native Kanban bridge for v2; normal Hermes dispatch is unchanged."""
+"""Small native Kanban bridge; normal Hermes dispatch is unchanged."""
 import os
 import socket
 import uuid
@@ -11,7 +11,7 @@ def connect(board=None):
 
 
 def new_claimer():
-    return f'{socket.gethostname() or "unknown"}:{os.getpid()}:cpipe-v2-{uuid.uuid4().hex[:12]}'
+    return f'{socket.gethostname() or "unknown"}:{os.getpid()}:cpipe-{uuid.uuid4().hex[:12]}'
 
 
 def get_task(conn, task_id):

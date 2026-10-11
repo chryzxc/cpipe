@@ -13,7 +13,7 @@ from cpipe.delivery.journal import Journal
 from cpipe.delivery.service import Service
 from cpipe.delivery.schema import Actor, ExecutionPlan
 from .test_artifact import repo
-from .test_v2_entrypoints import Context
+from .test_entrypoints import Context
 
 
 @pytest.fixture
@@ -54,9 +54,9 @@ def prepare(data, revision=0):
 def test_one_task_entry_and_adaptive_installed_capabilities(run_context):
     ctx, _, _, _, _, prompt = run_context
     assert set(ctx.commands) == {'cp-run', 'cp-status', 'cp-stop'}
-    for text in ('investigate', 'skills_list', 'skill_view', 'AGENTS.md', 'annotations', 'cpipe_approve_plan'):
+    for text in ('investigate', 'AGENTS.md', 'annotations', 'cpipe_approve_plan'):
         assert text in prompt
-    assert 'Superpowers is optional' in prompt
+    assert 'skills_list' not in prompt
     assert 'Human consent cannot be inferred' in prompt
 
 

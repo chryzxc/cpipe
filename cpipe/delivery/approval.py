@@ -1,4 +1,4 @@
-"""Frozen v2 envelope consent via the existing Hermes one-operation transport.
+"""Frozen envelope consent via the existing Hermes one-operation transport.
 
 The journal remains the approval authority. Archived outbox entries only prevent
 re-prompting after dismissal or interruption; they never grant worker authority.
@@ -129,13 +129,13 @@ def request(service, args, *, session_id, profile_id):
     try:
         state, previous = _reserve(service, args, session_id, profile_id)
     except (ValueError, RuntimeError):
-        return {'error': 'The v2 proposal is unavailable, changed, expired or belongs to another session/profile.'}
+        return {'error': 'The proposal is unavailable, changed, expired or belongs to another session/profile.'}
     if previous is not None:
         return previous
     from cpipe.plan_approval import _native_prompt
     command, description = presentation(state.plan, args['plan_revision'])
     try:
-        decision = _native_prompt(command, description, 'cpipe_v2_envelope', 'Ready to start?')
+        decision = _native_prompt(command, description, 'cpipe_envelope', 'Ready to start?')
     except Exception:
         decision = {}  # Never save transport diagnostics or credential-bearing exceptions.
     result = {'delivery_id': args['delivery_id'], 'status': 'waiting_for_approval'}

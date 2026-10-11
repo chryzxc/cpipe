@@ -1,9 +1,9 @@
-"""Bind v2 engineering activities to Hermes' native queue and run authority.
+"""Bind engineering activities to Hermes' native queue and run authority.
 
 Only the trusted execution adapter calls this module. It is not a model tool,
 worker launcher, approval transport, or sandbox. Worker prose must never be
 converted into check receipts here. Hermes still owns claims and scheduling;
-stock-dispatch eligibility does not imply confinement or a v2-aware worker.
+stock-dispatch eligibility does not imply confinement or a cpipe-aware worker.
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ class NativeBridge:
         # Includes profile/session so two initiating profiles cannot alias cards.
         e = state.plan.envelope
         material = encoded([e.profile_id, e.session_id, state.plan.digest(), state.active_intent])
-        return 'cpipe-v2:' + hashlib.sha256(material.encode()).hexdigest()
+        return 'cpipe:' + hashlib.sha256(material.encode()).hexdigest()
 
     @staticmethod
     def _actor(state):
@@ -75,7 +75,7 @@ class NativeBridge:
         return task
 
     def _body(self, state):
-        return 'cpipe v2 activity contract (trusted execution adapter required):\n' + encoded(self._packet(state))
+        return 'cpipe activity contract (trusted execution adapter required):\n' + encoded(self._packet(state))
 
     def schedule(self, delivery_id):
         state = self._state(delivery_id)
@@ -94,7 +94,7 @@ class NativeBridge:
         # Serialize native idempotency lookup/create. Hermes create_task supports
         # nesting, but its standalone pre-check is otherwise subject to a race.
         with h.kb.write_txn(self.conn):
-            tid = h.kb.create_task(self.conn, title=f'cpipe v2: {state.activity}',
+            tid = h.kb.create_task(self.conn, title=f'cpipe: {state.activity} · {actor.profile}',
                 body=self._body(state), assignee=self._lane(actor.profile), created_by='cpipe',
                 workspace_kind='dir', workspace_path=state.plan.worktree,
                 project_id='', session_id=self.session_id,
@@ -154,6 +154,19 @@ class NativeBridge:
         event = self._event(state, 'activity_claimed', run_id=run_id,
                             worker_session=worker_session, actor_id=self._actor(state).profile)
         return self.service.accept(event)[0]
+
+    def abandon(self, delivery_id, claimer=None):
+        """Release a bound run whose step crashed, so the next build re-issues it."""
+        state = self._state(delivery_id)
+        if not state.run_id:
+            return state
+        task = h.get_task(self.conn, state.run_id.split(':')[0])
+        if task and task.status == 'running':
+            if task.claim_lock != claimer and (task.claim_expires or 0) > time.time():
+                raise ValueError('step is still running')
+            h.block(self.conn, task.id, run_id=task.current_run_id,
+                    reason='step abandoned; re-issued on a new card', kind='needs_input')
+        return self.service.accept(self._event(state, 'activity_abandoned'))[0]
 
     def result_event(self, delivery_id, task_id, *, claimer, kind, **result):
         if kind not in RESULT_KINDS:
@@ -216,7 +229,7 @@ class NativeBridge:
         native_recorded = bool(task and run and task.status == 'done'
             and run.outcome == 'completed' and run.claim_lock == claimer
             and f'{task_id}:{run.id}' == event.run_id
-            and (run.metadata or {}).get('cpipe_v2_event') == event.to_dict())
+            and (run.metadata or {}).get('cpipe_event') == event.to_dict())
         if recorded:
             if not native_recorded:
                 raise ValueError('recorded engineering result lacks matching native run')
@@ -229,12 +242,12 @@ class NativeBridge:
             if state.run_id != event.run_id or event.run_id != f'{task.id}:{task.current_run_id}':
                 raise ValueError('native result run mismatch')
             if not h.complete(self.conn, task_id, run_id=task.current_run_id, summary=summary,
-                              metadata={'cpipe_v2_event': event.to_dict()}):
+                              metadata={'cpipe_event': event.to_dict()}):
                 raise RuntimeError('native completion was rejected')
             task = h.get_task(self.conn, task_id)
             run = h.kb.latest_run(self.conn, task_id)
             if (not task or task.status != 'done' or not run or run.outcome != 'completed'
                     or f'{task_id}:{run.id}' != event.run_id
-                    or (run.metadata or {}).get('cpipe_v2_event') != event.to_dict()):
+                    or (run.metadata or {}).get('cpipe_event') != event.to_dict()):
                 raise RuntimeError('native completion readback failed')
         return self.service.accept(event)[0]
