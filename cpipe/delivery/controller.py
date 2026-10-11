@@ -5,6 +5,7 @@ Trusted local workers are not sandboxed. Publication is deliberately unavailable
 from contextlib import closing
 import json
 from pathlib import Path
+import subprocess
 import time
 import uuid
 
@@ -14,7 +15,7 @@ from .contracts import Envelope, Budget, UNAVAILABLE_REASONS
 from .schema import ExecutionPlan
 from .service import Service, Event
 from .native_bridge import NativeBridge
-from .hermes_worker import HermesWorker, keep, roll_back
+from .hermes_worker import changed_since_base, reattach, HermesWorker, keep, roll_back
 from .workers import observe_implementation, usage, WorkerRefused
 from .review import observe_review, review_identity
 from .approval import arguments
@@ -31,20 +32,35 @@ CALLS = 40
 # A failing worker is resumed with the reason, then retried in a fresh session; on the
 # next failure the next approved actor takes over. Retries back off for provider hiccups.
 FAILURES = 3
+ACTIVE_STEPS = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review'})
 BACKOFF = 15
 WORKER_STEPS = frozenset({'write_tests', 'implement', 'review'})
 
 
-def settle(state, store):
-    """Before each step: remember a verified worktree, or roll a failed step's leftovers back."""
+def settle(state, store, service):
+    """Before each step: remember a verified worktree, roll a failed step's leftovers back, or adopt it."""
     try:
         clean = validate_worktree(state.plan).digest == state.artifact
     except (ValueError, OSError):
         clean = False
     if clean:
-        return keep(state.plan, store)
-    if not roll_back(state.plan, store) or validate_worktree(state.plan).digest != state.artifact:
-        raise ValueError('the worktree was changed outside cpipe and could not be restored')
+        keep(state.plan, store)
+        return state
+    try:
+        if roll_back(state.plan, store) and validate_worktree(state.plan).digest == state.artifact:
+            return state
+    except (ValueError, OSError, subprocess.SubprocessError):
+        pass
+    # Nothing verified to return to (or it is gone): continue from the worktree as it is, if it
+    # stays inside the approved paths. The checks prove it again before any review.
+    reattach(state.plan)
+    plan = state.plan
+    inside = lambda name, paths: any(name == p or name.startswith(p + '/') for p in paths)
+    if any(not inside(n, plan.write_paths) or inside(n, plan.forbidden_paths) for n in changed_since_base(plan)):
+        raise ValueError('the worktree was changed outside the approved paths and could not be restored')
+    digest = validate_worktree(plan).digest
+    bridge = NativeBridge(service, None, session_id=plan.envelope.session_id, profile_id=plan.envelope.profile_id)
+    return service.accept(bridge._event(state, 'worktree_adopted', result_artifact=digest))[0]
 
 
 def summary(state, service=None):
@@ -228,16 +244,17 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
     store = Path(evidence_root) / 'good' / delivery_id
     claimer = h.new_claimer()
     bridge.abandon(delivery_id)  # recover a run left bound by a crashed build
-    for _ in range(max(4, state.plan.budget.calls * 4)):
+    for _ in range(max(4, state.plan.budget.calls * 6)):
         state = owned(service, delivery_id, session_id, profile_id)
-        if not state.activity or state.activity not in {'tests', 'checks', 'write_tests', 'implement', 'review'}:
+        if state.activity not in ACTIVE_STEPS:
             break
         action = state.activity
-        settle(state, store)
-        tid = bridge.schedule(delivery_id)
-        if tid is None:
-            raise ValueError('missing runnable native task')
         try:
+            state = settle(state, store, service)
+            action = state.activity
+            tid = bridge.schedule(delivery_id)
+            if tid is None:
+                raise ValueError('missing runnable native task')
             if action in {'tests', 'checks'}:
                 if h.claim_task(conn, tid, claimer=claimer, ttl_seconds=state.plan.budget.seconds) is None:
                     raise ValueError('task owned by another launcher; no worker started')
@@ -257,27 +274,34 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             bridge.abandon(delivery_id, claimer, kind='activity_refused')
             continue
         except Exception as exc:
-            if action not in WORKER_STEPS:
-                bridge.abandon(delivery_id, claimer)
-                raise
-            if not owned(service, delivery_id, session_id, profile_id).run_id:
-                continue  # cancelled or out of budget meanwhile; the loop ends
-            who = bridge._actor(state).profile
-            strikes[who] = n = strikes.get(who, 0) + 1
+            current = owned(service, delivery_id, session_id, profile_id)
+            if current.activity != action or not current.approved:
+                continue  # cancelled, out of budget or moved on meanwhile; the loop decides
             # cpipe's own ValueErrors are fixed labels; anything else stays a type name.
             reason = str(exc)[:200] if type(exc) is ValueError else type(exc).__name__
-            recoveries.append(f'{who} failed {action} ({reason}); '
-                              + ('retrying' if n < FAILURES else 'handing over'))
-            worker.note = (f'Your previous attempt at this step failed: {reason}. Its changes were undone. '
-                           'Do the step again and finish with exactly the requested JSON.')
-            if n < FAILURES:
-                bridge.abandon(delivery_id, claimer, action='fresh' if n > 1 else '')
+            if action not in WORKER_STEPS or not current.run_id:
+                # Not the worker's doing (checks, or preparing the step): retry a few times, then report.
+                strikes[action] = n = strikes.get(action, 0) + 1
+                recoveries.append(f'{action} failed ({reason}); ' + ('retrying' if n < FAILURES else 'giving up'))
+                if current.run_id:
+                    bridge.abandon(delivery_id, claimer)
+                if n >= FAILURES:
+                    raise
             else:
-                worker.note = ''
-                bridge.abandon(delivery_id, claimer, kind='activity_refused')
+                who = bridge._actor(state).profile
+                strikes[who] = n = strikes.get(who, 0) + 1
+                recoveries.append(f'{who} failed {action} ({reason}); '
+                                  + ('retrying' if n < FAILURES else 'handing over'))
+                worker.note = (f'Your previous attempt at this step failed: {reason}. Its changes were undone. '
+                               'Do the step again and finish with exactly the requested JSON.')
+                if n < FAILURES:
+                    bridge.abandon(delivery_id, claimer, action='fresh' if n > 1 else '')
+                else:
+                    worker.note = ''
+                    bridge.abandon(delivery_id, claimer, kind='activity_refused')
             time.sleep(min(BACKOFF * n, max(0, state.plan.budget.seconds - (time.time() - state.started_at)) / 4))
             continue
-        strikes.pop(bridge._actor(state).profile if action in WORKER_STEPS else '', None)  # the ladder restarts
+        strikes.pop(bridge._actor(state).profile if action in WORKER_STEPS else action, None)  # the ladder restarts
         task = h.get_task(conn, tid)
         steps.append(dict(activity=action, task_id=tid, native_status=task.status,
                           phase=state.phase, outcomes=[r.outcome.value for r in state.receipts]))

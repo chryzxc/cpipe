@@ -328,3 +328,51 @@ def test_roll_back_restores_files_index_branch_and_commits(repo, tmp_path):
     assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'
     assert (repo / 'kept.py').read_text() == 'kept\n' and not (repo / 'junk.py').exists()
     assert git(repo, 'diff', '--cached', '--name-only') == staged == 'kept.py'
+
+
+@pytest.mark.parametrize('drift, adopted', [('double.py', True), ('outside.py', False)])
+def test_leftovers_with_nothing_to_roll_back_to_are_adopted_only_inside_the_approved_paths(
+        repo, tmp_path, monkeypatch, drift, adopted):
+    """A crashed step from an earlier process left edits behind and no verified snapshot exists."""
+    from cpipe.delivery import controller
+    from cpipe.delivery.controller import propose, run
+    from cpipe.delivery.workers import WorkerResult
+    from cpipe.delivery.review import REVIEW_AXES, review_identity
+    from cpipe.runtime import hermes_api as h
+    from .test_execution_plan import plan
+    monkeypatch.setattr(controller, 'BACKOFF', 0)
+    spec = pytest_check(timeout=20)
+    (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
+        base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=int(time.time()) + 300,
+        envelope=replace(plan().envelope, required=('behavior', 'review')),
+        checks=(spec.identity(), review_identity()),
+        write_paths=('double.py', 'test_behavior.py'), interactive=False, transient_retries=0)
+    h.kb.init_db(tmp_path / 'native.db')
+    conn = h.kbc.connect(tmp_path / 'native.db')
+    def execute(state, *, on_session, **kw):
+        session = 'review-session' if state.activity == 'review' else 'builder-session'
+        on_session(session)
+        if state.activity == 'review':
+            return WorkerResult(session, dict(status='approved', artifact=state.artifact,
+                reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
+        (repo / 'double.py').write_text('def double(n): return n * 2\n')
+        return WorkerResult(session, {'status': 'done'})
+    try:
+        with Journal(tmp_path / 'controller.db') as journal:
+            service = Service(journal)
+            state = propose(service, p, (spec,))
+            service.accept(Event('approval', 'envelope_approved', 'd1', p.digest(), state.artifact,
+                state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
+            (repo / drift).write_text('def double(n): return n + 1  # half-finished\n')
+            kw = dict(session_id='s1', profile_id='default', conn=conn, execute=execute,
+                      evidence_root=tmp_path / 'evidence')
+            if adopted:
+                result = run(service, 'd1', **kw)
+                assert result['phase'] == 'locally_ready', result
+            else:
+                with pytest.raises(ValueError, match='outside the approved paths'):
+                    run(service, 'd1', **kw)
+                assert (repo / drift).exists()  # never deletes work it cannot attribute
+    finally:
+        conn.close()

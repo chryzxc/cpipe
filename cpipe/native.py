@@ -60,7 +60,8 @@ def scope():
 
 _CTX = None  # plugin context, to message the originating chat when a run settles
 _RUNS = {}  # delivery_id -> background thread
-CRASH_RETRIES = 2  # a crashed step is re-issued on a fresh card this many times
+CRASH_RETRIES = 2  # a run that crashes again without any progress is given up after this many retries
+RETRY_PAUSE = 30  # seconds, grows with each retry without progress
 
 HEADLINES = {'locally_ready': 'done and ready for your review',
              'stopped': 'stopped: its time or turn budget ran out',
@@ -83,17 +84,31 @@ def launch(delivery_id, *, session_id, profile_id, chat_key):
             _runner(delivery_id), encoded(dict(claimer=f'{socket.gethostname() or "unknown"}:{os.getpid()}:run',
                 session_id=session_id, profile_id=profile_id, chat_key=chat_key))))
     def work():
-        result, error = None, ''
-        for _ in range(CRASH_RETRIES + 1):
+        result, error, stalls = None, '', 0
+        def progress():
+            try:
+                with scope() as (service, _, _home):
+                    state = controller.owned(service, delivery_id, session_id, profile_id)
+                    return state.version, state.activity in controller.ACTIVE_STEPS and state.approved
+            except Exception:
+                return None, False
+        # Keep going while the run moves forward; give up only when it crashes again and again in place.
+        while stalls <= CRASH_RETRIES:
+            before, _ = progress()
             try:
                 with scope() as (service, _, home):
                     result = controller.run(service, delivery_id, session_id=session_id, profile_id=profile_id,
                                             evidence_root=home / 'cpipe-deliveries' / 'evidence')
                 error = ''
-                break
             except Exception as exc:
                 # cpipe's own ValueErrors are static labels; anything else stays a type name.
                 error = type(exc).__name__ + (': ' + str(exc)[:200] if type(exc) is ValueError else '')
+            after, active = progress()
+            if not active:
+                break  # settled: done, waiting, stuck, out of budget or cancelled
+            stalls = 0 if after != before else stalls + 1
+            if stalls:
+                time.sleep(RETRY_PAUSE * stalls)
         try:
             with scope() as (service, _, _home):
                 state = controller.owned(service, delivery_id, session_id, profile_id)

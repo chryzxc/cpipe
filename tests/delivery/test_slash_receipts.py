@@ -72,6 +72,9 @@ def test_cli_status_uses_the_same_store(repo, tmp_path, hermes_home, capsys):
 
 def test_crashed_background_run_retries_then_still_tells_the_chat(hermes_home, monkeypatch):
     calls, told = [], []
+    monkeypatch.setattr(native, 'RETRY_PAUSE', 0)
+    monkeypatch.setattr(native.controller, 'owned', lambda *a: type('S', (), dict(version=1, activity='implement',
+                                                                                    approved=True))())
     monkeypatch.setattr(native.controller, 'ready', lambda *a: None)
     monkeypatch.setattr(native.controller, 'run', lambda *a, **kw: calls.append(1) or 1 / 0)
     ctx = Context()

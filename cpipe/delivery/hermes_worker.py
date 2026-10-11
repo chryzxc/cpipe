@@ -278,14 +278,25 @@ def keep(plan, store):
         (store / 'index').unlink(missing_ok=True)
 
 
+def reattach(plan):
+    """Back on the approved branch at the approved base; any commits become uncommitted edits."""
+    _git(plan.worktree, 'symbolic-ref', 'HEAD', 'refs/heads/' + plan.envelope.branch)
+    _git(plan.worktree, 'reset', '-q', '--soft', plan.base_commit)  # workers never commit; undo any that did
+
+
+def changed_since_base(plan):
+    """Paths whose content differs from the approved base, new files included."""
+    return _git(plan.worktree, 'diff-tree', '-r', '-z', '--no-renames', '--name-only',
+                plan.base_commit + '^{tree}', snapshot(plan.worktree)).split('\0')[:-1]
+
+
 def roll_back(plan, store):
     """Undo a failed step's edits, staging, commits or branch switch; False if nothing was kept."""
     cwd = plan.worktree
     tree = _git(cwd, 'rev-parse', '-q', '--verify', _good(plan) + '^{tree}', check=False)
     if not tree:
         return False
-    _git(cwd, 'symbolic-ref', 'HEAD', 'refs/heads/' + plan.envelope.branch)
-    _git(cwd, 'reset', '-q', '--soft', plan.base_commit)  # workers never commit; undo any that did
+    reattach(plan)
     now = snapshot(cwd)
     if now != tree:
         parts = _git(cwd, 'diff-tree', '-r', '-z', '--no-renames', '--name-status', tree, now).split('\0')
