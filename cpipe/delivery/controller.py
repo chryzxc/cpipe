@@ -26,7 +26,7 @@ APPROVAL_WINDOW = 3600
 
 
 # Builder/reviewer turns per delivery: room for test, fix and review rounds plus self-repair.
-CALLS = 16
+CALLS = 24
 
 
 def summary(state, service=None):

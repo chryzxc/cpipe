@@ -125,6 +125,32 @@ def validate_document(service, plan):
         raise ValueError('reviewed approach document changed or is unavailable')
 
 
+def roles(home):
+    """(saved builder/reviewer or None, {profile: model} of profiles that can run as workers)."""
+    from hermes_cli.profiles import list_profile_names
+    from .live_probe import observe_actor
+    usable = {}
+    for name in list_profile_names():
+        try:
+            usable[name] = observe_actor('builder', name).model
+        except ValueError:
+            pass  # no saved model/provider: cannot run unattended
+    try:
+        saved = json.loads((Path(home) / 'cpipe-deliveries' / 'roles.json').read_text())
+        saved = {'builder': saved['builder'], 'reviewer': saved['reviewer']}
+    except (OSError, ValueError, KeyError, TypeError):
+        saved = None
+    if saved and (saved['builder'] == saved['reviewer'] or not set(saved.values()) <= set(usable)):
+        saved = None  # a remembered profile was removed or lost its model
+    return saved, usable
+
+
+def remember_roles(home, spec):
+    path = Path(home) / 'cpipe-deliveries' / 'roles.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({'builder': spec['builder'], 'reviewer': spec['reviewer']}) + '\n')
+
+
 def _save(db, key, record):
     db.execute('UPDATE intent SET payload=? WHERE id=?', (encoded(record), key))
 
@@ -228,6 +254,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
     if op == 'plan':
         state = controller.from_spec(service, record['spec'], session_id=session_id, profile_id=profile_id,
                                      approach=record['text'])
+        remember_roles(home, record['spec'])  # the next /cp-run reuses these without asking
         binding = {'document_path': record['result']['document_path']}
         db.execute('INSERT INTO intent(id,payload,acknowledged) VALUES (?,?,1)',
                    ('approach:' + state.plan.digest(), encoded(binding)))

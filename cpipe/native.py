@@ -62,7 +62,7 @@ CRASH_RETRIES = 2  # a crashed step is re-issued on a fresh card this many times
 
 HEADLINES = {'locally_ready': 'done and ready for your review',
              'stopped': 'stopped: its time or turn budget ran out',
-             'diagnosis': 'stopped: it could not get a valid failing test',
+             'diagnosis': 'stopped: it got stuck (no valid failing test, or review findings it could not resolve)',
              'waiting': 'stopped: it needs you',
              'cancelled': 'cancelled'}
 
@@ -137,6 +137,20 @@ def dispatch(ctx, name, raw=''):
     from agent.redact import redact_sensitive_text
     from .runtime.envpolicy import Redactor
     import os
+    roles_text = ''
+    if op == 'run':
+        from .delivery.approach import roles
+        with scope() as (_, _profile, home):
+            saved, usable = roles(home)
+        if len(usable) < 2:
+            return ('cpipe needs two Hermes profiles with a saved model and provider: one builds, a different one '
+                    'reviews. Set them up in Hermes, then run /cp-run again; no work started.')
+        offer = ', '.join(f'{n} ({m})' for n, m in sorted(usable.items()))
+        roles_text = (f"Use builder {saved['builder']} and reviewer {saved['reviewer']} (the user's saved cpipe roles). "
+            if saved else
+            'No cpipe roles are saved yet. Include in your one clarify question which profile builds and which '
+            'different one reviews, offering only: ' + offer + '. Suggest the strongest model as reviewer. '
+            'The answer is remembered for later runs. ')
     token = secrets.token_urlsafe(24)
     with scope() as (service, profile, _):
         record = dict(kind='slash', operation=op, session_id=sid, session_key=key,
@@ -161,8 +175,8 @@ def dispatch(ctx, name, raw=''):
         prompt = ('The user explicitly chose cpipe with /cp-run. Resolve the actual task, repository and worktree '
             'from this session using tools. Read project instructions such as AGENTS.md and inspect only the code the '
             'task touches; use installed skills only when clearly relevant. '
-            'Do not alter user configuration, profiles, skills or plugins. Do not guess models/providers: Hermes resolves '
-            'saved distinct builder/reviewer profiles. Preserve unrelated edits.\n'
+            'Do not alter user configuration, profiles, skills or plugins. ' + roles_text +
+            'Do not guess models/providers: Hermes resolves them from the profiles. Preserve unrelated edits.\n'
             'Choose kind bug, feature or change; risk normal or high; depth focused or detailed. For bugs, investigate '
             'and reproduce/trace the cause before proposing a focused fix, not a speculative detailed plan. '
             'Features and high-risk or cross-cutting work require detailed design decisions, even when described as bugs. '

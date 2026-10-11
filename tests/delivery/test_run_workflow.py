@@ -25,6 +25,9 @@ def run_context(repo, hermes_home, monkeypatch):
     monkeypatch.setattr(session_context, 'get_session_env', lambda key: values.get(key, ''))
     monkeypatch.setattr(live_probe, 'observe_actor', lambda role, profile:
                         Actor(role, 'hermes', profile, 'saved-model', 'saved-provider'))
+    from cpipe.delivery import approach
+    monkeypatch.setattr(approach, 'roles', lambda home: ({'builder': 'builder', 'reviewer': 'reviewer'},
+                                                         {'builder': 'saved-model', 'reviewer': 'saved-model'}))
     (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
     ctx, queued = Context(), []
     ctx.inject_message = lambda text, **kw: queued.append(text) or True
@@ -310,3 +313,31 @@ def test_missing_behavior_check_fails_at_prepare_not_after_approval(run_context)
     out = prepare(run_context)
     assert 'behavior' in json.dumps(out)
     assert out.get('phase') != 'approach_review'
+
+
+def test_roles_are_asked_once_then_remembered_and_never_guessed(hermes_home, monkeypatch):
+    from hermes_cli import profiles
+    from cpipe.delivery import approach, live_probe
+    from gateway import session_context
+    monkeypatch.setattr(session_context, 'get_session_env', lambda key: {'HERMES_SESSION_ID': 's1'}.get(key, 'chat-one'))
+    names = ['default', 'forge', 'sentry', 'blank']
+    monkeypatch.setattr(profiles, 'list_profile_names', lambda: names)
+    def observe(role, name):
+        if name == 'blank':
+            raise ValueError('no model')
+        return Actor(role, 'hermes', name, name + '-model', 'p')
+    monkeypatch.setattr(live_probe, 'observe_actor', observe)
+    ctx, queued = Context(), []
+    ctx.inject_message = lambda text, **kw: queued.append(text) or True
+    native.register(ctx)
+    ctx.commands['cp-run']('Fix it')
+    assert 'No cpipe roles are saved yet' in queued[-1] and 'forge (forge-model)' in queued[-1]
+    assert 'blank' not in queued[-1]  # cannot run without a saved model
+    approach.remember_roles(hermes_home, {'builder': 'forge', 'reviewer': 'sentry'})
+    ctx.commands['cp-run']('Fix it')
+    assert 'Use builder forge and reviewer sentry' in queued[-1]
+    names.remove('sentry')  # a remembered profile disappears: ask again rather than fail later
+    ctx.commands['cp-run']('Fix it')
+    assert 'No cpipe roles are saved yet' in queued[-1]
+    names[:] = ['default', 'blank']
+    assert 'two Hermes profiles' in ctx.commands['cp-run']('Fix it')

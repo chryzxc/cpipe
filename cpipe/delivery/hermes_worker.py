@@ -12,6 +12,7 @@ import os
 import selectors
 import signal
 import subprocess
+import tempfile
 import time
 
 from .workers import WorkerResult
@@ -186,7 +187,7 @@ def _delta(state):
     return '\n'.join(lines) + '\n' if lines else ''
 
 
-def _prompt(state, resume):
+def _prompt(state, resume, since=''):
     """Stable contract on a fresh session; on resume only the delta, since the session holds the rest."""
     if state.activity == 'write_tests':
         task = ('Write or fix only the behavior check\'s test (its exact command and criteria are in the '
@@ -194,8 +195,10 @@ def _prompt(state, resume):
                 'assertion, not a crash: if the code under test does not exist yet, add only a minimal stub '
                 '(right signature, wrong result). Do not implement the change yet. Return only {"status":"done"}; the controller observes RED.')
     elif state.activity == 'implement':
-        task = ('Make the minimum authorized correction for the failing checks and open findings, '
-                'then return only {"status":"done"}. Passing checks and completion are the controller’s '
+        task = ('Make the minimum authorized correction for the failing checks and open findings. Fix every '
+                'listed finding at its root cause in this one pass, then run the approved check commands and '
+                'inspect the callers of anything you changed so the fix introduces no regression. '
+                'Return only {"status":"done"}. Passing checks and completion are the controller’s '
                 'job, not a prose assertion.')
     if state.activity in {'write_tests', 'implement'} and resume:
         return 'Same delivery, next round. Activity: ' + state.activity + '.\n' + _delta(state) + task
@@ -215,15 +218,44 @@ def _prompt(state, resume):
         findings=[], verified_ids=[])
     return prompt + ('Read-only independent review: inspect the complete frozen base-to-candidate '
         'range, goal, acceptance, preserved behavior and evidence. Do not edit anything. '
-        'Every coverage axis requires actual inspection, not a checkbox assertion. '
-        'Review all listed axes and report all findings in one verdict. For each prior finding ID '
+        'Every coverage axis requires actual inspection, not a checkbox assertion. Look for: regressions '
+        '(run the project\'s own tests; check callers and behavior outside the diff), new bugs and unhandled '
+        'edge cases, security issues, and code to simplify (duplication, dead code, needless abstraction, '
+        'comments restating code, reimplemented existing helpers). Report only issues worth changing, not '
+        'style preferences; every open in-scope finding sends the change back to the builder and is reviewed again. '
+        + (f'This is a re-review. Only the builder\'s fixes changed since the last review; run '
+           f'`git diff {since}` to see them. Confirm each prior finding is resolved, then review that diff and its '
+           'effect on callers for regressions and new bugs. Do not raise new issues in code unchanged since the '
+           'last review unless high or critical; it was already reviewed. ' if since else
+           'Review all listed axes and report all findings in one verdict, so the builder can fix them in one pass. ')
+        + 'For each prior finding ID '
         'listed above, confirm it is resolved before putting it in verified_ids; otherwise leave it unresolved. '
         'Return exactly the following JSON schema, replacing status with approved or '
         'changes_requested; each new finding has exactly id (empty string), criterion '
-        '(review), root_cause (nonempty description, no credentials), severity '
+        '(review), root_cause (the problem and the concrete fix, no credentials), severity '
         '(low/medium/high/critical), in_scope (boolean), disposition (open). '
         'Only existing prior IDs may appear in verified_ids. Do not add fields.\n'
         + encoded(schema))
+
+
+def _git(cwd, *args, env=None, check=True):
+    env = env or {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+    return subprocess.run(['git', *args], cwd=cwd, env=env, stdin=subprocess.DEVNULL, capture_output=True,
+                          check=check, timeout=120).stdout.decode().strip()
+
+
+def snapshot(cwd):
+    """Tree id of the whole worktree, new files included, without touching the real index."""
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+        env['GIT_INDEX_FILE'] = os.path.join(tmp, 'index')
+        _git(cwd, 'read-tree', 'HEAD', env=env)
+        _git(cwd, 'add', '-A', env=env)
+        return _git(cwd, 'write-tree', env=env)
+
+
+def _ref(state):
+    return 'refs/cpipe/reviewed/' + state.plan.envelope.delivery_id
 
 
 class HermesWorker:
@@ -233,10 +265,21 @@ class HermesWorker:
         if actor.engine != 'hermes':
             raise ValueError('unsupported execution engine')
         resume = state.builder_session if state.activity in {'write_tests', 'implement'} else ''
-        prompt = _prompt(state, resume)
+        since = now = ''
+        if state.activity == 'review':
+            try:  # re-reviews look only at what changed since the last review
+                now = snapshot(state.plan.worktree)
+                last = _git(state.plan.worktree, 'rev-parse', '-q', '--verify', _ref(state) + '^{tree}', check=False)
+                since = f'{last} {now}' if state.review_cycles and last and last != now else ''
+            except (OSError, subprocess.SubprocessError):
+                now = ''
+        prompt = _prompt(state, resume, since)
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(('HERMES_KANBAN_', 'GIT_')) and k != 'PYTHONPATH'}
-        return execute_stream(command(actor, state.plan.worktree, resume, timeout_seconds),
+        result = execute_stream(command(actor, state.plan.worktree, resume, timeout_seconds),
             prompt=prompt, cwd=state.plan.worktree, env=env, model=actor.model,
             expected_session=resume, on_session=on_session, heartbeat=heartbeat,
             timeout_seconds=timeout_seconds)
+        if now:  # the next re-review diffs from this tree
+            _git(state.plan.worktree, 'update-ref', _ref(state), now, check=False)
+        return result

@@ -1,6 +1,7 @@
 """Public command names, help and responses use plain cpipe terminology."""
 import argparse
 import json
+import re
 
 import pytest
 
@@ -10,6 +11,7 @@ from .test_entrypoints import Context
 
 
 def plain(text):
+    text = re.sub(r'token [A-Za-z0-9_-]+', 'token', text)  # random receipt tokens may contain any letters
     assert 'v2' not in text.lower()
     assert 'legacy' not in text.lower()
 
@@ -51,6 +53,8 @@ def test_doctor_response_is_plain(capsys):
 def test_run_responses_and_injected_prompt_are_plain(hermes_home, monkeypatch, session_id, injection):
     from gateway import session_context
     monkeypatch.setattr(session_context, 'get_session_env', lambda _: session_id)
+    from cpipe.delivery import approach
+    monkeypatch.setattr(approach, 'roles', lambda home: (None, {'forge': 'm1', 'sentry': 'm2'}))
     ctx = Context()
     queued = []
     setattr(ctx, 'inject_message', lambda text, **kw: queued.append(text) or injection)

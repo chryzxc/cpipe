@@ -25,7 +25,7 @@ from ..runtime import hermes_api as h
 
 REVIEW_AXES = ('goal_alignment', 'correctness', 'regressions', 'integration',
                'breaking_behavior', 'maintainability', 'security', 'accessibility',
-               'operability', 'evidence_quality')
+               'operability', 'evidence_quality', 'simplicity')
 
 
 def _hash(value):

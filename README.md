@@ -1,81 +1,136 @@
 # cpipe
 
-A standalone, opt-in Hermes plugin for **local-only** development. Start with `/cp-run <task>`: investigate or design, review a Markdown approach, explicitly approve the frozen scope, then implement and verify. No Hermes Agent fork or core dispatcher modification is required.
+cpipe is an opt-in Hermes plugin that takes a development task from request to reviewed, locally verified code on its own.
+
+You describe the task once. cpipe investigates, shows you an approach, and asks once for approval. It then works in the background: it writes a failing test, implements, runs your project's own tests and has a second Hermes profile review the change until it is clean. When it is done, or genuinely needs you, it sends one message to the chat you started from.
+
+It is built to be cheap with tokens:
+- Every pass/fail decision is made by code from real test results, not by a model.
+- The builder session is resumed and only sees what changed.
+- Re-reviews look only at the latest fixes.
+
+cpipe never commits, pushes, opens PRs, merges or deploys. You review the result in the worktree.
+
+## How it works
+
+```
+/cp-run <task>
+  └─ coordinator (your chat): investigate read-only, ask at most one batched question
+       └─ approach preview (Markdown) ── your comments → new revision
+            └─ freeze + native approval  ← the only interrupt
+                 └─ background run ───────────────────────────────────────────┐
+                      write_tests → tests must FAIL (RED)                     │
+                      implement ⇄ checks (your test command, real JUnit)      │ self-repair:
+                      review ⇄ implement   (until no open findings)           │ missing/misnamed/crashing
+                      locally_ready                                           │ tests, failing checks,
+                 └─ one chat message: result, checks, tokens, worktree ◄──────┘ crashed steps
+```
+
+1. **Clarify once.** The coordinator reads the project instructions and only the code the task touches. It asks a single batched question only for things tools cannot resolve; anything else becomes a stated assumption in the approach.
+2. **Approach preview.** The coordinator produces a Markdown document covering scope, non-goals, steps, decisions, risks, checks and limits. You reply with comments or changes; each produces a new immutable revision. Saying *proceed* freezes it.
+3. **One approval.** Hermes' native approval dialog shows the frozen scope. Nothing runs before you accept, and the time budget starts at approval.
+4. **Background run.** The chat is free immediately. The run uses native Kanban cards titled with the working profile:
+   - **write_tests:** the builder writes the behavior test. cpipe must observe it **fail on an assertion** before any implementation. A missing, misnamed or crashing test goes back to the builder with the exact reason, up to 3 rounds.
+   - **implement / checks:** the builder fixes the code and cpipe runs the approved test command. Failures and broken runs go back to the builder.
+   - **review:** a *different* profile reviews the full change against these axes:
+     - goal, correctness, regressions (including callers outside the diff), integration, breaking behavior;
+     - maintainability, security, accessibility, operability, evidence and simplicity.
+
+     Findings carry the concrete fix. The builder fixes them all in one pass, the checks rerun, and the reviewer looks **only at the fix diff** to confirm resolution and catch regressions. Already-reviewed code is not reopened unless something high or critical turns up. This repeats until there are no open findings: at most 5 rounds, and it stops early if a round changes nothing.
+5. **Notification.** You get one message in the originating chat when the run is:
+   - **done:** `locally_ready`;
+   - **stuck:** `diagnosis`;
+   - **waiting on you**, e.g. the test command is not installed;
+   - **out of budget.**
+
+   The message includes the check results, token usage and the worktree to review. A crashed step is retried twice before reporting.
+
+## Builder and reviewer
+
+cpipe uses two of your saved Hermes profiles: a **builder** and a different **reviewer**. Models and providers always come from the profiles; cpipe never guesses them.
+
+- **First run:** if no roles are saved, the coordinator asks which profiles to use, in its single question. It offers only profiles that have a saved model and provider.
+- **After that:** the choice is remembered in `cpipe-deliveries/roles.json` and reused without asking.
+- **Removed profile:** if a remembered profile is removed or loses its model, cpipe asks again.
+- **Too few profiles:** with fewer than two usable profiles, `/cp-run` stops immediately and explains why.
+
+Use your strongest model as the reviewer: a reviewer that finds everything in round one keeps the loop short. The builder can be a cheaper model.
 
 ## Install or update
 
-Private repositories require an already-authorized Git/GitHub account on the machine. Never put credentials in an install URL, chat, plan or artifact.
+Private repositories need an already-authorized Git/GitHub account. Never put credentials in an install URL, chat, plan or artifact.
 
 ```sh
-hermes plugins install chryzxc/cpipe --force --ref <exact-40-character-commit> --enable --yes-deps
+hermes plugins install chryzxc/cpipe --force --ref <commit> --enable --yes-deps
 hermes plugins doctor cpipe --ci
 hermes cpipe doctor
 ```
 
-An exact revision is intentionally pinned. Reinstall with an explicit newer revision to update it. Restart the Hermes application/session after installation: an already-running process can retain old imported tools. The installed manifest, package and Python project all report version `2.0.0`.
+Start a new Hermes chat after updating; a running chat keeps the old tools loaded.
 
-## Explicit entry points
+## Commands
 
-Ordinary chat requests use normal Hermes tools; they do not silently start cpipe. Supported commands:
+- `/cp-run <task>`: the only entry point. One session-bound receipt carries investigation, revisions, approval and the run. You never copy IDs or type a second command.
+- `/cp-status [delivery_id]`: current phase, each check's result (with the reason when a check produced no result), review rounds and tokens.
+- `/cp-stop <delivery_id>`: cancel a delivery.
 
-- `/cp-run <task>`: the task-oriented entry point. One session-bound receipt carries investigation, approach revisions, explicit native approval and execution. No separate plan/build commands or copied delivery IDs are required from the user.
-- `/cp-status [delivery_id]`: read the profile-local journal directly.
-- `/cp-stop <delivery_id>`: revoke a delivery. An already-running unsandboxed child cannot be forcibly confined by this command; lease/revocation checks reject further evidence.
+Ordinary chat requests never start cpipe. The model sees exactly two tools:
+- `cpipe_execute_intent`;
+- `cpipe_approve_plan`. Approval binds to the frozen plan, session and profile; no model-provided flag counts as consent.
 
-There are exactly two model tools: `cpipe_execute_intent` and `cpipe_approve_plan`. The latter accepts only `delivery_id` and `plan_revision`; no model-provided approval flag is authority. Approval is scoped to the frozen artifact, plan, session and active Hermes profile. The approval tool starts no workers and permits no publication. In `/cp-run`, the coordinator continues after explicit consent using the same receipt. Rejected, expired, wrong-session or changed envelopes cannot build.
+## The execution spec
 
-`/cp-run` needs Hermes' native session-injection permission. If injection is unavailable it starts nothing, removes the unused receipt and reports the failure.
+The coordinator fills in the spec; it is shown in the preview and frozen at approval.
 
-### Task-sensitive approach and review
+| Field | Meaning |
+|---|---|
+| `worktree`, `repo`, `base` | Where the work happens. A dedicated worktree is recommended. |
+| `goal`, `acceptance`, `non_goals` | What done means. |
+| `write_paths`, `forbidden_paths` | Edits outside `write_paths` are rejected. |
+| `builder`, `reviewer` | Distinct saved Hermes profiles (see above). |
+| `seconds` | Execution budget, 30–7200 (3600 suggested for features). Up to 24 builder/reviewer turns. |
+| `checks` | The repository's own test commands (see below). |
 
-1. **Resolve the task and repository.** Inspect project instructions, relevant code and saved configuration. Ask a focused question only when missing information changes scope, ownership or intended behavior. Installed relevant skills are used when available; optional skills and Desktop preview are not runtime dependencies.
-2. **Investigate bugs before proposing a fix.** Reproduce safely or trace the cause, recording real evidence. For features, establish expected behavior and design. Small clear changes need a focused approach; features and high-risk or cross-cutting work need fuller design regardless of whether they are described as bugs. Investigation is read-only: do not edit application code or run unapproved project tests.
-3. **Prepare the approach.** Call `cpipe_execute_intent` with the same opaque receipt, `operation: prepare` and `{spec, approach, expected_revision}`. Preparation validates a supported execution spec without proposing a delivery or starting its execution budget. The structured approach has exactly `kind` (`bug`, `feature` or `change`), `depth` (`focused` or `detailed`), `risk` (`normal` or `high`), `summary`, and the string lists `evidence`, `steps`, `decisions`, `risks`. Steps are required; a bug needs investigation evidence; detailed approaches need explicit design decisions. First preparation uses revision `0`; edits name the current revision.
-4. **Present the Markdown artifact.** The document includes scope, non-goals, verification, actors, limits and permissions. Put the returned `preview_attachment` (`MEDIA:` followed by the quoted local path) on its own line in the assistant reply. Herm renders a file card with a clickable **Open preview** button. Saving a file alone does not open preview, and Herm intentionally disables ordinary `file://` Markdown links. The returned `preview_link` is a fallback for clients that support local-file links. Where preview is unavailable, review the document in an editor or chat.
-5. **Consume review feedback.** Herm sends review comments into this same conversation as a user message. Integrate the feedback with `prepare`, creating a new immutable revision and a new attachment. Even when the comment prompt requests editing in place, do not overwrite the managed reviewed file. Resolve substantive comments and present the latest approach again. No automatic comment parser or separate comment UI is required.
-6. **Freeze, then ask for explicit execution approval.** Freeze the latest `draft_revision` with the internal `plan` operation. The frozen plan embeds the exact approach text in its digest. Show the frozen scope through `cpipe_approve_plan`. Opening, commenting on or clicking the preview's document-review approval button does **not** authorize workers; native execution approval remains mandatory.
-7. **Continue after consent.** On native acceptance, consume the internal `build` stage using the same receipt and returned delivery identity; the user need not type another command. Denial, unavailable approval transport, stale source/documents and expired authority fail closed. Repeating a completed stage returns its saved result rather than relaunching workers. An interrupted claimed stage is not proof of success and is not automatically retried.
+Each check has an `obligation`, an `argv`, `criteria` and a `timeout_seconds`. Exactly one check has the obligation `behavior`: it is the test proving the change, and its file must be inside `write_paths`.
 
-Approaches are stored under the active profile's `cpipe-deliveries/approaches/` directory (directory mode `0700`, files `0600`). Each revision is separate. Source and document identities are checked before freezing and at the approval/execution boundary. Sensitive text is redacted before receipt persistence; structured approach/spec fields containing recognizable credentials are rejected rather than retained. The execution budget starts when the plan is frozen, not when the user begins reviewing a draft. The run receipt expires after 24 hours.
+- **`argv`:** the command, run in the worktree. Its program must be on `PATH` or given as an absolute path.
+- **`criteria`:** the test names.
+- **With `{report}` (preferred):** if `argv` contains `{report}`, cpipe swaps in a private JUnit path and reads per-test results. A criterion matches:
+  - `name`;
+  - `classname::name`;
+  - the title under describe blocks (vitest's `describe > title`, jest's `describe title`).
+- **Without `{report}`:** the exit code decides, and every criterion must appear in the output. That way a build error is never mistaken for a failing test.
 
-## Execution contract
+```text
+["uv", "run", "pytest", "tests/test_x.py", "--junitxml={report}"]
+["npx", "vitest", "run", "src/x.test.ts", "--reporter=junit", "--outputFile={report}"]
+["go", "test", "./...", "-run", "TestX", "-v"]
+```
 
-A spec must explicitly provide `worktree`, `repo`, `base`, `goal`, `acceptance`, `non_goals`, `write_paths`, `forbidden_paths`, `builder`, `reviewer`, `seconds`, and `checks`. These are not optional inferred defaults. `builder` and `reviewer` are distinct saved Hermes profile names. Their model/provider values are read from the saved profiles; external CLI engines are unsupported. `seconds` is a bounded integer from 30 through 1800.
+Prefer commands that provision their own dependencies; otherwise install first (`sh -c "npm ci && ..."`). Checks run with a minimal environment (`PATH`, `HOME`, locale, `CI=1`) and no credentials.
 
-Each check is the repository's own test command, in any language: `obligation`, `argv` (run in the worktree; the program must be on `PATH` or absolute), `criteria` (test names) and `timeout_seconds`. If `argv` contains `{report}`, cpipe swaps in a private JUnit XML path and reads per-test outcomes, with each criterion matching one reported `classname::name` or `name`. Otherwise the exit code decides, and every criterion must appear in the output, so a compile or import error is not mistaken for a failing test. Exactly one check has obligation `behavior`, and it must fail before implementing. The checks and scope are frozen into the approval digest. A dedicated worktree is recommended. The worktree fingerprint includes its Git-visible files; artifacts are invalidated on mutation. Changes outside the write allowlist cannot become implementation receipts.
+## Security and limits
 
-Examples: `["uv", "run", "pytest", "tests/test_x.py", "--junitxml={report}"]`, `["npx", "vitest", "run", "src/x.test.ts", "--reporter=junit", "--outputFile={report}"]`, `["go", "test", "./...", "-run", "TestX", "-v"]`. Prefer commands that install their own dependencies; otherwise put the install step first in the command (`sh -c "npm ci && ..."`). Checks run with a minimal environment (`PATH`, `HOME`, locale, `CI=1`) and no credentials.
+- **Not sandboxed.** Builders, reviewers and checks are trusted local processes. Scope and artifact checks detect violations; they do not prevent file or network access.
+- **Dispatcher unchanged.** cpipe's cards are assigned to `cp:<profile>`, so the normal Hermes dispatcher does not pick them up. The dispatcher itself is not modified.
+- **No credentials kept.** Credentials must be written as `[REDACTED]`. Worker prose is never treated as evidence; only observed test results and validated review verdicts are.
+- **Runs inside Hermes.** A background run lives in the Hermes process. If Hermes restarts mid-run, the next build of that delivery recovers the abandoned step.
+- **No publication.** There is no publication adapter. `locally_ready` means verified in the worktree, not pushed.
 
-The controller uses the journal, native task ownership, bounded Hermes stream workers, actual test-command observations and independent review observations. A passing readiness result is `locally_ready`, not a PR, merge or deployment. Setup repair, automatic correction loops and publication adapters are not exposed by this controller. Failures remain inspectable and fail closed.
-
-## Security and limitations
-
-Live builders, reviewers and checks are **trusted local, unsandboxed execution**. Scope and artifact checks detect violations; they do not prevent file or network access. Native Kanban claims coordinate launchers but provide no isolation. The normal Hermes dispatcher is unchanged; cpipe does not promise to exclude it from cpipe-owned tasks. Credentials must be replaced with `[REDACTED]`; worker prose and diagnostics are not retained as authoritative test evidence.
-
-The offline smoke fixture's separate sandbox tests do not establish isolation for live workers. Likewise, successful fixture tests do not establish a complete production delivery for an arbitrary repository. The plugin intentionally has no PR, push, merge or deployment operation. Reviewing the approach changes no publication permission.
-
-The adaptive planning and comment interpretation happen in the native coordinator session, guided by the injected task workflow and available skills. The plugin enforces draft revisions, session binding, frozen-plan consent and execution boundaries; it cannot prove that a model's claimed investigation or design judgment is correct.
-
-## Diagnostics and verification
+## Diagnostics and development
 
 ```sh
 hermes cpipe doctor
 hermes cpipe status
 hermes cpipe smoke
-# Explicit opt-in only: runs live models and consumes usage.
-hermes cpipe live-probe --builder forge --reviewer sentry --seconds 480
+# Opt-in: runs live models and consumes usage.
+hermes cpipe live-probe --builder <profile> --reviewer <profile> --seconds 480
 ```
 
-`smoke` uses disposable fixture state and fails if its sandbox boundary is unavailable. `live-probe` also uses disposable fixture state, but its workers are unsandboxed. Neither diagnostic migrates or resumes previous deliveries.
-
-Development tests require the supported Hermes Agent checkout and pytest. Set `HERMES_AGENT_ROOT` if the checkout is not in the default local location. Tests use throwaway Hermes homes and native boards, not the operator's live board.
+Tests need the supported Hermes Agent checkout (set `HERMES_AGENT_ROOT` if it is not in the default location). They use throwaway Hermes homes and boards, never your live board.
 
 ```sh
 python -m pytest tests
 hermes plugins doctor . --ci
 hermes plugins validate . --json
 ```
-
-The controlled `/cp-run` integration exercises native consent transport, real failing/passing checks and fixture builder/reviewer callbacks. It is not proof of a live human approval click or a paid-model end-to-end delivery. Herm's attachment/comment contract is verified in source; do not claim a live installed preview-and-delivery lifecycle without exercising it.
-
-Old delivery state is not automatically imported. Back up any locally edited installed-plugin files before changing installation source.
