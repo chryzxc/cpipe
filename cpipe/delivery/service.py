@@ -3,7 +3,7 @@
 Adapters must authenticate events and derive receipts from observed executions.
 Intent IDs are semantic deduplication keys, not leases or a tool/filesystem sandbox.
 """
-from dataclasses import dataclass, replace
+from dataclasses import MISSING, dataclass, fields, replace
 from .contracts import Versioned, Receipt, Outcome, identity, relative_path
 from .schema import ExecutionPlan
 from .findings import Finding, FindingRecord, blocking, merge_findings, needs_diagnosis, disposition
@@ -58,20 +58,26 @@ class State(Versioned):
     calls_used: int
     started_at: int
     last_at: int
-    builder: str = ""  # the builder that took over after a refusal; "" = the first
+    # Takeover: the approved fallback actor now in charge ("" = the first), and the
+    # test/review counts when the current builder took over, so it gets its own rounds.
+    builder: str = ""
+    reviewer: str = ""
+    handover_tests: int = 0
+    handover_reviews: int = 0
 
     def __post_init__(self):
         if type(self.plan) is not ExecutionPlan or self.phase not in PHASES:
             raise ValueError("invalid snapshot plan or phase")
         identity(self.artifact, "artifact")
-        for name in ("version", "review_cycles", "calls_used", "started_at", "last_at"):
+        for name in ("version", "review_cycles", "calls_used", "started_at", "last_at",
+                     "handover_tests", "handover_reviews"):
             nonnegative(getattr(self, name), name)
         if self.last_at < self.started_at:
             raise ValueError("time moved backwards")
         if type(self.approved) is not bool or type(self.readiness_requested) is not bool:
             raise ValueError("invalid snapshot flags")
         for name in ("activity", "active_intent", "run_id", "worker_session", "builder_session",
-                     "builder_digest", "last_reviewed_artifact", "builder"):
+                     "builder_digest", "last_reviewed_artifact", "builder", "reviewer"):
             optional_id(getattr(self, name), name)
         typed_tuple(self.receipts, Receipt, "receipts")
         typed_tuple(self.findings, FindingRecord, "findings")
@@ -86,8 +92,8 @@ class State(Versioned):
 
     @classmethod
     def from_dict(cls, data):
-        if type(data) is dict and "builder" not in data:
-            data = {**data, "builder": ""}  # snapshots saved before builder takeover existed
+        if type(data) is dict:  # snapshots saved before newer defaulted fields existed
+            data = {**{f.name: f.default for f in fields(cls) if f.default is not MISSING}, **data}
         values = cls._payload(data)
         values["plan"] = ExecutionPlan.from_dict(values["plan"])
         for name in ("receipts", "findings"):
@@ -212,9 +218,23 @@ def green(state, include_review=True):
 
 
 def actor(state, role):
-    """The reviewer, or the builder in charge: the first, until one refuses."""
-    return next(a for a in state.plan.actors if a.role == role
-                and (role == "reviewer" or a.profile == state.builder or not state.builder))
+    """The approved actor in charge of role: the first, until it hands over."""
+    current = getattr(state, role)
+    return next(a for a in state.plan.actors if a.role == role and (not current or a.profile == current))
+
+
+def takeover(state, role):
+    """State with the next approved actor of role in charge, or None when none is left."""
+    names = [a.profile for a in state.plan.actors if a.role == role]
+    later = names[names.index(actor(state, role).profile) + 1:]
+    if not later:
+        return None
+    if role == "reviewer":
+        return replace(state, reviewer=later[0])
+    # A fresh session with its own test and review rounds.
+    return replace(state, builder=later[0], builder_session="", builder_digest="",
+                   handover_tests=sum(r.obligation == "behavior" for r in state.receipts),
+                   handover_reviews=state.review_cycles)
 
 
 def continue_with(state, action, phase, feedback_ref=""):
@@ -292,7 +312,10 @@ def accept_review(state, event):
                     review_cycles=state.review_cycles + 1, last_reviewed_artifact=state.artifact)
     after = {r.finding.id for r in records if r.finding.in_scope and r.finding.disposition == "open"}
     if blocking(r.finding for r in records):
-        if needs_diagnosis(state.review_cycles, before, after):
+        if needs_diagnosis(state.review_cycles - state.handover_reviews, before, after):
+            fresh = takeover(state, "builder")  # a stuck fix loop gets fresh eyes before the user
+            if fresh:
+                return continue_with(fresh, "implement", "implementing", event.evidence_ref)
             return continue_with(state, "diagnose", "diagnosis", event.evidence_ref)
         return continue_with(state, "implement", "implementing", event.evidence_ref)
     if not green(state):
@@ -359,17 +382,17 @@ def apply(snapshot, event):
         if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
             raise ValueError("abandon does not match claimed activity")
         # A crashed step is re-issued on a fresh card; builder steps spend a call.
+        if event.action == "fresh":  # the bound session itself may be the problem
+            state = replace(state, builder_session="", builder_digest="")
         return continue_with(state, state.activity, state.phase)
     if event.kind == "activity_refused":
         if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
             raise ValueError("refusal does not match claimed activity")
-        builders = [a.profile for a in state.plan.actors if a.role == "builder"]
-        later = builders[builders.index(actor(state, "builder").profile) + 1:]
-        if state.activity not in {"write_tests", "implement"} or not later:
-            return quiescent(state, "waiting")
-        # The next approved builder takes over in a fresh session; the flow continues.
-        return continue_with(replace(state, builder=later[0], builder_session="", builder_digest=""),
-                             state.activity, state.phase)
+        if state.activity not in {"write_tests", "implement", "review"}:
+            raise ValueError("only worker steps can be refused")
+        # The next approved actor takes over and the flow continues; none left: ask the user.
+        fresh = takeover(state, "reviewer" if state.activity == "review" else "builder")
+        return continue_with(fresh, state.activity, state.phase) if fresh else quiescent(state, "waiting")
     if event.kind in {"activity_observed", "review_received", "publication_observed"}:
         check_result_identity(state, event)
     if event.kind == "activity_observed":
@@ -392,8 +415,11 @@ def apply(snapshot, event):
         if state.activity == "tests" and not any(r.outcome is Outcome.FAIL for r in event.receipts):
             # Only an observed RED proves the behavior test covers the change. A
             # missing, passing or broken test goes back to the builder with the reason.
-            if earlier < WRITE_TEST_ROUNDS:
+            if earlier - state.handover_tests < WRITE_TEST_ROUNDS:
                 return continue_with(state, "write_tests", "implementing")
+            fresh = takeover(state, "builder")
+            if fresh:  # the same number of write_tests rounds as the first builder
+                return continue_with(replace(fresh, handover_tests=earlier), "write_tests", "implementing")
             return continue_with(state, "diagnose", "diagnosis")
         if any(r.outcome in {Outcome.FAIL, Outcome.UNAVAILABLE} for r in event.receipts):
             # Crashes, timeouts and build errors are code problems the builder can repair.

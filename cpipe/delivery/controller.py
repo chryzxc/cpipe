@@ -14,7 +14,7 @@ from .contracts import Envelope, Budget, UNAVAILABLE_REASONS
 from .schema import ExecutionPlan
 from .service import Service, Event
 from .native_bridge import NativeBridge
-from .hermes_worker import HermesWorker
+from .hermes_worker import HermesWorker, keep, roll_back
 from .workers import observe_implementation, usage, WorkerRefused
 from .review import observe_review, review_identity
 from .approval import arguments
@@ -26,7 +26,25 @@ APPROVAL_WINDOW = 3600
 
 
 # Builder/reviewer turns per delivery: room for test, fix and review rounds plus self-repair.
-CALLS = 24
+CALLS = 40
+
+# A failing worker is resumed with the reason, then retried in a fresh session; on the
+# next failure the next approved actor takes over. Retries back off for provider hiccups.
+FAILURES = 3
+BACKOFF = 15
+WORKER_STEPS = frozenset({'write_tests', 'implement', 'review'})
+
+
+def settle(state, store):
+    """Before each step: remember a verified worktree, or roll a failed step's leftovers back."""
+    try:
+        clean = validate_worktree(state.plan).digest == state.artifact
+    except (ValueError, OSError):
+        clean = False
+    if clean:
+        return keep(state.plan, store)
+    if not roll_back(state.plan, store) or validate_worktree(state.plan).digest != state.artifact:
+        raise ValueError('the worktree was changed outside cpipe and could not be restored')
 
 
 def summary(state, service=None):
@@ -110,14 +128,17 @@ def validate_spec(spec):
         raise ValueError('the behavior check needs criteria naming the test that proves the change')
     for c in checks:
         c.identity()  # resolves the program now, not after approval
-    builders = spec['builder'] if type(spec['builder']) is list else [spec['builder']]
-    if not 1 <= len(builders) <= 3 or any(type(b) is not str for b in builders):
-        raise ValueError('builder is a profile name or an ordered list of up to 3 (fallbacks take over on refusal)')
+    builders, reviewers = (spec[r] if type(spec[r]) is list else [spec[r]] for r in ('builder', 'reviewer'))
+    if (not 1 <= len(builders) <= 3 or not 1 <= len(reviewers) <= 3
+            or any(type(name) is not str for name in builders + reviewers)):
+        raise ValueError('builder and reviewer are each a profile name or an ordered list of up to 3 '
+                         '(the next takes over if one refuses or keeps failing)')
     for name in builders:
         if soul(name)[1]:
             raise ValueError(f'profile {name} is read-only (its SOUL.md forbids edits) and cannot build; '
                              'choose a profile that edits code')
-    actors = tuple(observe_actor('builder', b) for b in builders) + (observe_actor('reviewer', spec['reviewer']),)
+    actors = (tuple(observe_actor('builder', b) for b in builders)
+              + tuple(observe_actor('reviewer', r) for r in reviewers))
     if len({a.profile for a in actors}) != len(actors) or not checks:
         raise ValueError('distinct builder/reviewer profiles and checks are required')
     from .contracts import identity, relative_path, string_tuple
@@ -203,7 +224,8 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             return run(service, delivery_id, session_id=session_id, profile_id=profile_id,
                        conn=conn, execute=execute, evidence_root=evidence_root)
     bridge = NativeBridge(service, conn, session_id=session_id, profile_id=profile_id)
-    worker, steps, refusals = execute or HermesWorker(), [], []
+    worker, steps, recoveries, strikes = execute or HermesWorker(), [], [], {}
+    store = Path(evidence_root) / 'good' / delivery_id
     claimer = h.new_claimer()
     bridge.abandon(delivery_id)  # recover a run left bound by a crashed build
     for _ in range(max(4, state.plan.budget.calls * 4)):
@@ -211,6 +233,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         if not state.activity or state.activity not in {'tests', 'checks', 'write_tests', 'implement', 'review'}:
             break
         action = state.activity
+        settle(state, store)
         tid = bridge.schedule(delivery_id)
         if tid is None:
             raise ValueError('missing runnable native task')
@@ -229,18 +252,37 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
                                        evidence_root=Path(evidence_root))
         except WorkerRefused as exc:
-            # Not a crash: the next approved builder takes over, or the run waits for the user.
-            refusals.append(f'{bridge._actor(state).profile} declined {action}: {exc}')
+            # Not a crash: the next approved actor takes over, or the run waits for the user.
+            recoveries.append(f'{bridge._actor(state).profile} declined {action}: {exc}')
             bridge.abandon(delivery_id, claimer, kind='activity_refused')
             continue
-        except Exception:
-            bridge.abandon(delivery_id, claimer)
-            raise
+        except Exception as exc:
+            if action not in WORKER_STEPS:
+                bridge.abandon(delivery_id, claimer)
+                raise
+            if not owned(service, delivery_id, session_id, profile_id).run_id:
+                continue  # cancelled or out of budget meanwhile; the loop ends
+            who = bridge._actor(state).profile
+            strikes[who] = n = strikes.get(who, 0) + 1
+            # cpipe's own ValueErrors are fixed labels; anything else stays a type name.
+            reason = str(exc)[:200] if type(exc) is ValueError else type(exc).__name__
+            recoveries.append(f'{who} failed {action} ({reason}); '
+                              + ('retrying' if n < FAILURES else 'handing over'))
+            worker.note = (f'Your previous attempt at this step failed: {reason}. Its changes were undone. '
+                           'Do the step again and finish with exactly the requested JSON.')
+            if n < FAILURES:
+                bridge.abandon(delivery_id, claimer, action='fresh' if n > 1 else '')
+            else:
+                worker.note = ''
+                bridge.abandon(delivery_id, claimer, kind='activity_refused')
+            time.sleep(min(BACKOFF * n, max(0, state.plan.budget.seconds - (time.time() - state.started_at)) / 4))
+            continue
+        strikes.pop(bridge._actor(state).profile if action in WORKER_STEPS else '', None)  # the ladder restarts
         task = h.get_task(conn, tid)
         steps.append(dict(activity=action, task_id=tid, native_status=task.status,
                           phase=state.phase, outcomes=[r.outcome.value for r in state.receipts]))
     result = summary(owned(service, delivery_id, session_id, profile_id), service)
     result['steps'] = steps
-    if refusals:
-        result['refusals'] = refusals
+    if recoveries:
+        result['recoveries'] = recoveries
     return result

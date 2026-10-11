@@ -342,7 +342,7 @@ def test_roles_are_asked_once_then_remembered_and_never_guessed(hermes_home, mon
     assert 'No cpipe roles are saved yet' in queued[-1]  # a read-only builder is never reused
     approach.remember_roles(hermes_home, {'builder': 'forge', 'reviewer': 'sentry'})
     ctx.commands['cp-run']('Fix it')
-    assert 'Use builder ["forge"] and reviewer sentry' in queued[-1]
+    assert 'Use builder ["forge"] and reviewer ["sentry"]' in queued[-1]
     names.remove('sentry')  # a remembered profile disappears: ask again rather than fail later
     ctx.commands['cp-run']('Fix it')
     assert 'No cpipe roles are saved yet' in queued[-1]
@@ -360,4 +360,4 @@ def test_a_read_only_builder_is_refused_before_approval_and_fallbacks_are_shown(
     out = call(token, 'prepare', dict(spec={**spec, 'builder': ['builder', 'builder2']},
                                       approach=approach_, expected_revision=0))
     assert out['phase'] == 'approach_review'
-    assert 'Builder: builder (takes over if it refuses: builder2)' in Path(out['document_path']).read_text()
+    assert 'builder: builder (then, if it refuses or keeps failing: builder2)' in Path(out['document_path']).read_text()

@@ -92,10 +92,10 @@ class ExecutionPlan(Versioned):
                 if (path == denied or path.startswith(denied + "/")
                         or denied.startswith(path + "/")):
                     raise ValueError("write allowance overlaps forbidden path")
-        # Builders are ordered: the first builds, the next takes over if one refuses.
-        if (type(self.actors) is not tuple or not 2 <= len(self.actors) <= 4
+        # Each role is ordered: the first acts, the next takes over if one refuses or fails.
+        if (type(self.actors) is not tuple or not 2 <= len(self.actors) <= 6
                 or any(type(a) is not Actor for a in self.actors)
-                or [a.role for a in self.actors].count("reviewer") != 1
+                or {a.role for a in self.actors} != {"builder", "reviewer"}
                 or len({a.profile for a in self.actors}) != len(self.actors)):
             raise ValueError("builder and independent reviewer bindings are required")
         if (type(self.checks) is not tuple or any(type(c) is not CheckIdentity for c in self.checks)
