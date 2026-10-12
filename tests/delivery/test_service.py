@@ -284,6 +284,16 @@ def test_draft_grant_is_exact_and_readback_is_required_before_completion():
     assert done.phase == "completed" and not intents
 
 
+def test_a_failed_pull_request_waits_and_continue_retries_only_the_publication():
+    p = plan()
+    granted = replace(p.envelope, capabilities=frozenset({"local", "push", "draft_pr"}))
+    state, _ = reviewed(ready_for_review(candidate(envelope=granted, completion_target="draft")))
+    state, intents = step(claim(state), "activity_refused")
+    assert state.phase == "waiting" and not intents
+    state, intents = step(state, "resumed", "publish", result_artifact=state.artifact)
+    assert state.phase == "publishing"
+
+
 @pytest.mark.parametrize("field,value", [("approved", 1), ("version", True),
                                         ("phase", "made_up"), ("receipts", ["fake"]),
                                         ("findings", ["fake"])])

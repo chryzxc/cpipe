@@ -55,8 +55,9 @@ def _previous(db, key, session_id, profile_id):
 def presentation(plan, revision):
     """Readable copy from the frozen contract; no generated or inferred authority."""
     capabilities = plan.envelope.capabilities
-    grants = {'local': 'Local development work', 'push': 'Push the branch',
-              'draft_pr': 'Open a draft pull request',
+    grants = {'local': 'Local development work',
+              'push': f'Push the branch {plan.envelope.branch} to origin, after the checks and review pass',
+              'draft_pr': f"Open a draft pull request against {plan.envelope.base.removeprefix('origin/')}",
               'mark_ready': 'Mark the pull request ready for review'}
     lines = ['Scope', plan.envelope.scope,
              *('- ' + item for item in plan.acceptance),

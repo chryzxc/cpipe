@@ -254,6 +254,8 @@ def deadline(state):
 
 def resume_point(state):
     """Where a resumed run picks up: re-observe the code, or prove the failing test first."""
+    if state.plan.completion_target == "draft" and green(state):
+        return continue_with(state, "publish", "publishing")  # verified and reviewed: only the PR is left
     proved = any(r.obligation == "behavior" and r.outcome is Outcome.FAIL for r in state.receipts)
     return continue_with(state, "checks" if proved else "tests", "checking")
 
@@ -442,6 +444,8 @@ def apply(snapshot, event):
     if event.kind == "activity_refused":
         if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
             raise ValueError("refusal does not match claimed activity")
+        if state.activity == "publish":  # push or PR failed: the verified work waits for "continue"
+            return quiescent(state, "waiting")
         if state.activity not in {"write_tests", "implement", "review"}:
             raise ValueError("only worker steps can be refused")
         # The next approved actor takes over and the flow continues; none left: ask the user.

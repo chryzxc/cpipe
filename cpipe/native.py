@@ -17,7 +17,7 @@ from .delivery import controller
 
 SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow. Consume an explicit /cp-run command receipt. '
     'Ordinary requests use normal tools. Plans require explicit worktree, scope, test-command checks and distinct saved '
-    'builder/reviewer profiles. Prepare a reviewable Markdown draft, then freeze and approve before build. Never publishes or merges.',
+    'builder/reviewer profiles. Prepare a reviewable Markdown draft, then freeze and approve before build. Never merges; opens a draft PR only when the user asked for one.',
     parameters=dict(type='object', additionalProperties=False,
         properties=dict(token=dict(type='string'), operation=dict(type='string', enum=['prepare', 'plan', 'build', 'status', 'stop']),
             arguments=dict(type='object', description='prepare: {spec, approach, expected_revision} (0 initially; current revision for edits). '
@@ -28,7 +28,7 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'base (branch, tag or commit the delivery starts from; when it is what the checkout has checked out, '
                 'its uncommitted changes are included), goal, acceptance, '
                 'non_goals, write_paths, forbidden_paths, builder and reviewer (each a profile, or an ordered list: the next takes over if one refuses or keeps failing), '
-                'seconds and checks. Each check has '
+                'seconds, checks, and draft_pr (true only when the user asked for a pull request; omit otherwise). Each check has '
                 'obligation, argv (the repository\'s own test command as a list, run in the worktree, any language; '
                 'argv[0] on PATH or absolute), timeout_seconds and criteria (test names). If argv contains {report}, '
                 'it is replaced by a private JUnit XML path (e.g. --junitxml={report}, --reporter=junit '
@@ -75,6 +75,7 @@ SETTLE = 15  # seconds build waits, so a run that fails at once is reported in t
 log = logging.getLogger('cpipe')
 
 HEADLINES = {'locally_ready': 'done and ready for your review',
+             'completed': 'done: its draft pull request is open for your review',
              'stopped': 'stopped: its time or turn budget ran out',
              'diagnosis': 'stopped: every approved builder got stuck (no valid failing test, or review findings none could resolve)',
              'waiting': 'stopped: it needs you (every approved builder or reviewer declined or kept failing, or the environment is missing something)',
@@ -147,12 +148,15 @@ def _settled(delivery_id, result, error):
     phase = (result or {}).get('phase', '')
     head = HEADLINES.get(phase, 'stopped unexpectedly' + (f' ({error})' if error else ''))
     unresolved = sum(f['blocking'] for f in (result or {}).get('findings', ()))
+    checks = (result or {}).get('checks') or {}
+    if phase == 'waiting' and 'review' in checks and all(v.startswith('pass') for v in checks.values()):
+        head = 'verified and reviewed, but its draft pull request could not be opened (see recoveries)'
     if phase == 'locally_ready' and unresolved:
         head = (f'ready for your review with {unresolved} unresolved review finding(s): checks pass, but '
                 'more fix rounds kept trading one finding for another')
     return head, (f'[cpipe] Delivery {delivery_id} is {head}.\n' + json.dumps(result or {}, sort_keys=True) +
         '\nTell the user this result in a few short lines: what was done, each check result, tokens used, '
-        'and the worktree to review. List the unresolved (blocking) findings, and the others as optional advice. '
+        'and the worktree (or pull_request link) to review. List the unresolved (blocking) findings, and the others as optional advice. '
         'If it stopped or findings are unresolved, say why and that they can fix the cause and say "continue" '
         '(it picks up where it stopped, asking approval again only for more time). Do not call cpipe tools.')
 
@@ -441,7 +445,7 @@ def dispatch(ctx, name, raw=''):
         'inferred. If the user answers Yes, the same plan receipt may execute build for its own delivery_id; '
         'otherwise leave it waiting. '
         'Build accepts only a same-session approved delivery_id, not a task_id. '
-        'Report real state, not worker prose. This controller is local-only, unsandboxed and has no PR adapter.\n'
+        'Report real state, not worker prose. Execution is unsandboxed and never merges.\n'
         'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
     if op == 'run':
         prompt = ('The user explicitly chose cpipe with /cp-run. Resolve the actual task, repository and worktree '
@@ -490,7 +494,10 @@ def dispatch(ctx, name, raw=''):
             'the run, or picks a stopped one up where it stopped, and returns its real state. If that result has '
             'approval_arguments, the budget ran out: ask for approval again the same way, then build again. '
             'Never run cpipe code or scripts yourself. '
-            'Execution is local-only, unsandboxed; no publication adapter.\n'
+            'If the user asked for a pull request (for example "open a PR" or "create a draft PR"), set spec draft_pr '
+            'true: after the checks and review pass, cpipe commits, pushes the delivery\'s own branch and opens a draft PR '
+            'itself, and the approval question shows this. Otherwise omit draft_pr; the work stays local. Never push, '
+            'open PRs or merge yourself. Execution is unsandboxed.\n'
             'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
     try:
         queued = ctx.inject_message(prompt, role='user', session_key=key)

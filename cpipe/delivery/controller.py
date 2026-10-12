@@ -1,6 +1,6 @@
 """Production local controller, sharing the receipt-aware native adapters.
 
-Trusted local workers are not sandboxed. Publication is deliberately unavailable.
+Trusted local workers are not sandboxed. A draft PR is opened only when the approved plan grants it.
 """
 from contextlib import closing
 import json
@@ -36,13 +36,15 @@ CALLS = 40
 # A failing worker is resumed with the reason, then retried in a fresh session; on the
 # next failure the next approved actor takes over. Retries back off for provider hiccups.
 FAILURES = 3
-ACTIVE_STEPS = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review'})
+ACTIVE_STEPS = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 BACKOFF = 15
 WORKER_STEPS = frozenset({'write_tests', 'implement', 'review'})
 
 
 STEP_LINES = {'write_tests': '{who} is writing the failing test', 'tests': 'running the new test (it must fail first)',
-              'implement': '{who} is implementing', 'checks': 'running the checks', 'review': '{who} is reviewing'}
+              'implement': '{who} is implementing', 'checks': 'running the checks', 'review': '{who} is reviewing',
+              'publish': 'opening the draft pull request'}
+DRAFT = frozenset({'local', 'push', 'draft_pr'})
 
 
 def tell(session_id, delivery_id, text, done=False):
@@ -114,17 +116,21 @@ def summary(state, service=None):
             result['plan'] = state.plan.to_dict()
     if service is not None:
         result['tokens'] = usage(service, state.plan.envelope.delivery_id)
+        row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?',
+                                         ('pr:' + state.plan.envelope.delivery_id,)).fetchone()
+        if row:
+            result['pull_request'] = json.loads(row[0])['url']
     return result
 
 
 def propose(service, plan, checks):
-    if (plan.completion_target != 'local_only' or plan.envelope.capabilities != frozenset({'local'})
+    if (plan.envelope.capabilities != (DRAFT if plan.completion_target == 'draft' else frozenset({'local'}))
             or plan.interactive or plan.repair_allowed or plan.transient_retries
             or any(a.engine != 'hermes' for a in plan.actors)
             or len({a.profile for a in plan.actors}) != len(plan.actors)
             or len(checks) == 0 or any(type(c) is not CommandCheck for c in checks)
             or tuple(c.identity() for c in checks) + (review_identity(),) != plan.checks):
-        raise ValueError('cpipe supports explicit local-only Hermes execution with frozen checks and independent review')
+        raise ValueError('cpipe supports explicit Hermes execution with frozen checks and independent review')
     artifact = validate_worktree(plan)
     now = int(time.time())
     e = plan.envelope
@@ -150,11 +156,13 @@ def validate_spec(spec):
                 'forbidden_paths', 'builder', 'reviewer', 'seconds', 'checks'}
     if type(spec) is not dict:
         raise ValueError('spec must be an object')
-    if set(spec) != expected:
+    if set(spec) - {'draft_pr'} != expected:
         # Field names are fixed schema labels, never user values.
         missing, extra = sorted(expected - set(spec)), sorted(set(spec) - expected)
         raise ValueError('spec fields: missing ' + (', '.join(missing) or 'none')
                          + '; unsupported ' + (', '.join(k for k in extra if k.isidentifier()) or 'none'))
+    if type(spec.get('draft_pr', False)) is not bool:
+        raise ValueError('draft_pr must be true or false')
     if type(spec['seconds']) is not int or not 30 <= spec['seconds'] <= 7200:
         raise ValueError('cpipe requires a bounded 30..7200 second budget')
     for key in ('acceptance', 'non_goals', 'write_paths', 'forbidden_paths', 'checks'):
@@ -221,14 +229,14 @@ def _git(root, *args, env=None, timeout=300):
                           capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=timeout).stdout.strip()
 
 
-def starting_point(source, base):
+def starting_point(source, base, carry=True):
     """(commit, carried) a delivery starts from: base, plus the checkout's uncommitted work when base is what
-    the checkout has checked out. Nothing in the checkout or its index changes."""
+    the checkout has checked out (never for a draft PR). Nothing in the checkout or its index changes."""
     try:
         commit = _git(source, 'rev-parse', '--verify', '-q', base + '^{commit}')
     except subprocess.CalledProcessError:
         raise ValueError('base must be a branch, tag or commit in the repository') from None
-    if commit != _git(source, 'rev-parse', 'HEAD'):
+    if not carry or commit != _git(source, 'rev-parse', 'HEAD'):
         return commit, False
     # Other repositories inside the checkout (worktrees, clones) are not part of this one.
     nested = [n[:-1] for n in _git(source, 'ls-files', '-z', '--others', '--exclude-standard').split('\0')
@@ -267,7 +275,10 @@ def from_spec(service, spec, *, session_id, profile_id, approach='', start=None)
     if not session_id or not profile_id:
         raise ValueError('missing initiating session/profile')
     _, checks, actors = validate_spec(spec)
-    start = start or starting_point(spec['worktree'], spec['base'])[0]
+    start = start or starting_point(spec['worktree'], spec['base'], carry=not spec.get('draft_pr'))[0]
+    if spec.get('draft_pr'):
+        from .publish import preflight
+        preflight(spec['worktree'], spec['base'], start)
     delivery_id = 'cp-' + uuid.uuid4().hex
     root = isolate(spec['worktree'], start, delivery_id)
     try:
@@ -283,14 +294,16 @@ def _plan(spec, checks, actors, root, start, delivery_id, session_id, profile_id
     artifact = fingerprint(root)
     now = int(time.time())
     e = Envelope(delivery_id, session_id, profile_id, spec['repo'], artifact.branch,
-        spec['base'], 'scope-' + uuid.uuid4().hex, tuple(c.obligation for c in checks) + ('review',), frozenset({'local'}))
+        spec['base'], 'scope-' + uuid.uuid4().hex, tuple(c.obligation for c in checks) + ('review',),
+        DRAFT if spec.get('draft_pr') else frozenset({'local'}))
     p = ExecutionPlan(envelope=e, worktree=str(root), common_git_dir=artifact.common_git_dir,
         base_commit=start, goal=spec['goal'], acceptance=tuple(spec['acceptance']),
         non_goals=tuple(spec['non_goals']), write_paths=tuple(spec['write_paths']),
         forbidden_paths=tuple(spec['forbidden_paths']), actors=actors, budget=Budget(spec['seconds'], CALLS),
-        policy_id='local-only', check_definition='frozen-command',
+        policy_id='draft-pr' if spec.get('draft_pr') else 'local-only', check_definition='frozen-command',
         checks=tuple(c.identity() for c in checks) + (review_identity(),), interactive=False,
-        repair_allowed=False, transient_retries=0, completion_target='local_only', expires_at=now + APPROVAL_WINDOW + spec['seconds'],
+        repair_allowed=False, transient_retries=0, completion_target='draft' if spec.get('draft_pr') else 'local_only',
+        expires_at=now + APPROVAL_WINDOW + spec['seconds'],
         approach=approach)
     return p
 
@@ -332,8 +345,6 @@ def ready(service, delivery_id, session_id, profile_id):
         raise ValueError('execution requires an approved frozen envelope')
     from .approach import validate_document
     validate_document(service, state.plan)
-    if state.plan.completion_target != 'local_only':
-        raise ValueError('publication adapter is not installed')
     row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?',
                                     ('check-spec:' + state.plan.digest(),)).fetchone()
     if not row:
@@ -343,6 +354,37 @@ def ready(service, delivery_id, session_id, profile_id):
     if tuple(c.identity() for c in checks) + (review_identity(),) != state.plan.checks:
         raise ValueError('frozen check environment changed')
     return state, checks
+
+
+def publish(service, bridge, delivery_id, tid, claimer):
+    """Commit the verified worktree, push its branch and open the draft PR; record it once GitHub shows it."""
+    from .hermes_worker import snapshot
+    from .publish import open_draft
+    state = owned(service, delivery_id, bridge.session_id, bridge.profile_id)
+    plan = state.plan
+    if validate_worktree(plan).digest != state.artifact:
+        raise ValueError('the worktree changed after it was verified')
+    if any(not inside(n, plan.write_paths) or inside(n, plan.forbidden_paths) for n in changed_since_base(plan)):
+        raise ValueError('the worktree has changes outside the approved paths')
+    latest = {r.obligation: r.outcome.value for r in state.receipts}
+    body = '\n'.join([plan.goal, '', '## Acceptance', *('- ' + a for a in plan.acceptance), '', '## Verification',
+                      *(f'- {c.obligation}: {latest.get(c.obligation, "not run")}' for c in plan.checks
+                        if c.obligation != 'review'),
+                      f'- Independent review: approved after {state.review_cycles} round(s)', '',
+                      'Opened as a draft by cpipe after its checks and review passed.'])
+    url, commit = open_draft(plan, snapshot(plan.worktree), plan.goal + '\n\n' + '\n'.join(
+        '- ' + a for a in plan.acceptance) + '\n', body + '\n')
+    service.journal.db.execute('INSERT OR REPLACE INTO intent(id,payload,acknowledged) VALUES (?,?,1)',
+                               ('pr:' + delivery_id, encoded(dict(url=url, commit=commit))))
+    e = plan.envelope
+    event = bridge.result_event(delivery_id, tid, claimer=claimer, kind='publication_observed',
+                                target=(e.repo, e.branch, e.base, state.artifact, 'draft'))
+    state = bridge.finish(event, tid, claimer=claimer, summary='Opened draft pull request ' + url)
+    try:  # the local branch matches what was pushed; the files are untouched
+        _git(plan.worktree, 'reset', '-q', commit)
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return state
 
 
 def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None, evidence_root):
@@ -411,6 +453,21 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                         return reproduces(state, checks, evidence_root=Path(evidence_root))
                 state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker,
                                                prove=prove)
+            elif action == 'publish':
+                if h.take(conn, tid, claimer=claimer, ttl_seconds=600) is None:
+                    raise ValueError('task owned by another launcher; no worker started')
+                bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='publish-' + uuid.uuid4().hex)
+                try:
+                    state = publish(service, bridge, delivery_id, tid, claimer)
+                except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                    if owned(service, delivery_id, session_id, profile_id).activity != 'publish':
+                        raise
+                    from .review import redacted
+                    detail = getattr(exc, 'stderr', '') or str(exc)
+                    note('the draft pull request was not opened: ' + redacted(str(detail).strip(), 300) +
+                         '. The verified work stays in the worktree; fix the cause and say continue to retry.')
+                    bridge.abandon(delivery_id, claimer, kind='activity_refused')
+                    continue
             else:
                 state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
                                        evidence_root=Path(evidence_root))

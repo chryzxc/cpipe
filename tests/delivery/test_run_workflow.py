@@ -472,3 +472,117 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
     assert texts[2].startswith('builder declined implement')
     assert 'reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
     assert 'error' in call(token, 'prepare', {})  # still no new work on an expired receipt
+
+
+@pytest.fixture
+def github(repo, tmp_path, monkeypatch):
+    """origin looks like GitHub but pushes go to a local bare repository; gh is a fake that keeps its PRs in a file."""
+    bare, prs, bin_dir = tmp_path / 'origin.git', tmp_path / 'prs.json', tmp_path / 'bin'
+    subprocess.run(['git', 'init', '-q', '--bare', str(bare)], check=True)
+    for args in (('add', 'test_behavior.py'),  # a PR starts from the base as committed
+                 ('-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'test: behavior'),
+                 ('remote', 'add', 'origin', 'https://github.com/acme/widget.git'),
+                 ('config', f'url.{bare}.pushInsteadOf', 'https://github.com/acme/widget.git'),
+                 ('update-ref', 'refs/remotes/origin/feature', 'HEAD')):
+        subprocess.run(['git', *args], cwd=repo, check=True)
+    bin_dir.mkdir()
+    gh = bin_dir / 'gh'
+    gh.write_text(f'''#!{sys.executable}
+import json, subprocess, sys
+from pathlib import Path
+db, args = Path({str(prs)!r}), sys.argv[1:]
+prs = json.loads(db.read_text()) if db.exists() else []
+def opt(name): return args[args.index(name) + 1]
+def head(b): return subprocess.run(['git', '--git-dir', {str(bare)!r}, 'rev-parse', 'refs/heads/' + b],
+                                   capture_output=True, text=True).stdout.strip()
+if args[:2] == ['auth', 'status']: sys.exit(0)
+if args[:2] == ['pr', 'list']:
+    print(json.dumps([dict(p, headRefOid=head(p['headRefName'])) for p in prs if p['headRefName'] == opt('--head')]))
+elif args[:2] == ['pr', 'create']:
+    if Path({str(tmp_path / 'gh-down')!r}).exists():
+        sys.exit('HTTP 503: GitHub is unavailable')
+    assert '--draft' in args and opt('--repo') == 'acme/widget'
+    prs.append(dict(url='https://github.com/acme/widget/pull/%d' % (len(prs) + 1), isDraft=True, state='OPEN',
+                    baseRefName=opt('--base'), headRefName=opt('--head'), title=opt('--title'), body=sys.stdin.read()))
+    db.write_text(json.dumps(prs))
+elif args[:2] == ['pr', 'view']:
+    print(json.dumps(next(dict(p, headRefOid=head(p['headRefName'])) for p in prs if p['headRefName'] == args[2])))
+else:
+    sys.exit(2)
+''')
+    gh.chmod(0o755)
+    monkeypatch.setenv('PATH', f"{bin_dir}:{__import__('os').environ['PATH']}")
+    return bare, prs
+
+
+def test_asked_for_a_draft_pr_it_opens_one_after_review_and_retries_only_that_step(
+        run_context, repo, hermes_home, monkeypatch, github, tmp_path):
+    import model_tools
+    from tools.registry import registry
+    from cpipe.delivery import controller
+    from cpipe.delivery.review import REVIEW_AXES
+    from cpipe.delivery.workers import WorkerResult
+    from cpipe.runtime import hermes_api as h
+    bare, prs = github
+    ctx, token, spec, _, _, _ = run_context
+    spec['draft_pr'] = True
+    (tmp_path / 'gh-down').touch()  # the first attempt fails on GitHub's side
+    assert prepare(run_context)['phase'] == 'approach_review'
+    frozen = call(token, 'plan', {'draft_revision': 1})
+    delivery_id = frozen['delivery_id']
+    monkeypatch.setattr(registry, 'dispatch', lambda name, args, **kw: ctx.tools[name]['handler'](args, **kw))
+    h.kb.init_db()
+    told, workers = [], []
+    ctx.inject_message = lambda text, **kw: told.append(text) or True
+    def worker(state, *, on_session, **kw):
+        workers.append(state.activity)
+        on_session(state.activity + '-fixture')
+        if state.activity == 'implement':
+            (Path(state.plan.worktree) / 'double.py').write_text('def double(n): return n * 2\n')
+            return WorkerResult(state.activity + '-fixture', {'status': 'done'})
+        return WorkerResult(state.activity + '-fixture', dict(status='approved', artifact=state.artifact,
+            reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
+    original_run = controller.run
+    def controlled(service, delivery_id, **kw):
+        with closing(h.connect(None)) as conn:
+            return original_run(service, delivery_id, conn=conn, execute=worker, **kw)
+    monkeypatch.setattr(controller, 'run', controlled)
+    monkeypatch.setattr(native, 'SETTLE', 0)
+    asked = json.loads(model_tools.handle_function_call('cpipe_approve_plan', frozen['approval_arguments'],
+        session_id='s1', skip_pre_tool_call_hook=True))['clarify']['question']
+    assert f'Push the branch cpipe/{delivery_id} to origin' in asked and 'Open a draft pull request against feature' in asked
+    assert 'No pushes.' not in asked
+    assert reply(frozen['approval_arguments'], 'Yes', asked)['status'] == 'approved'
+
+    def build():
+        out = call(token, 'build', {'delivery_id': delivery_id})
+        if delivery_id in native._RUNS:
+            native._RUNS.pop(delivery_id).join(60)
+        return out
+    build()
+    first = json.loads(told[-1].split('\n')[1])
+    assert told[-1].startswith(f'[cpipe] Delivery {delivery_id} is verified and reviewed, but its draft pull request')
+    assert first['phase'] == 'waiting' and 'pull_request' not in first
+    assert any('draft pull request was not opened' in r and 'HTTP 503' in r for r in first['recoveries'])
+    assert workers == ['implement', 'review']
+
+    (tmp_path / 'gh-down').unlink()  # fixed; "continue" retries the PR step alone
+    build()
+    done = json.loads(told[-1].split('\n')[1])
+    assert told[-1].startswith(f'[cpipe] Delivery {delivery_id} is done: its draft pull request is open')
+    assert done['phase'] == 'completed' and done['pull_request'] == 'https://github.com/acme/widget/pull/1'
+    assert workers == ['implement', 'review']  # no rebuild or second review
+    pr, = json.loads(prs.read_text())
+    assert pr['title'] == spec['goal'] and pr['baseRefName'] == 'feature' and '- behavior: pass' in pr['body']
+    git = lambda *a: subprocess.run(['git', '--git-dir', str(bare), *a], capture_output=True, text=True,
+                                    check=True).stdout.strip()
+    branch = f'refs/heads/cpipe/{delivery_id}'
+    assert git('show', f'{branch}:double.py') == 'def double(n): return n * 2'
+    head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=repo, capture_output=True, text=True).stdout.strip()
+    assert git('rev-parse', branch + '^') == head  # exactly one commit on the base
+    assert (repo / 'double.py').read_text() == 'def double(n): return n\n'  # the checkout is untouched
+
+
+def test_a_draft_pr_that_could_not_be_opened_is_refused_before_approval(run_context, repo):
+    run_context[2]['draft_pr'] = True  # no origin remote
+    assert 'origin' in prepare(run_context)['error']

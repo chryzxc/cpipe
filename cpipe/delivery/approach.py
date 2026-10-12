@@ -72,7 +72,10 @@ def render(spec, approach, revision, start=None):
         section('Risks and preserved behavior', approach['risks'])
     section('Execution limits', [actors_line(spec) + '. Saved models/providers are resolved by Hermes.',
         f"Execution budget: {spec['seconds']} seconds. Draft review time is not execution time.",
-        'Local development only; no commits, pushes, PRs, merging, deployment or credential changes.',
+        ('After the checks and review pass: one commit on the delivery\'s own branch, pushed to origin, and a draft '
+         'pull request against ' + spec['base'].removeprefix('origin/') + '. No merging, deployment or credential changes.'
+         if spec.get('draft_pr') else
+         'Local development only; no commits, pushes, PRs, merging, deployment or credential changes.'),
         'Workers are trusted local processes, not sandboxed. Scope checks detect violations; they do not prevent access.'])
     section('Approval boundary', ['Use Open preview to review this document, then reply in the originating chat with any comments or changes.',
         'Comments revise the approach. Preview approval means the approach looks good; it does not grant execution authority.',
@@ -203,7 +206,10 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
             raise ValueError('draft is frozen or revision changed')
         spec, approach = payload['spec'], payload['approach']
         controller.validate_spec(spec)
-        start = controller.starting_point(spec['worktree'], spec['base'])
+        start = controller.starting_point(spec['worktree'], spec['base'], carry=not spec.get('draft_pr'))
+        if spec.get('draft_pr'):
+            from .publish import preflight
+            preflight(spec['worktree'], spec['base'], start[0])
         revision = record.get('draft_revision', 0) + 1
         text = render(spec, approach, revision, start)
         # The directory is outside the worktree: Markdown cannot invalidate source identity.

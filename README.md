@@ -4,7 +4,7 @@ cpipe is a Hermes plugin that delivers a development task from request to review
 
 You describe the task once. cpipe investigates, presents an approach and asks for a single approval. The delivery then runs in the background: a failing test is written first, the change is implemented, the project's own tests are run, and a second Hermes profile reviews the result. When the delivery finishes, or needs a decision from you, cpipe sends one message to the originating chat.
 
-cpipe does not commit, push, open pull requests, merge or deploy. Each delivery runs in a new Git worktree of its own, so your checkout is never changed, and several deliveries can run side by side. The result is left in that worktree for your review.
+cpipe does not merge or deploy. It commits, pushes and opens a draft pull request only when you ask for one in the task. Each delivery runs in a new Git worktree of its own, so your checkout is never changed, and several deliveries can run side by side. The result is left in that worktree for your review.
 
 ## Design
 
@@ -74,7 +74,7 @@ Each loop in the graph has an exit condition and a bound.
 
 - **Least privilege for checks:** checks run with a minimal environment (`PATH`, `HOME`, locale, `CI=1`) and no credentials.
 - **Redaction:** credentials are written as `[REDACTED]`, and review text is redacted before it is stored or shown.
-- **Local only:** cpipe never commits, pushes or deploys.
+- **Local unless asked:** cpipe commits, pushes and opens a pull request only when the task asks for one and you approve it; the PR is always a draft on the delivery's own branch. It never merges or deploys.
 
 ## How it works
 
@@ -87,7 +87,7 @@ Each loop in the graph has an exit condition and a bound.
                       write_tests → tests must FAIL (RED)                     │
                       implement ⇄ checks (your test command, real JUnit)      │ self-repair:
                       review ⇄ implement   (until no serious findings)        │ missing/misnamed/crashing
-                      locally_ready                                           │ tests, failing checks,
+                      locally_ready   (or, if you asked: commit → push → draft PR)  │ tests, failing checks,
                  └─ one chat message: result, checks, tokens, worktree ◄──────┘ crashed steps
 ```
 
@@ -104,8 +104,9 @@ Each loop in the graph has an exit condition and a bound.
      Each finding includes the concrete fix. The builder addresses all findings in one pass, the checks run again, and the reviewer inspects the fix diff.
 
      See [Review](#review) for how findings are handled.
-5. **Notification.** You get one message in the originating chat when the run is:
-   - **done:** `locally_ready`, with any open findings and advice listed;
+5. **Draft pull request (only if you asked).** Say so in the task, e.g. `/cp-run fix the date parser and open a draft PR`. The approval question then lists the push and the draft PR, and the plan checks up front that `origin` is on GitHub, `gh` is logged in and the base branch is on `origin`. A PR delivery starts from the base as committed, without your uncommitted changes. After the checks and a clean review, cpipe makes one commit of the verified worktree, force-pushes the delivery's own branch and opens (or reuses) its draft PR, then confirms on GitHub that the PR is a draft at that commit. If any step fails, the run waits with the reason; fix it and say *continue* to retry the PR step alone.
+6. **Notification.** You get one message in the originating chat when the run is:
+   - **done:** `locally_ready`, with any open findings and advice listed, or `completed` with the draft PR link;
    - **stuck:** `diagnosis`;
    - **waiting on you**, e.g. the test command is not installed;
    - **out of budget.**
@@ -234,7 +235,7 @@ Prefer commands that provision their own dependencies; otherwise install first (
 - **No credentials kept.** Credentials must be written as `[REDACTED]`. Worker prose is never treated as evidence; only observed test results and validated review verdicts are.
 - **Runs inside Hermes.** A background run lives in a long-running Hermes process (the app, TUI or gateway). If Hermes restarts mid-run, the watchdog or the next chat resumes it; while no Hermes process is running, nothing runs, but the budget clock keeps going.
 - **Shared provider limits.** All builders and reviewers on one provider share its rate limits; a fallback on another provider makes the ladder more robust.
-- **No publication.** There is no publication adapter. `locally_ready` means verified in the worktree, not pushed.
+- **Draft PRs only.** cpipe opens draft pull requests on request and never marks them ready or merges. `locally_ready` means verified in the worktree, not pushed.
 
 ## Diagnostics and development
 
