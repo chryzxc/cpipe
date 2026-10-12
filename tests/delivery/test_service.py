@@ -442,3 +442,16 @@ def test_continue_after_the_budget_ran_out_needs_approval_for_a_fresh_one():
 def test_a_proposal_that_was_never_approved_cannot_be_resumed():
     with pytest.raises(ValueError, match="resumed"):
         step(start(), "resumed")
+
+
+def test_a_missing_environment_waits_for_the_user_instead_of_handing_over():
+    from cpipe.delivery.schema import Actor
+    actors = (Actor("builder", "hermes", "sentry", "m", "p"), Actor("builder", "hermes", "forge", "m", "p"),
+              Actor("reviewer", "hermes", "aegis", "m", "p"))
+    state = start(actors=actors)
+    state, _ = step(state, "envelope_approved", "tests")
+    state = claim(state)
+    state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
+    state = claim(state, "sentry", "sentry-session")
+    state, intents = step(state, "activity_refused", action="environment")
+    assert state.phase == "waiting" and not intents and state.builder != "forge"

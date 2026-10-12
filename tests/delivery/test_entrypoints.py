@@ -258,7 +258,7 @@ def test_controller_recovers_a_step_that_crashed(repo, tmp_path, monkeypatch):
 
 
 def test_a_builder_that_keeps_failing_is_retried_then_replaced(repo, tmp_path, monkeypatch):
-    """resume with the reason -> fresh session -> next approved builder; the run never stops."""
+    """retry with the reason in a fresh session -> next approved builder; the run never stops."""
     from cpipe.delivery import controller
     from cpipe.delivery.controller import propose, run
     from cpipe.delivery.schema import Actor
@@ -304,7 +304,7 @@ def test_a_builder_that_keeps_failing_is_retried_then_replaced(repo, tmp_path, m
             assert result['phase'] == 'locally_ready', result
             assert [r.split(' (')[0] for r in result['recoveries']] == ['forge failed implement'] * 3
             assert result['recoveries'][-1].endswith('handing over')
-            assert resumed == ['', 'forge-1', '', '']  # resume, then fresh, then atlas in a new session
+            assert resumed == ['', '', '', '']  # every retry, and atlas, start a fresh session
             assert service.read('d1').builder == 'atlas'
     finally:
         conn.close()
@@ -604,3 +604,10 @@ def test_spawn_opens_one_chat_per_task_running_cp_run(hermes_home, monkeypatch):
     assert out['chats'][0]['session_id'] == 'key-first' and 'two Hermes profiles' in out['chats'][1]['reason']
     assert closed == ['new-second']
     assert call({'tasks': tasks}) == out and len(ran) == 2  # a repeated call replays, opening no more chats
+
+
+def test_a_budget_stop_after_passing_checks_says_only_review_is_left():
+    from cpipe import native
+    head = native._settled('d1', dict(phase='stopped', checks={'behavior': 'pass', 'review': 'unobserved'}), '')[0]
+    assert head.startswith('implemented and its checks pass')
+    assert native._settled('d1', dict(phase='stopped', checks={'behavior': 'fail'}), '')[0] == native.HEADLINES['stopped']

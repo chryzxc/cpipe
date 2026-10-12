@@ -36,9 +36,11 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'it is replaced by a private report path (e.g. pytest --junitxml={report}, vitest --reporter=junit '
                 '--outputFile={report}, jest --json --outputFile={report}) and each criterion matches one reported classname::name or name; otherwise '
                 'pass/fail is the exit code and every criterion must appear in the output. Prefer {report}. '
-                'Checks run in the new worktree, where ignored files such as node_modules or .venv do not exist yet: '
-                'use commands that provision their own dependencies (uv run, go test, cargo test) or install first, '
-                'e.g. ["sh","-c","npm ci && npx vitest run ..."]; never name the investigated checkout in a command. '
+                'Checks run in the new worktree. It gets copies of the checkout\'s installed dependency folders (such as '
+                'node_modules) when the lockfiles match, but never a virtualenv, and copies can be unavailable: use '
+                'commands that provision their own dependencies (uv run, go test, cargo test) or install only when '
+                'missing, e.g. ["sh","-c","[ -d node_modules ] || npm ci; npx vitest run ..."]; never name the '
+                'investigated checkout in a command. '
                 'Exactly one check has obligation behavior: the test proving the change; it must fail before implementing, '
                 'and the builder writes it first, so its file must be inside write_paths. '
                 'For /cp-run, plan: {draft_revision} freezes the reviewed draft; build: {delivery_id} from that plan after the user approves. '
@@ -158,6 +160,9 @@ def _settled(delivery_id, result, error):
     checks = result.get('checks') or {}
     if phase == 'waiting' and 'review' in checks and all(v.startswith('pass') for v in checks.values()):
         head = 'verified and reviewed, but its draft pull request could not be opened (see recoveries)'
+    built = {k: v for k, v in checks.items() if k != 'review'}
+    if phase == 'stopped' and built and all(v.startswith('pass') for v in built.values()):
+        head = 'implemented and its checks pass, but its time ran out before the review finished'
     if phase == 'locally_ready' and unresolved:
         head = (f'ready for your review with {unresolved} unresolved review finding(s): checks pass, but '
                 'more fix rounds kept trading one finding for another')

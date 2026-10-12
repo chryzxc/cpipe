@@ -6,6 +6,7 @@ from contextlib import closing
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,7 +20,7 @@ from .schema import ExecutionPlan
 from .service import Service, Event, deadline, resumable  # noqa: F401 (resumable: used by native)
 from .native_bridge import NativeBridge
 from .hermes_worker import (at_base, before_step, changed_since_base, reattach, release, HermesWorker,
-                            keep, roll_back)
+                            keep, roll_back, stop_orphan)
 from .workers import observe_implementation, usage, WorkerRefused
 from .review import observe_review, review_identity
 from .approval import arguments
@@ -259,7 +260,44 @@ def isolate(source, start, delivery_id):
     parent.mkdir(parents=True, exist_ok=True)
     path = parent.resolve() / delivery_id
     _git(source, 'worktree', 'add', '-q', '-b', 'cpipe/' + delivery_id, str(path), start)
+    provision(source, path)
     return path
+
+
+# Dependency lockfiles: when one differs, the checkout's installed dependencies are the wrong versions.
+LOCKFILES = frozenset({'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb',
+                       'bun.lock', 'uv.lock', 'poetry.lock', 'Pipfile.lock', 'requirements.txt', 'Gemfile.lock',
+                       'composer.lock', 'Cargo.lock', 'go.sum', 'mix.lock', 'pubspec.lock', 'Podfile.lock'})
+
+
+def provision(source, path):
+    """Start the delivery worktree with the checkout's installed dependencies (node_modules, tool caches and
+    other ignored folders), so builders and checks never spend time and tokens reinstalling them. Copy-on-write
+    clones only: a folder is skipped, never linked, so nothing can write back into the checkout. Skipped
+    entirely when a lockfile differs, and for virtualenvs, whose scripts and editable installs point back at the
+    checkout's own code. Best effort: a skipped folder is installed by the check command as before."""
+    source, clone = Path(source), (['cp', '-c', '-R'] if sys.platform == 'darwin' else ['cp', '-R', '--reflink=always'])
+    try:
+        for name in _git(path, 'ls-files', '-z').split('\0'):
+            if Path(name).name in LOCKFILES and (path / name).read_bytes() != (
+                    (source / name).read_bytes() if (source / name).is_file() else b''):
+                return
+        ignored = _git(source, 'ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory')
+    except (subprocess.SubprocessError, OSError):
+        return
+    for name in ignored.split('\0'):
+        src, dst = source / name, path / name
+        if (not name.endswith('/') or dst.exists() or src.is_symlink() or (src / 'pyvenv.cfg').exists()
+                or (src / '.git').exists() or next(src.glob('*/.git'), None)):
+            continue  # not a folder, already there, a virtualenv, or another repository or worktree
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            done = subprocess.run([*clone, str(src).rstrip('/'), str(dst).rstrip('/')], capture_output=True,
+                                  stdin=subprocess.DEVNULL, timeout=300).returncode == 0
+        except subprocess.TimeoutExpired:
+            done = False
+        if not done:
+            shutil.rmtree(dst, ignore_errors=True)
 
 
 def discard(source, path):
@@ -319,6 +357,7 @@ def cancel(service, delivery_id, *, session_id, profile_id):
     state = owned(service, delivery_id, session_id, profile_id)
     if state.phase in {'cancelled', 'stopped', 'completed'}:
         return summary(state)
+    stop_orphan(state.plan.worktree)
     e = state.plan.envelope
     state, _ = service.accept(Event('cancel:' + state.active_intent, 'cancelled', delivery_id,
         state.plan.digest(), state.artifact, state.version, max(state.last_at, int(time.time())),
@@ -405,7 +444,8 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             bridge.comment(tid, text)  # handoffs and retries show as card activity on the board
     store = Path(evidence_root) / 'good' / delivery_id
     claimer = h.new_claimer()
-    bridge.abandon(delivery_id)  # recover a run left bound by a crashed build
+    bridge.abandon(delivery_id)  # recover a run left bound by a crashed build,
+    stop_orphan(state.plan.worktree)  # the worker it left running
     release(state.plan)  # and files its baseline moved aside
     for _ in range(max(4, state.plan.budget.calls * 6)):
         state = owned(service, delivery_id, session_id, profile_id)
@@ -475,9 +515,11 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
                                        evidence_root=Path(evidence_root))
         except WorkerRefused as exc:
-            # Not a crash: the next approved actor takes over, or the run waits for the user.
+            # Not a crash: the next approved actor takes over, or the run waits for the user. A missing
+            # tool or dependency stops every actor alike, so it waits for the user straight away.
             note(f'{bridge._actor(state).profile} declined {action}: {exc}')
-            bridge.abandon(delivery_id, claimer, kind='activity_refused')
+            bridge.abandon(delivery_id, claimer, kind='activity_refused',
+                           action='environment' if str(exc).lower().startswith('environment') else '')
             continue
         except Exception as exc:
             current = owned(service, delivery_id, session_id, profile_id)
@@ -501,7 +543,8 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 worker.note = (f'Your previous attempt at this step failed: {reason}. Its changes were undone. '
                                'Do the step again and finish with exactly the requested JSON.')
                 if n < FAILURES:
-                    bridge.abandon(delivery_id, claimer, action='fresh' if n > 1 else '')
+                    # A session that failed once carries the failure's context into every resume.
+                    bridge.abandon(delivery_id, claimer, action='fresh')
                 else:
                     worker.note = ''
                     bridge.abandon(delivery_id, claimer, kind='activity_refused')

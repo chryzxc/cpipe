@@ -102,3 +102,30 @@ def test_delivery_worktrees_sit_next_to_the_main_repository(repo):
     head = git(repo, 'rev-parse', 'HEAD').strip()
     for source, name in ((repo, 'd1'), (repo.parent / 'linked', 'd2')):  # a linked checkout still lands by the repo
         assert isolate(source, head, name) == (repo.parent / (repo.name + '-worktrees') / name).resolve()
+
+
+def test_worktrees_get_cloned_dependencies_only_when_safe(repo, monkeypatch):
+    import subprocess, sys
+    from cpipe.delivery import controller
+    (repo / '.gitignore').write_text('__pycache__/\n*.pyc\nnode_modules/\n.venv/\nvendor/\n')
+    (repo / 'package-lock.json').write_text('{"v": 1}')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-qm', 'deps')
+    (repo / 'node_modules' / 'left').mkdir(parents=True)
+    (repo / 'node_modules' / 'left' / 'index.js').write_text('x')
+    (repo / '.venv').mkdir()
+    (repo / '.venv' / 'pyvenv.cfg').write_text('home = /usr/bin')
+    (repo / 'vendor' / 'lib').mkdir(parents=True)
+    (repo / 'vendor' / 'lib' / '.git').mkdir()
+    # Plain copies stand in for copy-on-write clones on file systems that cannot clone.
+    real = subprocess.run
+    monkeypatch.setattr(controller.subprocess, 'run', lambda argv, **kw: real(
+        ['cp', '-R', *argv[-2:]] if argv[0] == 'cp' else argv, **kw))
+    head = git(repo, 'rev-parse', 'HEAD').strip()
+    path = controller.isolate(repo, head, 'd1')
+    assert (path / 'node_modules' / 'left' / 'index.js').read_text() == 'x'
+    assert not (path / '.venv').exists() and not (path / 'vendor').exists()  # virtualenvs, nested repos
+    (path / 'node_modules' / 'left' / 'index.js').write_text('changed')
+    assert (repo / 'node_modules' / 'left' / 'index.js').read_text() == 'x'  # never linked back
+    (repo / 'package-lock.json').write_text('{"v": 2}')  # installed for other versions: nothing copied
+    assert not (controller.isolate(repo, head, 'd2') / 'node_modules').exists()

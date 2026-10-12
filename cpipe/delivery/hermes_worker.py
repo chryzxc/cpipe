@@ -25,15 +25,24 @@ from .journal import encoded
 MAX_LINE = 256 * 1024
 MAX_STREAM = 32 * 1024 * 1024
 MAX_RESULT = 64 * 1024
+# Model turns per step: a worker that cannot finish in these is lost, and a fresh attempt is cheaper.
+TURNS = {'write_tests': 20, 'implement': 40, 'review': 30}
+# How builders work: every background job, poll loop or reinstall is paid for in tokens on every later turn.
+RULES = ('Work in the foreground: no background jobs, polling loops, sleeps or watch modes. cpipe runs the '
+         'approved checks after you return and sends you any failures, so do not run the full suite; at most run '
+         'the one narrow test you are working on. Inline scripts (-c/-e flags) may be blocked; write a small file '
+         'instead. Do not install dependencies, download tools or debug the environment: if something missing '
+         'stops you, change nothing more and return only {"status":"blocked","reason":"environment: <what is '
+         'missing>"}; the user fixes it and the delivery continues. ')
 
 
-def command(actor, cwd, resume, timeout_seconds):
+def command(actor, cwd, resume, timeout_seconds, turns=50):
     from ..runtime.launcher import module_command
     args = ['-p', actor.profile, 'chat', '--query-file', '-', '--oneshot',
             '--format', 'stream-json', '--in', str(cwd), '--no-restore-cwd',
             '--model', actor.model, '--provider', actor.provider,
             '--run-budget', str(max(1, math.ceil(timeout_seconds))),
-            '--max-turns', '50', '--source', 'tool']
+            '--max-turns', str(turns), '--source', 'tool']
     if resume:
         args += ['--resume', resume]
     return module_command('hermes_cli.main', *args)
@@ -64,7 +73,7 @@ def structured(text):
 
 
 def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
-                   on_session, heartbeat, timeout_seconds):
+                   on_session, heartbeat, timeout_seconds, pidfile=None):
     """Read the real JSONL protocol with lease checks and a hard wall clock."""
     data = prompt.encode()
     if len(data) > MAX_RESULT or timeout_seconds <= 0:
@@ -73,6 +82,8 @@ def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
     deadline = started + timeout_seconds
     proc = subprocess.Popen(argv, cwd=cwd, env=env, start_new_session=True,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if pidfile:  # if this process dies, the next run stops the worker instead of letting it spend on
+        Path(pidfile).write_text(str(proc.pid))
     session = ''
     final = None
     usage = None
@@ -161,6 +172,8 @@ def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
         except (ProcessLookupError, PermissionError):  # macOS: EPERM once only zombies remain
             pass
         proc.wait()
+        if pidfile:
+            Path(pidfile).unlink(missing_ok=True)
         for stream in (proc.stdin, proc.stdout):
             if stream and not stream.closed:
                 stream.close()
@@ -226,12 +239,11 @@ def _prompt(state, resume, since=''):
         task = ('Make the minimum authorized correction for the failing checks and open findings. Fix every '
                 'listed finding you do not dispute at its root cause in this one pass, changing only the code each one is about: '
                 'no unrelated refactors, renames or extra features, since every changed line is reviewed again. '
-                'Then run the approved check commands and inspect the callers of anything you changed so the fix '
-                'introduces no regression. '
+                'Inspect the callers of anything you changed so the fix introduces no regression. '
                 'Return only {"status":"done"}, or the answer asked for above when there are review findings. '
                 'Passing checks and completion are the controller’s job, not a prose assertion.')
     if state.activity in {'write_tests', 'implement'} and resume:
-        return 'Same delivery, next round. Activity: ' + state.activity + '.\n' + _delta(state) + task
+        return 'Same delivery, next round. Activity: ' + state.activity + '.\n' + _delta(state) + RULES + task
     prompt = ('You are a directly executing worker in an explicitly selected cpipe workflow. '
         'Do the assigned work with your own tools; do not delegate, invoke external coding CLIs, '
         'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
@@ -244,15 +256,17 @@ def _prompt(state, resume, since=''):
         'Frozen contract:\n' + encoded(state.plan.to_dict()) + '\n'
         'Current activity: ' + state.activity + '\n' + _delta(state))
     if state.activity != 'review':
-        return prompt + task
+        return prompt + RULES + task
     from .review import REVIEW_AXES
     schema = dict(status='approved|changes_requested', artifact=state.artifact,
         reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES),
         findings=[], verified_ids=[])
     return prompt + ('Read-only independent review: inspect the complete frozen base-to-candidate '
         'range, goal, acceptance, preserved behavior and evidence. Do not edit anything. '
+        'The approved checks already passed on this exact tree: do not run them or the full suite again; run '
+        'one narrow test only to confirm a bug you suspect, in the foreground, with no background jobs or polling. '
         'Every coverage axis requires actual inspection, not a checkbox assertion. Look for: regressions '
-        '(run the project\'s own tests; check callers and behavior outside the diff), new bugs and unhandled '
+        '(check callers and behavior outside the diff), new bugs and unhandled '
         'edge cases, security issues, and code to simplify (duplication, dead code, needless abstraction, '
         'comments restating code, reimplemented existing helpers). Report only issues worth changing, not '
         'style preferences. Severity decides what happens: critical/high/medium (wrong or broken behavior, a '
@@ -277,6 +291,33 @@ def _prompt(state, resume, since=''):
         '(low/medium/high/critical), in_scope (boolean), disposition (open). '
         'Only existing prior IDs may appear in verified_ids. Do not add fields.\n'
         + encoded(schema))
+
+
+def worker_pidfile(worktree):
+    """Where the running worker's process id is kept: the worktree's own git dir, never in the diff."""
+    return Path(_git(worktree, 'rev-parse', '--path-format=absolute', '--git-path', 'cpipe-worker.pid'))
+
+
+def stop_orphan(worktree):
+    """Stop a worker left running by a cpipe process that died (a Hermes restart): it would keep spending
+    tokens unobserved and hold its session, so every retry fails to resume. Only a process still working in
+    this worktree is stopped; a reused process id is left alone."""
+    try:
+        path = worker_pidfile(worktree)
+        pid = int(path.read_text())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return
+    try:
+        argv = subprocess.run(['ps', '-o', 'command=', '-p', str(pid)], capture_output=True, text=True,
+                              timeout=10).stdout
+        if str(worktree) in argv and os.getpgid(pid) == pid:
+            os.killpg(pid, signal.SIGKILL)
+            for _ in range(50):  # until it is gone and its session is free again
+                os.kill(pid, 0)
+                time.sleep(.1)
+    except (OSError, subprocess.SubprocessError):
+        pass  # gone already
+    path.unlink(missing_ok=True)
 
 
 def _git(cwd, *args, env=None, check=True):
@@ -434,6 +475,11 @@ class HermesWorker:
         if actor.engine != 'hermes':
             raise ValueError('unsupported execution engine')
         resume = state.builder_session if state.activity in {'write_tests', 'implement'} else ''
+        stop_orphan(state.plan.worktree)  # it would hold the session and keep spending
+        try:
+            pidfile = worker_pidfile(state.plan.worktree)
+        except (OSError, subprocess.SubprocessError):
+            pidfile = None
         since = now = ''
         if state.activity == 'review':
             try:  # re-reviews look only at what changed since the last review
@@ -448,10 +494,11 @@ class HermesWorker:
             prompt += '\n' + note
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(('HERMES_KANBAN_', 'GIT_')) and k != 'PYTHONPATH'}
-        result = execute_stream(command(actor, state.plan.worktree, resume, timeout_seconds),
+        result = execute_stream(command(actor, state.plan.worktree, resume, timeout_seconds,
+                                        TURNS.get(state.activity, 50)),
             prompt=prompt, cwd=state.plan.worktree, env=env, model=actor.model,
             expected_session=resume, on_session=on_session, heartbeat=heartbeat,
-            timeout_seconds=timeout_seconds)
+            timeout_seconds=timeout_seconds, pidfile=pidfile)
         if now:  # the next re-review diffs from this tree
             _git(state.plan.worktree, 'update-ref', _ref(state), now, check=False)
         return result

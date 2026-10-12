@@ -445,7 +445,8 @@ def apply(snapshot, event):
     if event.kind == "activity_refused":
         if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
             raise ValueError("refusal does not match claimed activity")
-        if state.activity == "publish":  # push or PR failed: the verified work waits for "continue"
+        if state.activity == "publish" or event.action == "environment":
+            # Push or PR failed, or a tool or dependency is missing: the work waits for "continue".
             return quiescent(state, "waiting")
         if state.activity not in {"write_tests", "implement", "review"}:
             raise ValueError("only worker steps can be refused")

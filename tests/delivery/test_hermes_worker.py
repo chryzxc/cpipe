@@ -155,3 +155,34 @@ def test_re_review_is_scoped_to_the_fix_diff(monkeypatch):
     focused = _prompt(state, '', 'aaa bbb')
     assert '`git diff aaa bbb`' in focused and 'report all findings in one verdict' not in focused
 
+
+
+def test_builders_work_cheaply_and_steps_cap_their_turns():
+    from dataclasses import replace
+    from cpipe.delivery import hermes_worker
+    from .test_service import candidate
+    state = replace(candidate(), activity='implement')
+    for resume in ('', 'session'):
+        prompt = hermes_worker._prompt(state, resume)
+        assert 'no background jobs' in prompt and '"environment: ' in prompt
+    review = hermes_worker._prompt(replace(state, activity='review'), '')
+    assert 'do not run them or the full suite again' in review
+    argv = hermes_worker.command(state.plan.actors[0], '/w', '', 60, hermes_worker.TURNS['write_tests'])
+    assert argv[argv.index('--max-turns') + 1] == '20'
+
+
+def test_a_worker_left_running_by_a_dead_process_is_stopped(tmp_path):
+    import subprocess, sys, time
+    from cpipe.delivery import hermes_worker
+    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+    orphan = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', str(tmp_path)],
+                              start_new_session=True)
+    pidfile = hermes_worker.worker_pidfile(tmp_path)
+    pidfile.write_text(str(orphan.pid))
+    hermes_worker.stop_orphan(tmp_path)
+    assert orphan.wait(timeout=10) and not pidfile.exists()
+    bystander = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)
+    pidfile.write_text(str(bystander.pid))  # a reused process id: not working here, left alone
+    hermes_worker.stop_orphan(tmp_path)
+    assert bystander.poll() is None
+    bystander.kill()
