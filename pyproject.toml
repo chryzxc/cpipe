@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cpipe"
-version = "2.0.0"
+version = "2.1.0"
 description = "Delivers a development task to reviewed, locally verified code: one approval, test-first background runs, independent review and self-recovery."
 readme = "README.md"
 requires-python = ">=3.11"
