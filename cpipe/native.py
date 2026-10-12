@@ -450,7 +450,7 @@ def dispatch(ctx, name, raw=''):
     if op == 'run':
         prompt = ('The user explicitly chose cpipe with /cp-run. Resolve the actual task, repository and worktree '
             'from this session using tools. Read project instructions such as AGENTS.md and inspect only the code the '
-            'task touches; use installed skills only when clearly relevant. '
+            'task touches; use installed skills only when clearly relevant. If you have a code index or code-navigation tool, locate code with it before broad file reads or searches; then read only the lines you need. '
             'Do not alter user configuration, profiles, skills or plugins. ' + roles_text +
             'Do not guess models/providers: Hermes resolves them from the profiles. Preserve unrelated edits.\n'
             'Choose kind bug, feature or change; risk normal or high; depth focused or detailed. For bugs, investigate '

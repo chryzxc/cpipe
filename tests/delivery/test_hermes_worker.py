@@ -155,18 +155,3 @@ def test_re_review_is_scoped_to_the_fix_diff(monkeypatch):
     focused = _prompt(state, '', 'aaa bbb')
     assert '`git diff aaa bbb`' in focused and 'report all findings in one verdict' not in focused
 
-
-def test_workers_are_pointed_at_the_users_code_index_only_when_one_exists(repo, tmp_path, monkeypatch):
-    from cpipe.delivery.hermes_worker import _navigation, _git
-    monkeypatch.setattr('shutil.which', lambda name: '/bin/' + name)
-    tree = tmp_path / 'delivery'
-    _git(repo, 'worktree', 'add', '-q', '--detach', str(tree))
-    assert _navigation(tree) == ''
-    (repo / 'graphify-out').mkdir()
-    (repo / 'graphify-out/graph.json').write_text('{}')
-    hint = _navigation(tree)
-    assert f'--graph {repo.resolve()}/graphify-out/graph.json' in hint and 'codegraph' not in hint
-    (tree / '.codegraph').mkdir()
-    assert f'codegraph explore -p {tree}' in _navigation(tree)
-    monkeypatch.setattr('shutil.which', lambda name: None)
-    assert _navigation(tree) == ''
