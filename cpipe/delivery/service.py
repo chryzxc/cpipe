@@ -453,6 +453,10 @@ def apply(snapshot, event):
         if state.activity in {"write_tests", "implement"}:
             if not event.result_artifact:
                 raise ValueError("implementation needs an observed successor artifact")
+            if (state.activity == "implement" and event.result_artifact == state.artifact
+                    and green(state, include_review=False)):
+                # It disputed the findings and changed nothing: the passing checks still hold.
+                return continue_with(state, "review", "reviewing")
             after = "tests" if state.activity == "write_tests" else "checks"
             return continue_with(replace(state, artifact=event.result_artifact), after, "checking")
         if state.activity not in {"tests", "checks"} or not event.receipts:
