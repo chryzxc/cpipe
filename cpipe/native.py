@@ -140,9 +140,14 @@ def deliver():
 def _settled(delivery_id, result, error):
     phase = (result or {}).get('phase', '')
     head = HEADLINES.get(phase, 'stopped unexpectedly' + (f' ({error})' if error else ''))
+    unresolved = sum(f['blocking'] for f in (result or {}).get('findings', ()))
+    if phase == 'locally_ready' and unresolved:
+        head = (f'ready for your review with {unresolved} unresolved review finding(s): checks pass, but '
+                'more fix rounds kept trading one finding for another')
     return head, (f'[cpipe] Delivery {delivery_id} is {head}.\n' + json.dumps(result or {}, sort_keys=True) +
         '\nTell the user this result in a few short lines: what was done, each check result, tokens used, '
-        'and the worktree to review. If it stopped, say why and that they can fix the cause and say "continue" '
+        'and the worktree to review. List the unresolved (blocking) findings, and the others as optional advice. '
+        'If it stopped or findings are unresolved, say why and that they can fix the cause and say "continue" '
         '(it picks up where it stopped, asking approval again only for more time). Do not call cpipe tools.')
 
 
@@ -290,7 +295,7 @@ def ensure_running(delivery_id, *, session_id, profile_id, chat_key, wait=0):
     """A repeated build: restart the run if nothing works on it any more, then report its real state."""
     with scope() as (service, _, _home):
         state = controller.owned(service, delivery_id, session_id, profile_id)
-    if state.approved and state.phase in controller.RESUMABLE:
+    if state.approved and controller.resumable(state):
         with scope() as (service, _, _home):
             state = controller.resume(service, delivery_id, session_id=session_id, profile_id=profile_id)
         log.info('cpipe: run %s resumed from %s', delivery_id, 'approval' if not state.approved else state.activity)

@@ -139,16 +139,27 @@ def merge_findings(prior, incoming):
     return result
 
 
+# Only these send the change back to the builder. Reviewers find something in any code,
+# and every fix is new code to critique, so low/info findings are advice for the report.
+SERIOUS = frozenset({"critical", "high", "medium"})
+
+
+def blocks(f):
+    return f.in_scope and f.severity in SERIOUS and f.disposition not in {"verified", "dismissed"}
+
+
 def blocking(findings):
-    return any(f.in_scope and f.disposition not in {"verified", "dismissed"}
-               for f in findings)
+    return any(blocks(f) for f in findings)
 
 
-REVIEW_ROUNDS = 5  # review -> fix -> review rounds before asking the user
+REVIEW_ROUNDS = 5  # review -> fix -> review rounds per builder at most
+STALLS = 2  # rounds in a row in which fixing did not reduce the blocking findings
 
 
-def needs_diagnosis(cycles, before, after):
+def stalled(cycles, before, after, stalls):
+    """The fix loop is not converging: out of rounds, the same findings stay open, or the
+    blocking count stopped falling (each fix trades one finding for another)."""
     if type(cycles) is not int or cycles < 0:
         raise ValueError("invalid review cycle count")
-    # Stop early when a fix round left exactly the same findings open.
-    return cycles >= REVIEW_ROUNDS or (cycles >= 2 and bool(after) and set(after) == set(before))
+    return (cycles >= REVIEW_ROUNDS or stalls >= STALLS
+            or (cycles >= 2 and bool(after) and set(after) == set(before)))

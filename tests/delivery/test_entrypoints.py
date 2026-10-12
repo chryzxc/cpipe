@@ -431,3 +431,12 @@ def test_leftovers_with_nothing_to_roll_back_to_are_adopted_only_inside_the_appr
                 assert (repo / drift).exists()  # never deletes work it cannot attribute
     finally:
         conn.close()
+
+
+def test_the_chat_hears_when_working_code_comes_back_with_unresolved_findings():
+    from cpipe import native
+    findings = [dict(id='REV-002', severity='medium', blocking=True, in_scope=True, text='x'),
+                dict(id='REV-003', severity='low', blocking=False, in_scope=True, text='y')]
+    head, text = native._settled('d1', dict(phase='locally_ready', findings=findings), '')
+    assert '1 unresolved review finding' in head and 'REV-003' in text
+    assert native._settled('d1', dict(phase='locally_ready', findings=findings[1:]), '')[0] == native.HEADLINES['locally_ready']
