@@ -141,6 +141,32 @@ def test_any_runner_junit_report_decides_the_outcome(repo, tmp_path, case, code,
         assert execute(state, spec, tmp_path).outcome is outcome
 
 
+def jest_report(status, messages=(), crashed=False):
+    import json
+    cases = [] if crashed else [
+        {'fullName': 'price rounds up', 'status': status, 'failureMessages': list(messages)},
+        {'fullName': 'price keeps cents', 'status': 'passed', 'failureMessages': []}]
+    return json.dumps({'testResults': [{'name': '/w/src/price.test.js', 'status': 'failed' if crashed else 'passed',
+                                        'assertionResults': cases}]})
+
+
+@pytest.mark.parametrize('report, code, outcome', [
+    (jest_report('failed', ['Error: expect(received).toBe(expected)']), 1, Outcome.FAIL),
+    (jest_report('passed'), 0, Outcome.PASS),
+    (jest_report('failed', ['TypeError: price is not a function']), 1, Outcome.UNAVAILABLE),
+    (jest_report('pending'), 0, Outcome.UNAVAILABLE),
+    (jest_report('', crashed=True), 1, Outcome.UNAVAILABLE),  # the suite never loaded
+])
+def test_jest_json_report_decides_the_outcome_whatever_jest_prints(repo, tmp_path, report, code, outcome):
+    path = tmp_path / 'jest.json'
+    path.write_text(report)
+    # Several files run: jest prints no test names, so only the report can name the criterion.
+    spec = sh(f'echo "PASS a.test.js"; cp {path} "$1"; exit {code}', report=True)
+    journal, service, state, spec = setup_check(repo, tmp_path, spec=spec)
+    with journal:
+        assert execute(state, spec, tmp_path).outcome is outcome
+
+
 def test_real_behavior_pass_on_new_artifact_produces_green(repo, tmp_path):
     journal, service, state, spec = setup_check(repo, tmp_path)
     with journal:

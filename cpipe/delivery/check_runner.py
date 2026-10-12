@@ -2,7 +2,7 @@
 
 A check is the repository's own test command (any language), run in the
 worktree. The approved argv and criteria are frozen. Outcomes come from a JUnit
-report when the argv names ``{report}``, else from the exit code plus the
+(or jest --json) report when the argv names ``{report}``, else from the exit code plus the
 criteria appearing in the output. Report and output stay in memory or a private
 temporary directory: raw assertion text, credentials and captured output never
 enter an evidence file or journal. Saved evidence contains only criterion
@@ -162,12 +162,29 @@ def _named(case, criterion):
     return criterion in (name, f"{case.attrib.get('classname', '')}::{name}") or name.endswith(' ' + criterion)
 
 
+def _jest(raw):
+    """jest --json --outputFile report as JUnit, so jest needs no reporter package. A suite
+    that failed to load has no assertions: it becomes one crashed case named after its file."""
+    root = ET.Element('testsuites')
+    for suite in json.loads(raw)['testResults']:
+        cases = suite.get('assertionResults') or []
+        for result in cases:
+            case = ET.SubElement(root, 'testcase', classname=suite['name'], name=result['fullName'])
+            if result['status'] == 'failed':
+                ET.SubElement(case, 'failure').text = (result.get('failureMessages') or [''])[0]
+            elif result['status'] != 'passed':
+                ET.SubElement(case, 'skipped')
+        if not cases and suite.get('status') == 'failed':
+            ET.SubElement(ET.SubElement(root, 'testcase', classname=suite['name'], name=suite['name']), 'error')
+    return ET.tostring(root)
+
+
 def _junit(spec, code, raw):
     """(outcome, reason); reason is a fixed label, never report text."""
     if not raw or b'<!DOCTYPE' in raw or b'<!ENTITY' in raw:
         return Outcome.UNAVAILABLE, 'no_report'
     try:
-        root = ET.fromstring(raw)
+        root = ET.fromstring(_jest(raw) if raw.lstrip().startswith(b'{') else raw)
         if root.tag not in {'testsuites', 'testsuite'}:
             return Outcome.UNAVAILABLE, 'no_report'
         cases = list(root.iter('testcase'))
@@ -194,7 +211,7 @@ def _junit(spec, code, raw):
         if code != 0 and mine:
             return Outcome.FAIL, ''
         return Outcome.UNAVAILABLE, 'other_failures'
-    except (ET.ParseError, KeyError, ValueError, TypeError):
+    except (ET.ParseError, KeyError, ValueError, TypeError, AttributeError):
         return Outcome.UNAVAILABLE, 'no_report'
 
 

@@ -29,7 +29,7 @@ A delivery is a state graph driven by code, not by a model.
 
 ### Evidence over claims
 
-- **Observed results only:** pass/fail comes from running the project's own commands (JUnit per test, or exit code). Worker prose is never evidence.
+- **Observed results only:** pass/fail comes from running the project's own commands (per-test reports, or exit code). Worker prose is never evidence.
 - **Content fingerprints:** every check result is bound to a hash of the worktree it ran on. A result for an older tree does not count.
 - **Separation of duties:** the reviewer is a different profile from the builder and works read-only.
 
@@ -215,15 +215,16 @@ Each check has an `obligation`, an `argv`, `criteria` and a `timeout_seconds`. E
 
 - **`argv`:** the command, run in the delivery worktree. Its program must be on `PATH` or given as an absolute path. Ignored files such as `node_modules` or `.venv` do not exist there yet, so use commands that provision their own dependencies.
 - **`criteria`:** the test names.
-- **With `{report}` (preferred):** if `argv` contains `{report}`, cpipe swaps in a private JUnit path and reads per-test results. A criterion matches:
+- **With `{report}` (preferred):** if `argv` contains `{report}`, cpipe swaps in a private report path and reads per-test results from JUnit XML or jest's own `--json` report. A criterion matches:
   - `name`;
   - `classname::name`;
   - the title under describe blocks (vitest's `describe > title`, jest's `describe title`).
-- **Without `{report}`:** the exit code decides, and every criterion must appear in the output. That way a build error is never mistaken for a failing test.
+- **Without `{report}`:** the exit code decides, and every criterion must appear in the output. That way a build error is never mistaken for a failing test. Runners that do not print every test name (jest running several files) need `{report}`.
 
 ```text
 ["uv", "run", "pytest", "tests/test_x.py", "--junitxml={report}"]
 ["npx", "vitest", "run", "src/x.test.ts", "--reporter=junit", "--outputFile={report}"]
+["npx", "jest", "src/a.test.js", "src/b.test.js", "--json", "--outputFile={report}"]
 ["go", "test", "./...", "-run", "TestX", "-v"]
 ```
 
