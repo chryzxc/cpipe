@@ -50,14 +50,17 @@ def _receipt(state, outcome):
 NOTES = {}
 
 
-def remember(payload):
+def redacted(text):
     from agent.redact import redact_sensitive_text
     from ..runtime.envpolicy import Redactor
-    redact = Redactor(os.environ)
+    return Redactor(os.environ)(redact_sensitive_text(text))[:1000]
+
+
+def remember(payload):
     if len(NOTES) > 500:
         NOTES.clear()
     for value in payload['findings']:
-        NOTES['cause-' + _hash(value['root_cause'])] = redact(redact_sensitive_text(value['root_cause']))[:1000]
+        NOTES['cause-' + _hash(value['root_cause'])] = redacted(value['root_cause'])
 
 
 def _parse(state, payload):
