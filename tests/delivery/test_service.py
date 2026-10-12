@@ -70,6 +70,13 @@ def reviewed(state, **changes):
     return step(state, "review_received", **fields)
 
 
+def passed(state, actor_id="sentry", **changes):
+    """The normal review approves, then the final regression review approves the same tree."""
+    state, intents = reviewed(state, actor_id=actor_id, **changes)
+    assert state.phase == "reviewing" and intents[0][1]["action"] == "review"
+    return reviewed(claim(state, actor_id, "final-review-session"), actor_id=actor_id)
+
+
 def ready_for_review(state):
     state, intents = step(state, "feedback_received", "review", action="ready")
     assert intents[0][1]["resume"] == ""
@@ -81,7 +88,15 @@ def test_approval_tests_implementation_checks_candidate_then_independent_readine
     assert not any(r.obligation == "review" for r in state.receipts)
     state = ready_for_review(state)
     state, intents = reviewed(state)
-    assert state.phase == "locally_ready" and not intents
+    assert state.phase == "reviewing" and intents[0][1]["action"] == "review"  # approval alone never ships
+    with pytest.raises(ValueError, match="quiescent"):
+        step(state, "feedback_received", action="publish")
+    state = claim(state, "sentry", "final-review-session")
+    finding = Finding("", "regressions", "a caller outside the diff breaks", "medium", True, "open")
+    back, intents = reviewed(state, receipts=(receipt(state, "review", Outcome.FAIL),), findings=(finding,))
+    assert back.phase == "implementing" and intents[0][1]["action"] == "implement"
+    state, intents = reviewed(state)
+    assert state.phase == "locally_ready" and not intents and state.regressions_checked == state.artifact
     assert State.from_dict(json.loads(json.dumps(state.to_dict()))) == state
 
 
@@ -106,7 +121,7 @@ def test_material_scope_change_needs_new_frozen_native_approval():
 
 
 def test_readiness_does_not_authorize_publication_and_answers_cannot_grant_it():
-    state, _ = reviewed(ready_for_review(candidate()))
+    state, _ = passed(ready_for_review(candidate()))
     waiting, intents = step(state, "feedback_received", "approve_publication", action="publish")
     assert waiting.phase == "waiting"
     assert waiting.plan.envelope.capabilities == frozenset({"local"})
@@ -194,7 +209,7 @@ def test_serious_finding_keeps_stable_id_until_successor_verification():
     assert blocked.findings[0].finding.disposition == "open"
     assert blocked.phase == "locally_ready" and not intents  # checks pass; the finding is listed, unresolved
     verified = Verification("REV-001", receipt(state), "evidence/regression.json")
-    done, intents = reviewed(state, verifications=(verified,))
+    done, intents = passed(state, verifications=(verified,))
     assert done.phase == "locally_ready" and not intents
     assert done.findings[0].finding.disposition == "verified"
     assert len(done.findings[0].history) == 1
@@ -238,7 +253,7 @@ def test_new_finding_cannot_arrive_preverified_or_predismissed():
 
 
 def test_fresh_recurrence_reopens_verified_id_with_current_failure_history():
-    state, _ = reviewed(ready_for_review(candidate()))
+    state, _ = passed(ready_for_review(candidate()))
     # A verified record from an earlier current verdict is preserved during feedback.
     from cpipe.delivery.findings import FindingRecord, disposition
     old = FindingRecord(Finding("REV-001", "behavior", "same bug", "high", True, "open"))
@@ -274,7 +289,7 @@ def test_draft_grant_is_exact_and_readback_is_required_before_completion():
     granted = replace(p.envelope, capabilities=frozenset({"local", "push", "draft_pr"}))
     state = candidate(envelope=granted, completion_target="draft")
     state = ready_for_review(state)
-    state, intents = reviewed(state)
+    state, intents = passed(state)
     assert state.phase == "publishing" and intents[0][1]["action"] == "publish"
     state = claim(state)
     target = ("owner/repo", "feature", "main", state.artifact, "draft")
@@ -287,7 +302,7 @@ def test_draft_grant_is_exact_and_readback_is_required_before_completion():
 def test_a_failed_pull_request_waits_and_continue_retries_only_the_publication():
     p = plan()
     granted = replace(p.envelope, capabilities=frozenset({"local", "push", "draft_pr"}))
-    state, _ = reviewed(ready_for_review(candidate(envelope=granted, completion_target="draft")))
+    state, _ = passed(ready_for_review(candidate(envelope=granted, completion_target="draft")))
     state, intents = step(claim(state), "activity_refused")
     assert state.phase == "waiting" and not intents
     state, intents = step(state, "resumed", "publish", result_artifact=state.artifact)
@@ -381,7 +396,7 @@ def test_a_refusing_reviewer_hands_over_to_the_next_approved_reviewer():
     state, intents = step(state, "activity_refused", "review")
     assert intents[0][1]["actor"]["profile"] == "aegis" and state.reviewer == "aegis"
     state = claim(state, "aegis", "aegis-session")
-    state, _ = reviewed(state, actor_id="aegis")
+    state, _ = passed(state, actor_id="aegis")
     assert state.phase == "locally_ready"
 
 

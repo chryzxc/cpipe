@@ -67,7 +67,7 @@ def test_independent_unchanged_full_coverage_review_produces_local_readiness(rep
     with journal:
         after = observe_review(b, 'd1', tid, claimer='controller',
             execute=reviewer(verdict), evidence_root=tmp_path / 'evidence')
-        assert after.phase == 'locally_ready'
+        assert after.phase == 'reviewing'  # the final regression review comes next
         assert after.receipts[-1].obligation == 'review'
         assert after.receipts[-1].outcome is Outcome.PASS
         assert h.get_task(board, tid).status == 'done'
@@ -124,7 +124,7 @@ def test_the_findings_decide_the_verdict_not_the_status_word(repo, tmp_path, boa
         after = observe_review(b, 'd1', tid, claimer='controller',
             execute=reviewer(lambda state: verdict(state, status='changes_requested', findings=[advice])),
             evidence_root=tmp_path / 'evidence')
-        assert after.receipts[-1].outcome is Outcome.PASS and after.phase == 'locally_ready'
+        assert after.receipts[-1].outcome is Outcome.PASS and after.phase == 'reviewing'
         assert after.findings[0].finding.disposition == 'open'  # kept as advice for the report
 
 

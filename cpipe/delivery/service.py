@@ -68,6 +68,7 @@ class State(Versioned):
     handover_reviews: int = 0
     renewals: int = 0  # times the user granted a fresh budget to continue
     stalls: int = 0  # review rounds in a row that did not reduce the blocking findings
+    regressions_checked: str = ""  # the tree that passed the final regression review
 
     def __post_init__(self):
         if type(self.plan) is not ExecutionPlan or self.phase not in PHASES:
@@ -81,7 +82,7 @@ class State(Versioned):
         if type(self.approved) is not bool or type(self.readiness_requested) is not bool:
             raise ValueError("invalid snapshot flags")
         for name in ("activity", "active_intent", "run_id", "worker_session", "builder_session",
-                     "builder_digest", "last_reviewed_artifact", "builder", "reviewer"):
+                     "builder_digest", "last_reviewed_artifact", "builder", "reviewer", "regressions_checked"):
             optional_id(getattr(self, name), name)
         typed_tuple(self.receipts, Receipt, "receipts")
         typed_tuple(self.findings, FindingRecord, "findings")
@@ -221,6 +222,18 @@ def green(state, include_review=True):
                                   and latest[name].outcome is Outcome.PASS for name in required)
 
 
+def final_pass(state):
+    """The normal review approved this exact tree; one fresh regression review is still owed."""
+    review = next((r for r in reversed(state.receipts) if r.obligation == "review"), None)
+    return bool(review and current(state, review) and review.outcome is Outcome.PASS
+                and state.regressions_checked != state.artifact)
+
+
+def verified(state):
+    """Checks green, reviewed, and the final regression review passed on this exact tree."""
+    return green(state) and state.regressions_checked == state.artifact
+
+
 def actor(state, role):
     """The approved actor in charge of role: the first, until it hands over."""
     current = getattr(state, role)
@@ -255,7 +268,9 @@ def deadline(state):
 
 def resume_point(state):
     """Where a resumed run picks up: re-observe the code, or prove the failing test first."""
-    if state.plan.completion_target == "draft" and green(state):
+    if final_pass(state):
+        return continue_with(state, "review", "reviewing")
+    if state.plan.completion_target == "draft" and verified(state):
         return continue_with(state, "publish", "publishing")  # verified and reviewed: only the PR is left
     proved = any(r.obligation == "behavior" and r.outcome is Outcome.FAIL for r in state.receipts)
     return continue_with(state, "checks" if proved else "tests", "checking")
@@ -298,6 +313,7 @@ def accept_review(state, event):
     if state.activity != "review" or not event.verdict or not event.evidence_ref:
         raise ValueError("review requires current verdict and evidence")
     relative_path(event.evidence_ref)
+    final = final_pass(state)
     if (event.reviewed_from != state.plan.base_commit or event.reviewed_to != state.artifact
             or len(event.receipts) != 1 or event.receipts[0].obligation != "review"
             or not current(state, event.receipts[0])):
@@ -350,6 +366,9 @@ def accept_review(state, event):
         return continue_with(state, "implement", "implementing", event.evidence_ref)
     if not green(state):
         return continue_with(state, "diagnose", "waiting", event.evidence_ref)
+    if not final:  # nothing ships on the normal review alone
+        return continue_with(state, "review", "reviewing")
+    state = replace(state, regressions_checked=state.artifact)
     if state.plan.completion_target == "draft":
         return continue_with(state, "publish", "publishing")
     return quiescent(state, "locally_ready")
@@ -516,7 +535,7 @@ def apply(snapshot, event):
                                  "review" if green(state, include_review=False) else "checks",
                                  "reviewing" if green(state, include_review=False) else "checking")
         if event.action == "publish":
-            if state.phase != "locally_ready" or not green(state):
+            if state.phase != "locally_ready" or not verified(state):
                 raise ValueError("publication requires current readiness")
             return continue_with(state, "approve_publication", "waiting")
         if event.action == "change":
@@ -532,7 +551,7 @@ def apply(snapshot, event):
         # An answer cannot mutate authority. Scope/grant changes require a proposal.
         return quiescent(state, "waiting")
     if event.kind == "publication_observed":
-        if (state.phase != "publishing" or state.activity != "publish" or not green(state)
+        if (state.phase != "publishing" or state.activity != "publish" or not verified(state)
                 or not {"push", "draft_pr"} <= e.capabilities
                 or event.target != (e.repo, e.branch, e.base, state.artifact, "draft")):
             raise ValueError("publication readback does not match ready authorized target")

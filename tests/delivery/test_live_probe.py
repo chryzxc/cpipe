@@ -23,9 +23,9 @@ def test_reproducible_native_probe_uses_workers_and_never_claims_ui_consent(tmp_
         return WorkerResult(session, payload)
     result = run(actors=actors, scratch=tmp_path, execute=execute)
     assert result['phase'] == 'locally_ready'
-    assert [v['activity'] for v in result['steps']] == ['tests', 'implement', 'checks', 'review']
+    assert [v['activity'] for v in result['steps']] == ['tests', 'implement', 'checks', 'review', 'review']
     assert all(v['native_status'] == 'done' for v in result['steps'])
-    assert sessions == ['builder-session', 'review-session']
+    assert sessions == ['builder-session', 'review-session', 'review-session']
     assert result['approval'] == 'synthetic-harness-only'
     assert result['production_wiring'] is False
 

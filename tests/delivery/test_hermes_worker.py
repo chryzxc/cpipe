@@ -186,3 +186,13 @@ def test_a_worker_left_running_by_a_dead_process_is_stopped(tmp_path):
     hermes_worker.stop_orphan(tmp_path)
     assert bystander.poll() is None
     bystander.kill()
+
+
+def test_the_final_review_hunts_regressions_over_the_whole_range():
+    from cpipe.delivery.hermes_worker import _prompt
+    from .test_service import candidate, claim, ready_for_review, reviewed
+    state, _ = reviewed(ready_for_review(candidate()))
+    final = _prompt(claim(state, 'sentry', 'final-review-session'), '', 'tree-a tree-b')
+    assert 'final regression review' in final and 'callers' in final
+    assert 're-review round' not in final and 'one narrow test only' not in final
+    assert 'final regression review' not in _prompt(ready_for_review(candidate()), '', '')

@@ -155,13 +155,17 @@ def validate_spec(spec):
                 'forbidden_paths', 'builder', 'reviewer', 'seconds', 'checks'}
     if type(spec) is not dict:
         raise ValueError('spec must be an object')
-    if set(spec) - {'draft_pr', 'title'} != expected:
+    if set(spec) - {'draft_pr', 'title', 'branch'} != expected:
         # Field names are fixed schema labels, never user values.
         missing, extra = sorted(expected - set(spec)), sorted(set(spec) - expected)
         raise ValueError('spec fields: missing ' + (', '.join(missing) or 'none')
                          + '; unsupported ' + (', '.join(k for k in extra if k.isidentifier()) or 'none'))
     if type(spec.get('draft_pr', False)) is not bool:
         raise ValueError('draft_pr must be true or false')
+    if bool(spec.get('draft_pr')) != ('branch' in spec) or 'branch' in spec and (
+            type(spec['branch']) is not str or not spec['branch'] or len(spec['branch']) > 200):
+        raise ValueError('a draft PR needs branch: a new branch name following the repository\'s and the user\'s '
+                         'conventions (and only a draft PR has one)')
     if type(spec['seconds']) is not int or not 30 <= spec['seconds'] <= 7200:
         raise ValueError('cpipe requires a bounded 30..7200 second budget')
     for key in ('acceptance', 'non_goals', 'write_paths', 'forbidden_paths', 'checks'):
@@ -251,7 +255,7 @@ def starting_point(source, base, carry=True):
                 tree, '-p', commit, '-m', 'cpipe: start from the uncommitted changes in ' + str(source)), True
 
 
-def isolate(source, start, delivery_id):
+def isolate(source, start, delivery_id, branch=''):
     """A worktree of its own for each delivery, next to the repository in <repo>-worktrees: the user's checkout is
     never touched, and deliveries run side by side."""
     common = Path(_git(source, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
@@ -259,7 +263,7 @@ def isolate(source, start, delivery_id):
     parent = repo.parent / (repo.name + '-worktrees')
     parent.mkdir(parents=True, exist_ok=True)
     path = parent.resolve() / delivery_id
-    _git(source, 'worktree', 'add', '-q', '-b', 'cpipe/' + delivery_id, str(path), start)
+    _git(source, 'worktree', 'add', '-q', '-b', branch or 'cpipe/' + delivery_id, str(path), start)
     provision(source, path)
     return path
 
@@ -300,9 +304,9 @@ def provision(source, path):
             shutil.rmtree(dst, ignore_errors=True)
 
 
-def discard(source, path):
+def discard(source, path, branch=''):
     """Remove a worktree cpipe made for a delivery that was never created."""
-    for args in (('worktree', 'remove', '--force', str(path)), ('branch', '-D', 'cpipe/' + Path(path).name)):
+    for args in (('worktree', 'remove', '--force', str(path)), ('branch', '-D', branch or 'cpipe/' + Path(path).name)):
         try:
             _git(source, *args)
         except (subprocess.SubprocessError, OSError):
@@ -316,14 +320,14 @@ def from_spec(service, spec, *, session_id, profile_id, approach='', start=None)
     start = start or starting_point(spec['worktree'], spec['base'], carry=not spec.get('draft_pr'))[0]
     if spec.get('draft_pr'):
         from .publish import preflight
-        preflight(spec['worktree'], spec['base'], start)
+        preflight(spec['worktree'], spec['base'], start, spec['branch'])
     delivery_id = 'cp-' + uuid.uuid4().hex
-    root = isolate(spec['worktree'], start, delivery_id)
+    root = isolate(spec['worktree'], start, delivery_id, spec.get('branch', ''))
     try:
         return propose(service, _plan(spec, checks, actors, root, start, delivery_id, session_id, profile_id,
                                       approach), checks)
     except BaseException:
-        discard(spec['worktree'], root)
+        discard(spec['worktree'], root, spec.get('branch', ''))
         raise
 
 
@@ -395,30 +399,111 @@ def ready(service, delivery_id, session_id, profile_id):
     return state, checks
 
 
-def publish(service, bridge, delivery_id, tid, claimer):
-    """Commit the verified worktree, push its branch and open the draft PR; record it once GitHub shows it."""
-    from .hermes_worker import snapshot
-    from .publish import open_draft
+# Rounds of writing and verifying a pull request before the run waits for the user.
+PR_ROUNDS = 2
+CONVENTIONS = ("the repository's and your own instructions and skills for branch names, commit messages, pull "
+               "request titles and descriptions (PR templates, contributing guides, linters)")
+
+
+def pull_request(plan, payload, changed):
+    """The writer's commits, title and body, or why they cannot be published."""
+    from .review import redacted
+    if type(payload) is not dict or set(payload) != {'commits', 'title', 'body'}:
+        raise ValueError('return exactly commits, title and body')
+    title, body, commits = payload['title'], payload['body'], payload['commits']
+    if type(title) is not str or not 0 < len(title) <= 256 or '\n' in title.strip():
+        raise ValueError('title must be one line of at most 256 characters')
+    if type(body) is not str or not body.strip() or len(body) > 60000:
+        raise ValueError('body must be non-empty and under 60000 characters')
+    if (type(commits) is not list or not 0 < len(commits) <= 10
+            or any(type(c) is not dict or set(c) != {'message', 'paths'} or type(c['message']) is not str
+                   or not c['message'].strip() or len(c['message']) > 8000 or type(c['paths']) is not list
+                   or not c['paths'] or any(type(n) is not str for n in c['paths']) for c in commits)):
+        raise ValueError('commits must be 1 to 10 of {message, paths}')
+    paths = [n for c in commits for n in c['paths']]
+    if len(paths) != len(set(paths)) or set(paths) != set(changed):
+        raise ValueError('the commits must cover every changed path exactly once: ' + ', '.join(sorted(changed)))
+    for text in (title.strip(), body, *(c['message'] for c in commits)):
+        if any(marker in text for marker in (plan.envelope.delivery_id, plan.worktree, str(Path.home()))):
+            raise ValueError('internal workflow data (a delivery id or local path) is not for reviewers')
+        if redacted(text, len(text)) != text:
+            raise ValueError('a credential or secret is not for reviewers')
+    return [(c['paths'], c['message'].strip() + '\n') for c in commits], title.strip(), body.strip() + '\n'
+
+
+def publish(service, bridge, delivery_id, tid, claimer, ask=None):
+    """The builder writes the commits, title and description the user's conventions ask for; each commit is
+    pushed on its own and the draft PR opened; the reviewer then verifies the published PR against the
+    instructions. Recorded once GitHub shows it and the reviewer approves it."""
+    from .hermes_worker import ask as worker_ask
+    from .publish import open_draft, readback, trees
+    from .service import actor
+    ask = ask or worker_ask
     state = owned(service, delivery_id, bridge.session_id, bridge.profile_id)
     plan = state.plan
     if validate_worktree(plan).digest != state.artifact:
         raise ValueError('the worktree changed after it was verified')
-    if any(not inside(n, plan.write_paths) or inside(n, plan.forbidden_paths) for n in changed_since_base(plan)):
+    changed = changed_since_base(plan)
+    if any(not inside(n, plan.write_paths) or inside(n, plan.forbidden_paths) for n in changed):
         raise ValueError('the worktree has changes outside the approved paths')
+
+    def heartbeat():
+        if not h.heartbeat_claim(bridge.conn, tid, claimer=claimer, ttl_seconds=900):
+            raise ValueError('native ownership could not be renewed')
     latest = {r.obligation: r.outcome.value for r in state.receipts}
-    body = '\n'.join([plan.goal, '', '## Acceptance', *('- ' + a for a in plan.acceptance), '', '## Verification',
-                      *(f'- {c.obligation}: {latest.get(c.obligation, "not run")}' for c in plan.checks
-                        if c.obligation != 'review'),
-                      f'- Independent review: approved after {state.review_cycles} round(s)', '',
-                      'Opened as a draft by cpipe after its checks and review passed.'])
-    url, commit = open_draft(plan, snapshot(plan.worktree), plan.goal + '\n\n' + '\n'.join(
-        '- ' + a for a in plan.acceptance) + '\n', body + '\n')
-    service.journal.db.execute('INSERT OR REPLACE INTO intent(id,payload,acknowledged) VALUES (?,?,1)',
-                               ('pr:' + delivery_id, encoded(dict(url=url, commit=commit))))
+    brief = encoded(dict(goal=plan.goal, acceptance=list(plan.acceptance), non_goals=list(plan.non_goals),
+                         base=plan.envelope.base, branch=plan.envelope.branch, changed=changed,
+                         checks={c.obligation: latest.get(c.obligation, 'not run') for c in plan.checks},
+                         review_rounds=state.review_cycles))
+    problems, url = [], ''
+    for _ in range(PR_ROUNDS):
+        prompt = ('The change in this worktree is finished: its checks and an independent code review passed. '
+                  'Write its commits, pull request title and description for the people who review it, following '
+                  + CONVENTIONS + '. If a linter for them is configured, run it. Describe the problem, the change '
+                  'and how it was verified; never include internal workflow data (delivery or plan IDs, local '
+                  'paths, agent or tool names, budgets). Read the diff with git diff ' + plan.base_commit +
+                  '. Do not edit files, commit, push or open anything. Return only {"commits":[{"message":"…",'
+                  '"paths":["…"]}],"title":"…","body":"…"}: commits in order, together covering every changed path '
+                  'exactly once; one commit unless the instructions or conventions ask for more.\nDelivery: ' + brief
+                  + ('\nThe last version did not pass verification; fix these problems:\n- ' + '\n- '.join(problems)
+                     if problems else ''))
+        for attempt in range(2):
+            payload = ask(actor(state, 'builder'), plan.worktree, prompt, heartbeat=heartbeat, timeout_seconds=600)
+            try:
+                commits, title, body = pull_request(plan, payload, changed)
+                break
+            except ValueError as exc:
+                if attempt:
+                    raise ValueError('the pull request content could not be used: ' + str(exc)) from None
+                prompt += '\nYour last answer could not be used: ' + str(exc)
+        if validate_worktree(plan).digest != state.artifact:
+            raise ValueError('the worktree changed while the pull request was written')
+        url, commit = open_draft(plan, list(zip(trees(plan.worktree, plan.base_commit, [p for p, _ in commits]),
+                                                (m for _, m in commits))), title, body)
+        service.journal.db.execute('INSERT OR REPLACE INTO intent(id,payload,acknowledged) VALUES (?,?,1)',
+                                   ('pr:' + delivery_id, encoded(dict(url=url, commit=commit))))
+        verdict = ask(actor(state, 'reviewer'), plan.worktree, (
+            'Verify a published draft pull request before the user is told it is done. Check it against the '
+            "user's instructions below (goal, acceptance, non-goals) and against " + CONVENTIONS + ': the branch '
+            'name, every commit message and the files in each commit, the title and the description. It must '
+            'carry no internal workflow data (delivery or plan IDs, local paths, agent or tool names). A problem '
+            'breaks an instruction or a convention; style preferences are not problems. Read-only: change '
+            'nothing. Return only {"status":"approved"} or {"status":"changes_requested","problems":["<one line '
+            'each>"]}.\nInstructions: ' + brief + '\nPublished: ' + encoded(readback(plan))),
+            heartbeat=heartbeat, timeout_seconds=600)
+        if verdict == {'status': 'approved'}:
+            break
+        found = verdict.get('problems') if type(verdict) is dict and verdict.get('status') == 'changes_requested' else None
+        if type(found) is not list or not found or any(type(x) is not str for x in found):
+            raise ValueError('the pull request verification gave no usable verdict')
+        from .review import redacted
+        problems = [redacted(x, 300) for x in found[:10]]
+    else:
+        raise ValueError(f'the draft pull request {url} does not meet the instructions yet: ' + '; '.join(problems))
     e = plan.envelope
     event = bridge.result_event(delivery_id, tid, claimer=claimer, kind='publication_observed',
                                 target=(e.repo, e.branch, e.base, state.artifact, 'draft'))
-    state = bridge.finish(event, tid, claimer=claimer, summary='Opened draft pull request ' + url)
+    state = bridge.finish(event, tid, claimer=claimer, summary='Opened and verified draft pull request ' + url)
     try:  # the local branch matches what was pushed; the files are untouched
         _git(plan.worktree, 'reset', '-q', commit)
     except (subprocess.SubprocessError, OSError):
@@ -497,7 +582,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker,
                                                prove=prove)
             elif action == 'publish':
-                if h.take(conn, tid, claimer=claimer, ttl_seconds=600) is None:
+                if h.take(conn, tid, claimer=claimer, ttl_seconds=900) is None:
                     raise ValueError('task owned by another launcher; no worker started')
                 bridge.bind_claim(delivery_id, tid, claimer=claimer, worker_session='publish-' + uuid.uuid4().hex)
                 try:
@@ -507,7 +592,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                         raise
                     from .review import redacted
                     detail = getattr(exc, 'stderr', '') or str(exc)
-                    note('the draft pull request was not opened: ' + redacted(str(detail).strip(), 300) +
+                    note('the draft pull request is not done: ' + redacted(str(detail).strip(), 600) +
                          '. The verified work stays in the worktree; fix the cause and say continue to retry.')
                     bridge.abandon(delivery_id, claimer, kind='activity_refused')
                     continue

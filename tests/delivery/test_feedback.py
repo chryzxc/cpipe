@@ -3,11 +3,11 @@ import pytest
 from cpipe.delivery.contracts import Outcome
 from cpipe.delivery.findings import Finding
 from cpipe.delivery.service import apply, green, resumable, Verification
-from .test_service import candidate, event, claim, receipt, step, ready_for_review, reviewed
+from .test_service import candidate, event, claim, receipt, step, ready_for_review, reviewed, passed
 
 
 def test_change_preserves_feedback_reference_and_invalidates_readiness():
-    state, _ = reviewed(ready_for_review(candidate()))
+    state, _ = passed(ready_for_review(candidate()))
     changed, intents = apply(state, event(state, 'feedback_received', action='change',
                                          evidence_ref='feedback/label.json'))
     assert intents[0][1]['feedback_ref'] == 'feedback/label.json'
@@ -70,7 +70,7 @@ def test_a_finding_no_fix_resolves_hands_over_working_code_and_continue_retries_
 def test_low_findings_are_advice_and_do_not_send_the_change_back():
     state = ready_for_review(candidate())
     advice = Finding('', 'review', 'name could be clearer', 'low', True, 'open')
-    done, intents = reviewed(state, findings=(advice,))
+    done, intents = passed(state, findings=(advice,))
     assert done.phase == 'locally_ready' and not intents
     assert done.findings[0].finding.disposition == 'open' and not resumable(done)
 

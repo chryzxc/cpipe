@@ -46,6 +46,7 @@ Each loop in the graph has an exit condition and a bound.
 - **Test loop:** up to 3 rounds per builder to produce a valid failing test.
 - **Fix loop:** implement and checks repeat until every check passes, with failures returned to the builder.
 - **Review loop:** until no blocking findings remain, up to 5 rounds per builder, ending early when progress stops (see [Review](#review)).
+- **Final regression review:** an approval never ships alone. A fresh reviewer session re-reviews the whole change for bugs and regressions only, and its findings start the fix loop again.
 - **Severity triage:** only serious in-scope findings drive the loop; low findings are reported as advice.
 - **Escalation ladder:** when a loop reaches its bound, the next approved profile takes over in a fresh session. A delivery always ends in a defined state.
 
@@ -107,8 +108,16 @@ Each loop in the graph has an exit condition and a bound.
 
      Each finding includes the concrete fix. The builder addresses all findings in one pass, the checks run again, and the reviewer inspects the fix diff.
 
+     Once the reviewer approves, a fresh reviewer session runs a **final regression review** of the whole base-to-candidate range. It traces every changed function, signature, condition and removed line to its callers outside the diff, and runs the existing tests for that code. Nothing is marked ready or published until this pass approves the exact tree. A finding sends the change back through fix, checks and review, and then a new final pass.
+
      See [Review](#review) for how findings are handled.
-5. **Draft pull request (only if you asked).** Say so in the task, e.g. `/cp-run fix the date parser and open a draft PR`. The approval question then lists the push and the draft PR, and the plan checks up front that `origin` is on GitHub, `gh` is logged in and the base branch is on `origin`. A PR delivery starts from the base as committed, without your uncommitted changes. After the checks and a clean review, cpipe makes one commit of the verified worktree, force-pushes the delivery's own branch and opens (or reuses) its draft PR, then confirms on GitHub that the PR is a draft at that commit. If any step fails, the run waits with the reason; fix it and say *continue* to retry the PR step alone.
+5. **Draft pull request (only if you asked).** Say so in the task, e.g. `/cp-run fix the date parser and open a draft PR`.
+   - **Branch:** the plan names a new branch following your instructions and the repository's conventions (its contributing guide, project instructions and recent branch names). The approval question lists the push to that branch and the draft PR.
+   - **Up-front checks:** `origin` is on GitHub, `gh` is logged in, the base branch is on `origin`, and the branch name is valid and exists neither locally nor on `origin`. A PR delivery starts from the base as committed, without your uncommitted changes.
+   - **Content:** after the final regression review, the builder writes the commits (messages plus which changed files each holds), the title and the description, following your instructions and the repository's conventions. cpipe rejects content that leaves a changed file out, names cpipe internals (delivery IDs, worktree or home paths), or contains a credential, and asks once more.
+   - **Publishing:** cpipe pushes each commit in order to the branch and opens (or reuses) the draft PR.
+   - **Verification:** a reviewer reads the published PR back from GitHub (title, description, branch, base, draft state and each commit's files) and checks it against the goal, acceptance, non-goals and conventions. Problems go back to the builder, up to 2 rounds. Only a verified PR is reported done; otherwise the run waits with the problems listed.
+   - **Failures:** if any step fails, the run waits with the reason; fix it and say *continue* to retry the PR step alone.
 6. **Notification.** You get one message in the originating chat when the run is:
    - **done:** `locally_ready`, with any open findings and advice listed, or `completed` with the draft PR link;
    - **stuck:** `diagnosis`;
@@ -132,7 +141,7 @@ A delivery stops for you only when no approved action can move it forward. Other
 
 - **A step fails** (malformed or missing JSON, no edits, edits outside `write_paths`, a commit, branch switch or staged files, a crash, provider error or timeout): the step's changes, staging, commits and branch switch are rolled back to the last verified worktree. The same profile then retries with the reason in a fresh session, with a short backoff, so a failed attempt's context is not paid for again. After 3 failures the next approved profile for that role takes over.
 - **A profile declines** (`{"status":"blocked"}`): rolled back the same way, and the next approved profile takes over at once. When the reason starts with `environment:` (a missing tool, dependency, browser or service), every profile would hit it, so the run waits for you with that reason instead.
-- **Workers stay cheap:** builders work in the foreground, run at most the one narrow test they work on (cpipe runs the checks and sends them the failures), and never install dependencies or debug the environment. The reviewer does not re-run checks that already passed on the same tree. Each step has a turn cap (20 to write the test, 40 to implement, 30 to review).
+- **Workers stay cheap:** builders work in the foreground, run at most the one narrow test they work on (cpipe runs the checks and sends them the failures), and never install dependencies or debug the environment. The reviewer does not re-run checks that already passed on the same tree; the final regression review runs only the existing tests for the changed code and its callers. Each step has a turn cap (20 to write the test, 40 to implement, 30 to review).
 - **A loop is stuck** (no valid failing test after 3 rounds, or review findings that stop converging): the next approved builder gets the same rounds in a fresh session. After the last builder, a test loop reports `diagnosis`. A review loop with passing checks ends `locally_ready` with the open findings listed.
 - **A check cannot see its criteria:** when the same check produces no result for the same contract reason twice in a row (the runner does not print the criteria, writes no report, or reports no test cases), no builder can fix it, because the check command is frozen. The run waits with that reason instead of spending more rounds.
 - **A worker hangs:** each step is capped at a third of the budget (at least 10 minutes).
@@ -197,7 +206,7 @@ Start a new Hermes chat after updating; a running chat keeps the old tools loade
 
 ## Commands
 
-- `/cp-run <task>`: starts a delivery. One session-bound receipt carries investigation, revisions, approval and the run. You never copy IDs or type a second command. A request with several tasks (for example *work on 2 and 3*) becomes one delivery per independent task, each in its own worktree and running in parallel; related tasks that touch the same files become one delivery. All their approval questions are asked together.
+- `/cp-run <task>`: starts a delivery. One session-bound receipt carries investigation, revisions, approval and the run. You never copy IDs or type a second command. Follow-up work in the same chat (a redo, another branch name, a related fix) gets its own approach and approval question, but needs no new `/cp-run`. A request with several tasks (for example *work on 2 and 3*) becomes one delivery per independent task, each in its own worktree and running in parallel; related tasks that touch the same files become one delivery. All their approval questions are asked together.
 - `/cp-spawn <which tasks>`: hands tasks from the current conversation to new chats, for example *task 1,2* after a list or an audit earlier in the chat. The chat's model works out which tasks are meant and writes a self-contained brief for each one (repository, goal, evidence with paths, acceptance, what must not change). cpipe then opens one new desktop chat per brief, titled after the change it makes, and starts `/cp-run` there, so each plan is reviewed and approved in its own chat. It needs the Hermes desktop app.
 - `/cp-status [delivery_id]`: a table of this chat's deliveries with their state, each check's result (with the reason when a check produced no result), review rounds and tokens, followed by open findings.
 - `/cp-stop <delivery_id>`: cancel a delivery.
@@ -219,8 +228,9 @@ The coordinator fills in the spec; it is shown in the preview and frozen at appr
 | `builder`, `reviewer` | Distinct saved Hermes profiles; each may be an ordered list of up to 3 (see above). |
 | `seconds` | Execution budget, 30–7200 (3600 suggested for features). Up to 40 builder/reviewer turns. |
 | `checks` | The repository's own test commands (see below). |
+| `draft_pr`, `branch` | Only when you asked for a pull request: `branch` is a new branch name following your and the repository's conventions. |
 
-Each check has an `obligation`, an `argv`, `criteria` and a `timeout_seconds`. Exactly one check has the obligation `behavior`: it is the test proving the change, and its file must be inside `write_paths`.
+Each check has an `obligation`, an `argv`, `criteria` and a `timeout_seconds`. Exactly one check has the obligation `behavior`: it is the test proving the change, and its file must be inside `write_paths`. Plans also add a regression check that runs the existing tests for the modules the change touches and their callers, plus the repository's type checker or linter for those files, if it has one.
 
 - **`argv`:** the command, run in the delivery worktree. Its program must be on `PATH` or given as an absolute path. The worktree starts with copy-on-write copies of the checkout's ignored folders, such as `node_modules` or tool caches, when every lockfile matches the checkout's, so checks and workers do not reinstall them. Virtualenvs and nested repositories are never copied, and nothing is copied where the file system cannot clone, so use commands that provision their own dependencies or install only when missing (`[ -d node_modules ] || npm ci; …`).
 - **`criteria`:** the test names.

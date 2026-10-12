@@ -30,7 +30,8 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'its uncommitted changes are included), title (optional: a short name for the task on the board, at most 60 '
                 'characters; start with the task\'s own ID only if it has one), goal, acceptance, '
                 'non_goals, write_paths, forbidden_paths, builder and reviewer (each a profile, or an ordered list: the next takes over if one refuses or keeps failing), '
-                'seconds, checks, and draft_pr (true only when the user asked for a pull request; omit otherwise). Each check has '
+                'seconds, checks, and draft_pr (true only when the user asked for a pull request; omit otherwise) with branch '
+                '(required with draft_pr: a new branch name following the repository\'s and the user\'s conventions). Each check has '
                 'obligation, argv (the repository\'s own test command as a list, run in the worktree, any language; '
                 'argv[0] on PATH or absolute), timeout_seconds and criteria (test names). If argv contains {report}, '
                 'it is replaced by a private report path (e.g. pytest --junitxml={report}, vitest --reporter=junit '
@@ -43,6 +44,9 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'investigated checkout in a command. '
                 'Exactly one check has obligation behavior: the test proving the change; it must fail before implementing, '
                 'and the builder writes it first, so its file must be inside write_paths. '
+                'Also add a regression check running the existing tests for every module the change touches and '
+                'their callers (and the type checker or linter for those files, if the repository has one), so a '
+                'change cannot pass while breaking code next to it. '
                 'For /cp-run, plan: {draft_revision} freezes the reviewed draft; build: {delivery_id} from that plan after the user approves. '
                 'Run status: {}. For several deliveries in one /cp-run, add task (short label) to every call for each. '
                 'Existing plan receipts accept their full spec. For /cp-spawn, spawn: {tasks: [{title (a specific chat title, at most 80 '
@@ -149,6 +153,8 @@ def deliver():
         log.exception('cpipe: message delivery failed')
 
 
+# How long a /cp-run receipt can start new deliveries in its chat after it was last used.
+RUN_RECEIPT = 86400
 SHOW = '[cpipe] Show the user this message exactly as written, then stop. Do not call tools.\n\n'
 
 
@@ -464,7 +470,7 @@ def dispatch(ctx, name, raw=''):
     token = secrets.token_urlsafe(24)
     with scope() as (service, profile, _):
         record = dict(kind='slash', operation=op, session_id=sid, session_key=key,
-                      profile_id=profile, expires=time.time() + (86400 if op == 'run' else 900), state='pending', result=None)
+                      profile_id=profile, expires=time.time() + (RUN_RECEIPT if op == 'run' else 900), state='pending', result=None)
         service.journal.db.execute('INSERT INTO intent(id,payload,acknowledged) VALUES (?,?,1)',
                                   (_intent_key(token), encoded(record)))
     prompt = ('The user explicitly chose cpipe with /' + name + '. '
@@ -533,9 +539,19 @@ def dispatch(ctx, name, raw=''):
             'approval_arguments, the budget ran out: ask for approval again the same way, then build again. '
             'Never run cpipe code or scripts yourself. '
             'If the user asked for a pull request (for example "open a PR" or "create a draft PR"), set spec draft_pr '
-            'true: after the checks and review pass, cpipe commits, pushes the delivery\'s own branch and opens a draft PR '
-            'itself, and the approval question shows this. Otherwise omit draft_pr; the work stays local. Never push, '
-            'open PRs or merge yourself. Execution is unsandboxed.\n'
+            'true and branch: a new branch name that follows the user\'s and the repository\'s conventions (their '
+            'instructions and skills for branches and pull requests, the contributing guide, recent branch names on '
+            'origin). Put every instruction the user gave about commits, the PR title or description into acceptance, '
+            'so the published PR is verified against it. After the checks and review pass, the builder writes the '
+            'commits, title and description following those conventions, cpipe pushes and opens the draft PR, and the '
+            'reviewer verifies the published PR before the user is told it is done; the approval question shows this. '
+            'Otherwise omit draft_pr and branch; the work stays local. Never push, open PRs or merge yourself. If the '
+            'user asks for something cpipe cannot do (merging, deploying, deleting branches), say so in the approach '
+            'instead of promising it. Execution is unsandboxed.\n'
+            'Later in this chat, when the user asks for more or different work (another task, or a redo with a changed '
+            'plan such as a new branch name), start it yourself: call prepare with the same token and a new task label '
+            'in the arguments, then plan and ask for approval as above. Never ask the user to type /cp-run again; '
+            'their approval of the new plan is still required.\n'
             'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
     if op == 'spawn':
         prompt = ('The user chose /cp-spawn to hand tasks to new chats, each running /cp-run. Work out which tasks '
@@ -650,6 +666,12 @@ def execute(args, **kwargs):
                 if (run_record.get('kind') != 'slash' or lapsed
                     or (run_record['session_id'], run_record['profile_id'], run_record['session_key']) != (sid, profile, key)):
                     raise ValueError('missing, expired or wrong-session run receipt')
+                base = json.loads(db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()[0])
+                if base['expires'] - time.time() < RUN_RECEIPT / 2:  # in use: follow-ups in this chat need no new /cp-run
+                    base = dict(base, expires=time.time() + RUN_RECEIPT)
+                    db.execute('UPDATE intent SET payload=? WHERE id=?', (encoded(base), _intent_key(token)))
+                    if run_key == _intent_key(token):
+                        run_record = base
                 from .delivery.approach import execute as execute_run
                 return json.dumps(execute_run(service, run_record, run_key, op, payload,
                     home=home, session_id=sid, profile_id=profile,

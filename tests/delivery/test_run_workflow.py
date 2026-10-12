@@ -329,17 +329,17 @@ def test_one_receipt_through_the_users_answer_and_red_green_review(
         assert len(told) == 1 and told[0][1] == {'role': 'user', 'session_key': 'chat-one'}
         text = told[0][0]
         assert text.startswith(native.SHOW + f'**cpipe · `{delivery_id}` is done and ready for your review.**')
-        assert '| Steps | tests, implement, checks, review |' in text
+        assert '| Steps | tests, implement, checks, review ×2 |' in text
         assert '| lint | pass: it still fails, but only on failures' in text
         with native.scope() as (service, _, _home):
             state = service.read(delivery_id)
             out = dict(native.controller.summary(state, service), worktree=state.plan.worktree)
         assert out['phase'] == 'locally_ready'
-        assert out['outcomes'] == ['fail', 'pass', 'pass', 'pass']
-        assert workers == ['implement', 'review']
+        assert out['outcomes'] == ['fail', 'pass', 'pass', 'pass', 'pass']
+        assert workers == ['implement', 'review', 'review']
         again = call(token, 'build', {'delivery_id': delivery_id})  # the real state, not the cached 'running'
         assert again['phase'] == 'locally_ready' and 'background' not in again
-        assert workers == ['implement', 'review']  # No duplicate launches on retry.
+        assert workers == ['implement', 'review', 'review']  # No duplicate launches on retry.
         # Built in a worktree of its own; the investigated checkout is untouched.
         assert (repo / 'double.py').read_text() == 'def double(n): return n\n'
         assert Path(out['worktree']).parent == repo.parent / (repo.name + '-worktrees')  # next to the repository
@@ -471,7 +471,7 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
     assert build()['phase'] == 'running'
     native._RUNS[delivery_id].join(60)
     assert call(token, 'status', {})['phase'] == 'locally_ready'
-    assert workers == ['implement', 'implement', 'review']
+    assert workers == ['implement', 'implement', 'review', 'review']
     # The chat sees each handover and recovery as a display-only line, never a model turn.
     assert {(p, e, sid, d) for p, e, sid, d, _, _ in lines} == {('cpipe', 'progress', 's1', delivery_id)}
     texts = [text for *_, text, _ in lines]
@@ -489,7 +489,7 @@ def github(repo, tmp_path, monkeypatch):
     for args in (('add', 'test_behavior.py'),  # a PR starts from the base as committed
                  ('-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'test: behavior'),
                  ('remote', 'add', 'origin', 'https://github.com/acme/widget.git'),
-                 ('config', f'url.{bare}.pushInsteadOf', 'https://github.com/acme/widget.git'),
+                 ('config', f'url.{bare}.insteadOf', 'https://github.com/acme/widget.git'),
                  ('update-ref', 'refs/remotes/origin/feature', 'HEAD')):
         subprocess.run(['git', *args], cwd=repo, check=True)
     bin_dir.mkdir()
@@ -512,8 +512,19 @@ elif args[:2] == ['pr', 'create']:
     prs.append(dict(url='https://github.com/acme/widget/pull/%d' % (len(prs) + 1), isDraft=True, state='OPEN',
                     baseRefName=opt('--base'), headRefName=opt('--head'), title=opt('--title'), body=sys.stdin.read()))
     db.write_text(json.dumps(prs))
+elif args[:2] == ['pr', 'edit']:
+    pr = next(p for p in prs if p['headRefName'] == args[2])
+    pr.update(title=opt('--title'), body=sys.stdin.read())
+    db.write_text(json.dumps(prs))
 elif args[:2] == ['pr', 'view']:
-    print(json.dumps(next(dict(p, headRefOid=head(p['headRefName'])) for p in prs if p['headRefName'] == args[2])))
+    pr = next(dict(p, headRefOid=head(p['headRefName'])) for p in prs if p['headRefName'] == args[2])
+    git = lambda *a: subprocess.run(['git', '--git-dir', {str(bare)!r}, *a], capture_output=True, text=True).stdout
+    base = subprocess.run(['git', 'rev-parse', 'refs/remotes/origin/feature'], cwd={str(repo)!r},
+                          capture_output=True, text=True).stdout.strip()
+    pr['commits'] = [dict(oid=oid, messageHeadline=git('log', '-1', '--format=%s', oid).strip(),
+                          messageBody=git('log', '-1', '--format=%b', oid).strip())
+                     for oid in git('rev-list', '--reverse', pr['headRefOid'], '^' + base).split()]
+    print(json.dumps(pr))
 else:
     sys.exit(2)
 ''')
@@ -532,9 +543,10 @@ def test_asked_for_a_draft_pr_it_opens_one_after_review_and_retries_only_that_st
     from cpipe.runtime import hermes_api as h
     bare, prs = github
     ctx, token, spec, _, _, _ = run_context
-    spec['draft_pr'] = True
+    spec.update(draft_pr=True, branch='fix/double-doubles')
     (tmp_path / 'gh-down').touch()  # the first attempt fails on GitHub's side
-    assert prepare(run_context)['phase'] == 'approach_review'
+    out = prepare(run_context)
+    assert out.get('phase') == 'approach_review', out
     frozen = call(token, 'plan', {'draft_revision': 1})
     delivery_id = frozen['delivery_id']
     monkeypatch.setattr(registry, 'dispatch', lambda name, args, **kw: ctx.tools[name]['handler'](args, **kw))
@@ -549,6 +561,25 @@ def test_asked_for_a_draft_pr_it_opens_one_after_review_and_retries_only_that_st
             return WorkerResult(state.activity + '-fixture', {'status': 'done'})
         return WorkerResult(state.activity + '-fixture', dict(status='approved', artifact=state.artifact,
             reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
+    asks = []
+    def ask(actor, cwd, prompt, **kw):  # the builder writes the PR the conventions ask for; the reviewer verifies it
+        asks.append(actor.role)
+        if actor.role == 'builder':
+            leak = delivery_id if len(asks) == 1 else ''  # internal data is refused before anything is pushed
+            return dict(title='Double numbers correctly', body='Fixes double. ' + leak,
+                        commits=[dict(message='fix: double numbers correctly', paths=['double.py'])])
+        published = json.loads(prompt.split('\nPublished: ', 1)[1])
+        assert published['headRefName'] == 'fix/double-doubles' and published['commits'][0]['files'] == ['double.py']
+        if asks.count('reviewer') == 1:
+            return dict(status='changes_requested', problems=['the body must say how it was verified'])
+        assert 'the body must say how it was verified' in asks_prompts[-1]
+        return dict(status='approved')
+    asks_prompts = []
+    def recorded(actor, cwd, prompt, **kw):
+        asks_prompts.append(prompt) if actor.role == 'builder' else None
+        return ask(actor, cwd, prompt, **kw)
+    from cpipe.delivery import hermes_worker
+    monkeypatch.setattr(hermes_worker, 'ask', recorded)
     original_run = controller.run
     def controlled(service, delivery_id, **kw):
         with closing(h.connect(None)) as conn:
@@ -557,7 +588,7 @@ def test_asked_for_a_draft_pr_it_opens_one_after_review_and_retries_only_that_st
     monkeypatch.setattr(native, 'SETTLE', 0)
     asked = json.loads(model_tools.handle_function_call('cpipe_approve_plan', frozen['approval_arguments'],
         session_id='s1', skip_pre_tool_call_hook=True))['clarify']['question']
-    assert f'Push the branch cpipe/{delivery_id} to origin' in asked and 'Open a draft pull request against feature' in asked
+    assert 'Push the branch fix/double-doubles to origin' in asked and 'Open a draft pull request against feature' in asked
     assert 'No pushes.' not in asked
     assert reply(frozen['approval_arguments'], 'Yes', asked)['status'] == 'approved'
 
@@ -570,20 +601,24 @@ def test_asked_for_a_draft_pr_it_opens_one_after_review_and_retries_only_that_st
     first = told[-1]
     assert first.startswith(native.SHOW + f'**cpipe · `{delivery_id}` is verified and reviewed, but its draft pull request')
     assert '| Pull request |' not in first and '**continue**' in first
-    assert any('draft pull request was not opened' in r and 'HTTP 503' in r for r in first.splitlines())
-    assert workers == ['implement', 'review']
+    assert any('draft pull request is not done' in r and 'HTTP 503' in r for r in first.splitlines())
+    assert workers == ['implement', 'review', 'review']
 
     (tmp_path / 'gh-down').unlink()  # fixed; "continue" retries the PR step alone
     build()
     done = told[-1]
     assert done.startswith(native.SHOW + f'**cpipe · `{delivery_id}` is done: its draft pull request is open')
     assert '| Pull request | https://github.com/acme/widget/pull/1 |' in done and '**continue**' not in done
-    assert workers == ['implement', 'review']  # no rebuild or second review
+    assert workers == ['implement', 'review', 'review']  # no rebuild or second review
     pr, = json.loads(prs.read_text())
-    assert pr['title'] == spec['goal'] and pr['baseRefName'] == 'feature' and '- behavior: pass' in pr['body']
+    assert pr['title'] == 'Double numbers correctly' and pr['baseRefName'] == 'feature' and delivery_id not in pr['body']
+    # GitHub down: content refused (leaked id) and rewritten, push fails. Continue: written, published, verified,
+    # rewritten for the verifier's problem, verified.
+    assert asks == ['builder', 'builder', 'builder', 'reviewer', 'builder', 'reviewer']
     git = lambda *a: subprocess.run(['git', '--git-dir', str(bare), *a], capture_output=True, text=True,
                                     check=True).stdout.strip()
-    branch = f'refs/heads/cpipe/{delivery_id}'
+    branch = 'refs/heads/fix/double-doubles'
+    assert git('log', '-1', '--format=%s', branch) == 'fix: double numbers correctly'
     assert git('show', f'{branch}:double.py') == 'def double(n): return n * 2'
     head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=repo, capture_output=True, text=True).stdout.strip()
     assert git('rev-parse', branch + '^') == head  # exactly one commit on the base
@@ -591,5 +626,26 @@ def test_asked_for_a_draft_pr_it_opens_one_after_review_and_retries_only_that_st
 
 
 def test_a_draft_pr_that_could_not_be_opened_is_refused_before_approval(run_context, repo):
-    run_context[2]['draft_pr'] = True  # no origin remote
+    run_context[2].update(draft_pr=True, branch='fix/x')  # no origin remote
     assert 'origin' in prepare(run_context)['error']
+
+
+@pytest.mark.parametrize('change', [dict(draft_pr=True), dict(branch='fix/x'), dict(draft_pr=True, branch='')])
+def test_a_draft_pr_needs_its_own_branch_name_and_a_branch_needs_a_pr(run_context, repo, change):
+    run_context[2].update(change)
+    assert 'branch' in prepare(run_context)['error']
+
+
+def test_a_receipt_in_use_keeps_working_for_follow_ups_in_the_same_chat(run_context, hermes_home):
+    token = run_context[1]
+    def expires(value=None):
+        with Journal.for_profile(hermes_home) as store:
+            row = store.db.execute('SELECT payload FROM intent WHERE id=?', (native._intent_key(token),)).fetchone()
+            if value is not None:
+                store.db.execute('UPDATE intent SET payload=? WHERE id=?',
+                                 (json.dumps({**json.loads(row[0]), 'expires': value}), native._intent_key(token)))
+            return json.loads(row[0])['expires']
+    expires(time.time() + 60)  # nearly a day after /cp-run
+    assert 'error' not in call(token, 'prepare', dict(spec=run_context[2], approach=run_context[3],
+                                                      expected_revision=0, task='redo'))
+    assert expires() > time.time() + native.RUN_RECEIPT / 2

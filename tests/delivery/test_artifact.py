@@ -129,3 +129,28 @@ def test_worktrees_get_cloned_dependencies_only_when_safe(repo, monkeypatch):
     assert (repo / 'node_modules' / 'left' / 'index.js').read_text() == 'x'  # never linked back
     (repo / 'package-lock.json').write_text('{"v": 2}')  # installed for other versions: nothing copied
     assert not (controller.isolate(repo, head, 'd2') / 'node_modules').exists()
+
+
+def test_pull_request_content_is_checked_before_anything_is_pushed(repo):
+    from pathlib import Path
+    from types import SimpleNamespace
+    import pytest
+    from cpipe.delivery.controller import pull_request
+    from cpipe.delivery.publish import trees
+    plan = SimpleNamespace(envelope=SimpleNamespace(delivery_id='cp-123'), worktree=str(repo))
+    ok = dict(title='Fix doubling', body='Why and how.', commits=[dict(message='test: doubling', paths=['t.py']),
+                                                                  dict(message='fix: doubling', paths=['double.py'])])
+    assert [m for _, m in pull_request(plan, ok, ['double.py', 't.py'])[0]] == ['test: doubling\n', 'fix: doubling\n']
+    for bad, why in ((dict(ok, commits=ok['commits'][:1]), 'every changed path'),
+                     (dict(ok, body='See ' + str(Path.home()) + '/x'), 'internal'),
+                     (dict(ok, title='cp-123 fix'), 'internal'),
+                     (dict(ok, title='two\nlines'), 'one line')):
+        with pytest.raises(ValueError, match=why):
+            pull_request(plan, bad, ['double.py', 't.py'])
+    (repo / 't.py').write_text('t\n')
+    (repo / 'double.py').write_text('def double(n): return n * 2\n')
+    base = git(repo, 'rev-parse', 'HEAD').strip()
+    first, second = trees(repo, base, [['t.py'], ['double.py']])
+    assert git(repo, 'ls-tree', '--name-only', first).split() == ['.gitignore', 'double.py', 't.py']
+    assert git(repo, 'show', f'{first}:double.py') == git(repo, 'show', f'{base}:double.py')  # only t.py so far
+    assert git(repo, 'show', f'{second}:double.py') == 'def double(n): return n * 2'

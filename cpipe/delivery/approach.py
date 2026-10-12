@@ -72,8 +72,11 @@ def render(spec, approach, revision, start=None):
         section('Risks and preserved behavior', approach['risks'])
     section('Execution limits', [actors_line(spec) + '. Saved models/providers are resolved by Hermes.',
         f"Execution budget: {spec['seconds']} seconds. Draft review time is not execution time.",
-        ('After the checks and review pass: one commit on the delivery\'s own branch, pushed to origin, and a draft '
-         'pull request against ' + spec['base'].removeprefix('origin/') + '. No merging, deployment or credential changes.'
+        ('After the checks and review pass: the builder writes the commits, title and description following '
+         'the repository\'s and your conventions; each commit is pushed on its own to the new branch `'
+         + spec.get('branch', '') + '` and a draft pull request is opened against '
+         + spec['base'].removeprefix('origin/') + '; the reviewer then verifies the published pull request '
+         'against this plan before it is reported done. No merging, deployment or credential changes.'
          if spec.get('draft_pr') else
          'Local development only; no commits, pushes, PRs, merging, deployment or credential changes.'),
         'Workers are trusted local processes, not sandboxed. Scope checks detect violations; they do not prevent access.'])
@@ -198,7 +201,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
             if state.approved:
                 raise ValueError('the plan is approved; build it or stop it')
             controller.cancel(service, record['delivery_id'], session_id=session_id, profile_id=profile_id)
-            controller.discard(record['spec']['worktree'], state.plan.worktree)
+            controller.discard(record['spec']['worktree'], state.plan.worktree, record['spec'].get('branch', ''))
             record = dict(record, state='draft')
             record.pop('delivery_id')
             _save(db, key, record)
@@ -209,7 +212,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
         start = controller.starting_point(spec['worktree'], spec['base'], carry=not spec.get('draft_pr'))
         if spec.get('draft_pr'):
             from .publish import preflight
-            preflight(spec['worktree'], spec['base'], start[0])
+            preflight(spec['worktree'], spec['base'], start[0], spec['branch'])
         revision = record.get('draft_revision', 0) + 1
         text = render(spec, approach, revision, start)
         # The directory is outside the worktree: Markdown cannot invalidate source identity.

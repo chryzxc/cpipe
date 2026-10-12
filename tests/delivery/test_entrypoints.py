@@ -107,11 +107,11 @@ def test_controller_uses_real_red_green_and_independent_review(repo, tmp_path):
             result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn, execute=execute,
                 evidence_root=tmp_path / 'evidence')
             assert result['phase'] == 'locally_ready'
-            assert [s['activity'] for s in result['steps']] == ['tests', 'implement', 'checks', 'review']
+            assert [s['activity'] for s in result['steps']] == ['tests', 'implement', 'checks', 'review', 'review']
             assert result['steps'][0]['outcomes'] == ['fail']
             assert result['steps'][-1]['outcomes'][-2:] == ['pass', 'pass']
             assert all(step['native_status'] == 'done' for step in result['steps'])
-            assert result['tokens'] == dict(steps=2, input=150, output=15, total=165, cache_read=80, cache_write=0)
+            assert result['tokens'] == dict(steps=3, input=200, output=20, total=220, cache_read=80, cache_write=0)
     finally:
         conn.close()
 
@@ -151,7 +151,7 @@ def test_controller_writes_a_missing_behavior_test_then_goes_red_green(repo, tmp
             result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn, execute=execute,
                 evidence_root=tmp_path / 'evidence')
             assert [s['activity'] for s in result['steps']] == [
-                'tests', 'write_tests', 'tests', 'implement', 'checks', 'review']
+                'tests', 'write_tests', 'tests', 'implement', 'checks', 'review', 'review']
             assert result['phase'] == 'locally_ready'
     finally:
         conn.close()
@@ -250,7 +250,7 @@ def test_controller_recovers_a_step_that_crashed(repo, tmp_path, monkeypatch):
                 state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
             result = run(service, 'd1', **kw)  # recovered inside the same run, no restart needed
             assert result['phase'] == 'locally_ready'
-            assert [s['activity'] for s in result['steps']] == ['tests', 'implement', 'checks', 'review']
+            assert [s['activity'] for s in result['steps']] == ['tests', 'implement', 'checks', 'review', 'review']
             assert result['recoveries'] == ['forge failed implement (RuntimeError); retrying']
             assert 'previous attempt at this step failed: RuntimeError' in seen_notes[0]
     finally:
@@ -515,7 +515,7 @@ def test_a_finding_is_fixed_with_a_test_that_fails_without_the_fix_or_disputed(r
     finally:
         conn.close()
         DISPUTES.clear()
-    assert result['phase'] == 'locally_ready' and len(reviews) == 2, result
+    assert result['phase'] == 'locally_ready' and len(reviews) == 3, result
     if answer == 'prove':
         assert builds == ['implement'] * 3
         assert any('pass without your fix' in r for r in result['recoveries']), result
@@ -523,7 +523,7 @@ def test_a_finding_is_fixed_with_a_test_that_fails_without_the_fix_or_disputed(r
         assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'  # restored after the proof
     else:
         # Nothing changed, so the passing checks still hold: straight back to the reviewer, with the reason.
-        assert [s['activity'] for s in result['steps']][-2:] == ['implement', 'review']
+        assert [s['activity'] for s in result['steps']][-3:] == ['implement', 'review', 'review']
         assert reviews[1] == {'d1:REV-001': 'negatives are out of scope'}
         assert (repo / 'double.py').read_text() == 'def double(n): return n * 2 if n > 0 else 0\n'
 

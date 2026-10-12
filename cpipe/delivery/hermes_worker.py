@@ -258,13 +258,27 @@ def _prompt(state, resume, since=''):
     if state.activity != 'review':
         return prompt + RULES + task
     from .review import REVIEW_AXES
+    from .service import final_pass
+    if final_pass(state):
+        since = ''
+        scope = ('This is the final regression review: another reviewer already approved this tree, and '
+            'nothing ships until you approve it too. Assume bugs remain. Review the whole base-to-candidate '
+            'range again with fresh eyes, but hunt only for bugs and regressions: for every changed function, '
+            'signature, default, query, condition or removed line, find its callers and dependents outside the '
+            'diff and confirm they still behave correctly; check error paths, empty/null and boundary inputs, '
+            'concurrency, data migrations and backwards compatibility. Run the existing tests that cover the '
+            'changed code and its callers (not the whole suite), in the foreground. Any wrong behavior is medium '
+            'or above. Report simplifications as low at most. ')
+    else:
+        scope = ''
     schema = dict(status='approved|changes_requested', artifact=state.artifact,
         reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES),
         findings=[], verified_ids=[])
     return prompt + ('Read-only independent review: inspect the complete frozen base-to-candidate '
         'range, goal, acceptance, preserved behavior and evidence. Do not edit anything. '
-        'The approved checks already passed on this exact tree: do not run them or the full suite again; run '
-        'one narrow test only to confirm a bug you suspect, in the foreground, with no background jobs or polling. '
+        'The approved checks already passed on this exact tree: do not run them or the full suite again; '
+        + (scope or 'run one narrow test only to confirm a bug you suspect, in the foreground, with no background '
+           'jobs or polling. ') +
         'Every coverage axis requires actual inspection, not a checkbox assertion. Look for: regressions '
         '(check callers and behavior outside the diff), new bugs and unhandled '
         'edge cases, security issues, and code to simplify (duplication, dead code, needless abstraction, '
@@ -291,6 +305,18 @@ def _prompt(state, resume, since=''):
         '(low/medium/high/critical), in_scope (boolean), disposition (open). '
         'Only existing prior IDs may appear in verified_ids. Do not add fields.\n'
         + encoded(schema))
+
+
+def ask(actor, cwd, prompt, *, heartbeat, timeout_seconds):
+    """One fresh worker turn outside the step loop (writing or verifying a pull request); returns its JSON."""
+    if actor.engine != 'hermes':
+        raise ValueError('unsupported execution engine')
+    stop_orphan(cwd)
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(('HERMES_KANBAN_', 'GIT_')) and k != 'PYTHONPATH'}
+    return execute_stream(command(actor, cwd, '', timeout_seconds, 20), prompt=prompt, cwd=cwd, env=env,
+                          model=actor.model, expected_session='', on_session=lambda _: None, heartbeat=heartbeat,
+                          timeout_seconds=timeout_seconds, pidfile=worker_pidfile(cwd)).payload
 
 
 def worker_pidfile(worktree):
