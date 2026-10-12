@@ -192,7 +192,7 @@ def test_serious_finding_keeps_stable_id_until_successor_verification():
     # Merely omitting an earlier finding cannot close it.
     blocked, intents = reviewed(state)
     assert blocked.findings[0].finding.disposition == "open"
-    assert blocked.phase == "diagnosis" and intents[0][1]["action"] == "diagnose"
+    assert blocked.phase == "locally_ready" and not intents  # checks pass; the finding is listed, unresolved
     verified = Verification("REV-001", receipt(state), "evidence/regression.json")
     done, intents = reviewed(state, verifications=(verified,))
     assert done.phase == "locally_ready" and not intents

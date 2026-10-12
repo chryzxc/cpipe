@@ -16,7 +16,7 @@ import uuid
 
 from .artifact import validate_worktree
 from .contracts import Outcome, Receipt
-from .findings import Finding
+from .findings import Finding, blocks
 from .journal import encoded
 from .schema import CheckIdentity
 from .service import Verification
@@ -92,12 +92,11 @@ def _parse(state, payload):
     signatures = {f.root_cause for f in findings}
     if any(r.finding.id in ids and r.finding.root_cause in signatures for r in state.findings):
         raise ValueError('contradictory verification and recurrence')
-    unresolved = any(r.finding.in_scope and r.finding.disposition == 'open'
-                     and r.finding.id not in ids for r in state.findings)
-    blocks = unresolved or any(f.in_scope for f in findings)
-    if (payload['status'] == 'approved') == blocks:
-        raise ValueError('review status contradicts findings or prior-ID coverage')
-    return tuple(findings), tuple(ids), Outcome.FAIL if blocks else Outcome.PASS
+    # The findings decide, not the status word: a reviewer that says changes_requested over
+    # advice only, or approved over a serious finding, is not a reason to fail the step.
+    failed = (any(blocks(r.finding) and r.finding.id not in ids for r in state.findings)
+              or any(blocks(f) for f in findings))
+    return tuple(findings), tuple(ids), Outcome.FAIL if failed else Outcome.PASS
 
 
 def observe_review(bridge, delivery_id, task_id, *, claimer, execute, evidence_root):

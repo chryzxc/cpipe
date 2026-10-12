@@ -2,7 +2,7 @@ from dataclasses import replace
 import pytest
 from cpipe.delivery.contracts import Outcome
 from cpipe.delivery.findings import Finding
-from cpipe.delivery.service import apply, green
+from cpipe.delivery.service import apply, green, resumable, Verification
 from .test_service import candidate, event, claim, receipt, step, ready_for_review, reviewed
 
 
@@ -46,7 +46,7 @@ def test_review_correction_forwards_exact_verdict_evidence_to_builder():
     assert intents[0][1]['resume'] == 'builder-session'
 
 
-def test_repeated_finding_diagnosis_keeps_latest_verdict_reference():
+def test_a_finding_no_fix_resolves_hands_over_working_code_and_continue_retries_it():
     state = ready_for_review(candidate())
     finding = Finding('', 'behavior', 'missing case', 'high', True, 'open')
     state, _ = reviewed(state, findings=(finding,),
@@ -59,6 +59,35 @@ def test_repeated_finding_diagnosis_keeps_latest_verdict_reference():
     state, intents = reviewed(state, findings=(finding,),
                               receipts=(receipt(state, 'review', Outcome.FAIL),),
                               evidence_ref='evidence/repeated.json')
-    assert state.phase == 'diagnosis'
-    assert state.findings[0].finding.id == 'REV-001'
-    assert intents[0][1]['feedback_ref'] == 'evidence/repeated.json'
+    # Checks pass, so more rounds would only churn: ready for review with the finding left open.
+    assert state.phase == 'locally_ready' and not intents
+    assert state.findings[0].finding.id == 'REV-001' and state.findings[0].finding.disposition == 'open'
+    assert resumable(state)
+    state, _ = step(state, 'resumed', 'checks', result_artifact='tree-now')
+    assert state.stalls == 0 and state.handover_reviews == state.review_cycles
+
+
+def test_low_findings_are_advice_and_do_not_send_the_change_back():
+    state = ready_for_review(candidate())
+    advice = Finding('', 'review', 'name could be clearer', 'low', True, 'open')
+    done, intents = reviewed(state, findings=(advice,))
+    assert done.phase == 'locally_ready' and not intents
+    assert done.findings[0].finding.disposition == 'open' and not resumable(done)
+
+
+def test_a_fix_loop_that_trades_findings_stops_after_two_rounds_without_progress():
+    state = ready_for_review(candidate())
+    for n, cause in enumerate(('first', 'second', 'third')):
+        finding = Finding('', 'review', cause + ' bug', 'medium', True, 'open')
+        verify = tuple(Verification(r.finding.id, receipt(state, 'review'), 'evidence/v.json')
+                       for r in state.findings if r.finding.disposition == 'open')
+        state, intents = reviewed(state, findings=(finding,), verifications=verify,
+                                  receipts=(receipt(state, 'review', Outcome.FAIL),))
+        if n < 2:
+            assert state.phase == 'implementing'
+            state = claim(state, 'forge', 'builder-session')
+            state, _ = step(state, 'activity_observed', 'checks', actor_id='forge', result_artifact=f'tree{n + 3}')
+            state = claim(state)
+            state, _ = step(state, 'activity_observed', 'review', receipts=(receipt(state),))
+            state = claim(state, 'sentry', f'review-session{n + 2}')
+    assert state.stalls == 2 and state.phase == 'locally_ready'

@@ -183,9 +183,11 @@ def _delta(state):
         lines += [f'- {o}: ' + UNAVAILABLE_REASONS.get(reason, 'no result') for o, reason in broken]
     if state.activity == 'write_tests':
         lines.append('The behavior test names must match the approved criteria exactly (describe prefixes are fine).')
-    open_ = [r.finding for r in state.findings if r.finding.disposition == 'open' and r.finding.in_scope]
+    from .findings import blocks
+    open_ = [r.finding for r in state.findings if blocks(r.finding)]
     if open_:
-        lines.append('Open review findings to resolve:')
+        lines.append('Open review findings to resolve:' if state.activity != 'review' else
+                     'Prior blocking findings (put each in verified_ids only once resolved):')
         lines += [f'- {f.id} [{f.severity}] ' + NOTES.get(f.root_cause, '(text unavailable; re-inspect all review axes)')
                   for f in open_]
     return '\n'.join(lines) + '\n' if lines else ''
@@ -200,8 +202,10 @@ def _prompt(state, resume, since=''):
                 '(right signature, wrong result). Do not implement the change yet. Return only {"status":"done"}; the controller observes RED.')
     elif state.activity == 'implement':
         task = ('Make the minimum authorized correction for the failing checks and open findings. Fix every '
-                'listed finding at its root cause in this one pass, then run the approved check commands and '
-                'inspect the callers of anything you changed so the fix introduces no regression. '
+                'listed finding at its root cause in this one pass, changing only the code each one is about: '
+                'no unrelated refactors, renames or extra features, since every changed line is reviewed again. '
+                'Then run the approved check commands and inspect the callers of anything you changed so the fix '
+                'introduces no regression. '
                 'Return only {"status":"done"}. Passing checks and completion are the controller’s '
                 'job, not a prose assertion.')
     if state.activity in {'write_tests', 'implement'} and resume:
@@ -228,16 +232,22 @@ def _prompt(state, resume, since=''):
         '(run the project\'s own tests; check callers and behavior outside the diff), new bugs and unhandled '
         'edge cases, security issues, and code to simplify (duplication, dead code, needless abstraction, '
         'comments restating code, reimplemented existing helpers). Report only issues worth changing, not '
-        'style preferences; every open in-scope finding sends the change back to the builder and is reviewed again. '
-        + (f'This is a re-review. Only the builder\'s fixes changed since the last review; run '
-           f'`git diff {since}` to see them. Confirm each prior finding is resolved, then review that diff and its '
-           'effect on callers for regressions and new bugs. Do not raise new issues in code unchanged since the '
-           'last review unless high or critical; it was already reviewed. ' if since else
+        'style preferences. Severity decides what happens: critical/high/medium (wrong or broken behavior, a '
+        'regression, a security or data-loss risk, an unmet acceptance criterion, a real maintenance cost) sends '
+        'the change back to the builder, and every fix is reviewed again; low is advice listed in the report and '
+        'never blocks. Each finding names the file and line and how it fails or what it costs; without that it '
+        'is low at most. '
+        + (f'This is re-review round {state.review_cycles + 1}. Only the builder\'s fixes changed since the last '
+           f'review; run `git diff {since}` to see them. Confirm each prior finding is resolved, then review that '
+           'diff and its effect on callers for regressions and new bugs. A new finding is medium or above only if '
+           'those fixes caused it; do not raise new issues in code unchanged since the last review unless high '
+           'or critical, it was already reviewed. Do not re-raise a resolved finding in other words, and do not '
+           'ask to undo what an earlier finding asked for. ' if since else
            'Review all listed axes and report all findings in one verdict, so the builder can fix them in one pass. ')
         + 'For each prior finding ID '
         'listed above, confirm it is resolved before putting it in verified_ids; otherwise leave it unresolved. '
-        'Return exactly the following JSON schema, replacing status with approved or '
-        'changes_requested; each new finding has exactly id (empty string), criterion '
+        'Return exactly the following JSON schema, with status changes_requested if any finding is medium or '
+        'above (or a prior one is unresolved), else approved; each new finding has exactly id (empty string), criterion '
         '(review), root_cause (the problem and the concrete fix, no credentials), severity '
         '(low/medium/high/critical), in_scope (boolean), disposition (open). '
         'Only existing prior IDs may appear in verified_ids. Do not add fields.\n'

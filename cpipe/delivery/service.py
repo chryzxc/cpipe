@@ -6,7 +6,7 @@ Intent IDs are semantic deduplication keys, not leases or a tool/filesystem sand
 from dataclasses import MISSING, dataclass, fields, replace
 from .contracts import Versioned, Receipt, Outcome, identity, relative_path
 from .schema import ExecutionPlan
-from .findings import Finding, FindingRecord, blocking, merge_findings, needs_diagnosis, disposition
+from .findings import Finding, FindingRecord, blocking, blocks, merge_findings, stalled, disposition
 
 PHASES = frozenset({"proposal", "checking", "implementing", "testable", "reviewing",
                     "locally_ready", "publishing", "completed", "waiting", "diagnosis",
@@ -66,13 +66,14 @@ class State(Versioned):
     handover_tests: int = 0
     handover_reviews: int = 0
     renewals: int = 0  # times the user granted a fresh budget to continue
+    stalls: int = 0  # review rounds in a row that did not reduce the blocking findings
 
     def __post_init__(self):
         if type(self.plan) is not ExecutionPlan or self.phase not in PHASES:
             raise ValueError("invalid snapshot plan or phase")
         identity(self.artifact, "artifact")
         for name in ("version", "review_cycles", "calls_used", "started_at", "last_at",
-                     "handover_tests", "handover_reviews", "renewals"):
+                     "handover_tests", "handover_reviews", "renewals", "stalls"):
             nonnegative(getattr(self, name), name)
         if self.last_at < self.started_at:
             raise ValueError("time moved backwards")
@@ -234,9 +235,15 @@ def takeover(state, role):
     if role == "reviewer":
         return replace(state, reviewer=later[0])
     # A fresh session with its own test and review rounds.
-    return replace(state, builder=later[0], builder_session="", builder_digest="",
+    return replace(state, builder=later[0], builder_session="", builder_digest="", stalls=0,
                    handover_tests=sum(r.obligation == "behavior" for r in state.receipts),
                    handover_reviews=state.review_cycles)
+
+
+def resumable(state):
+    """Stopped, waiting, or handed over with review findings left unresolved: "continue" picks it up."""
+    return (state.phase in {"waiting", "diagnosis", "stopped"}
+            or state.phase == "locally_ready" and blocking(r.finding for r in state.findings))
 
 
 def deadline(state):
@@ -297,7 +304,7 @@ def accept_review(state, event):
     if len({v.finding_id for v in event.verifications}) != len(event.verifications):
         raise ValueError("duplicate prior-ID verification")
     prior = {r.finding.id: r for r in state.findings}
-    before = {key for key, r in prior.items() if r.finding.in_scope and r.finding.disposition == "open"}
+    before = {key for key, r in prior.items() if blocks(r.finding)}
     signatures = {(f.criterion, f.root_cause) for f in event.findings}
     for v in event.verifications:
         if v.finding_id not in prior or not current(state, v.receipt):
@@ -324,12 +331,18 @@ def accept_review(state, event):
     records = tuple(prior.get(f.id) or FindingRecord(f) for f in merged)
     state = replace(state, findings=records, receipts=state.receipts + event.receipts,
                     review_cycles=state.review_cycles + 1, last_reviewed_artifact=state.artifact)
-    after = {r.finding.id for r in records if r.finding.in_scope and r.finding.disposition == "open"}
-    if blocking(r.finding for r in records):
-        if needs_diagnosis(state.review_cycles - state.handover_reviews, before, after):
+    after = {r.finding.id for r in records if blocks(r.finding)}
+    cycles = state.review_cycles - state.handover_reviews
+    state = replace(state, stalls=state.stalls + 1 if after and cycles >= 2 and len(after) >= len(before) else 0)
+    if after:
+        if stalled(cycles, before, after, state.stalls):
             fresh = takeover(state, "builder")  # a stuck fix loop gets fresh eyes before the user
             if fresh:
                 return continue_with(fresh, "implement", "implementing", event.evidence_ref)
+            if green(state, include_review=False):
+                # More fix rounds would only trade findings: hand over working code with the
+                # unresolved findings listed for the user, rather than stopping empty-handed.
+                return quiescent(state, "locally_ready")
             return continue_with(state, "diagnose", "diagnosis", event.evidence_ref)
         return continue_with(state, "implement", "implementing", event.evidence_ref)
     if not green(state):
@@ -371,11 +384,11 @@ def apply(snapshot, event):
         # "Continue" after a stop: every approved builder and reviewer gets its full rounds again,
         # from the code as it is now (result_artifact). Within budget it just runs; more time
         # or calls need the same native approval as the first time, for a fresh budget.
-        if (not state.approved or state.phase not in {"waiting", "diagnosis", "stopped"}
+        if (not state.approved or not resumable(state)
                 or state.activity not in {"", "diagnose", "clarify"}):
             raise ValueError("only an approved delivery that stopped or waits can be resumed")
         state = replace(state, artifact=event.result_artifact or state.artifact, builder="", reviewer="",
-                        builder_session="", builder_digest="",
+                        builder_session="", builder_digest="", stalls=0,
                         handover_tests=sum(r.obligation == "behavior" for r in state.receipts),
                         handover_reviews=state.review_cycles)
         if event.now >= deadline(state) or state.calls_used >= state.plan.budget.calls:
