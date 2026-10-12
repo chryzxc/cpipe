@@ -8,28 +8,73 @@ cpipe does not commit, push, open pull requests, merge or deploy. The result is 
 
 ## Design
 
+### Contract first
+
+- **Clarify once:** open questions are batched into one round before planning; anything else becomes a stated assumption.
+- **Frozen contract:** the approved approach (goal, acceptance, scope, checks, profiles, budget) is immutable and identified by a content digest. Every later step is bound to it.
+- **Bound consent:** approval is tied to the plan digest, the worktree fingerprint and the chat session. No model-provided flag counts as approval.
+
 ### Graph engineering
 
 A delivery is a state graph driven by code, not by a model.
 - **Nodes** are activities: `write_tests`, `implement`, `checks`, `review`, plus the end states `locally_ready`, `waiting`, `diagnosis` and `stopped`.
 - **Edges** are chosen by a deterministic reducer from observed facts: test results, review verdicts, step failures and budget. A model never decides which step comes next or whether the work passed.
-- **Events** are journaled in a local transactional store. Every transition is versioned, so a delivery can be resumed from its last fact after any interruption.
+
+### Event sourcing and durability
+
+- **Journal:** every fact is appended to a local transactional store. State is the projection of those facts, so a delivery resumes from its last fact after any interruption.
+- **Optimistic concurrency:** each event carries the version it expects; a stale writer is rejected.
+- **Idempotency:** events and intents carry keys; replaying one is a no-op, and reusing a key with different content is rejected.
+- **Outbox:** chat messages are stored with the state change that produced them and redelivered until the chat accepts them.
+
+### Evidence over claims
+
+- **Observed results only:** pass/fail comes from running the project's own commands (JUnit per test, or exit code). Worker prose is never evidence.
+- **Content fingerprints:** every check result is bound to a hash of the worktree it ran on. A result for an older tree does not count.
+- **Separation of duties:** the reviewer is a different profile from the builder and works read-only.
+
+### Test-driven delivery
+
+- **Red first:** the behavior test must fail on an assertion before implementation starts.
+- **Green by the checks:** the change is done when the approved checks pass.
+- **Proven regression tests:** a behavior fix from review must include a test that fails with the fix undone.
+- **Baseline:** failures that already exist on the base code are recorded once and never attributed to the change.
 
 ### Loop engineering
 
 Each loop in the graph has an exit condition and a bound.
-- **Test loop:** the behavior test must be observed failing on an assertion before implementation starts, within 3 rounds per builder.
+- **Test loop:** up to 3 rounds per builder to produce a valid failing test.
 - **Fix loop:** implement and checks repeat until every check passes, with failures returned to the builder.
-- **Review loop:** review and fix repeat until no blocking findings remain, within 5 rounds per builder, and ends early when progress stops (see [Review](#review)).
-- **Escalation:** when a loop reaches its bound, the next approved profile takes over in a fresh session. A delivery ends in a defined state, never in an open loop.
+- **Review loop:** until no blocking findings remain, up to 5 rounds per builder, ending early when progress stops (see [Review](#review)).
+- **Severity triage:** only serious in-scope findings drive the loop; low findings are reported as advice.
+- **Escalation ladder:** when a loop reaches its bound, the next approved profile takes over in a fresh session. A delivery always ends in a defined state.
+
+### Checkpoints and rollback
+
+- **Last-good checkpoint:** after every verified step, the worktree is recorded under a private Git ref.
+- **Rollback:** a failed or declined step is reset to that checkpoint, including staging, commits and branch switches.
+- **Scope enforcement:** edits outside `write_paths` are rejected and rolled back.
+
+### Fault tolerance
+
+- **Retry with backoff:** failed steps, check runs and setup are retried with increasing delays.
+- **Crash-loop parking:** a run that crashes repeatedly at the same point is parked and retried on a timer, similar to a circuit breaker.
+- **Watchdog:** long-running Hermes processes resume orphaned runs, and a single owner record ensures only one process resumes each run.
+- **Timeouts and budgets:** each step has a wall-clock cap, and the delivery has a time and turn budget set at approval.
 
 ### Token efficiency and caching
 
 - **Stable prefix:** a new worker session receives the frozen contract once, in a stable form that provider prompt caches can reuse.
-- **Session reuse:** the builder and reviewer sessions are resumed across rounds. A resumed session receives only the delta: failing checks, open findings and the current task.
+- **Session reuse:** builder and reviewer sessions are resumed across rounds. A resumed session receives only the delta: failing checks, open findings and the current task.
 - **Diff-scoped re-reviews:** after the first full review, the reviewer inspects only the diff since its last review.
-- **Code-made decisions:** pass/fail is decided from real test results (JUnit or exit code), so verification costs no model tokens.
+- **Code-made decisions:** verification and routing cost no model tokens.
 - **Usage tracking:** input, output, cache-read and cache-write tokens are recorded per step and reported with the result.
+
+### Safety
+
+- **Least privilege for checks:** checks run with a minimal environment (`PATH`, `HOME`, locale, `CI=1`) and no credentials.
+- **Redaction:** credentials are written as `[REDACTED]`, and review text is redacted before it is stored or shown.
+- **Local only:** cpipe never commits, pushes or deploys.
 
 ## How it works
 
