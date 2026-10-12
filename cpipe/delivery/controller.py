@@ -14,7 +14,7 @@ from .artifact import validate_worktree
 from .check_runner import CommandCheck, baseline_path, take_baseline
 from .contracts import Envelope, Budget, UNAVAILABLE_REASONS
 from .schema import ExecutionPlan
-from .service import Service, Event, deadline
+from .service import Service, Event, deadline, resumable  # noqa: F401 (resumable: used by native)
 from .native_bridge import NativeBridge
 from .hermes_worker import at_base, changed_since_base, reattach, release, HermesWorker, keep, roll_back
 from .workers import observe_implementation, usage, WorkerRefused
@@ -91,6 +91,13 @@ def summary(state, service=None):
         completion_target=state.plan.completion_target,
         checks={r.obligation: r.outcome.value + (': ' + UNAVAILABLE_REASONS[r.reason] if r.reason else '')
                 for r in state.receipts})
+    from .findings import blocks
+    from .review import NOTES
+    found = [r.finding for r in state.findings if r.finding.disposition == 'open']
+    if found:  # unresolved blocking findings first, then advice the run did not act on
+        result['findings'] = [dict(id=f.id, severity=f.severity, blocking=blocks(f), in_scope=f.in_scope,
+                                   text=NOTES.get(f.root_cause, '(text not kept after a restart)'))
+                              for f in sorted(found, key=lambda f: not blocks(f))]
     if state.phase == 'proposal' and not state.approved:
         result['approval_arguments'] = arguments(state)
         if state.renewals:  # the plan is unchanged; only the budget needs consent again
@@ -234,9 +241,6 @@ def cancel(service, delivery_id, *, session_id, profile_id):
         state.plan.digest(), state.artifact, state.version, max(state.last_at, int(time.time())),
         session_id=e.session_id, profile_id=e.profile_id))
     return summary(state)
-
-
-RESUMABLE = {'waiting', 'diagnosis', 'stopped'}
 
 
 def resume(service, delivery_id, *, session_id, profile_id):

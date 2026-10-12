@@ -2,7 +2,7 @@
 
 cpipe is an opt-in Hermes plugin that takes a development task from request to reviewed, locally verified code on its own.
 
-You describe the task once. cpipe investigates, shows you an approach, and asks once for approval. It then works in the background: it writes a failing test, implements, runs your project's own tests and has a second Hermes profile review the change until it is clean. When it is done, or genuinely needs you, it sends one message to the chat you started from.
+You describe the task once. cpipe investigates, shows you an approach, and asks once for approval. It then works in the background: it writes a failing test, implements, runs your project's own tests and has a second Hermes profile review the change until no serious findings remain. When it is done, or genuinely needs you, it sends one message to the chat you started from.
 
 It is built to be cheap with tokens:
 - Every pass/fail decision is made by code from real test results, not by a model.
@@ -21,7 +21,7 @@ cpipe never commits, pushes, opens PRs, merges or deploys. You review the result
                  └─ background run ───────────────────────────────────────────┐
                       write_tests → tests must FAIL (RED)                     │
                       implement ⇄ checks (your test command, real JUnit)      │ self-repair:
-                      review ⇄ implement   (until no open findings)           │ missing/misnamed/crashing
+                      review ⇄ implement   (until no serious findings)        │ missing/misnamed/crashing
                       locally_ready                                           │ tests, failing checks,
                  └─ one chat message: result, checks, tokens, worktree ◄──────┘ crashed steps
 ```
@@ -36,9 +36,16 @@ cpipe never commits, pushes, opens PRs, merges or deploys. You review the result
      - goal, correctness, regressions (including callers outside the diff), integration, breaking behavior;
      - maintainability, security, accessibility, operability, evidence and simplicity.
 
-     Findings carry the concrete fix. The builder fixes them all in one pass, the checks rerun, and the reviewer looks **only at the fix diff** to confirm resolution and catch regressions. Already-reviewed code is not reopened unless something high or critical turns up. This repeats until there are no open findings: at most 5 rounds, and it stops early if a round changes nothing.
+     Findings carry the concrete fix. The builder fixes them all in one pass, the checks rerun, and the reviewer looks **only at the fix diff** to confirm resolution and catch regressions. Already-reviewed code is not reopened unless something high or critical turns up.
+
+     **Why the loop ends.** An AI reviewer finds something in any code, and every fix is new code to critique, so "fix until the reviewer has nothing to say" never converges: it trades one finding for another and can make working code worse. cpipe bounds this in code, not by trusting the model:
+     - **Only serious findings block.** Critical, high and medium findings that are in scope go back to the builder. Low findings are advice listed in the final message and never trigger another round.
+     - **Re-reviews judge the fixes.** The reviewer is told the round number. A new finding counts as medium or above only if the latest fixes caused it, and it must name the file, the line and how it fails. Re-raising a resolved finding in other words, or asking to undo an earlier fix, is ruled out.
+     - **Fixes stay small.** The builder changes only the code each finding is about, with no unrelated refactors, and the checks must pass again after every fix.
+     - **Progress is measured.** The run stops fixing when the serious findings stay the same, when their count does not drop for 2 rounds in a row, or after 5 rounds. The next approved builder then gets its own rounds in a fresh session.
+     - **Working code is handed over.** If no builder settles the last findings but the checks pass, the run ends `locally_ready` with those findings listed as unresolved for you to decide. Say "continue" to give the builders another try.
 5. **Notification.** You get one message in the originating chat when the run is:
-   - **done:** `locally_ready`;
+   - **done:** `locally_ready`, with any unresolved serious findings and the low-severity advice listed;
    - **stuck:** `diagnosis`;
    - **waiting on you**, e.g. the test command is not installed;
    - **out of budget.**
@@ -51,7 +58,7 @@ A run only stops for you when nothing it was approved to do can move it forward.
 
 - **A step fails** (malformed or missing JSON, no edits, edits outside `write_paths`, a commit, branch switch or staged files, a crash, provider error or timeout): the step's changes, staging, commits and branch switch are rolled back to the last verified worktree. The same profile then retries with the reason, first in its session and then in a fresh one, with a short backoff. After 3 failures the next approved profile for that role takes over.
 - **A profile declines** (`{"status":"blocked"}`): rolled back the same way, and the next approved profile takes over at once.
-- **A loop is stuck** (no valid failing test after 3 rounds, or review findings that stop converging): the next approved builder gets the same rounds in a fresh session before the run reports `diagnosis`.
+- **A loop is stuck** (no valid failing test after 3 rounds, or review findings that stop converging): the next approved builder gets the same rounds in a fresh session. After the last builder, a test loop reports `diagnosis`. A review loop with passing checks ends `locally_ready` with the unresolved findings listed (see [Why the loop ends](#how-it-works)).
 - **A worker hangs:** each step is capped at a third of the budget (at least 10 minutes).
 - **Leftover edits with nothing to roll back to** (e.g. a crash before cpipe had verified anything): if they stay inside `write_paths`, cpipe continues from them and runs the checks again before any review.
 - **The repository already fails a check** (lint picking up other worktrees, someone's unrelated failing test): before any change, cpipe runs every check once and remembers what already fails. A check that later fails only on those counts as passed and says so in the report; any new failure still goes back to the builder. The behavior test never gets this pass.
@@ -60,7 +67,7 @@ A run only stops for you when nothing it was approved to do can move it forward.
 - **Hermes restarts or crashes:** a watchdog in every long-running Hermes process (and the next chat turn) resumes the run from its last step. Exactly one process resumes it.
 - **Something else takes cpipe's cards** (a board automation, an older background service): a card that was reassigned, claimed by something else or left behind is archived and replaced. Cards are claimed the moment they are queued, and released cards are archived so nothing picks them up again. `hermes cpipe doctor` warns when this happens.
 - **The budget runs out while nothing runs:** the next resume records the stop and reports it, instead of failing every step.
-- **"Continue" in the chat:** asking the coordinator to continue calls build again, which restarts a run nothing is working on and returns its real state, never a stale "running". This also works for a run that stopped, waits or reports `diagnosis`, at any later time:
+- **"Continue" in the chat:** asking the coordinator to continue calls build again, which restarts a run nothing is working on and returns its real state, never a stale "running". This also works for a run that stopped, waits, reports `diagnosis` or finished with unresolved findings, at any later time:
   - it picks up from the code as it is now, so fix the cause first if it was yours (e.g. install the test command);
   - every approved builder and reviewer gets its full rounds again;
   - if the time or turn budget ran out, the same native approval asks you for a fresh budget, and the run continues after you accept.

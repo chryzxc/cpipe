@@ -115,6 +115,19 @@ def test_findings_return_to_same_builder_without_authorizing_publication(repo, t
         assert after.receipts[-1].outcome is Outcome.FAIL
 
 
+def test_the_findings_decide_the_verdict_not_the_status_word(repo, tmp_path, board):
+    from cpipe.delivery.review import observe_review
+    journal, s, b, tid = reviewing(repo, tmp_path, board)
+    with journal:
+        advice = dict(id='', criterion='review', root_cause='helper name could be clearer',
+                      severity='low', in_scope=True, disposition='open')
+        after = observe_review(b, 'd1', tid, claimer='controller',
+            execute=reviewer(lambda state: verdict(state, status='changes_requested', findings=[advice])),
+            evidence_root=tmp_path / 'evidence')
+        assert after.receipts[-1].outcome is Outcome.PASS and after.phase == 'locally_ready'
+        assert after.findings[0].finding.disposition == 'open'  # kept as advice for the report
+
+
 def test_unrecognized_credential_values_in_reviewer_prose_are_never_retained(repo, tmp_path, board):
     from cpipe.delivery.review import observe_review
     journal, s, b, tid = reviewing(repo, tmp_path, board)
