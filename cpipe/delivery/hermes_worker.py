@@ -170,6 +170,7 @@ def _delta(state):
     """What changed since the worker last looked: failing checks and open findings."""
     from .contracts import Outcome, UNAVAILABLE_REASONS
     from .review import NOTES
+    from .workers import DISPUTES
     lines = []
     latest = {r.obligation: r for r in state.receipts if r.artifact == state.artifact and r.obligation != 'review'}
     failed = sorted(o for o, r in latest.items() if r.outcome is Outcome.FAIL)
@@ -189,7 +190,17 @@ def _delta(state):
         lines.append('Open review findings to resolve:' if state.activity != 'review' else
                      'Prior blocking findings (put each in verified_ids only once resolved):')
         lines += [f'- {f.id} [{f.severity}] ' + NOTES.get(f.root_cause, '(text unavailable; re-inspect all review axes)')
-                  for f in open_]
+                  + (f' (builder disputes it and left it unchanged: {DISPUTES[f.id]})'
+                     if state.activity == 'review' and f.id in DISPUTES else '') for f in open_]
+        if state.activity == 'implement':
+            lines.append('For each finding about behavior (a wrong result, a crash, an unhandled case), first add a '
+                         'regression test, in a file the approved check commands already run, that fails on the code '
+                         'before your fix; cpipe runs it without your fix to confirm. Keep it: it stops later fixes '
+                         'from breaking this again. If you find a finding is wrong (the code already behaves '
+                         'correctly, or it asks for something outside the approach), change nothing for it and '
+                         'dispute it with a one-line reason. Return {"status":"done","tests":[<regression test '
+                         'files you added or changed>],"disputed":[{"id":"REV-…","reason":"…"}]} (empty lists when '
+                         'none).')
     return '\n'.join(lines) + '\n' if lines else ''
 
 
@@ -202,12 +213,12 @@ def _prompt(state, resume, since=''):
                 '(right signature, wrong result). Do not implement the change yet. Return only {"status":"done"}; the controller observes RED.')
     elif state.activity == 'implement':
         task = ('Make the minimum authorized correction for the failing checks and open findings. Fix every '
-                'listed finding at its root cause in this one pass, changing only the code each one is about: '
+                'listed finding you do not dispute at its root cause in this one pass, changing only the code each one is about: '
                 'no unrelated refactors, renames or extra features, since every changed line is reviewed again. '
                 'Then run the approved check commands and inspect the callers of anything you changed so the fix '
                 'introduces no regression. '
-                'Return only {"status":"done"}. Passing checks and completion are the controller’s '
-                'job, not a prose assertion.')
+                'Return only {"status":"done"}, or the answer asked for above when there are review findings. '
+                'Passing checks and completion are the controller’s job, not a prose assertion.')
     if state.activity in {'write_tests', 'implement'} and resume:
         return 'Same delivery, next round. Activity: ' + state.activity + '.\n' + _delta(state) + task
     prompt = ('You are a directly executing worker in an explicitly selected cpipe workflow. '
@@ -242,7 +253,9 @@ def _prompt(state, resume, since=''):
            'diff and its effect on callers for regressions and new bugs. A new finding is medium or above only if '
            'those fixes caused it; do not raise new issues in code unchanged since the last review unless high '
            'or critical, it was already reviewed. Do not re-raise a resolved finding in other words, and do not '
-           'ask to undo what an earlier finding asked for. ' if since else
+           'ask to undo what an earlier finding asked for. If the builder disputes a finding, put it in verified_ids '
+           'when its reason holds; keep it open only if you are certain it is still wrong, since an unsettled '
+           'dispute goes to the user. ' if since else
            'Review all listed axes and report all findings in one verdict, so the builder can fix them in one pass. ')
         + 'For each prior finding ID '
         'listed above, confirm it is resolved before putting it in verified_ids; otherwise leave it unresolved. '
@@ -357,30 +370,46 @@ def release(plan):
     held = _git(cwd, 'rev-parse', '-q', '--verify', _hold(plan) + '^{tree}', check=False)
     if not held:
         return
+    origin = (_git(cwd, 'rev-parse', '-q', '--verify', _hold(plan) + '-from', check=False)
+              or plan.base_commit + '^{tree}')
     # Only the files at_base moved: never another edit made meanwhile.
-    names = _diff(cwd, held, snapshot(cwd)) & _diff(cwd, plan.base_commit + '^{tree}', held)
+    names = _diff(cwd, held, snapshot(cwd)) & _diff(cwd, origin, held)
     if names:
         _put(cwd, held, sorted(names))
+    _git(cwd, 'update-ref', '-d', _hold(plan) + '-from', check=False)
     _git(cwd, 'update-ref', '-d', _hold(plan))
 
 
 @contextmanager
-def at_base(plan, names):
-    """Run with these files as they are at the approved base, then put them back."""
+def at_base(plan, names, tree=None):
+    """Run with these files as they are at the approved base (or at tree), then put them back."""
     release(plan)
-    if names:  # held: the base plus these files as they are, so release knows exactly what moved
+    origin = tree or plan.base_commit + '^{tree}'
+    if names:  # held: origin plus these files as they are, so release knows exactly what moved
         with tempfile.TemporaryDirectory() as tmp:
             env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
             env['GIT_INDEX_FILE'] = os.path.join(tmp, 'index')
-            _git(plan.worktree, 'read-tree', plan.base_commit + '^{tree}', env=env)
+            _git(plan.worktree, 'read-tree', origin, env=env)
             _git(plan.worktree, 'add', '-A', '--', *names, env=env)
+            if tree:
+                _git(plan.worktree, 'update-ref', _hold(plan) + '-from', tree)
             _git(plan.worktree, 'update-ref', _hold(plan), _git(plan.worktree, 'write-tree', env=env))
     try:
         if names:
-            _put(plan.worktree, plan.base_commit + '^{tree}', names)
+            _put(plan.worktree, origin, names)
         yield
     finally:
         release(plan)
+
+
+@contextmanager
+def before_step(plan, keep):
+    """Run with this step's changes undone, except the files in keep (e.g. its new tests)."""
+    tree = _git(plan.worktree, 'rev-parse', '-q', '--verify', _good(plan) + '^{tree}', check=False)
+    if not tree:
+        raise ValueError('no verified state from before this step')
+    with at_base(plan, sorted(_diff(plan.worktree, tree, snapshot(plan.worktree)) - set(keep)), tree):
+        yield
 
 
 def _ref(state):
@@ -398,7 +427,7 @@ class HermesWorker:
             try:  # re-reviews look only at what changed since the last review
                 now = snapshot(state.plan.worktree)
                 last = _git(state.plan.worktree, 'rev-parse', '-q', '--verify', _ref(state) + '^{tree}', check=False)
-                since = f'{last} {now}' if state.review_cycles and last and last != now else ''
+                since = f'{last} {now}' if state.review_cycles and last else ''
             except (OSError, subprocess.SubprocessError):
                 now = ''
         prompt = _prompt(state, resume, since)

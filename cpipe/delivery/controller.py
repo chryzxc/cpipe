@@ -11,12 +11,13 @@ import time
 import uuid
 
 from .artifact import validate_worktree
-from .check_runner import CommandCheck, baseline_path, take_baseline
+from .check_runner import CommandCheck, baseline_path, reproduces, take_baseline
 from .contracts import Envelope, Budget, UNAVAILABLE_REASONS
 from .schema import ExecutionPlan
 from .service import Service, Event, deadline, resumable  # noqa: F401 (resumable: used by native)
 from .native_bridge import NativeBridge
-from .hermes_worker import at_base, changed_since_base, reattach, release, HermesWorker, keep, roll_back
+from .hermes_worker import (at_base, before_step, changed_since_base, reattach, release, HermesWorker,
+                            keep, roll_back)
 from .workers import observe_implementation, usage, WorkerRefused
 from .review import observe_review, review_identity
 from .approval import arguments
@@ -93,10 +94,12 @@ def summary(state, service=None):
                 for r in state.receipts})
     from .findings import blocks
     from .review import NOTES
+    from .workers import DISPUTES
     found = [r.finding for r in state.findings if r.finding.disposition == 'open']
     if found:  # unresolved blocking findings first, then advice the run did not act on
         result['findings'] = [dict(id=f.id, severity=f.severity, blocking=blocks(f), in_scope=f.in_scope,
-                                   text=NOTES.get(f.root_cause, '(text not kept after a restart)'))
+                                   text=NOTES.get(f.root_cause, '(text not kept after a restart)'),
+                                   **({'builder_disputes': DISPUTES[f.id]} if f.id in DISPUTES else {}))
                               for f in sorted(found, key=lambda f: not blocks(f))]
     if state.phase == 'proposal' and not state.approved:
         result['approval_arguments'] = arguments(state)
@@ -336,7 +339,11 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 state = bridge.observe_checks(delivery_id, tid, claimer=claimer,
                                               checks=due, evidence_root=Path(evidence_root))
             elif action in {'write_tests', 'implement'}:
-                state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker)
+                def prove(tests, state=state):  # the regression tests must fail without the fix
+                    with before_step(state.plan, tests):
+                        return reproduces(state, checks, evidence_root=Path(evidence_root))
+                state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker,
+                                               prove=prove)
             else:
                 state = observe_review(bridge, delivery_id, tid, claimer=claimer, execute=worker,
                                        evidence_root=Path(evidence_root))

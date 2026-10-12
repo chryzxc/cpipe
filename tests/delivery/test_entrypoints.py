@@ -440,3 +440,107 @@ def test_the_chat_hears_when_working_code_comes_back_with_unresolved_findings():
     head, text = native._settled('d1', dict(phase='locally_ready', findings=findings), '')
     assert '1 unresolved review finding' in head and 'REV-003' in text
     assert native._settled('d1', dict(phase='locally_ready', findings=findings[1:]), '')[0] == native.HEADLINES['locally_ready']
+
+
+@pytest.mark.parametrize('answer', ['prove', 'dispute'])
+def test_a_finding_is_fixed_with_a_test_that_fails_without_the_fix_or_disputed(repo, tmp_path, monkeypatch, answer):
+    from cpipe.delivery import controller
+    from cpipe.delivery.controller import propose, run
+    from cpipe.delivery.workers import DISPUTES, WorkerResult
+    from cpipe.delivery.review import REVIEW_AXES, review_identity
+    from cpipe.runtime import hermes_api as h
+    from .test_execution_plan import plan
+    monkeypatch.setattr(controller, 'BACKOFF', 0)
+    spec = pytest_check(timeout=20)
+    test = 'from double import double\ndef test_double(): assert double(2) == 4\n'
+    (repo / 'test_behavior.py').write_text(test)
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
+        base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=int(time.time()) + 300,
+        envelope=replace(plan().envelope, required=('behavior', 'review')),
+        checks=(spec.identity(), review_identity()),
+        write_paths=('double.py', 'test_behavior.py'), interactive=False, transient_retries=0)
+    h.kb.init_db(tmp_path / 'native.db')
+    conn = h.kbc.connect(tmp_path / 'native.db')
+    builds, reviews = [], []
+
+    def execute(state, *, on_session, **kw):
+        session = f'review-{len(reviews)}' if state.activity == 'review' else 'builder-session'
+        on_session(session)
+        if state.activity == 'review':
+            reviews.append(dict(DISPUTES))
+            first = not state.findings
+            finding = dict(id='', criterion='review', root_cause='double(-1) returns 0 instead of -2',
+                           severity='medium', in_scope=True, disposition='open')
+            return WorkerResult(session, dict(status='changes_requested' if first else 'approved',
+                artifact=state.artifact, reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES),
+                findings=[finding] if first else [], verified_ids=[] if first else ['REV-001']))
+        builds.append(state.activity)
+        if not state.findings:
+            (repo / 'double.py').write_text('def double(n): return n * 2 if n > 0 else 0\n')
+            return WorkerResult(session, {'status': 'done'})
+        if answer == 'dispute':
+            return WorkerResult(session, dict(status='done', tests=[],
+                                              disputed=[dict(id='REV-001', reason='negatives are out of scope')]))
+        (repo / 'double.py').write_text('def double(n): return n * 2\n')
+        weak = builds.count('implement') == 2  # first try: a "regression test" that passes anyway
+        (repo / 'test_behavior.py').write_text(test + ('def test_more(): assert double(3) == 6\n' if weak else
+                                                       'def test_negative(): assert double(-1) == -2\n'))
+        return WorkerResult(session, dict(status='done', tests=['test_behavior.py'], disputed=[]))
+    try:
+        with Journal(tmp_path / 'controller.db') as journal:
+            service = Service(journal)
+            state = propose(service, p, (spec,))
+            service.accept(Event('approval', 'envelope_approved', 'd1', p.digest(), state.artifact,
+                state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
+            result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn, execute=execute,
+                         evidence_root=tmp_path / 'evidence')
+    finally:
+        conn.close()
+        DISPUTES.clear()
+    assert result['phase'] == 'locally_ready' and len(reviews) == 2, result
+    if answer == 'prove':
+        assert builds == ['implement'] * 3
+        assert any('pass without your fix' in r for r in result['recoveries']), result
+        assert 'test_negative' in (repo / 'test_behavior.py').read_text()  # kept: pins the fix
+        assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'  # restored after the proof
+    else:
+        # Nothing changed, so the passing checks still hold: straight back to the reviewer, with the reason.
+        assert [s['activity'] for s in result['steps']][-2:] == ['implement', 'review']
+        assert reviews[1] == {'REV-001': 'negatives are out of scope'}
+        assert (repo / 'double.py').read_text() == 'def double(n): return n * 2 if n > 0 else 0\n'
+
+
+def test_builder_answers_are_checked():
+    from types import SimpleNamespace
+    from cpipe.delivery.workers import _answer
+    implement, write = SimpleNamespace(activity='implement'), SimpleNamespace(activity='write_tests')
+    assert _answer(implement, {'status': 'done'}, set()) == (set(), {})
+    assert _answer(implement, dict(status='done', tests=['t.py'], disputed=[dict(id='REV-001', reason='r')]),
+                   {'REV-001'}) == ({'t.py'}, {'REV-001': 'r'})
+    for activity, payload, ids in [(write, dict(status='done', tests=[]), set()),
+                                   (implement, dict(status='done', disputed=[dict(id='REV-009', reason='r')]), set()),
+                                   (implement, dict(status='done', disputed=[dict(id='REV-001', reason=' ')]), {'REV-001'}),
+                                   (implement, dict(status='done', extra=1), set())]:
+        with pytest.raises(ValueError):
+            _answer(activity, payload, ids)
+
+
+def test_the_proof_puts_the_fix_back_even_after_a_crash_in_the_middle(repo, monkeypatch):
+    from cpipe.delivery import hermes_worker
+    from cpipe.delivery.hermes_worker import _good, before_step, release, snapshot
+    from .test_execution_plan import plan
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'), base_commit=git(repo, 'rev-parse', 'HEAD'))
+    (repo / 'double.py').write_text('def double(n): return n * 2 if n > 0 else 0\n')
+    git(repo, 'update-ref', _good(p), snapshot(str(repo)))  # verified before the fix step
+    (repo / 'double.py').write_text('def double(n): return n * 2\n')
+    (repo / 'test_x.py').write_text('regression\n')
+    with pytest.raises(KeyboardInterrupt):
+        with before_step(p, {'test_x.py'}):
+            assert (repo / 'double.py').read_text() == 'def double(n): return n * 2 if n > 0 else 0\n'
+            assert (repo / 'test_x.py').exists()
+            monkeypatch.setattr(hermes_worker, 'release', lambda plan: None)  # the process dies here
+            raise KeyboardInterrupt
+    monkeypatch.undo()
+    release(p)  # the next run puts the fix back
+    assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'
+    assert (repo / 'test_x.py').read_text() == 'regression\n'
