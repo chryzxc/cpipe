@@ -196,3 +196,14 @@ def test_the_final_review_hunts_regressions_over_the_whole_range():
     assert 'final regression review' in final and 'callers' in final
     assert 're-review round' not in final and 'one narrow test only' not in final
     assert 'final regression review' not in _prompt(ready_for_review(candidate()), '', '')
+
+
+def test_the_test_writer_runs_the_exact_behavior_check_once():
+    from cpipe.delivery.check_runner import CommandCheck
+    from cpipe.delivery.hermes_worker import behavior_check
+    text = behavior_check((CommandCheck('regression', ('npm', 'test')),
+                           CommandCheck('behavior', ('npx', 'vitest', 'run', 'a.test.ts', '--outputFile={report}'),
+                                        ('parser > rejects empty input',))))
+    assert "`npx vitest run a.test.ts '--outputFile=<any temporary file>'`" in text
+    assert 'parser > rejects empty input' in text and 'npm' not in text
+    assert behavior_check(()) == ''

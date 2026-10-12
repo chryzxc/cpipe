@@ -11,6 +11,7 @@ import json
 import math
 import os
 import selectors
+import shlex
 import shutil
 import signal
 import subprocess
@@ -307,6 +308,18 @@ def _prompt(state, resume, since=''):
         + encoded(schema))
 
 
+def behavior_check(checks):
+    """The exact command and names cpipe will judge RED by, so the writer gets them right in one round."""
+    check = next((c for c in checks if c.obligation == 'behavior'), None)
+    if check is None:
+        return ''
+    argv = shlex.join(check.argv).replace('{report}', '<any temporary file>')
+    return ('\nBefore returning, run the behavior check exactly as cpipe will, once, in the foreground: `' + argv
+            + '`. Its output must show each of these test names failing on an assertion: '
+            + ', '.join(check.criteria) + '. If a name is missing, differs, or matches more than one test, rename '
+            'the test and run it again; this is the one test you may run. A mismatch costs a whole new round.\n')
+
+
 def ask(actor, cwd, prompt, *, heartbeat, timeout_seconds):
     """One fresh worker turn outside the step loop (writing or verifying a pull request); returns its JSON."""
     if actor.engine != 'hermes':
@@ -515,6 +528,8 @@ class HermesWorker:
             except (OSError, subprocess.SubprocessError):
                 now = ''
         prompt = _prompt(state, resume, since)
+        if state.activity == 'write_tests':
+            prompt += behavior_check(getattr(self, 'checks', ()))
         note, self.note = getattr(self, 'note', ''), ''
         if note:  # the controller's reason the previous attempt failed (a fixed label, never worker text)
             prompt += '\n' + note

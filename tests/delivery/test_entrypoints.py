@@ -449,13 +449,13 @@ def test_the_chat_hears_when_working_code_comes_back_with_unresolved_findings():
 def test_the_settled_message_is_a_rendered_report_not_raw_state():
     from cpipe import native
     result = dict(phase='waiting', goal='Fix | double', worktree='/w/d1', review_cycles=1,
-                  checks={'behavior': 'pass', 'suite': 'fail'}, tokens=dict(total=12345, steps=3),
+                  checks={'behavior': 'pass', 'suite': 'fail'}, tokens=dict(total=12345, steps=3, cache_read=11111, output=300),
                   steps=[dict(activity=a) for a in ('implement', 'checks', 'implement')],
                   findings=[dict(id='REV-1', severity='high', blocking=True, in_scope=True, text='leaks')],
                   recoveries=['builder failed implement (timeout); handing over'])
     text = native._settled('d1', result, '')[1]
     assert text.startswith(native.SHOW) and '{' not in text
-    for row in ('| Goal | Fix \\| double |', '| Steps | implement ×2, checks |', '| Tokens | 12,345 in 3 steps |',
+    for row in ('| Goal | Fix \\| double |', '| Steps | implement ×2, checks |', '| Tokens | 12,345 in 3 steps (90% cache reads, billed at the provider\'s cache rate; 300 output) |',
                 '| suite | fail |', '| REV-1 | high | yes | leaks |', '- builder failed implement', '**continue**'):
         assert row in text, row
 

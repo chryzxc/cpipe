@@ -182,7 +182,9 @@ def report(delivery_id, head, result):
             ('Worktree', result.get('worktree') and '`' + result['worktree'] + '`'),
             ('Steps', ', '.join(f'{k} ×{n}' if n > 1 else k for k, n in Counter(s['activity'] for s in steps).items())),
             ('Review rounds', result.get('review_cycles', 0)),
-            ('Tokens', tokens and f"{tokens.get('total', 0):,} in {tokens.get('steps', 0)} steps")]
+            ('Tokens', tokens and f"{tokens.get('total', 0):,} in {tokens.get('steps', 0)} steps "
+                       f"({tokens.get('cache_read', 0) * 100 // max(1, tokens.get('total', 0))}% cache reads, billed at "
+                       f"the provider's cache rate; {tokens.get('output', 0):,} output)")]
     lines = [f'**cpipe · `{delivery_id}` is {head}.**', '', '| | |', '|---|---|']
     lines += [f'| {k} | {_cell(v)} |' for k, v in rows if v not in (None, '', ())]
     if checks := result.get('checks'):

@@ -520,6 +520,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                        conn=conn, execute=execute, evidence_root=evidence_root)
     bridge = NativeBridge(service, conn, session_id=session_id, profile_id=profile_id)
     worker, steps, recoveries, strikes, baselined, shown = execute or HermesWorker(), [], [], {}, False, ''
+    worker.checks = checks  # the test writer runs the exact behavior check before returning
     tid = None
 
     def note(text):
