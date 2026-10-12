@@ -215,6 +215,23 @@ def _delta(state):
     return '\n'.join(lines) + '\n' if lines else ''
 
 
+def _navigation(worktree):
+    """Point the worker at a code index the user already keeps, so it locates code without broad reads.
+    The delivery worktree lacks ignored directories, so the main checkout's index is used as well."""
+    try:
+        common = _git(worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir', check=False)
+    except OSError:
+        common = ''
+    roots = [Path(worktree)] + ([Path(common).parent] if common else [])
+    hints = []
+    if shutil.which('codegraph') and (root := next((r for r in roots if (r / '.codegraph').is_dir()), None)):
+        hints.append(f'codegraph explore -p {root} "<symbols or question>"')
+    if shutil.which('graphify') and (root := next((r for r in roots if (r / 'graphify-out/graph.json').is_file()), None)):
+        hints.append(f'graphify query "<question>" --budget 1500 --graph {root}/graphify-out/graph.json')
+    return ('To locate code, run ' + ' or '.join(hints) + ' in your terminal before broad file reads or '
+            'searches; then read only the lines you need from this worktree.\n') if hints else ''
+
+
 def _prompt(state, resume, since=''):
     """Stable contract on a fresh session; on resume only the delta, since the session holds the rest."""
     if state.activity == 'write_tests':
@@ -240,6 +257,7 @@ def _prompt(state, resume, since=''):
         'Credentials must never be written; replace any encountered values with [REDACTED]. '
         'If your own instructions forbid this work, return only {"status":"blocked","reason":"<one line>"} '
         'without changing files; another approved worker takes over.\n'
+        + _navigation(state.plan.worktree) +
         'Frozen contract:\n' + encoded(state.plan.to_dict()) + '\n'
         'Current activity: ' + state.activity + '\n' + _delta(state))
     if state.activity != 'review':

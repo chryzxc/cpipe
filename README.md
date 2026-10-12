@@ -67,6 +67,7 @@ Each loop in the graph has an exit condition and a bound.
 - **Stable prefix:** a new worker session receives the frozen contract once, in a stable form that provider prompt caches can reuse.
 - **Session reuse:** builder and reviewer sessions are resumed across rounds. A resumed session receives only the delta: failing checks, open findings and the current task.
 - **Diff-scoped re-reviews:** after the first full review, the reviewer inspects only the diff since its last review.
+- **Existing code index:** when the repository already has a CodeGraph (`.codegraph/`) or graphify (`graphify-out/graph.json`) index and its CLI is installed, workers are told to query it before broad file reads. cpipe never builds or changes an index, and worker profiles keep their own tools and configuration.
 - **Code-made decisions:** verification and routing cost no model tokens.
 - **Usage tracking:** input, output, cache-read and cache-write tokens are recorded per step and reported with the result.
 

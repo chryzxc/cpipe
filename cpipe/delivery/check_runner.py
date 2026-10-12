@@ -48,8 +48,8 @@ def _environment(program):
     # Checks deliberately do not inherit arbitrary settings or credentials.
     # Hash only the safe, explicitly selected subprocess definition. Secret
     # values must never enter persisted identities, even through a hash.
-    # ponytail: the resolved program is hashed, not the project's installed
-    # dependencies; lockfiles are already in the artifact fingerprint.
+    # The resolved program is hashed, not the project's installed dependencies;
+    # lockfiles are already in the artifact fingerprint.
     from ..runtime.envpolicy import Redactor
     safe = ('PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TMPDIR')
     redact = Redactor(os.environ)
@@ -144,7 +144,7 @@ def _run(spec, worktree, env, timeout):
 
 # "RuntimeError: ...", "TypeError: ..." are harness/runtime failures, not behavioral
 # RED. Assertion messages ("assert ...", "AssertionError", jest's bare "Error: expect(...)") are.
-# ponytail: only runners that lead the message with the exception type (pytest, vitest, jest)
+# Only runners that lead the message with the exception type (pytest, vitest, jest)
 # are told apart; node:test hides it in the trace, so its crashes count as RED.
 _EXCEPTION = re.compile(r'([\w.]*?)(?:Error|Exception)\b')
 
