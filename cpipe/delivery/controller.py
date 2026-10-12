@@ -154,7 +154,7 @@ def validate_spec(spec):
                 'forbidden_paths', 'builder', 'reviewer', 'seconds', 'checks'}
     if type(spec) is not dict:
         raise ValueError('spec must be an object')
-    if set(spec) - {'draft_pr'} != expected:
+    if set(spec) - {'draft_pr', 'title'} != expected:
         # Field names are fixed schema labels, never user values.
         missing, extra = sorted(expected - set(spec)), sorted(set(spec) - expected)
         raise ValueError('spec fields: missing ' + (', '.join(missing) or 'none')
@@ -304,7 +304,7 @@ def _plan(spec, checks, actors, root, start, delivery_id, session_id, profile_id
         checks=tuple(c.identity() for c in checks) + (review_identity(),), interactive=False,
         repair_allowed=False, transient_retries=0, completion_target='draft' if spec.get('draft_pr') else 'local_only',
         expires_at=now + APPROVAL_WINDOW + spec['seconds'],
-        approach=approach)
+        approach=approach, title=spec.get('title') or '')
     return p
 
 

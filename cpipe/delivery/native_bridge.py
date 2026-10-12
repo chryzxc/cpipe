@@ -19,6 +19,9 @@ from .service import Event, apply, actor as active, deadline
 
 RUNNABLE = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 RESULT_KINDS = frozenset({'activity_observed', 'review_received', 'publication_observed'})
+# Card titles: the step's place in the delivery and its name. Writing and running the proving test are one step.
+STEPS = {'tests': (1, 'Proving test'), 'write_tests': (1, 'Writing tests'), 'implement': (2, 'Implementing'),
+         'checks': (3, 'Running checks'), 'review': (4, 'Review'), 'publish': (5, 'Opening draft PR')}
 
 
 def alive(claimer):
@@ -59,6 +62,15 @@ class NativeBridge:
         e = state.plan.envelope
         material = encoded([e.profile_id, e.session_id, state.plan.digest(), state.active_intent])
         return 'cpipe:' + hashlib.sha256(material.encode()).hexdigest()
+
+    @staticmethod
+    def _title(state):
+        """Task first, then where the delivery is: "Fix date parser — 2/4 Implementing"; the assignee names the profile."""
+        plan = state.plan
+        name = plan.title or (plan.goal if len(plan.goal) <= 60 else plan.goal[:60].rsplit(' ', 1)[0] + '…')
+        number, label = STEPS.get(state.activity, (0, state.activity))
+        step = f"{number}/{5 if plan.completion_target == 'draft' else 4} {label}" if number else label
+        return f'{name} — {step}'
 
     @staticmethod
     def _actor(state):
@@ -106,7 +118,7 @@ class NativeBridge:
             # Serialize native idempotency lookup/create. Hermes create_task supports
             # nesting, but its standalone pre-check is otherwise subject to a race.
             with h.kb.write_txn(self.conn):
-                tid = h.kb.create_task(self.conn, title=f'cpipe: {state.activity} · {actor.profile} · {state.plan.goal[:60]}',
+                tid = h.kb.create_task(self.conn, title=self._title(state),
                     body=self._body(state), assignee=self._lane(actor.profile), created_by='cpipe',
                     workspace_kind='dir', workspace_path=state.plan.worktree,
                     project_id='', session_id=self.session_id,

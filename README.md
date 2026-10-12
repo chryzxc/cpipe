@@ -149,7 +149,7 @@ A delivery stops for you only when no approved action can move it forward. Other
 
 ### Monitoring
 
-- **Kanban activity:** each step is a card titled with the step, the profile and the goal (`cpipe: implement · forge · Fix the date parser`), with a short table of delivery, worktree and plan. Handovers, retries and declines are posted as comments on the step's card, and the step's result is the card's run summary. Comments do not wake any chat.
+- **Kanban activity:** each step is a card titled with the task and the step's place in the delivery (`Fix the date parser — 2/4 Implementing`), assigned to `cp:<profile>`. The task name is the plan's short `title`, or its goal cut at a word when there is none, with a short table of delivery, worktree and plan. Handovers, retries and declines are posted as comments on the step's card, and the step's result is the card's run summary. Comments do not wake any chat.
 - **Progress line in the desktop app:** a single line above the chat input shows what the run is doing (`forge is implementing`, `running the checks`, `sentry is reviewing`) and every handover or recovery as it happens. It is display only: no model turn, no tokens. Enable **cpipe** under **Capabilities → Plugins** (use **Rescan** after installing or updating). Runs hosted outside the desktop app (gateway, terminal chat) skip it.
 
 - Every message to the chat is stored until the chat accepts it; the watchdog and the next chat turn redeliver it.
@@ -210,6 +210,7 @@ The coordinator fills in the spec; it is shown in the preview and frozen at appr
 
 | Field | Meaning |
 |---|---|
+| `title` | Optional. A short name for the task on the kanban board, at most 60 characters. |
 | `worktree`, `repo`, `base` | The investigated checkout, which is never changed, and the branch, tag or commit the delivery's own worktree starts from. When `base` is what the checkout has checked out, its uncommitted changes are included. |
 | `goal`, `acceptance`, `non_goals` | What done means. |
 | `write_paths`, `forbidden_paths` | Edits outside `write_paths` are rejected. |

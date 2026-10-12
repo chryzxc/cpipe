@@ -64,6 +64,7 @@ def test_schedule_is_idempotent_pins_runtime_and_never_wakes_a_chat(tmp_path, bo
         assert len(h.kb.list_tasks(board)) == 1
         # A short card for people; the plan stays in the journal.
         assert len(task.body) < 1000 and state.plan.digest()[:12] in task.body and '| tests |' in task.body
+        assert task.title == f'{state.plan.goal} — 1/4 Proving test'
         b.comment(tid, 'builder handed over to fallback')
         assert [c.body for c in h.kb.list_comments(board, tid)] == ['builder handed over to fallback']
 
@@ -275,3 +276,15 @@ def test_a_released_card_is_archived_so_nothing_picks_it_up_again(tmp_path, boar
         b.abandon('d1', claimer)
         assert h.get_task(board, tid).status == 'archived'
         assert b.schedule('d1', claimer) != tid
+
+
+def test_card_title_leads_with_the_task_and_shows_the_step(tmp_path):
+    from dataclasses import replace
+    from cpipe.delivery.native_bridge import NativeBridge
+    _, _, state = approved(tmp_path)
+    titled = replace(state, activity='implement', plan=replace(state.plan, title='Fix date parser'))
+    assert NativeBridge._title(titled) == 'Fix date parser — 2/4 Implementing'
+    long = replace(state, activity='review', plan=replace(state.plan, goal='word ' * 30))  # no title: the goal, cut at a word
+    assert NativeBridge._title(long) == 'word ' * 11 + 'word… — 4/4 Review'
+    with pytest.raises(ValueError, match='title'):
+        replace(state.plan, title='x' * 61)
