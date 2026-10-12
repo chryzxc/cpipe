@@ -216,6 +216,28 @@ def _outcome(spec, observed):
     return (Outcome.PASS if code == 0 else Outcome.FAIL), ''
 
 
+# Redacted output tail and missing criteria per check that did not pass, for the builder's
+# next turn only (like review.NOTES): process memory, never journal or evidence, so the
+# builder fixes from what the run printed instead of re-running and re-exploring.
+TAILS = {}
+TAIL = 3000
+
+
+def _remember(state, spec, observed, outcome):
+    key = state.plan.envelope.delivery_id + ':' + spec.obligation
+    if outcome is Outcome.PASS or observed is None:
+        TAILS.pop(key, None)
+        return
+    from .review import redacted
+    if len(TAILS) > 500:
+        TAILS.clear()
+    _, output, raw = observed
+    seen = output + (raw or b'')
+    missing = [c for c in spec.criteria if c.encode() not in seen]
+    tail = output[-TAIL:].decode(errors='replace')
+    TAILS[key] = (state.artifact, [redacted(c, 200) for c in missing], redacted(tail, TAIL))
+
+
 def _marks(spec, observed):
     """Hashes of what failed: JUnit case IDs, else the output's lines with numbers
     masked (timings, counts). Never the text itself."""
@@ -301,6 +323,7 @@ def observe_check(state, spec, *, evidence_root):
     if _pre_existing(evidence_root, state, spec, observed, outcome, reason):
         outcome, reason = Outcome.PASS, 'pre_existing'
     code = observed[0] if observed else None
+    _remember(state, spec, observed, outcome)
     observed = None  # Never persist report text or test output.
     receipt = Receipt(spec.obligation, before.digest, state.plan.envelope.scope,
                       definition.inputs, environment, definition.command, outcome,

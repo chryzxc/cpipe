@@ -50,10 +50,10 @@ def _receipt(state, outcome):
 NOTES = {}
 
 
-def redacted(text):
+def redacted(text, limit=1000):
     from agent.redact import redact_sensitive_text
     from ..runtime.envpolicy import Redactor
-    return Redactor(os.environ)(redact_sensitive_text(text))[:1000]
+    return Redactor(os.environ)(redact_sensitive_text(text))[:limit]
 
 
 def remember(payload):

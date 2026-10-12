@@ -168,6 +168,7 @@ def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
 
 def _delta(state):
     """What changed since the worker last looked: failing checks and open findings."""
+    from .check_runner import TAIL, TAILS
     from .contracts import Outcome, UNAVAILABLE_REASONS
     from .review import NOTES
     from .workers import DISPUTES
@@ -176,12 +177,21 @@ def _delta(state):
     failed = sorted(o for o, r in latest.items() if r.outcome is Outcome.FAIL)
     if failed:
         lines.append('Failing checks on the current tree: ' + ', '.join(failed)
-                     + '. Run them yourself with the commands in the approach to see the failure.')
+                     + '. Their output is below; re-run a check only to confirm your fix.')
     broken = sorted((o, r.reason) for o, r in latest.items() if r.outcome is Outcome.UNAVAILABLE)
     if broken:
-        lines.append('Checks that produced no pass/fail result (run them yourself to see why, then fix the code '
-                     'or tests inside write_paths; never change the approved commands or criteria):')
+        lines.append('Checks that produced no pass/fail result (fix the code or tests inside write_paths from the '
+                     'output below; never change the approved commands or criteria):')
         lines += [f'- {o}: ' + UNAVAILABLE_REASONS.get(reason, 'no result') for o, reason in broken]
+    for o in failed + [o for o, _ in broken]:
+        artifact, missing, tail = TAILS.get(state.plan.envelope.delivery_id + ':' + o, (None, (), ''))
+        if artifact != state.artifact:
+            continue
+        if missing:
+            lines.append(f'{o}: these approved criteria never appeared in the output (the test name must contain '
+                         'each exactly): ' + ', '.join(missing))
+        if tail.strip():
+            lines.append(f'{o} output (last {TAIL} characters, redacted):\n```\n{tail.strip()}\n```')
     if state.activity == 'write_tests':
         lines.append('The behavior test names must match the approved criteria exactly (describe prefixes are fine).')
     from .findings import blocks

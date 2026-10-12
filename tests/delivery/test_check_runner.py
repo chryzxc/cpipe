@@ -285,3 +285,19 @@ def test_failures_already_there_before_the_change_do_not_block(repo, tmp_path):
             assert execute(state, spec, tmp_path).outcome is not Outcome.PASS  # a new failure blocks
         (tmp_path / 'evidence' / 'baseline').joinpath('d1.json').unlink()
         (tmp_path / 'checks.db').unlink()
+
+
+def test_builder_sees_missing_criteria_and_redacted_output_until_the_check_passes(repo, tmp_path):
+    from types import SimpleNamespace
+    from cpipe.delivery.hermes_worker import _delta
+    journal, service, state, spec = setup_check(
+        repo, tmp_path, spec=sh('echo "ImportError: no module price"; echo "token=sk-ant-DO_NOT_RETAIN_TEST_VALUE"; exit 1'))
+    with journal:
+        receipt = execute(state, spec, tmp_path)
+        assert receipt.reason == 'criteria_not_in_output'
+        view = SimpleNamespace(receipts=[receipt], artifact=state.artifact, activity='implement',
+                               findings=(), plan=state.plan)
+        delta = _delta(view)
+        assert 'never appeared in the output' in delta and 'price rounds up' in delta
+        assert 'ImportError: no module price' in delta and 'DO_NOT_RETAIN_TEST_VALUE' not in delta
+        assert 'ImportError' not in _delta(SimpleNamespace(**{**vars(view), 'artifact': 'other'}))
