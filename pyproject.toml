@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "cpipe"
 version = "2.0.0"
-description = "Local development with frozen approval, observed tests and independent review."
+description = "Delivers a development task to reviewed, locally verified code: one approval, test-first background runs, independent review and self-recovery."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
   {name = "Christian Rey Villablanca"},
 ]
-keywords = ["hermes-agent", "development-workflow", "ai-agents", "planning", "testing", "code-review", "pull-requests", "workflow-automation"]
+keywords = ["hermes-agent", "development-workflow", "ai-agents", "coding-agents", "testing", "tdd", "code-review", "workflow-automation"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "License :: OSI Approved :: MIT License",
