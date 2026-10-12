@@ -32,7 +32,7 @@ def test_registration_exposes_only_current_tools():
     assert set(ctx.hooks) == {'on_session_start', 'pre_llm_call', 'post_tool_call'}
     params = ctx.tools['cpipe_approve_plan']['schema']['parameters']
     assert set(params['properties']) == {'delivery_id', 'plan_revision'}
-    assert set(ctx.commands) == {'cp-run', 'cp-status', 'cp-stop'}
+    assert set(ctx.commands) == {'cp-run', 'cp-spawn', 'cp-status', 'cp-stop'}
 
 
 @pytest.mark.parametrize('old', ['run', 'once', 'round', 'configure'])
@@ -562,3 +562,45 @@ def test_the_proof_puts_the_fix_back_even_after_a_crash_in_the_middle(repo, monk
     release(p)  # the next run puts the fix back
     assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'
     assert (repo / 'test_x.py').read_text() == 'regression\n'
+
+
+def test_spawn_opens_one_chat_per_task_running_cp_run(hermes_home, monkeypatch):
+    import sys
+    import types
+    from contextlib import nullcontext
+    from cpipe import native
+    from gateway import session_context
+    env = {'HERMES_SESSION_ID': 's1', 'HERMES_UI_SESSION_ID': 'ui1'}
+    monkeypatch.setattr(session_context, 'get_session_env', lambda key, default='': env.get(key, default))
+    ran, closed = [], []
+    def slash(_, params):
+        ran.append(params)
+        ok = 'queued' if 'first' in params['command'] else 'needs two Hermes profiles'
+        return {'result': {'output': 'cpipe: /cp-run ' + ok}}
+    server = types.SimpleNamespace(
+        _sessions={'ui1': {'transport': 't', 'profile_home': None, 'source': 'desktop', 'cwd': '/repo'}},
+        _session_profile_runtime_scope=lambda _: nullcontext(),
+        _create_session=lambda _, p: {'result': {'session_id': 'new-' + p['title'], 'stored_session_id': 'key-' + p['title']}},
+        _methods={'slash.exec': slash, 'session.close': lambda _, p: closed.append(p['session_id'])})
+    transport = types.SimpleNamespace(bind_transport=lambda t: t, reset_transport=lambda t: None)
+    ctx = Context()
+    queued = []
+    ctx.inject_message = lambda text, **kw: queued.append(text) or True
+    native.register(ctx)
+    assert 'Usage' in ctx.commands['cp-spawn']('')
+    assert ctx.commands['cp-spawn']('task 1,2') == 'cpipe: /cp-spawn queued in this session.'
+    token = queued[0].split('token ')[1].split(',')[0]
+    assert 'task 1,2' in queued[0] and 'cannot see this conversation' in queued[0] and 'never "Task 1"' in queued[0]
+    tasks = [{'title': 'first', 'brief': 'Fix the first finding', 'cwd': '/repo'}, {'title': 'second', 'brief': 'Fix the second'}]
+    call = lambda args: json.loads(native.execute({'token': token, 'operation': 'spawn', 'arguments': args}))
+    assert 'desktop app' in call({'tasks': tasks})['error']  # no desktop host in this process
+    monkeypatch.setitem(sys.modules, 'tui_gateway.server', server)
+    monkeypatch.setitem(sys.modules, 'tui_gateway.transport', transport)
+    assert 'tasks: 1 to 8' in call({'tasks': [{'title': 'x' * 81, 'brief': 'b'}]})['error']
+    out = call({'tasks': tasks})  # rejected calls left the receipt usable
+    assert [(r['session_id'], r['command']) for r in ran] == [  # each brief runs in the chat titled for it
+        ('new-first', '/cp-run Fix the first finding'), ('new-second', '/cp-run Fix the second')]
+    assert [c['status'] for c in out['chats']] == ['started', 'failed']
+    assert out['chats'][0]['session_id'] == 'key-first' and 'two Hermes profiles' in out['chats'][1]['reason']
+    assert closed == ['new-second']
+    assert call({'tasks': tasks}) == out and len(ran) == 2  # a repeated call replays, opening no more chats

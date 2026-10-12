@@ -20,7 +20,7 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
     'Ordinary requests use normal tools. Plans require explicit worktree, scope, test-command checks and distinct saved '
     'builder/reviewer profiles. Prepare a reviewable Markdown draft, then freeze and approve before build. Never merges; opens a draft PR only when the user asked for one.',
     parameters=dict(type='object', additionalProperties=False,
-        properties=dict(token=dict(type='string'), operation=dict(type='string', enum=['prepare', 'plan', 'build', 'status', 'stop']),
+        properties=dict(token=dict(type='string'), operation=dict(type='string', enum=['prepare', 'plan', 'build', 'status', 'stop', 'spawn']),
             arguments=dict(type='object', description='prepare: {spec, approach, expected_revision} (0 initially; current revision for edits). '
                 'approach: kind (bug|feature|change), depth (focused|detailed), risk (normal|high), summary; '
                 'evidence, steps, decisions, risks are string lists. Bugs need evidence; feature/high-risk work needs detailed decisions. '
@@ -42,7 +42,8 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'and the builder writes it first, so its file must be inside write_paths. '
                 'For /cp-run, plan: {draft_revision} freezes the reviewed draft; build: {delivery_id} from that plan after the user approves. '
                 'Run status: {}. For several deliveries in one /cp-run, add task (short label) to every call for each. '
-                'Existing plan receipts accept their full spec. Other operations: only delivery_id.')),
+                'Existing plan receipts accept their full spec. For /cp-spawn, spawn: {tasks: [{title (a specific chat title, at most 80 '
+                'characters), cwd (the repository path), brief}]}. Other operations: only delivery_id.')),
         required=['token', 'operation', 'arguments']))
 
 
@@ -418,8 +419,8 @@ def dispatch(ctx, name, raw=''):
     if not sid or not key:
         return 'cpipe: a live session is required; no work started.'
     op = name[3:]
-    if op == 'run' and not raw.strip():
-        return 'Usage: /cp-run <task>. No work started.'
+    if op in {'run', 'spawn'} and not raw.strip():
+        return f'Usage: /{name} <task>. No work started.'
     if op in {'status', 'stop'}:
         try:
             with scope() as (service, profile, _):
@@ -433,7 +434,7 @@ def dispatch(ctx, name, raw=''):
                 return markdown([_status(service, controller.owned(service, raw.strip(), sid, profile))])
         except Exception as exc:
             return 'cpipe: state lookup failed: ' + type(exc).__name__
-    if op not in {'run', 'plan', 'build'} or not hasattr(ctx, 'inject_message'):
+    if op not in {'run', 'plan', 'build', 'spawn'} or not hasattr(ctx, 'inject_message'):
         return 'cpipe: unsupported operation or native session injection unavailable. No work started.'
     from agent.redact import redact_sensitive_text
     from .runtime.envpolicy import Redactor
@@ -529,6 +530,21 @@ def dispatch(ctx, name, raw=''):
             'itself, and the approval question shows this. Otherwise omit draft_pr; the work stays local. Never push, '
             'open PRs or merge yourself. Execution is unsandboxed.\n'
             'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
+    if op == 'spawn':
+        prompt = ('The user chose /cp-spawn to hand tasks to new chats, each running /cp-run. Work out which tasks '
+            'they mean from this conversation: a reference such as "task 1,2" or "the first two" points at a list '
+            'earlier in this chat. If a reference is ambiguous or matches nothing, ask with clarify. Do not start the '
+            'work here. Write one brief per task; put tasks that touch the same files in one brief. The new chat cannot '
+            'see this conversation, so each brief stands alone: repository path and base branch, the goal, the '
+            'evidence as found earlier (file paths, line numbers, findings), acceptance criteria, what must not '
+            'change, and whether the user asked for a pull request. Use tools only to fill a gap the conversation '
+            'leaves. Do not put credentials in any field; replace them with [REDACTED].\n'
+            'Call cpipe_execute_intent using token ' + token + ', operation spawn, arguments '
+            '{tasks: [{title, cwd, brief}]}. The title names the chat in the sidebar: make it specific, the change and '
+            'where, such as "Fix path traversal in the attachment download route" (at most 80 characters), never '
+            '"Task 1". Each task opens a new chat that asks the user to approve its plan there. '
+            'Report the result in one short table; do not poll the chats.\n'
+            'User reference (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
     try:
         queued = ctx.inject_message(prompt, role='user', session_key=key)
     except Exception:
@@ -540,14 +556,62 @@ def dispatch(ctx, name, raw=''):
     return 'cpipe: /' + name + ' queued in this session.'
 
 
+def _spawn_target(payload):
+    """The tasks and the calling desktop chat, checked before the receipt is claimed so a bad call can be retried."""
+    tasks = payload.get('tasks') if set(payload) == {'tasks'} else None
+    if (type(tasks) is not list or not 1 <= len(tasks) <= 8 or any(
+            type(t) is not dict or set(t) - {'title', 'cwd', 'brief'} or type(t.get('title')) is not str
+            or not 0 < len(t['title'].strip()) <= 80 or type(t.get('brief')) is not str or not t['brief'].strip()
+            or type(t.get('cwd', '')) is not str for t in tasks)):
+        raise ValueError('spawn takes tasks: 1 to 8 of {title (1-80 characters), cwd, brief}')
+    import sys
+    from gateway.session_context import get_session_env
+    server = sys.modules.get('tui_gateway.server')
+    caller = server._sessions.get(get_session_env('HERMES_UI_SESSION_ID') or '') if server else None
+    if caller is None:
+        raise ValueError('spawn works only from a chat in the Hermes desktop app')
+    return tasks, server, caller
+
+
+def spawn(tasks, server, caller):
+    """Open one desktop chat per task and start /cp-run there with the task's brief, so each plan is approved
+    in its own visible chat. Mirrors how the desktop starts a chat from a tool call."""
+    from hermes_constants import profile_name_for_home
+    from tui_gateway.transport import bind_transport, reset_transport
+    started = []
+    bound = bind_transport(caller.get('transport'))
+    try:
+        with server._session_profile_runtime_scope({'profile_home': caller.get('profile_home')}):
+            for task in tasks:
+                row = {'title': task['title'].strip()}
+                created = server._create_session(None, {
+                    'profile': profile_name_for_home(caller.get('profile_home')) or '', 'source': caller.get('source'),
+                    'title': row['title'], 'cwd': task.get('cwd') or caller.get('cwd') or ''})
+                if 'error' in created:
+                    started.append({**row, 'status': 'failed', 'reason': created['error']['message']})
+                    continue
+                sid = created['result']['session_id']
+                ran = server._methods['slash.exec'](None, {'session_id': sid, 'command': '/cp-run ' + task['brief'].strip()})
+                said = (ran.get('result') or {}).get('output') or (ran.get('error') or {}).get('message') or ''
+                if 'queued' in said:
+                    started.append({**row, 'status': 'started', 'session_id': created['result']['stored_session_id']})
+                else:
+                    server._methods['session.close'](None, {'session_id': sid})
+                    started.append({**row, 'status': 'failed', 'reason': said[:300]})
+    finally:
+        reset_transport(bound)
+    return {'chats': started, 'next': 'Each started chat investigates its task and asks for approval there.'}
+
+
 def execute(args, **kwargs):
     try:
         if type(args) is not dict or set(args) != {'token', 'operation', 'arguments'}:
             raise ValueError('invalid intent arguments')
         token, op, payload = args['token'], args['operation'], args['arguments']
-        if type(token) is not str or not token or op not in {'prepare', 'plan', 'build', 'status', 'stop'} or type(payload) is not dict:
+        if type(token) is not str or not token or op not in {'prepare', 'plan', 'build', 'status', 'stop', 'spawn'} or type(payload) is not dict:
             raise ValueError('invalid intent arguments')
         sid, key = session(kwargs.get('session_id')), session_key()
+        target = _spawn_target(payload) if op == 'spawn' else None
         with scope() as (service, profile, home):
             db = service.journal.db
             row = db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()
@@ -615,7 +679,9 @@ def execute(args, **kwargs):
             material = encoded(payload)
             if redact_sensitive_text(material) != material or Redactor(os.environ)(material) != material:
                 raise ValueError('credentials must be replaced with [REDACTED] before constructing a plan')
-            if op == 'plan':
+            if op == 'spawn':
+                out = spawn(*target)
+            elif op == 'plan':
                 out = controller.summary(controller.from_spec(service, payload, session_id=sid, profile_id=profile))
             else:
                 if set(payload) != {'delivery_id'} or type(payload['delivery_id']) is not str:
@@ -663,8 +729,10 @@ def register(ctx):
             ctx.register_hook(hook, resume_orphans)
     watchdog()
     if hasattr(ctx, 'register_command'):
-        for name in ('cp-run', 'cp-status', 'cp-stop'):
+        for name, about, hint in (
+                ('cp-run', 'Run a task with adaptive investigation and review', '<task>'),
+                ('cp-spawn', 'Start tasks from this chat in new chats, each with /cp-run', '<which tasks>'),
+                ('cp-status', 'cpipe: status', '[delivery_id]'), ('cp-stop', 'cpipe: stop', '<delivery_id>')):
             ctx.register_command(name, lambda raw='', _name=name: dispatch(ctx, _name, raw),
-                description='Run a task with adaptive investigation and review' if name == 'cp-run' else 'cpipe: ' + name[3:],
-                args_hint='<task>' if name == 'cp-run' else '[delivery_id]' if name == 'cp-status' else '<delivery_id>',
+                description=about, args_hint=hint,
                 argument_mode='text')

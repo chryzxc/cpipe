@@ -74,7 +74,7 @@ def prepare(data, revision=0):
 
 def test_one_task_entry_and_adaptive_installed_capabilities(run_context):
     ctx, _, _, _, _, prompt = run_context
-    assert set(ctx.commands) == {'cp-run', 'cp-status', 'cp-stop'}
+    assert set(ctx.commands) == {'cp-run', 'cp-spawn', 'cp-status', 'cp-stop'}
     for text in ('investigate', 'AGENTS.md', 'reply with any comments or changes', 'cpipe_approve_plan'):
         assert text in prompt
     assert 'skills_list' not in prompt

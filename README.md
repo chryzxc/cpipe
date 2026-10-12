@@ -195,7 +195,8 @@ Start a new Hermes chat after updating; a running chat keeps the old tools loade
 
 ## Commands
 
-- `/cp-run <task>`: the only entry point. One session-bound receipt carries investigation, revisions, approval and the run. You never copy IDs or type a second command. A request with several tasks (for example *work on 2 and 3*) becomes one delivery per independent task, each in its own worktree and running in parallel; related tasks that touch the same files become one delivery. All their approval questions are asked together.
+- `/cp-run <task>`: starts a delivery. One session-bound receipt carries investigation, revisions, approval and the run. You never copy IDs or type a second command. A request with several tasks (for example *work on 2 and 3*) becomes one delivery per independent task, each in its own worktree and running in parallel; related tasks that touch the same files become one delivery. All their approval questions are asked together.
+- `/cp-spawn <which tasks>`: hands tasks from the current conversation to new chats, for example *task 1,2* after a list or an audit earlier in the chat. The chat's model works out which tasks are meant and writes a self-contained brief for each one (repository, goal, evidence with paths, acceptance, what must not change). cpipe then opens one new desktop chat per brief, titled after the change it makes, and starts `/cp-run` there, so each plan is reviewed and approved in its own chat. It needs the Hermes desktop app.
 - `/cp-status [delivery_id]`: a table of this chat's deliveries with their state, each check's result (with the reason when a check produced no result), review rounds and tokens, followed by open findings.
 - `/cp-stop <delivery_id>`: cancel a delivery.
 
