@@ -29,7 +29,7 @@ def test_registration_exposes_only_current_tools():
     ctx = Context()
     cpipe.register(ctx)
     assert set(ctx.tools) == {'cpipe_execute_intent', 'cpipe_approve_plan'}
-    assert set(ctx.hooks) == {'on_session_start', 'pre_llm_call'}
+    assert set(ctx.hooks) == {'on_session_start', 'pre_llm_call', 'post_tool_call'}
     params = ctx.tools['cpipe_approve_plan']['schema']['parameters']
     assert set(params['properties']) == {'delivery_id', 'plan_revision'}
     assert set(ctx.commands) == {'cp-run', 'cp-status', 'cp-stop'}
@@ -63,9 +63,12 @@ def test_slash_status_reads_journal(repo, tmp_path, hermes_home, monkeypatch):
     monkeypatch.setattr(session_context, 'get_session_env', lambda key: 's1' if key == 'HERMES_SESSION_ID' else '')
     ctx = Context()
     native.register(ctx)
-    out = json.loads(ctx.commands['cp-status']('d1'))
-    assert out['delivery_id'] == 'd1'
-    assert out['phase'] == 'proposal'
+    out = ctx.commands['cp-status']('d1')
+    assert out.startswith('| Delivery | Goal | State |')
+    assert '| `d1` |' in out and 'waiting for your approval' in out
+    assert '| `d1` |' in ctx.commands['cp-status']('')
+    assert 'state lookup failed' in ctx.commands['cp-status']('other')
+    assert ' cancelled |' in ctx.commands['cp-stop']('d1')
 
 
 def test_controller_uses_real_red_green_and_independent_review(repo, tmp_path):
@@ -506,7 +509,7 @@ def test_a_finding_is_fixed_with_a_test_that_fails_without_the_fix_or_disputed(r
     else:
         # Nothing changed, so the passing checks still hold: straight back to the reviewer, with the reason.
         assert [s['activity'] for s in result['steps']][-2:] == ['implement', 'review']
-        assert reviews[1] == {'REV-001': 'negatives are out of scope'}
+        assert reviews[1] == {'d1:REV-001': 'negatives are out of scope'}
         assert (repo / 'double.py').read_text() == 'def double(n): return n * 2 if n > 0 else 0\n'
 
 

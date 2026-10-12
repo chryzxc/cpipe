@@ -186,12 +186,13 @@ def _delta(state):
         lines.append('The behavior test names must match the approved criteria exactly (describe prefixes are fine).')
     from .findings import blocks
     open_ = [r.finding for r in state.findings if blocks(r.finding)]
+    disputed = {f.id: DISPUTES.get(state.plan.envelope.delivery_id + ':' + f.id) for f in open_}
     if open_:
         lines.append('Open review findings to resolve:' if state.activity != 'review' else
                      'Prior blocking findings (put each in verified_ids only once resolved):')
         lines += [f'- {f.id} [{f.severity}] ' + NOTES.get(f.root_cause, '(text unavailable; re-inspect all review axes)')
-                  + (f' (builder disputes it and left it unchanged: {DISPUTES[f.id]})'
-                     if state.activity == 'review' and f.id in DISPUTES else '') for f in open_]
+                  + (f' (builder disputes it and left it unchanged: {disputed[f.id]})'
+                     if state.activity == 'review' and disputed[f.id] else '') for f in open_]
         if state.activity == 'implement':
             lines.append('For each finding about behavior (a wrong result, a crash, an unhandled case), first add a '
                          'regression test, in a file the approved check commands already run, that fails on the code '

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import secrets
 import threading
 import time
@@ -22,7 +23,10 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
             arguments=dict(type='object', description='prepare: {spec, approach, expected_revision} (0 initially; current revision for edits). '
                 'approach: kind (bug|feature|change), depth (focused|detailed), risk (normal|high), summary; '
                 'evidence, steps, decisions, risks are string lists. Bugs need evidence; feature/high-risk work needs detailed decisions. '
-                'spec: worktree, repo, base, goal, acceptance, '
+                'spec: worktree (the checkout you investigated; cpipe never changes it and runs the delivery in a new '
+                'worktree of its own, so other worktrees inside the checkout and unrelated edits do not matter), repo, '
+                'base (branch, tag or commit the delivery starts from; when it is what the checkout has checked out, '
+                'its uncommitted changes are included), goal, acceptance, '
                 'non_goals, write_paths, forbidden_paths, builder and reviewer (each a profile, or an ordered list: the next takes over if one refuses or keeps failing), '
                 'seconds and checks. Each check has '
                 'obligation, argv (the repository\'s own test command as a list, run in the worktree, any language; '
@@ -30,12 +34,14 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'it is replaced by a private JUnit XML path (e.g. --junitxml={report}, --reporter=junit '
                 '--outputFile={report}) and each criterion matches one reported classname::name or name; otherwise '
                 'pass/fail is the exit code and every criterion must appear in the output. Prefer {report}. '
-                'Prefer commands that provision their own dependencies (uv run, npx, go test, cargo test); '
-                'otherwise install first, e.g. ["sh","-c","npm ci && npx vitest run ..."]. '
+                'Checks run in the new worktree, where ignored files such as node_modules or .venv do not exist yet: '
+                'use commands that provision their own dependencies (uv run, go test, cargo test) or install first, '
+                'e.g. ["sh","-c","npm ci && npx vitest run ..."]; never name the investigated checkout in a command. '
                 'Exactly one check has obligation behavior: the test proving the change; it must fail before implementing, '
                 'and the builder writes it first, so its file must be inside write_paths. '
-                'For /cp-run, plan: {draft_revision} freezes the reviewed draft; build: {delivery_id} from that plan after native approval. '
-                'Run status: {}. Existing plan receipts accept their full spec. Other operations: only delivery_id.')),
+                'For /cp-run, plan: {draft_revision} freezes the reviewed draft; build: {delivery_id} from that plan after the user approves. '
+                'Run status: {}. For several deliveries in one /cp-run, add task (short label) to every call for each. '
+                'Existing plan receipts accept their full spec. Other operations: only delivery_id.')),
         required=['token', 'operation', 'arguments']))
 
 
@@ -325,6 +331,7 @@ def watchdog():
 def _status(service, state):
     """The delivery summary plus whether anything is actually working on it."""
     out = controller.summary(state, service)
+    out['goal'] = state.plan.goal
     record = _record(_runner(state.plan.envelope.delivery_id))
     if record:
         thread = _RUNS.get(state.plan.envelope.delivery_id)
@@ -337,6 +344,37 @@ def _status(service, state):
     if notice:
         out['undelivered_message'] = notice['text']
     return out
+
+
+def _cell(value):
+    return ' '.join(str(value).split()).replace('|', '\\|') or '-'
+
+
+def markdown(statuses):
+    """/cp-status and /cp-stop for people: one table row per delivery, then each one's open findings."""
+    if not statuses:
+        return 'No cpipe deliveries in this chat.'
+    lines = ['| Delivery | Goal | State | Checks | Review rounds | Tokens |', '|---|---|---|---|---|---|']
+    for s in statuses:
+        state = HEADLINES.get(s['phase']) or (s['phase'] + (' · ' + s['activity'] if s.get('activity') else ''))
+        if s['phase'] == 'proposal' and not s['approved']:
+            state = 'waiting for your approval'
+        if s.get('background'):
+            state += ' (' + s['background'] + ')'
+        checks = ', '.join(f'{name}: {result}' for name, result in s.get('checks', {}).items())
+        tokens = s.get('tokens') or {}
+        lines.append('| ' + ' | '.join(_cell(v) for v in (
+            '`' + s['delivery_id'] + '`', s.get('goal', ''), state, checks, s.get('review_cycles', 0),
+            f"{tokens.get('total', 0):,} in {tokens.get('steps', 0)} steps" if tokens else '')) + ' |')
+    for s in statuses:
+        if s.get('findings'):
+            lines += ['', f"**Open findings in `{s['delivery_id']}`**"]
+            lines += [f"- {f['id']} ({f['severity']}{', blocking' if f['blocking'] else ''}): {_cell(f['text'])}"
+                      + (f" — builder disputes: {_cell(f['builder_disputes'])}" if f.get('builder_disputes') else '')
+                      for f in s['findings']]
+        if s.get('undelivered_message'):
+            lines += ['', f"**Message not delivered for `{s['delivery_id']}`:** {_cell(s['undelivered_message'])}"]
+    return '\n'.join(lines)
 
 
 def _intent_key(token):
@@ -356,13 +394,13 @@ def dispatch(ctx, name, raw=''):
                 if op == 'status' and not raw.strip():
                     rows = service.journal.db.execute('SELECT snapshot FROM delivery').fetchall()
                     states = [State.from_dict(json.loads(row[0])) for row in rows]
-                    return json.dumps({'deliveries': [_status(service, s) for s in states
-                        if (s.plan.envelope.session_id, s.plan.envelope.profile_id) == (sid, profile)]})
+                    return markdown([_status(service, s) for s in states
+                        if (s.plan.envelope.session_id, s.plan.envelope.profile_id) == (sid, profile)])
                 if op == 'stop':
-                    return json.dumps(controller.cancel(service, raw.strip(), session_id=sid, profile_id=profile))
-                return json.dumps(_status(service, controller.owned(service, raw.strip(), sid, profile)))
+                    controller.cancel(service, raw.strip(), session_id=sid, profile_id=profile)
+                return markdown([_status(service, controller.owned(service, raw.strip(), sid, profile))])
         except Exception as exc:
-            return json.dumps({'error': 'state lookup failed: ' + type(exc).__name__})
+            return 'cpipe: state lookup failed: ' + type(exc).__name__
     if op not in {'run', 'plan', 'build'} or not hasattr(ctx, 'inject_message'):
         return 'cpipe: unsupported operation or native session injection unavailable. No work started.'
     from agent.redact import redact_sensitive_text
@@ -398,9 +436,10 @@ def dispatch(ctx, name, raw=''):
         'only for genuine scope/owner ambiguity. seconds is a bounded 30..1800 integer. The check criteria '
         'are exact test names as the runner reports them, not prose. Do not put credentials in any field. '
         'Call cpipe_execute_intent using token ' + token + ', operation ' + op + '. '
-        'A proposal returns the full frozen plan and approval_arguments: present it to the user and use '
-        'cpipe_approve_plan with those exact arguments. Human consent cannot be inferred. If approved, '
-        'the same plan receipt may execute build for its own delivery_id; otherwise leave it waiting. '
+        'A proposal returns the full frozen plan and approval_arguments: call cpipe_approve_plan with those exact '
+        'arguments and ask its returned question and choices with clarify, unchanged. Human consent cannot be '
+        'inferred. If the user answers Yes, the same plan receipt may execute build for its own delivery_id; '
+        'otherwise leave it waiting. '
         'Build accepts only a same-session approved delivery_id, not a task_id. '
         'Report real state, not worker prose. This controller is local-only, unsandboxed and has no PR adapter.\n'
         'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
@@ -416,7 +455,12 @@ def dispatch(ctx, name, raw=''):
             'Small clear changes need only a short approach. Explain the chosen approach. Ask native clarify only '
             'when tools cannot resolve a genuine scope, owner or product ambiguity; do not ask a mandatory planning question. '
             'Investigation before approval is read-only; do not run unapproved project test commands or modify project files. '
-            'Do not implement, delegate, publish or merge in the coordinator.\n'
+            'Do not implement, delegate, publish or merge in the coordinator. Do not create worktrees or branches: '
+            'cpipe makes a new worktree for each delivery from base, so the user\'s checkout is never changed. '
+            'If the request names several tasks, handle all of them in this run. Put related tasks, especially ones '
+            'touching the same files, in one delivery; give each independent one its own delivery by adding '
+            'task (a short label such as t2) to every call\'s arguments for it. Deliveries run side by side, each in '
+            'its own worktree.\n'
             'Call cpipe_execute_intent using token ' + token + ', operation prepare, arguments {spec, approach, expected_revision: 0}. '
             'The tool schema describes the exact fields. Use real evidence, explicit paths/acceptance and the '
             'repository\'s own test commands (from its scripts, Makefile, CI config or docs), not invented tests or identities. '
@@ -432,16 +476,19 @@ def dispatch(ctx, name, raw=''):
             'through prepare, leaving the reviewed file intact. Explain the new link. '
             'Never change the document directly: every edit needs a new tool-generated revision. Preview approval only '
             'means the approach looks good; Human consent cannot be inferred.\n'
-            'When the user is ready, use operation plan with only {draft_revision: current_revision}. Present the frozen '
-            'scope and call cpipe_approve_plan with the exact returned approval_arguments. Only if its status is approved, '
-            'continue automatically using the SAME token, operation build, arguments {delivery_id: returned_delivery_id}. '
-            'No second slash command or copied ID is needed. Denial, unavailable approval or dismissal starts nothing. '
+            'When the user is ready, use operation plan with only {draft_revision: current_revision}. Call '
+            'cpipe_approve_plan with the exact returned approval_arguments and ask its returned question and choices '
+            'with clarify, unchanged; with several deliveries, ask all their questions in one clarify call. Only for a '
+            'Yes, continue automatically using the SAME token, operation build, arguments {delivery_id: returned_delivery_id}. '
+            'No: that delivery starts nothing. Any other answer is the user\'s changes: revise with prepare using the '
+            'current expected_revision, plan again and ask again. If build says approval is required, call '
+            'cpipe_approve_plan again and ask its question. Unanswered or dismissed questions start nothing. '
             'build returns within seconds and runs in the background, repairing failing or broken checks itself. If its '
             'phase is running, tell the user in one line that it started and they will get a message here when it is '
             'done; otherwise report the result it returned. Do not poll status. If the user later asks to continue, '
             'resume or finish this delivery, call build again with the same token and delivery_id at once: it restarts '
             'the run, or picks a stopped one up where it stopped, and returns its real state. If that result has '
-            'approval_arguments, the budget ran out: call cpipe_approve_plan with them, then build again. '
+            'approval_arguments, the budget ran out: ask for approval again the same way, then build again. '
             'Never run cpipe code or scripts yourself. '
             'Execution is local-only, unsandboxed; no publication adapter.\n'
             'User request (redacted):\n' + Redactor(os.environ)(redact_sensitive_text(raw)))
@@ -469,6 +516,26 @@ def execute(args, **kwargs):
             row = db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()
             run_record = json.loads(row[0]) if row else None
             if run_record and run_record.get('operation') == 'run':
+                run_key = _intent_key(token)
+                if 'task' in payload:  # one /cp-run, several independent deliveries: one sub-receipt each
+                    payload = dict(payload)
+                    task = payload.pop('task')
+                    if type(task) is not str or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,31}', task):
+                        raise ValueError('task must be a short lowercase label such as t2')
+                    if (run_record.get('kind') != 'slash' or run_record['expires'] <= time.time() or
+                            (run_record['session_id'], run_record['profile_id'], run_record['session_key']) != (sid, profile, key)):
+                        raise ValueError('missing, expired or wrong-session run receipt')
+                    run_key += '-' + task
+                    row = db.execute('SELECT payload FROM intent WHERE id=?', (run_key,)).fetchone()
+                    if row is None:
+                        run_record = {k: run_record[k] for k in (
+                            'kind', 'operation', 'session_id', 'session_key', 'profile_id', 'expires')}
+                        run_record.update(state='pending', result=None)
+                        if op != 'prepare':
+                            raise ValueError('start a task with prepare')
+                        db.execute('INSERT OR IGNORE INTO intent(id,payload,acknowledged) VALUES (?,?,1)', (run_key, encoded(run_record)))
+                    else:
+                        run_record = json.loads(row[0])
                 # The receipt's expiry bounds starting work; a frozen delivery can always be continued.
                 lapsed = run_record['expires'] <= time.time() and not (
                     op in {'build', 'status'} and run_record.get('delivery_id'))
@@ -476,7 +543,7 @@ def execute(args, **kwargs):
                     or (run_record['session_id'], run_record['profile_id'], run_record['session_key']) != (sid, profile, key)):
                     raise ValueError('missing, expired or wrong-session run receipt')
                 from .delivery.approach import execute as execute_run
-                return json.dumps(execute_run(service, run_record, _intent_key(token), op, payload,
+                return json.dumps(execute_run(service, run_record, run_key, op, payload,
                     home=home, session_id=sid, profile_id=profile,
                     launch=lambda d, again=False: (ensure_running if again else launch)(
                         d, session_id=sid, profile_id=profile, chat_key=key, wait=SETTLE)))

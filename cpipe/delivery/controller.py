@@ -4,9 +4,11 @@ Trusted local workers are not sandboxed. Publication is deliberately unavailable
 """
 from contextlib import closing
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -96,16 +98,18 @@ def summary(state, service=None):
     from .review import NOTES
     from .workers import DISPUTES
     found = [r.finding for r in state.findings if r.finding.disposition == 'open']
+    disputed = {f.id: DISPUTES.get(state.plan.envelope.delivery_id + ':' + f.id) for f in found}
     if found:  # unresolved blocking findings first, then advice the run did not act on
         result['findings'] = [dict(id=f.id, severity=f.severity, blocking=blocks(f), in_scope=f.in_scope,
                                    text=NOTES.get(f.root_cause, '(text not kept after a restart)'),
-                                   **({'builder_disputes': DISPUTES[f.id]} if f.id in DISPUTES else {}))
+                                   **({'builder_disputes': disputed[f.id]} if disputed[f.id] else {}))
                               for f in sorted(found, key=lambda f: not blocks(f))]
     if state.phase == 'proposal' and not state.approved:
         result['approval_arguments'] = arguments(state)
         if state.renewals:  # the plan is unchanged; only the budget needs consent again
             result['message'] = ('The approved time or calls ran out. To continue, call cpipe_approve_plan with '
-                                 'approval_arguments (the user approves a fresh budget), then build again.')
+                                 'approval_arguments and ask its question with clarify (the user approves a fresh '
+                                 'budget), then build again.')
         else:
             result['plan'] = state.plan.to_dict()
     if service is not None:
@@ -163,6 +167,9 @@ def validate_spec(spec):
     artifact = fingerprint(root)
     checks = []
     for item in spec['checks']:
+        if type(item) is dict and any(type(a) is str and str(root) in a for a in item.get('argv', ())):
+            raise ValueError('check commands must not name the investigated checkout: the delivery runs in a new '
+                             'worktree of its own, so use commands relative to it that install what they need')
         fields = {'obligation', 'argv', 'timeout_seconds'}
         if type(item) is not dict or not fields <= set(item) <= fields | {'criteria'}:
             raise ValueError('each check needs obligation, argv, timeout_seconds and optional criteria')
@@ -209,23 +216,83 @@ def validate_spec(spec):
     return artifact, checks, actors
 
 
-def from_spec(service, spec, *, session_id, profile_id, approach=''):
+def _git(root, *args, env=None, timeout=300):
+    return subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', *args], cwd=root, env=env, check=True,
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=timeout).stdout.strip()
+
+
+def starting_point(source, base):
+    """(commit, carried) a delivery starts from: base, plus the checkout's uncommitted work when base is what
+    the checkout has checked out. Nothing in the checkout or its index changes."""
+    try:
+        commit = _git(source, 'rev-parse', '--verify', '-q', base + '^{commit}')
+    except subprocess.CalledProcessError:
+        raise ValueError('base must be a branch, tag or commit in the repository') from None
+    if commit != _git(source, 'rev-parse', 'HEAD'):
+        return commit, False
+    # Other repositories inside the checkout (worktrees, clones) are not part of this one.
+    nested = [n[:-1] for n in _git(source, 'ls-files', '-z', '--others', '--exclude-standard').split('\0')
+              if n.endswith('/')]
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {**os.environ, 'GIT_INDEX_FILE': str(Path(tmp) / 'index')}
+        _git(source, 'read-tree', 'HEAD', env=env)
+        _git(source, 'add', '-A', '--', '.', *(':(exclude,literal)' + n for n in nested), env=env)
+        tree = _git(source, 'write-tree', env=env)
+    if tree == _git(source, 'rev-parse', 'HEAD^{tree}'):
+        return commit, False
+    return _git(source, '-c', 'user.name=cpipe', '-c', 'user.email=cpipe@localhost', 'commit-tree', '--no-gpg-sign',
+                tree, '-p', commit, '-m', 'cpipe: start from the uncommitted changes in ' + str(source)), True
+
+
+def isolate(source, start, delivery_id):
+    """A worktree of its own for each delivery: the user's checkout is never touched, and deliveries run side by side."""
+    from hermes_constants import get_hermes_home
+    parent = Path(get_hermes_home()).absolute() / 'cpipe-deliveries' / 'worktrees'
+    parent.mkdir(parents=True, exist_ok=True)
+    path = parent.resolve() / delivery_id
+    _git(source, 'worktree', 'add', '-q', '-b', 'cpipe/' + delivery_id, str(path), start)
+    return path
+
+
+def discard(source, path):
+    """Remove a worktree cpipe made for a delivery that was never created."""
+    for args in (('worktree', 'remove', '--force', str(path)), ('branch', '-D', 'cpipe/' + Path(path).name)):
+        try:
+            _git(source, *args)
+        except (subprocess.SubprocessError, OSError):
+            pass
+
+
+def from_spec(service, spec, *, session_id, profile_id, approach='', start=None):
     if not session_id or not profile_id:
         raise ValueError('missing initiating session/profile')
-    artifact, checks, actors = validate_spec(spec)
-    root = Path(spec['worktree'])
+    _, checks, actors = validate_spec(spec)
+    start = start or starting_point(spec['worktree'], spec['base'])[0]
+    delivery_id = 'cp-' + uuid.uuid4().hex
+    root = isolate(spec['worktree'], start, delivery_id)
+    try:
+        return propose(service, _plan(spec, checks, actors, root, start, delivery_id, session_id, profile_id,
+                                      approach), checks)
+    except BaseException:
+        discard(spec['worktree'], root)
+        raise
+
+
+def _plan(spec, checks, actors, root, start, delivery_id, session_id, profile_id, approach):
+    from .artifact import fingerprint
+    artifact = fingerprint(root)
     now = int(time.time())
-    e = Envelope('cp-' + uuid.uuid4().hex, session_id, profile_id, spec['repo'], artifact.branch,
+    e = Envelope(delivery_id, session_id, profile_id, spec['repo'], artifact.branch,
         spec['base'], 'scope-' + uuid.uuid4().hex, tuple(c.obligation for c in checks) + ('review',), frozenset({'local'}))
     p = ExecutionPlan(envelope=e, worktree=str(root), common_git_dir=artifact.common_git_dir,
-        base_commit=artifact.head, goal=spec['goal'], acceptance=tuple(spec['acceptance']),
+        base_commit=start, goal=spec['goal'], acceptance=tuple(spec['acceptance']),
         non_goals=tuple(spec['non_goals']), write_paths=tuple(spec['write_paths']),
         forbidden_paths=tuple(spec['forbidden_paths']), actors=actors, budget=Budget(spec['seconds'], CALLS),
         policy_id='local-only', check_definition='frozen-command',
         checks=tuple(c.identity() for c in checks) + (review_identity(),), interactive=False,
         repair_allowed=False, transient_retries=0, completion_target='local_only', expires_at=now + APPROVAL_WINDOW + spec['seconds'],
         approach=approach)
-    return propose(service, p, checks)
+    return p
 
 
 def owned(service, delivery_id, session_id, profile_id):
@@ -248,7 +315,7 @@ def cancel(service, delivery_id, *, session_id, profile_id):
 
 def resume(service, delivery_id, *, session_id, profile_id):
     """Continue a delivery that stopped or waits, from the code as it is now. Out of time or
-    calls, it goes back to native approval for a fresh budget instead."""
+    calls, it goes back to approval for a fresh budget instead."""
     state = owned(service, delivery_id, session_id, profile_id)
     release(state.plan)  # files a crashed baseline moved aside
     e = state.plan.envelope

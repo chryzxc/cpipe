@@ -12,7 +12,6 @@ from pathlib import Path
 import stat
 
 from . import controller
-from .artifact import fingerprint
 from .contracts import identity, string_tuple
 from .journal import encoded, safe_file
 
@@ -48,12 +47,15 @@ def _approach(value):
         raise ValueError('detailed design requires explicit decisions')
 
 
-def render(spec, approach, revision):
+def render(spec, approach, revision, start=None):
     _approach(approach)
     lines = ['# ' + spec['goal'], '', f"Draft revision: {revision}",
              f"Task: {approach['kind']} · Approach: {approach['depth']} · Risk: {approach['risk']}",
              '', approach['summary'], '', '## Context',
-             'Repository: ' + spec['repo'], 'Worktree: ' + spec['worktree'], 'Base: ' + spec['base']]
+             'Repository: ' + spec['repo'], 'Investigated in: ' + spec['worktree'],
+             'Base: ' + spec['base'] + (f' at {start[0][:12]}' if start else ''),
+             'Runs in a new worktree of its own' + (', including the uncommitted changes in that checkout'
+                                                     if start and start[1] else '') + '.']
     def section(title, items):
         lines.extend(['', '## ' + title, *('- ' + item for item in items)])
     if approach['evidence']:
@@ -74,8 +76,8 @@ def render(spec, approach, revision):
         'Workers are trusted local processes, not sandboxed. Scope checks detect violations; they do not prevent access.'])
     section('Approval boundary', ['Use Open preview to review this document, then reply in the originating chat with any comments or changes.',
         'Comments revise the approach. Preview approval means the approach looks good; it does not grant execution authority.',
-        'After review, cpipe freezes this exact approach and requests native execution approval.',
-        'Only native approval of the current frozen plan can launch workers.'])
+        'After review, cpipe freezes this exact approach and asks you to approve it.',
+        'Only the user\'s approval of the current frozen plan can launch workers.'])
     text = '\n'.join(lines) + '\n'
     if len(text.encode()) > MAX_DOCUMENT:
         raise ValueError('approach document is too large')
@@ -188,12 +190,22 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
         request_digest = hashlib.sha256(encoded(payload).encode()).hexdigest()
         if record['state'] == 'draft' and record.get('request_digest') == request_digest:
             return record['result']
+        if record['state'] == 'proposal':  # the user answered the approval with changes: draft again
+            state = controller.owned(service, record['delivery_id'], session_id, profile_id)
+            if state.approved:
+                raise ValueError('the plan is approved; build it or stop it')
+            controller.cancel(service, record['delivery_id'], session_id=session_id, profile_id=profile_id)
+            controller.discard(record['spec']['worktree'], state.plan.worktree)
+            record = dict(record, state='draft')
+            record.pop('delivery_id')
+            _save(db, key, record)
         if record['state'] not in {'pending', 'draft'} or payload['expected_revision'] != record.get('draft_revision', 0):
             raise ValueError('draft is frozen or revision changed')
         spec, approach = payload['spec'], payload['approach']
-        artifact, _, _ = controller.validate_spec(spec)
+        controller.validate_spec(spec)
+        start = controller.starting_point(spec['worktree'], spec['base'])
         revision = record.get('draft_revision', 0) + 1
-        text = render(spec, approach, revision)
+        text = render(spec, approach, revision, start)
         # The directory is outside the worktree: Markdown cannot invalidate source identity.
         root = _directory(home)
         if root.is_relative_to(Path(spec['worktree'])):
@@ -224,7 +236,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
                           'Revise using prepare with expected_revision; after the user is ready, plan with draft_revision. '
                           'Preview approval is not execution consent.')
             record.update(state='draft', spec=spec, approach=approach, text=text,
-                          artifact=artifact.digest, draft_revision=revision, request_digest=request_digest, result=result)
+                          start=start[0], draft_revision=revision, request_digest=request_digest, result=result)
             _save(db, key, record)
             db.execute('COMMIT')
             return result
@@ -240,8 +252,6 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
             raise ValueError('run requires an approach draft before freezing')
         if _document(record['result']['document_path']) != record['text']:
             raise ValueError('approach changed; revise it before approval')
-        if fingerprint(record['spec']['worktree']).digest != record['artifact']:
-            raise ValueError('source changed since investigation; revise the approach')
     elif op == 'build':
         if payload != {'delivery_id': record.get('delivery_id')} or record['state'] not in {'proposal', 'complete'}:
             raise ValueError('build only the delivery frozen by this run receipt')
@@ -250,7 +260,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
         if record['state'] == 'complete':  # continues, resumes or asks for a fresh budget; the real state
             return launch(record['delivery_id'], again=True)
         if not state.approved:
-            raise ValueError('native frozen-plan approval is required before execution')
+            raise ValueError('approval is required before execution: call cpipe_approve_plan and ask its question')
     else:
         raise ValueError('unsupported run stage')
     # Reserve exactly once. No database lock is held during the controller/worker.
@@ -267,7 +277,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
         raise
     if op == 'plan':
         state = controller.from_spec(service, record['spec'], session_id=session_id, profile_id=profile_id,
-                                     approach=record['text'])
+                                     approach=record['text'], start=record.get('start'))
         remember_roles(home, record['spec'])  # the next /cp-run reuses these without asking
         binding = {'document_path': record['result']['document_path']}
         db.execute('INSERT INTO intent(id,payload,acknowledged) VALUES (?,?,1)',

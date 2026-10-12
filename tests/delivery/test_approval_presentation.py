@@ -26,7 +26,7 @@ def test_presentation_names_each_granted_capability_without_inventing_authority(
     assert 'not sandboxed' in description
     assert 'revision-fixture' in description
     assert '"schema"' not in description
-    assert 'Approving does not start workers' in description
+    assert 'Yes starts this exact plan' in description
     for check in frozen.checks:
         assert check.obligation in description
     for path in frozen.forbidden_paths:

@@ -1,69 +1,61 @@
-"""Human consent for frozen delivery envelopes."""
+"""Human consent for frozen delivery envelopes, given through Hermes clarify."""
 import json
+import logging
+import re
 
 NAME = 'cpipe_approve_plan'
-SCHEMA = dict(name=NAME, description='Show native one-operation human approval for the exact frozen envelope. '
-    'Use delivery_id and plan_revision from the proposal in its originating session. '
-    'Consent is never supplied by the model. Approval does not itself launch workers or authorize publication.',
+SCHEMA = dict(name=NAME, description='Get the approval question for the exact frozen envelope. '
+    'Use delivery_id and plan_revision from the proposal in its originating session, then ask the returned '
+    'question and choices with clarify, unchanged. Only the user\'s own clarify answer approves; consent is never '
+    'supplied by the model. Approval does not itself launch workers or authorize publication.',
     parameters=dict(type='object', additionalProperties=False,
         properties=dict(delivery_id=dict(type='string'), plan_revision=dict(type='string')),
         required=['delivery_id', 'plan_revision']))
+_IDS = re.compile(r'^(Delivery|Plan revision): (\S+)$', re.M)
+log = logging.getLogger(__name__)
 
 
-def _no_user_can_answer():
-    try:
-        from tools import approval_context as context
-        predicate = getattr(context, '_no_user_can_answer', None)
-        if predicate is not None:
-            return predicate() is not False
-        return any(getattr(context, name)() is not False for name in (
-            '_is_single_query_approval_context', '_is_cron_approval_context',
-            '_is_unattended_platform_approval_context'))
-    except Exception:
-        return True
-
-
-def _native_prompt(command, description, pattern, title):
-    from tools import approval
-    from tools.approval_context import _fire_approval_hook, get_current_session_key
-    from tools.approval_gateway_wait import _await_gateway_decision
-    from tools.approval_prompt import prompt_dangerous_approval
-    if _no_user_can_answer():
-        return dict(resolved=False, choice=None, unavailable=True)
-    from agent.redact import redact_sensitive_text
-    command, description = redact_sensitive_text(command), redact_sensitive_text(description)
-    data = dict(command=command, description=description, pattern_key=pattern, pattern_keys=[pattern],
-                allow_session=False, allow_permanent=False, title=title)
-    key = get_current_session_key()
-    with approval._lock:
-        notify = approval._gateway_notify_cbs.get(key)
-    if notify is not None:
-        return _await_gateway_decision(key, notify, data)
-    from tools.terminal_tool import _get_approval_callback
-    callback = _get_approval_callback()
-    if callback is None:
-        return dict(resolved=False, choice=None, unavailable=True)
-    hooks = {k: v for k, v in data.items() if k not in ('allow_session', 'allow_permanent')}
-    hooks.update(session_key=key, surface='cli')
-    _fire_approval_hook('pre_approval_request', **hooks)
-    choice = prompt_dangerous_approval(command, description, allow_session=False,
-                                      allow_permanent=False, title=title, approval_callback=callback)
-    _fire_approval_hook('post_approval_response', **hooks, choice=choice)
-    return dict(resolved=choice in ('once', 'deny'), choice=choice)
+def _scope():
+    from hermes_constants import get_hermes_home
+    from hermes_cli.profiles import get_active_profile_name
+    from .delivery.journal import Journal
+    return Journal.for_profile(get_hermes_home()), get_active_profile_name()
 
 
 def request(args, session_id=None):
-    from hermes_constants import get_hermes_home
-    from hermes_cli.profiles import get_active_profile_name
     from .native import session
-    from .delivery.journal import Journal
     from .delivery.service import Service
     from .delivery.approval import request as approve
     sid = session(session_id)
     if not sid:
-        return {'error': 'Native approval requires its originating session.'}
-    with Journal.for_profile(get_hermes_home()) as journal:
-        return approve(Service(journal), args, session_id=sid, profile_id=get_active_profile_name())
+        return {'error': 'Approval requires its originating session.'}
+    journal, profile = _scope()
+    with journal:
+        return approve(Service(journal), args, session_id=sid, profile_id=profile)
+
+
+def observe(tool_name='', args=None, result=None, session_id='', **_):
+    """post_tool_call: record the user's answer to a cpipe approval question asked through clarify.
+    The answer comes from the host's clarify result, which the model cannot write."""
+    if tool_name != 'clarify' or not session_id:
+        return
+    try:
+        reply = json.loads(result) if isinstance(result, str) else result
+        if not isinstance(reply, dict) or reply.get('outcome') != 'submitted':
+            return
+        from .delivery.service import Service
+        from .delivery.approval import answer
+        for asked, response in zip((args or {}).get('questions') or [], reply.get('responses') or []):
+            text = str(asked.get('question') or '') if isinstance(asked, dict) else ''
+            ids = dict(_IDS.findall(text))
+            if len(ids) != 2 or response.get('status') != 'answered':
+                continue
+            journal, profile = _scope()
+            with journal:
+                answer(Service(journal), {'delivery_id': ids['Delivery'], 'plan_revision': ids['Plan revision']},
+                       session_id=session_id, profile_id=profile, asked=text, response=response.get('user_response'))
+    except Exception as exc:
+        log.warning('cpipe: approval answer not recorded (%s)', type(exc).__name__)
 
 
 def register(ctx):
@@ -71,6 +63,8 @@ def register(ctx):
         try:
             return json.dumps(request(args, kwargs.get('session_id')))
         except Exception as exc:
-            return json.dumps({'error': 'Native approval failed: ' + type(exc).__name__ +
+            return json.dumps({'error': 'Approval failed: ' + type(exc).__name__ +
                                '. No consent inferred; inspect the proposal before retrying.'})
     ctx.register_tool(name=NAME, toolset='cpipe', schema=SCHEMA, handler=handler)
+    if hasattr(ctx, 'register_hook'):
+        ctx.register_hook('post_tool_call', observe)

@@ -2,8 +2,10 @@
 
 Includes HEAD, branch, staged entries, final tracked/untracked content and modes.
 Ignored build outputs are not source inputs; check definitions must separately
-bind external fixtures/environment. Symlinks, gitlinks, unmerged indexes and
-racy reads are unavailable, never inferred green. This is not a sandbox.
+bind external fixtures/environment. Symlinks are bound by their target text,
+nested repositories (submodules, other worktrees inside the checkout) by their
+presence only. Unmerged indexes and racy reads are unavailable, never inferred
+green. This is not a sandbox.
 """
 from __future__ import annotations
 
@@ -37,15 +39,19 @@ def git(root, *args):
 def _file(root, name):
     relative_path(name)
     path = root / name
-    for parent in (path, *path.parents):
+    for parent in path.parents:  # never read through a linked directory
         if parent == root:
             break
         if parent.is_symlink():
-            raise ValueError('symlink artifact is unsupported')
+            raise ValueError('file under a symlinked directory is unsupported')
     try:
         before = path.lstat()
     except FileNotFoundError:
         return name, 'missing', 0
+    if stat.S_ISLNK(before.st_mode):
+        return name, 'symlink:' + hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest(), 0o120000
+    if stat.S_ISDIR(before.st_mode) and (path / '.git').exists():
+        return name, 'repository', 0o160000  # its own history; another worktree may change it at any time
     if not stat.S_ISREG(before.st_mode):
         raise ValueError('artifact must contain regular files')
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -82,10 +88,11 @@ def _scan(root):
             continue
         header, _ = entry.split(b'\t', 1)
         mode, _, stage = header.split()
-        if stage != b'0' or mode in {b'120000', b'160000'}:
-            raise ValueError('unmerged, symlink or submodule artifact is unsupported')
+        if stage != b'0':
+            raise ValueError('unmerged artifact is unsupported')
     names = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z')
-    files = tuple(_file(root, os.fsdecode(name)) for name in sorted(set(names.split(b'\0')) - {b''}))
+    # Git lists an untracked nested repository as 'dir/'.
+    files = tuple(_file(root, os.fsdecode(name).rstrip('/')) for name in sorted(set(names.split(b'\0')) - {b''}))
     payload = encoded([head, branch, common, hashlib.sha256(index).hexdigest(), files])
     return Artifact(hashlib.sha256(payload.encode()).hexdigest(), head, branch, common, files)
 

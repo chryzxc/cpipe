@@ -4,7 +4,7 @@ cpipe is a Hermes plugin that delivers a development task from request to review
 
 You describe the task once. cpipe investigates, presents an approach and asks for a single approval. The delivery then runs in the background: a failing test is written first, the change is implemented, the project's own tests are run, and a second Hermes profile reviews the result. When the delivery finishes, or needs a decision from you, cpipe sends one message to the originating chat.
 
-cpipe does not commit, push, open pull requests, merge or deploy. The result is left in the worktree for your review.
+cpipe does not commit, push, open pull requests, merge or deploy. Each delivery runs in a new Git worktree of its own, so your checkout is never changed, and several deliveries can run side by side. The result is left in that worktree for your review.
 
 ## Design
 
@@ -12,7 +12,7 @@ cpipe does not commit, push, open pull requests, merge or deploy. The result is 
 
 - **Clarify once:** open questions are batched into one round before planning; anything else becomes a stated assumption.
 - **Frozen contract:** the approved approach (goal, acceptance, scope, checks, profiles, budget) is immutable and identified by a content digest. Every later step is bound to it.
-- **Bound consent:** approval is tied to the plan digest, the worktree fingerprint and the chat session. No model-provided flag counts as approval.
+- **Bound consent:** approval is your own answer in Hermes clarify to the exact frozen plan, tied to the plan digest, the worktree fingerprint and the chat session. The model cannot answer for you.
 
 ### Graph engineering
 
@@ -82,7 +82,7 @@ Each loop in the graph has an exit condition and a bound.
 /cp-run <task>
   └─ coordinator (your chat): investigate read-only, ask at most one batched question
        └─ approach preview (Markdown) ── your comments → new revision
-            └─ freeze + native approval  ← the only interrupt
+            └─ freeze + approval (Yes / No / changes)  ← the only interrupt
                  └─ background run ───────────────────────────────────────────┐
                       write_tests → tests must FAIL (RED)                     │
                       implement ⇄ checks (your test command, real JUnit)      │ self-repair:
@@ -93,7 +93,7 @@ Each loop in the graph has an exit condition and a bound.
 
 1. **Clarify once.** The coordinator reads the project instructions and only the code the task touches. It asks a single batched question only for things tools cannot resolve; anything else becomes a stated assumption in the approach.
 2. **Approach preview.** The coordinator produces a Markdown document covering scope, non-goals, steps, decisions, risks, checks and limits. You reply with comments or changes; each produces a new immutable revision. Saying *proceed* freezes it.
-3. **One approval.** Hermes' native approval dialog shows the frozen scope. Nothing runs before approval, and the time budget starts at approval.
+3. **One approval.** A Hermes clarify question shows the frozen scope with the choices *Yes* and *No*, or you type changes. Yes starts the run, No starts nothing, and changes produce a new revision that is asked again. Nothing runs before approval, and the time budget starts at approval.
 4. **Background run.** The chat remains available. The run uses native Kanban cards titled with the working profile:
    - **write_tests:** the builder writes the behavior test. cpipe must observe it **fail on an assertion** before any implementation. A missing, misnamed or crashing test goes back to the builder with the exact reason, up to 3 rounds.
    - **implement / checks:** the builder fixes the code and cpipe runs the approved test command. Failures and broken runs go back to the builder.
@@ -139,7 +139,7 @@ A delivery stops for you only when no approved action can move it forward. Other
 - **"Continue" in the chat:** asking the coordinator to continue calls build again, which restarts an idle run and returns its current state. This applies to a run that stopped, is waiting, reported `diagnosis` or finished with open findings:
   - it picks up from the code as it is now, so fix the cause first if it was yours (e.g. install the test command);
   - every approved builder and reviewer gets its full rounds again;
-  - if the time or turn budget ran out, the same native approval asks you for a fresh budget, and the run continues after you accept.
+  - if the time or turn budget ran out, the same approval question asks you for a fresh budget, and the run continues after you accept.
 
 ### Monitoring
 
@@ -149,7 +149,7 @@ A delivery stops for you only when no approved action can move it forward. Other
 - `/cp-status` shows whether anything is actually working on a delivery (`background`), when a parked run retries and why, and any message not yet delivered.
 - Starts, crashes, parking, resumes and deliveries are logged to the Hermes agent log under `cpipe`.
 - If a run ends within seconds of approval, the build reply reports the result directly.
-- One-shot queries (`-z`, `-q`, `--query-file`, `--oneshot`) and kanban workers never host or resume runs. Only one run works in a worktree at a time.
+- One-shot queries (`-z`, `-q`, `--query-file`, `--oneshot`) and kanban workers never host or resume runs. Only one run works in a delivery worktree at a time.
 
 A delivery stops and waits for you when (say "continue" once resolved):
 - the approved time or turn budget runs out (you set it; continuing asks for a fresh one);
@@ -188,8 +188,8 @@ Start a new Hermes chat after updating; a running chat keeps the old tools loade
 
 ## Commands
 
-- `/cp-run <task>`: the only entry point. One session-bound receipt carries investigation, revisions, approval and the run. You never copy IDs or type a second command.
-- `/cp-status [delivery_id]`: current phase, each check's result (with the reason when a check produced no result), review rounds and tokens.
+- `/cp-run <task>`: the only entry point. One session-bound receipt carries investigation, revisions, approval and the run. You never copy IDs or type a second command. A request with several tasks (for example *work on 2 and 3*) becomes one delivery per independent task, each in its own worktree and running in parallel; related tasks that touch the same files become one delivery. All their approval questions are asked together.
+- `/cp-status [delivery_id]`: a table of this chat's deliveries with their state, each check's result (with the reason when a check produced no result), review rounds and tokens, followed by open findings.
 - `/cp-stop <delivery_id>`: cancel a delivery.
 
 Ordinary chat requests never start cpipe. The model sees exactly two tools:
@@ -202,7 +202,7 @@ The coordinator fills in the spec; it is shown in the preview and frozen at appr
 
 | Field | Meaning |
 |---|---|
-| `worktree`, `repo`, `base` | Where the work happens. A dedicated worktree is recommended. |
+| `worktree`, `repo`, `base` | The investigated checkout, which is never changed, and the branch, tag or commit the delivery's own worktree starts from. When `base` is what the checkout has checked out, its uncommitted changes are included. |
 | `goal`, `acceptance`, `non_goals` | What done means. |
 | `write_paths`, `forbidden_paths` | Edits outside `write_paths` are rejected. |
 | `builder`, `reviewer` | Distinct saved Hermes profiles; each may be an ordered list of up to 3 (see above). |
@@ -211,7 +211,7 @@ The coordinator fills in the spec; it is shown in the preview and frozen at appr
 
 Each check has an `obligation`, an `argv`, `criteria` and a `timeout_seconds`. Exactly one check has the obligation `behavior`: it is the test proving the change, and its file must be inside `write_paths`.
 
-- **`argv`:** the command, run in the worktree. Its program must be on `PATH` or given as an absolute path.
+- **`argv`:** the command, run in the delivery worktree. Its program must be on `PATH` or given as an absolute path. Ignored files such as `node_modules` or `.venv` do not exist there yet, so use commands that provision their own dependencies.
 - **`criteria`:** the test names.
 - **With `{report}` (preferred):** if `argv` contains `{report}`, cpipe swaps in a private JUnit path and reads per-test results. A criterion matches:
   - `name`;

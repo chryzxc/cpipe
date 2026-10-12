@@ -60,30 +60,27 @@ def test_staged_content_is_bound_even_with_same_final_worktree(repo):
     assert fingerprint(repo).digest != dirty.digest
 
 
-def test_symlink_and_fifo_artifacts_fail_closed(repo, tmp_path):
-    from cpipe.delivery.artifact import fingerprint
+def test_symlinks_and_nested_repositories_are_bound_without_being_read(repo, tmp_path):
+    from cpipe.delivery.artifact import fingerprint, _file
     (tmp_path / 'outside').write_text('private')
     (repo / 'link').symlink_to(tmp_path / 'outside')
-    with pytest.raises(ValueError, match='symlink|regular'):
-        fingerprint(repo)
+    git(repo, 'worktree', 'add', '-q', '.worktrees/other', '-b', 'other')  # another agent's worktree inside
+    first = fingerprint(repo)
+    files = {name: (digest, mode) for name, digest, mode in first.files}
+    assert files['link'][0].startswith('symlink:') and files['.worktrees/other'] == ('repository', 0o160000)
+    (tmp_path / 'outside').write_text('changed')  # the target is not read
+    (repo / '.worktrees/other/double.py').write_text('changed by someone else')
+    assert fingerprint(repo) == first
     (repo / 'link').unlink()
+    (repo / 'link').symlink_to(tmp_path / 'elsewhere')
+    assert fingerprint(repo).digest != first.digest
+    git(repo, 'add', 'link')  # a staged symlink is bound too
+    assert fingerprint(repo).digest != first.digest
     os.mkfifo(repo / 'pipe')
     # Git does not list untracked FIFOs; an explicitly supplied file input still
     # fails closed before opening it and cannot block on a pipe.
-    from cpipe.delivery.artifact import _file
     with pytest.raises(ValueError, match='regular'):
         _file(repo, 'pipe')
-
-
-def test_staged_symlink_remains_unsupported_after_worktree_replacement(repo, tmp_path):
-    from cpipe.delivery.artifact import fingerprint
-    link = repo / 'link'
-    link.symlink_to(tmp_path / 'outside')
-    git(repo, 'add', 'link')
-    link.unlink()
-    link.write_text('now a regular file, but the index still contains a symlink')
-    with pytest.raises(ValueError, match='symlink'):
-        fingerprint(repo)
 
 
 def test_worktree_identity_rejects_wrong_branch_and_common_directory(repo):

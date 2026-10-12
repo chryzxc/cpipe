@@ -164,7 +164,7 @@ def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute, pr
             from .review import redacted
             if len(DISPUTES) > 500:
                 DISPUTES.clear()
-            DISPUTES.update({i: redacted(r) for i, r in disputes.items()})
+            DISPUTES.update({delivery_id + ':' + i: redacted(r) for i, r in disputes.items()})
         event = bridge.result_event(delivery_id, task_id, claimer=claimer,
             kind='activity_observed', result_artifact=after.digest)
         return bridge.finish(event, task_id, claimer=claimer,

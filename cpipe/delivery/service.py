@@ -383,7 +383,7 @@ def apply(snapshot, event):
     if event.kind == "resumed":
         # "Continue" after a stop: every approved builder and reviewer gets its full rounds again,
         # from the code as it is now (result_artifact). Within budget it just runs; more time
-        # or calls need the same native approval as the first time, for a fresh budget.
+        # or calls need the same approval as the first time, for a fresh budget.
         if (not state.approved or not resumable(state)
                 or state.activity not in {"", "diagnose", "clarify"}):
             raise ValueError("only an approved delivery that stopped or waits can be resumed")

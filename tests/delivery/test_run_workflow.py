@@ -4,6 +4,7 @@ from contextlib import closing
 import sys
 import re
 import stat
+import subprocess
 import time
 from pathlib import Path
 
@@ -48,6 +49,17 @@ def run_context(repo, hermes_home, monkeypatch):
 
 def call(token, operation, arguments):
     return json.loads(native.execute(dict(token=token, operation=operation, arguments=arguments), session_id='s1'))
+
+
+def reply(arguments, response, asked=None):
+    """The user answers cpipe's approval question in Hermes clarify; cpipe sees the host's result."""
+    from cpipe import plan_approval
+    from .test_native_approval import clarify
+    asked = asked or plan_approval.request(arguments, 's1')['clarify']['question']
+    questions = [{'question': asked, 'choices': ['Yes', 'No']}]
+    plan_approval.observe(tool_name='clarify', args={'questions': questions}, session_id='s1',
+                          result=clarify(questions, {'q0': response}))
+    return plan_approval.request(arguments, 's1')
 
 
 def prepare(data, revision=0):
@@ -113,7 +125,7 @@ def test_freeze_binds_reviewed_markdown_and_starts_budget_only_now(run_context, 
     assert out['preview_attachment'] == draft['preview_attachment']
     assert 'error' in call(run_context[1], 'build', {'delivery_id': out['delivery_id']})
     assert 'error' in call(run_context[1], 'build', {'delivery_id': 'other'})
-    assert 'error' in prepare(run_context, 1)
+    assert 'error' in prepare(run_context, 0)  # a stale revision never reopens the frozen plan
 
 
 @pytest.mark.parametrize('mutation', ['edit', 'symlink', 'mode', 'directory'])
@@ -134,19 +146,49 @@ def test_changed_document_cannot_freeze(run_context, mutation, tmp_path):
     assert 'error' in call(run_context[1], 'plan', {'draft_revision': 1})
 
 
-def test_document_change_during_native_approval_does_not_grant_authority(run_context, hermes_home, monkeypatch):
-    from cpipe.delivery.approval import request
+def test_document_change_before_the_answer_does_not_grant_authority(run_context, hermes_home):
+    from cpipe import plan_approval
     draft = prepare(run_context)
     frozen = call(run_context[1], 'plan', {'draft_revision': 1})
-    def changed(*args):
-        Path(draft['document_path']).write_text('changed during consent')
-        return dict(resolved=True, choice='once')
-    monkeypatch.setattr('cpipe.plan_approval._native_prompt', changed)
+    asked = plan_approval.request(frozen['approval_arguments'], 's1')['clarify']['question']
+    Path(draft['document_path']).write_text('changed during consent')
+    assert 'error' in reply(frozen['approval_arguments'], 'Yes', asked)
     with Journal.for_profile(hermes_home) as store:
-        service = Service(store)
-        out = request(service, frozen['approval_arguments'], session_id='s1', profile_id='default')
-        assert out['status'] == 'stale_plan'
-        assert service.read(frozen['delivery_id']).approved is False
+        assert Service(store).read(frozen['delivery_id']).approved is False
+
+
+def test_changes_in_the_answer_reopen_the_draft_and_the_new_plan_is_asked_again(run_context, repo, hermes_home):
+    token = run_context[1]
+    prepare(run_context)
+    first = call(token, 'plan', {'draft_revision': 1})
+    assert reply(first['approval_arguments'], 'Also handle floats')['status'] == 'changes_requested'
+    assert 'error' in call(token, 'build', {'delivery_id': first['delivery_id']})
+    assert prepare(run_context, revision=1)['draft_revision'] == 2
+    with Journal.for_profile(hermes_home) as store:
+        assert Service(store).read(first['delivery_id']).phase == 'cancelled'
+    assert first['delivery_id'] not in subprocess.run(['git', 'worktree', 'list'], cwd=repo, capture_output=True,
+                                                      text=True).stdout
+    second = call(token, 'plan', {'draft_revision': 2})
+    assert second['delivery_id'] != first['delivery_id']
+    assert reply(second['approval_arguments'], 'Yes')['status'] == 'approved'
+    assert 'error' in prepare(run_context, revision=2)  # an approved plan is built or stopped, not redrafted
+
+
+def test_one_run_carries_several_independent_tasks(run_context, hermes_home):
+    _, token, spec, approach_, _, _ = run_context
+    first = call(token, 'prepare', dict(spec=spec, approach=approach_, expected_revision=0, task='t2'))
+    other = dict(spec, goal='Document double', acceptance=['README explains double'])
+    second = call(token, 'prepare', dict(spec=other, approach=approach_, expected_revision=0, task='t3'))
+    assert first['document_path'] != second['document_path']
+    a = call(token, 'plan', {'draft_revision': 1, 'task': 't2'})
+    b = call(token, 'plan', {'draft_revision': 1, 'task': 't3'})
+    assert a['delivery_id'] != b['delivery_id'] and a['plan']['worktree'] != b['plan']['worktree']
+    assert 'error' in call(token, 'plan', {'draft_revision': 1, 'task': 'T 4'})
+    assert 'error' in call(token, 'build', {'delivery_id': a['delivery_id'], 'task': 't9'})  # unknown task
+    assert 'error' in call(token, 'build', {'delivery_id': a['delivery_id'], 'task': 't3'})  # another task's delivery
+    assert reply(a['approval_arguments'], 'Yes')['status'] == 'approved'
+    assert reply(b['approval_arguments'], 'No')['status'] == 'rejected'
+    assert 'error' in call(token, 'build', {'delivery_id': b['delivery_id'], 'task': 't3'})
 
 
 @pytest.mark.parametrize('changes', [dict(kind='bug', evidence=[]), dict(kind='feature', depth='focused'),
@@ -194,25 +236,32 @@ def test_review_time_does_not_use_frozen_execution_budget(run_context, monkeypat
     assert result['plan']['expires_at'] == now + APPROVAL_WINDOW + 300
 
 
-def test_changed_source_needs_a_new_investigation_revision(run_context, repo):
-    prepare(run_context)
-    (repo / 'double.py').write_text('def double(n): return n + 1\n')
-    assert 'error' in call(run_context[1], 'plan', {'draft_revision': 1})
-    run_context[3]['evidence'] = ['double(2) now returns 3; expected 4.']
-    out = prepare(run_context, 1)
-    assert out['draft_revision'] == 2
-    assert call(run_context[1], 'plan', {'draft_revision': 2})['phase'] == 'proposal'
+def test_a_delivery_starts_from_what_was_investigated_in_a_worktree_of_its_own(run_context, repo, hermes_home):
+    from cpipe.delivery.service import Service
+    import subprocess
+    prepare(run_context)  # the untracked behavior test is carried over from the checkout
+    (repo / 'double.py').write_text('def double(n): return n + 1\n')  # later edits in the checkout do not matter
+    git = lambda *a: subprocess.run(['git', *a], cwd=repo, check=True, capture_output=True, text=True).stdout
+    git('worktree', 'add', '-q', '.worktrees/other', '-b', 'other')  # nor do other worktrees inside it
+    frozen = call(run_context[1], 'plan', {'draft_revision': 1})
+    assert frozen['phase'] == 'proposal'
+    with Journal.for_profile(hermes_home) as j:
+        plan = Service(j).read(frozen['delivery_id']).plan
+    root = Path(plan.worktree)
+    assert root != repo and (root / 'test_behavior.py').exists()
+    assert (root / 'double.py').read_text() == 'def double(n): return n\n'
+    assert not (root / '.worktrees').exists()
+    assert git('status', '--porcelain', '--', 'double.py').strip() == 'M double.py'  # the checkout keeps its edit
+    assert 'cpipe/' + frozen['delivery_id'] in git('branch', '--list', 'cpipe/*')
 
 
-def test_document_edit_after_consent_blocks_even_direct_controller_execution(run_context, hermes_home, monkeypatch):
-    from cpipe.delivery.approval import request
+def test_document_edit_after_consent_blocks_even_direct_controller_execution(run_context, hermes_home):
     from cpipe.delivery import controller
     draft = prepare(run_context)
     frozen = call(run_context[1], 'plan', {'draft_revision': 1})
-    monkeypatch.setattr('cpipe.plan_approval._native_prompt', lambda *a: dict(resolved=True, choice='once'))
+    assert reply(frozen['approval_arguments'], 'Yes')['status'] == 'approved'
     with Journal.for_profile(hermes_home) as store:
         service = Service(store)
-        assert request(service, frozen['approval_arguments'], session_id='s1', profile_id='default')['status'] == 'approved'
         Path(draft['document_path']).write_text('changed after consent')
         with pytest.raises(ValueError, match='changed'):
             controller.run(service, frozen['delivery_id'], session_id='s1', profile_id='default',
@@ -220,14 +269,12 @@ def test_document_edit_after_consent_blocks_even_direct_controller_execution(run
     assert 'error' in call(run_context[1], 'build', {'delivery_id': frozen['delivery_id']})
 
 
-@pytest.mark.parametrize('choice', ['once', 'deny'])
-def test_one_receipt_through_real_native_consent_and_red_green_review(
+@pytest.mark.parametrize('choice', ['Yes', 'No'])
+def test_one_receipt_through_the_users_answer_and_red_green_review(
         run_context, repo, hermes_home, monkeypatch, choice):
-    """Real checks and gateway transport; worker fixture, no paid model/UI claim."""
+    """Real checks and clarify result; worker fixture, no paid model/UI claim."""
     import model_tools
-    from tools import approval
     from tools.registry import registry
-    from tools.approval_context import set_current_session_key, reset_current_session_key
     from cpipe.delivery import controller
     from cpipe.delivery.review import REVIEW_AXES
     from cpipe.delivery.workers import WorkerResult
@@ -239,18 +286,8 @@ def test_one_receipt_through_real_native_consent_and_red_green_review(
     prepare(run_context)
     frozen = call(token, 'plan', {'draft_revision': 1})
     delivery_id = frozen['delivery_id']
-    monkeypatch.setenv('HERMES_GATEWAY_SESSION', '1')
-    monkeypatch.delenv('HERMES_SINGLE_QUERY_SESSION', raising=False)
-    monkeypatch.delenv('HERMES_CRON_SESSION', raising=False)
     monkeypatch.setattr(registry, 'dispatch', lambda name, args, **kw: ctx.tools[name]['handler'](args, **kw))
-    seen, workers = [], []
-    def notify(payload):
-        seen.append(payload)
-        assert not payload['allow_session'] and not payload['allow_permanent']
-        assert 'No pushes.' in payload['description']
-        assert approval.resolve_gateway_approval('run-fixture', choice, request_id=payload['request_id'])
-    approval.register_gateway_notify('run-fixture', notify)
-    route = set_current_session_key('run-fixture')
+    workers = []
     h.kb.init_db()
     told = []
     ctx.inject_message = lambda text, **kw: told.append((text, kw)) or True
@@ -259,7 +296,7 @@ def test_one_receipt_through_real_native_consent_and_red_green_review(
         session = state.activity + '-fixture'
         on_session(session)
         if state.activity == 'implement':
-            (repo / 'double.py').write_text('def double(n): return n * 2\n')
+            (Path(state.plan.worktree) / 'double.py').write_text('def double(n): return n * 2\n')
             return WorkerResult(session, {'status': 'done'})
         return WorkerResult(session, dict(status='approved', artifact=state.artifact,
             reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
@@ -269,36 +306,38 @@ def test_one_receipt_through_real_native_consent_and_red_green_review(
             return original_run(service, delivery_id, conn=conn, execute=worker, **kw)
     monkeypatch.setattr(controller, 'run', controlled)
     monkeypatch.setattr(native, 'SETTLE', 0)  # exercise the background path
-    try:
-        consent = json.loads(model_tools.handle_function_call('cpipe_approve_plan', frozen['approval_arguments'],
-            session_id='s1', skip_pre_tool_call_hook=True))
-        assert consent['status'] == ('approved' if choice == 'once' else 'rejected')
-        assert len(seen) == 1 and not workers
-        out = json.loads(model_tools.handle_function_call('cpipe_execute_intent',
-            dict(token=token, operation='build', arguments={'delivery_id': delivery_id}),
-            session_id='s1', skip_pre_tool_call_hook=True))
-        if choice == 'deny':
-            assert 'error' in out and not workers
-            assert (repo / 'double.py').read_text() == 'def double(n): return n\n'
-        else:
-            assert out['phase'] == 'running'
-            native._RUNS[delivery_id].join(60)
-            assert len(told) == 1 and told[0][1] == {'role': 'user', 'session_key': 'chat-one'}
-            assert told[0][0].startswith(f'[cpipe] Delivery {delivery_id} is done and ready for your review.')
-            out = json.loads(told[0][0].split('\n')[1])
-            assert out['phase'] == 'locally_ready'
-            assert [s['activity'] for s in out['steps']] == ['tests', 'implement', 'checks', 'review']
-            assert out['steps'][0]['outcomes'] == ['fail']
-            assert out['outcomes'] == ['fail', 'pass', 'pass', 'pass']
-            assert out['checks']['lint'].startswith('pass: it still fails, but only on failures')
-            assert workers == ['implement', 'review']
-            again = call(token, 'build', {'delivery_id': delivery_id})  # the real state, not the cached 'running'
-            assert again['phase'] == 'locally_ready' and 'background' not in again
-            assert workers == ['implement', 'review']  # No duplicate launches on retry.
-            assert call(token, 'status', {})['phase'] == 'locally_ready'
-    finally:
-        approval.unregister_gateway_notify('run-fixture')
-        reset_current_session_key(route)
+    asked = json.loads(model_tools.handle_function_call('cpipe_approve_plan', frozen['approval_arguments'],
+        session_id='s1', skip_pre_tool_call_hook=True))
+    assert asked['status'] == 'ask_user' and 'No pushes.' in asked['clarify']['question']
+    consent = reply(frozen['approval_arguments'], choice, asked['clarify']['question'])
+    assert consent['status'] == ('approved' if choice == 'Yes' else 'rejected')
+    assert not workers
+    out = json.loads(model_tools.handle_function_call('cpipe_execute_intent',
+        dict(token=token, operation='build', arguments={'delivery_id': delivery_id}),
+        session_id='s1', skip_pre_tool_call_hook=True))
+    if choice == 'No':
+        assert 'error' in out and not workers
+        assert (repo / 'double.py').read_text() == 'def double(n): return n\n'
+    else:
+        assert out['phase'] == 'running'
+        native._RUNS[delivery_id].join(60)
+        assert len(told) == 1 and told[0][1] == {'role': 'user', 'session_key': 'chat-one'}
+        assert told[0][0].startswith(f'[cpipe] Delivery {delivery_id} is done and ready for your review.')
+        out = json.loads(told[0][0].split('\n')[1])
+        assert out['phase'] == 'locally_ready'
+        assert [s['activity'] for s in out['steps']] == ['tests', 'implement', 'checks', 'review']
+        assert out['steps'][0]['outcomes'] == ['fail']
+        assert out['outcomes'] == ['fail', 'pass', 'pass', 'pass']
+        assert out['checks']['lint'].startswith('pass: it still fails, but only on failures')
+        assert workers == ['implement', 'review']
+        again = call(token, 'build', {'delivery_id': delivery_id})  # the real state, not the cached 'running'
+        assert again['phase'] == 'locally_ready' and 'background' not in again
+        assert workers == ['implement', 'review']  # No duplicate launches on retry.
+        # Built in a worktree of its own; the investigated checkout is untouched.
+        assert (repo / 'double.py').read_text() == 'def double(n): return n\n'
+        assert Path(out['worktree']).parent.name == 'worktrees' and Path(out['worktree']) != repo
+        assert (Path(out['worktree']) / 'double.py').read_text() == 'def double(n): return n * 2\n'
+        assert call(token, 'status', {})['phase'] == 'locally_ready'
 
 
 def test_sparse_execution_plans_keep_existing_digest_identity():
@@ -370,9 +409,7 @@ def test_a_read_only_builder_is_refused_before_approval_and_fallbacks_are_shown(
 
 def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_context, repo, hermes_home, monkeypatch):
     import model_tools
-    from tools import approval
     from tools.registry import registry
-    from tools.approval_context import set_current_session_key, reset_current_session_key
     from cpipe.delivery import controller
     from cpipe.delivery.review import REVIEW_AXES
     from cpipe.delivery.workers import WorkerResult
@@ -383,13 +420,7 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
     prepare(run_context)
     frozen = call(token, 'plan', {'draft_revision': 1})
     delivery_id = frozen['delivery_id']
-    monkeypatch.setenv('HERMES_GATEWAY_SESSION', '1')
-    monkeypatch.delenv('HERMES_SINGLE_QUERY_SESSION', raising=False)
-    monkeypatch.delenv('HERMES_CRON_SESSION', raising=False)
     monkeypatch.setattr(registry, 'dispatch', lambda name, args, **kw: ctx.tools[name]['handler'](args, **kw))
-    approval.register_gateway_notify('run-fixture', lambda payload: approval.resolve_gateway_approval(
-        'run-fixture', 'once', request_id=payload['request_id']))
-    route = set_current_session_key('run-fixture')
     h.kb.init_db()
     told, workers, declining, lines = [], [], [True], []
     from hermes_cli import plugin_events
@@ -404,7 +435,7 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
         if state.activity == 'implement':
             if declining[0]:
                 return WorkerResult(session, {'status': 'blocked'})
-            (repo / 'double.py').write_text('def double(n): return n * 2\n')
+            (Path(state.plan.worktree) / 'double.py').write_text('def double(n): return n * 2\n')
             return WorkerResult(session, {'status': 'done'})
         return WorkerResult(session, dict(status='approved', artifact=state.artifact,
             reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
@@ -418,31 +449,26 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
         return json.loads(model_tools.handle_function_call('cpipe_execute_intent',
             dict(token=token, operation='build', arguments={'delivery_id': delivery_id}),
             session_id='s1', skip_pre_tool_call_hook=True))
-    try:
-        model_tools.handle_function_call('cpipe_approve_plan', frozen['approval_arguments'],
-                                         session_id='s1', skip_pre_tool_call_hook=True)
-        build()
-        native._RUNS[delivery_id].join(60)
-        assert call(token, 'status', {})['phase'] == 'waiting'  # the only builder declined
-        with Journal.for_profile(hermes_home) as store:  # a day later: the receipt no longer starts work
-            row = store.db.execute('SELECT payload FROM intent WHERE id=?', (native._intent_key(token),)).fetchone()
-            store.db.execute('UPDATE intent SET payload=? WHERE id=?',
-                             (json.dumps({**json.loads(row[0]), 'expires': 0}), native._intent_key(token)))
-        kept = list(hermes_home.rglob('baseline/*.json'))
-        assert len(kept) == 1
-        kept[0].unlink()  # a run from before failures were recorded up front
-        declining[0] = False  # the user fixed the cause and says "continue"
-        assert build()['phase'] == 'running'
-        native._RUNS[delivery_id].join(60)
-        assert call(token, 'status', {})['phase'] == 'locally_ready'
-        assert workers == ['implement', 'implement', 'review']
-        # The chat sees each handover and recovery as a display-only line, never a model turn.
-        assert {(p, e, sid, d) for p, e, sid, d, _, _ in lines} == {('cpipe', 'progress', 's1', delivery_id)}
-        texts = [text for *_, text, _ in lines]
-        assert texts[:2] == ['running the new test (it must fail first)', 'builder is implementing']
-        assert texts[2].startswith('builder declined implement')
-        assert 'reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
-        assert 'error' in call(token, 'prepare', {})  # still no new work on an expired receipt
-    finally:
-        approval.unregister_gateway_notify('run-fixture')
-        reset_current_session_key(route)
+    reply(frozen['approval_arguments'], 'Yes')
+    build()
+    native._RUNS[delivery_id].join(60)
+    assert call(token, 'status', {})['phase'] == 'waiting'  # the only builder declined
+    with Journal.for_profile(hermes_home) as store:  # a day later: the receipt no longer starts work
+        row = store.db.execute('SELECT payload FROM intent WHERE id=?', (native._intent_key(token),)).fetchone()
+        store.db.execute('UPDATE intent SET payload=? WHERE id=?',
+                         (json.dumps({**json.loads(row[0]), 'expires': 0}), native._intent_key(token)))
+    kept = list(hermes_home.rglob('baseline/*.json'))
+    assert len(kept) == 1
+    kept[0].unlink()  # a run from before failures were recorded up front
+    declining[0] = False  # the user fixed the cause and says "continue"
+    assert build()['phase'] == 'running'
+    native._RUNS[delivery_id].join(60)
+    assert call(token, 'status', {})['phase'] == 'locally_ready'
+    assert workers == ['implement', 'implement', 'review']
+    # The chat sees each handover and recovery as a display-only line, never a model turn.
+    assert {(p, e, sid, d) for p, e, sid, d, _, _ in lines} == {('cpipe', 'progress', 's1', delivery_id)}
+    texts = [text for *_, text, _ in lines]
+    assert texts[:2] == ['running the new test (it must fail first)', 'builder is implementing']
+    assert texts[2].startswith('builder declined implement')
+    assert 'reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
+    assert 'error' in call(token, 'prepare', {})  # still no new work on an expired receipt
