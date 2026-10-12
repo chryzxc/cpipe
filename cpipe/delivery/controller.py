@@ -251,9 +251,11 @@ def starting_point(source, base, carry=True):
 
 
 def isolate(source, start, delivery_id):
-    """A worktree of its own for each delivery: the user's checkout is never touched, and deliveries run side by side."""
-    from hermes_constants import get_hermes_home
-    parent = Path(get_hermes_home()).absolute() / 'cpipe-deliveries' / 'worktrees'
+    """A worktree of its own for each delivery, next to the repository in <repo>-worktrees: the user's checkout is
+    never touched, and deliveries run side by side."""
+    common = Path(_git(source, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+    repo = common.parent if common.name == '.git' else Path(_git(source, 'rev-parse', '--show-toplevel'))
+    parent = repo.parent / (repo.name + '-worktrees')
     parent.mkdir(parents=True, exist_ok=True)
     path = parent.resolve() / delivery_id
     _git(source, 'worktree', 'add', '-q', '-b', 'cpipe/' + delivery_id, str(path), start)

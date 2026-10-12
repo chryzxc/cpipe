@@ -253,7 +253,7 @@ def test_a_delivery_starts_from_what_was_investigated_in_a_worktree_of_its_own(r
     with Journal.for_profile(hermes_home) as j:
         plan = Service(j).read(frozen['delivery_id']).plan
     root = Path(plan.worktree)
-    assert root != repo and (root / 'test_behavior.py').exists()
+    assert root.parent == repo.parent / (repo.name + '-worktrees') and (root / 'test_behavior.py').exists()
     assert (root / 'double.py').read_text() == 'def double(n): return n\n'
     assert not (root / '.worktrees').exists()
     assert git('status', '--porcelain', '--', 'double.py').strip() == 'M double.py'  # the checkout keeps its edit
@@ -342,7 +342,7 @@ def test_one_receipt_through_the_users_answer_and_red_green_review(
         assert workers == ['implement', 'review']  # No duplicate launches on retry.
         # Built in a worktree of its own; the investigated checkout is untouched.
         assert (repo / 'double.py').read_text() == 'def double(n): return n\n'
-        assert Path(out['worktree']).parent.name == 'worktrees' and Path(out['worktree']) != repo
+        assert Path(out['worktree']).parent == repo.parent / (repo.name + '-worktrees')  # next to the repository
         assert (Path(out['worktree']) / 'double.py').read_text() == 'def double(n): return n * 2\n'
         assert call(token, 'status', {})['phase'] == 'locally_ready'
 

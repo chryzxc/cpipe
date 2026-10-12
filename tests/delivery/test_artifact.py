@@ -94,3 +94,11 @@ def test_worktree_identity_rejects_wrong_branch_and_common_directory(repo):
         validate_worktree(replace(p, envelope=replace(p.envelope, branch='wrong')))
     with pytest.raises(ValueError, match='common'):
         validate_worktree(replace(p, common_git_dir=str(repo.parent)))
+
+
+def test_delivery_worktrees_sit_next_to_the_main_repository(repo):
+    from cpipe.delivery.controller import isolate
+    git(repo, 'worktree', 'add', '-q', str(repo.parent / 'linked'), '-b', 'linked')
+    head = git(repo, 'rev-parse', 'HEAD').strip()
+    for source, name in ((repo, 'd1'), (repo.parent / 'linked', 'd2')):  # a linked checkout still lands by the repo
+        assert isolate(source, head, name) == (repo.parent / (repo.name + '-worktrees') / name).resolve()

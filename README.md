@@ -4,7 +4,7 @@ cpipe is a Hermes plugin that delivers a development task from request to review
 
 You describe the task once. cpipe investigates, presents an approach and asks for a single approval. The delivery then runs in the background: a failing test is written first, the change is implemented, the project's own tests are run, and a second Hermes profile reviews the result. When the delivery finishes, or needs a decision from you, cpipe sends one message to the originating chat.
 
-cpipe does not merge or deploy. It commits, pushes and opens a draft pull request only when you ask for one in the task. Each delivery runs in a new Git worktree of its own, so your checkout is never changed, and several deliveries can run side by side. The result is left in that worktree for your review.
+cpipe does not merge or deploy. It commits, pushes and opens a draft pull request only when you ask for one in the task. Each delivery runs in a new Git worktree of its own, next to your repository in `<repo>-worktrees/<delivery>` on branch `cpipe/<delivery>`, so your checkout is never changed, and several deliveries can run side by side. The result is left in that worktree for your review.
 
 ## Design
 
