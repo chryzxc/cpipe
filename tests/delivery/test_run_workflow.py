@@ -47,6 +47,11 @@ def run_context(repo, hermes_home, monkeypatch):
     return ctx, token, spec, approach, values, queued[0]
 
 
+def frozen_plan(delivery_id):
+    with native.scope() as (service, _, _home):
+        return service.read(delivery_id).plan
+
+
 def call(token, operation, arguments):
     return json.loads(native.execute(dict(token=token, operation=operation, arguments=arguments), session_id='s1'))
 
@@ -116,7 +121,7 @@ def test_freeze_binds_reviewed_markdown_and_starts_budget_only_now(run_context, 
     now = time.time()
     out = call(run_context[1], 'plan', {'draft_revision': draft['draft_revision']})
     assert out['phase'] == 'proposal' and out['approved'] is False
-    frozen = ExecutionPlan.from_dict(out['plan'])
+    frozen = frozen_plan(out['delivery_id'])
     assert frozen.approach == Path(draft['document_path']).read_text()
     assert frozen.expires_at >= int(now) + 299
     with Journal.for_profile(hermes_home) as store:
@@ -182,7 +187,7 @@ def test_one_run_carries_several_independent_tasks(run_context, hermes_home):
     assert first['document_path'] != second['document_path']
     a = call(token, 'plan', {'draft_revision': 1, 'task': 't2'})
     b = call(token, 'plan', {'draft_revision': 1, 'task': 't3'})
-    assert a['delivery_id'] != b['delivery_id'] and a['plan']['worktree'] != b['plan']['worktree']
+    assert a['delivery_id'] != b['delivery_id'] and frozen_plan(a['delivery_id']).worktree != frozen_plan(b['delivery_id']).worktree
     assert 'error' in call(token, 'plan', {'draft_revision': 1, 'task': 'T 4'})
     assert 'error' in call(token, 'build', {'delivery_id': a['delivery_id'], 'task': 't9'})  # unknown task
     assert 'error' in call(token, 'build', {'delivery_id': a['delivery_id'], 'task': 't3'})  # another task's delivery
@@ -233,7 +238,7 @@ def test_review_time_does_not_use_frozen_execution_budget(run_context, monkeypat
     monkeypatch.setattr(time, 'time', lambda: now)
     result = call(run_context[1], 'plan', {'draft_revision': 1})
     from cpipe.delivery.controller import APPROVAL_WINDOW
-    assert result['plan']['expires_at'] == now + APPROVAL_WINDOW + 300
+    assert frozen_plan(result['delivery_id']).expires_at == now + APPROVAL_WINDOW + 300
 
 
 def test_a_delivery_starts_from_what_was_investigated_in_a_worktree_of_its_own(run_context, repo, hermes_home):
@@ -322,13 +327,15 @@ def test_one_receipt_through_the_users_answer_and_red_green_review(
         assert out['phase'] == 'running'
         native._RUNS[delivery_id].join(60)
         assert len(told) == 1 and told[0][1] == {'role': 'user', 'session_key': 'chat-one'}
-        assert told[0][0].startswith(f'[cpipe] Delivery {delivery_id} is done and ready for your review.')
-        out = json.loads(told[0][0].split('\n')[1])
+        text = told[0][0]
+        assert text.startswith(native.SHOW + f'**cpipe · `{delivery_id}` is done and ready for your review.**')
+        assert '| Steps | tests, implement, checks, review |' in text
+        assert '| lint | pass: it still fails, but only on failures' in text
+        with native.scope() as (service, _, _home):
+            state = service.read(delivery_id)
+            out = dict(native.controller.summary(state, service), worktree=state.plan.worktree)
         assert out['phase'] == 'locally_ready'
-        assert [s['activity'] for s in out['steps']] == ['tests', 'implement', 'checks', 'review']
-        assert out['steps'][0]['outcomes'] == ['fail']
         assert out['outcomes'] == ['fail', 'pass', 'pass', 'pass']
-        assert out['checks']['lint'].startswith('pass: it still fails, but only on failures')
         assert workers == ['implement', 'review']
         again = call(token, 'build', {'delivery_id': delivery_id})  # the real state, not the cached 'running'
         assert again['phase'] == 'locally_ready' and 'background' not in again
@@ -560,17 +567,17 @@ def test_asked_for_a_draft_pr_it_opens_one_after_review_and_retries_only_that_st
             native._RUNS.pop(delivery_id).join(60)
         return out
     build()
-    first = json.loads(told[-1].split('\n')[1])
-    assert told[-1].startswith(f'[cpipe] Delivery {delivery_id} is verified and reviewed, but its draft pull request')
-    assert first['phase'] == 'waiting' and 'pull_request' not in first
-    assert any('draft pull request was not opened' in r and 'HTTP 503' in r for r in first['recoveries'])
+    first = told[-1]
+    assert first.startswith(native.SHOW + f'**cpipe · `{delivery_id}` is verified and reviewed, but its draft pull request')
+    assert '| Pull request |' not in first and '**continue**' in first
+    assert any('draft pull request was not opened' in r and 'HTTP 503' in r for r in first.splitlines())
     assert workers == ['implement', 'review']
 
     (tmp_path / 'gh-down').unlink()  # fixed; "continue" retries the PR step alone
     build()
-    done = json.loads(told[-1].split('\n')[1])
-    assert told[-1].startswith(f'[cpipe] Delivery {delivery_id} is done: its draft pull request is open')
-    assert done['phase'] == 'completed' and done['pull_request'] == 'https://github.com/acme/widget/pull/1'
+    done = told[-1]
+    assert done.startswith(native.SHOW + f'**cpipe · `{delivery_id}` is done: its draft pull request is open')
+    assert '| Pull request | https://github.com/acme/widget/pull/1 |' in done and '**continue**' not in done
     assert workers == ['implement', 'review']  # no rebuild or second review
     pr, = json.loads(prs.read_text())
     assert pr['title'] == spec['goal'] and pr['baseRefName'] == 'feature' and '- behavior: pass' in pr['body']

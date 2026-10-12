@@ -37,14 +37,11 @@ def alive(claimer):
 
 
 class NativeBridge:
-    def __init__(self, service, conn, *, session_id, profile_id,
-                 notify_target=None, require_notify=False):
+    def __init__(self, service, conn, *, session_id, profile_id):
         self.service = service
         self.conn = conn
         self.session_id = session_id
         self.profile_id = profile_id
-        self.notify_target = notify_target
-        self.require_notify = require_notify
         self.replaced = []  # cards retired because something else took or changed them
 
     def _state(self, delivery_id):
@@ -73,12 +70,6 @@ class NativeBridge:
         # cpipe claims these cards (Hermes stores assignees lowercased).
         return 'cp:' + profile.lower()
 
-    def _packet(self, state):
-        return {'schema': 1, 'delivery_id': state.plan.envelope.delivery_id,
-                'plan_digest': state.plan.digest(), 'intent_id': state.active_intent,
-                'action': state.activity, 'artifact': state.artifact,
-                'plan': state.plan.to_dict()}
-
     def _task(self, state, task_id):
         task = h.get_task(self.conn, task_id)
         actor = self._actor(state)
@@ -92,7 +83,13 @@ class NativeBridge:
         return task
 
     def _body(self, state):
-        return 'cpipe activity contract (trusted execution adapter required):\n' + encoded(self._packet(state))
+        # A short card for people on the board; the plan itself stays in cpipe's journal,
+        # bound to the card by its idempotency key.
+        plan = state.plan
+        return (f'**cpipe delivery** `{plan.envelope.delivery_id}`: {plan.goal}\n\n'
+                f'| Step | By | Worktree | Plan |\n|---|---|---|---|\n'
+                f'| {state.activity} | {self._actor(state).profile} | `{plan.worktree}` | `{plan.digest()[:12]}` |\n\n'
+                'Run by cpipe: handoffs, retries and results appear as comments and the run summary here.')
 
     def schedule(self, delivery_id, claimer=None):
         state = self._state(delivery_id)
@@ -102,8 +99,6 @@ class NativeBridge:
         remaining = deadline(state) - now
         if remaining <= 0:
             raise ValueError('execution authority expired or budget exhausted')
-        if self.require_notify and not self.notify_target:
-            raise RuntimeError('native wake subscription is required before scheduling')
         actor = self._actor(state)
         if actor.engine != 'hermes':
             raise ValueError('native bridge requires a Hermes actor')
@@ -111,7 +106,7 @@ class NativeBridge:
             # Serialize native idempotency lookup/create. Hermes create_task supports
             # nesting, but its standalone pre-check is otherwise subject to a race.
             with h.kb.write_txn(self.conn):
-                tid = h.kb.create_task(self.conn, title=f'cpipe: {state.activity} · {actor.profile}',
+                tid = h.kb.create_task(self.conn, title=f'cpipe: {state.activity} · {actor.profile} · {state.plan.goal[:60]}',
                     body=self._body(state), assignee=self._lane(actor.profile), created_by='cpipe',
                     workspace_kind='dir', workspace_path=state.plan.worktree,
                     project_id='', session_id=self.session_id,
@@ -129,16 +124,6 @@ class NativeBridge:
         else:
             raise ValueError('native activity is not queueable')
         task = self._task(state, tid)
-        # Commit and read back subscriptions before making a card dispatchable.
-        # If this fails the card stays blocked; rerunning schedule repairs it.
-        if self.notify_target:
-            from hermes_cli import kanban_db_notify as notify
-            target = {**self.notify_target, 'delivery_mode': 'notify+wake'}
-            notify.add_notify_sub(self.conn, task_id=tid, **target)
-            subs = notify.list_notify_subs(self.conn, tid)
-            expected = {**target, 'thread_id': target.get('thread_id') or ''}
-            if not any(all(s.get(k) == v for k, v in expected.items()) for s in subs):
-                raise RuntimeError('native wake subscription readback failed')
         if task.status == 'blocked' and not h.kb.unblock_task(self.conn, tid):
             raise RuntimeError('native task could not be queued')
         # Claim at once, so nothing else picks up a ready cpipe card in between.
@@ -149,6 +134,13 @@ class NativeBridge:
             raise ValueError('native activity is not queueable')
         self.service.journal.ack(state.active_intent)
         return tid
+
+    def comment(self, task_id, text):
+        """Activity on the card for people watching the board; never wakes a chat, never fatal."""
+        try:
+            h.kb.add_comment(self.conn, task_id, 'cpipe', text)
+        except Exception:
+            pass
 
     def _usable(self, state, task_id, claimer):
         try:

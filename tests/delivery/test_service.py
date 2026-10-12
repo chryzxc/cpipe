@@ -334,6 +334,18 @@ def test_broken_checks_go_back_to_the_builder_but_a_missing_command_waits():
         first, outcome=Outcome.UNAVAILABLE, observed=False, reason="command_not_found"),))[0].phase == "waiting"
 
 
+
+def test_a_check_that_cannot_see_its_criteria_twice_in_a_row_waits_for_the_user():
+    unseen = dict(outcome=Outcome.UNAVAILABLE, observed=False, reason="criteria_not_in_output")
+    state = claim(step(start(), "envelope_approved", "tests")[0])
+    state, _ = step(state, "activity_observed", "write_tests", receipts=(receipt(state, **unseen),))
+    assert state.phase == "implementing"  # the test may simply not exist yet
+    state = claim(state, "forge", "builder-session")
+    state, _ = step(state, "activity_observed", "tests", actor_id="forge", result_artifact="tree2")
+    state = claim(state)
+    stuck, _ = step(state, "activity_observed", "diagnose", receipts=(receipt(state, **unseen),))
+    assert stuck.phase == "waiting"  # the frozen command never prints them; no builder can fix that
+
 def test_a_refusing_builder_hands_over_to_the_next_approved_one_then_the_run_waits():
     from cpipe.delivery.schema import Actor
     actors = (Actor("builder", "hermes", "sentry", "m", "p"), Actor("builder", "hermes", "forge", "m", "p"),

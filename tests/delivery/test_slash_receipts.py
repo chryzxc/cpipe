@@ -92,7 +92,7 @@ def test_a_background_run_that_keeps_crashing_is_parked_retried_then_reported(he
     native._RUNS['d9'].join(30)
     assert len(calls) == native.CRASH_RETRIES + 1
     assert told == [(told[0][0], {'role': 'user', 'session_key': 'chat-one'})]
-    assert 'hit a problem it could not fix right away (ZeroDivisionError)' in told[0][0]
+    assert 'hit a problem it could not fix right away' in told[0][0] and '| Error | ZeroDivisionError |' in told[0][0]
     record = runner(hermes_home, 'd9')
     assert record['retry_at'] > time.time() and record['parks'] == 1
     native.resume_orphans()
@@ -104,7 +104,7 @@ def test_a_background_run_that_keeps_crashing_is_parked_retried_then_reported(he
     monkeypatch.setattr(native, '_SCANNED', [0.0])
     native.resume_orphans()
     native._RUNS['d9'].join(30)
-    assert len(told) == 2 and told[1][0].startswith('[cpipe] Delivery d9 is stopped unexpectedly (ZeroDivisionError).')
+    assert len(told) == 2 and told[1][0].startswith(native.SHOW + '**cpipe · `d9` is stopped unexpectedly (ZeroDivisionError).**')
     assert runner(hermes_home, 'd9') is None
 
 

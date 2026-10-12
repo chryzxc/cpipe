@@ -1,5 +1,6 @@
 """Session-bound task commands with explicit frozen-plan consent."""
 from contextlib import contextmanager
+from collections import Counter
 import contextvars
 import hashlib
 import json
@@ -144,21 +145,47 @@ def deliver():
         log.exception('cpipe: message delivery failed')
 
 
+SHOW = '[cpipe] Show the user this message exactly as written, then stop. Do not call tools.\n\n'
+
+
 def _settled(delivery_id, result, error):
-    phase = (result or {}).get('phase', '')
+    result = result or {}
+    phase = result.get('phase', '')
     head = HEADLINES.get(phase, 'stopped unexpectedly' + (f' ({error})' if error else ''))
-    unresolved = sum(f['blocking'] for f in (result or {}).get('findings', ()))
-    checks = (result or {}).get('checks') or {}
+    unresolved = sum(f['blocking'] for f in result.get('findings', ()))
+    checks = result.get('checks') or {}
     if phase == 'waiting' and 'review' in checks and all(v.startswith('pass') for v in checks.values()):
         head = 'verified and reviewed, but its draft pull request could not be opened (see recoveries)'
     if phase == 'locally_ready' and unresolved:
         head = (f'ready for your review with {unresolved} unresolved review finding(s): checks pass, but '
                 'more fix rounds kept trading one finding for another')
-    return head, (f'[cpipe] Delivery {delivery_id} is {head}.\n' + json.dumps(result or {}, sort_keys=True) +
-        '\nTell the user this result in a few short lines: what was done, each check result, tokens used, '
-        'and the worktree (or pull_request link) to review. List the unresolved (blocking) findings, and the others as optional advice. '
-        'If it stopped or findings are unresolved, say why and that they can fix the cause and say "continue" '
-        '(it picks up where it stopped, asking approval again only for more time). Do not call cpipe tools.')
+    return head, SHOW + report(delivery_id, head, result)
+
+
+def report(delivery_id, head, result):
+    """The settled delivery as markdown, rendered by code so the chat shows it without rewriting it."""
+    tokens, steps = result.get('tokens') or {}, result.get('steps') or ()
+    rows = [('Goal', result.get('goal')), ('Pull request', result.get('pull_request')),
+            ('Worktree', result.get('worktree') and '`' + result['worktree'] + '`'),
+            ('Steps', ', '.join(f'{k} ×{n}' if n > 1 else k for k, n in Counter(s['activity'] for s in steps).items())),
+            ('Review rounds', result.get('review_cycles', 0)),
+            ('Tokens', tokens and f"{tokens.get('total', 0):,} in {tokens.get('steps', 0)} steps")]
+    lines = [f'**cpipe · `{delivery_id}` is {head}.**', '', '| | |', '|---|---|']
+    lines += [f'| {k} | {_cell(v)} |' for k, v in rows if v not in (None, '', ())]
+    if checks := result.get('checks'):
+        lines += ['', '| Check | Result |', '|---|---|'] + [f'| {_cell(k)} | {_cell(v)} |' for k, v in checks.items()]
+    if findings := result.get('findings'):
+        lines += ['', '| Finding | Severity | Blocking | Detail |', '|---|---|---|---|']
+        lines += [f"| {_cell(f['id'])} | {_cell(f['severity'])} | {'yes' if f['blocking'] else 'advice'} | "
+                  f"{_cell(f['text'])}" + (f" (builder disputes: {_cell(f['builder_disputes'])})"
+                                           if f.get('builder_disputes') else '') + ' |' for f in findings]
+    if result.get('recoveries'):
+        lines += ['', '**What happened on the way**'] + [f'- {_cell(r)}' for r in result['recoveries']]
+    if result.get('phase') not in {'locally_ready', 'completed', 'cancelled'} or any(
+            f['blocking'] for f in findings or ()):
+        lines += ['', 'Fix the cause if needed and say **continue**: it picks up where it stopped '
+                      '(asking approval again only for more time).']
+    return '\n'.join(lines)
 
 
 def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
@@ -215,10 +242,11 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
                         log.warning('cpipe: run %s parked for %ss after repeated crashes', delivery_id, PARK)
                         controller.tell(session_id, delivery_id, f'hit a problem; retrying every {PARK // 60} minutes')
                         if record['parks'] == 1:
-                            notify(delivery_id, chat_key, f'[cpipe] Delivery {delivery_id} hit a problem it could not '
-                                   f'fix right away ({error or "unknown error"}). It retries on its own every '
-                                   f'{PARK // 60} minutes until it works or its budget ends. Tell the user in one line; '
-                                   'they can /cp-stop it. Do not call cpipe tools.')
+                            notify(delivery_id, chat_key, SHOW + (
+                                   f'**cpipe · `{delivery_id}` hit a problem it could not fix right away.**\n\n'
+                                   f'| | |\n|---|---|\n| Error | {_cell(error or "unknown")} |\n'
+                                   f'| Next | retries on its own every {PARK // 60} minutes until it works or its '
+                                   f'budget ends |\n| Stop it | `/cp-stop {delivery_id}` |'))
                         return
                 except Exception:
                     log.exception('cpipe: could not park %s', delivery_id)
@@ -227,7 +255,7 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
         try:
             with scope() as (service, _, _home):
                 state = controller.owned(service, delivery_id, session_id, profile_id)
-                result = {**(result or {}), **controller.summary(state, service), 'worktree': state.plan.worktree}
+                result = {**(result or {}), **controller.summary(state, service), 'worktree': state.plan.worktree, 'goal': state.plan.goal}
         except Exception:
             pass
         try:
@@ -291,7 +319,7 @@ def resume_orphans(**_):
                 try:
                     with scope() as (service, _, _home):
                         state = controller.owned(service, delivery_id, record['session_id'], record['profile_id'])
-                        result = {**controller.summary(state, service), 'worktree': state.plan.worktree}
+                        result = {**controller.summary(state, service), 'worktree': state.plan.worktree, 'goal': state.plan.goal}
                     notify(delivery_id, record['chat_key'], _settled(delivery_id, result, str(exc)[:200])[1])
                 except Exception:
                     pass
@@ -440,7 +468,7 @@ def dispatch(ctx, name, raw=''):
         'only for genuine scope/owner ambiguity. seconds is a bounded 30..1800 integer. The check criteria '
         'are exact test names as the runner reports them, not prose. Do not put credentials in any field. '
         'Call cpipe_execute_intent using token ' + token + ', operation ' + op + '. '
-        'A proposal returns the full frozen plan and approval_arguments: call cpipe_approve_plan with those exact '
+        'A proposal returns approval_arguments: call cpipe_approve_plan with those exact '
         'arguments and ask its returned question and choices with clarify, unchanged. Human consent cannot be '
         'inferred. If the user answers Yes, the same plan receipt may execute build for its own delivery_id; '
         'otherwise leave it waiting. '
@@ -459,7 +487,9 @@ def dispatch(ctx, name, raw=''):
             'Small clear changes need only a short approach. Explain the chosen approach. Ask native clarify only '
             'when tools cannot resolve a genuine scope, owner or product ambiguity; do not ask a mandatory planning question. '
             'Investigation before approval is read-only; do not run unapproved project test commands or modify project files. '
-            'Do not implement, delegate, publish or merge in the coordinator. Do not create worktrees or branches: '
+            'Do not implement, publish or merge in the coordinator. If you can delegate to a subagent, hand it '
+            'read-only research (finding code, tracing a cause) and ask for a short answer with paths and line numbers, '
+            'not file contents. Do not create worktrees or branches: '
             'cpipe makes a new worktree for each delivery from base, so the user\'s checkout is never changed. '
             'If the request names several tasks, handle all of them in this run. Put related tasks, especially ones '
             'touching the same files, in one delivery; give each independent one its own delivery by adding '

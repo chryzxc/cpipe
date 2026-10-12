@@ -19,6 +19,7 @@ KINDS = frozenset({"proposal_created", "envelope_approved", "activity_claimed",
 
 
 # Attempts to get a behavior test that fails on an assertion before implementing.
+CONTRACT_REASONS = frozenset({"criteria_not_in_output", "no_report", "no_test_cases"})
 WRITE_TEST_ROUNDS = 3
 
 def nonnegative(value, name):
@@ -471,9 +472,13 @@ def apply(snapshot, event):
                or (r.outcome is not Outcome.UNAVAILABLE and not r.observed) for r in event.receipts):
             raise ValueError("stale or misconfigured check receipt")
         earlier = sum(r.obligation == "behavior" for r in state.receipts)
+        last = {r.obligation: r.reason for r in state.receipts}
         state = replace(state, receipts=state.receipts + event.receipts)
-        if any(r.reason == "command_not_found" for r in event.receipts):
-            return continue_with(state, "diagnose", "waiting")  # the environment, not the code
+        # The environment, or a frozen check command that cannot observe its criteria
+        # however the code changes (twice in a row): only the user can fix either.
+        if any(r.reason == "command_not_found" or r.reason in CONTRACT_REASONS and last.get(r.obligation) == r.reason
+               for r in event.receipts):
+            return continue_with(state, "diagnose", "waiting")
         if state.activity == "tests" and not any(r.outcome is Outcome.FAIL for r in event.receipts):
             # Only an observed RED proves the behavior test covers the change. A
             # missing, passing or broken test goes back to the builder with the reason.

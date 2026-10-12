@@ -112,8 +112,6 @@ def summary(state, service=None):
             result['message'] = ('The approved time or calls ran out. To continue, call cpipe_approve_plan with '
                                  'approval_arguments and ask its question with clarify (the user approves a fresh '
                                  'budget), then build again.')
-        else:
-            result['plan'] = state.plan.to_dict()
     if service is not None:
         result['tokens'] = usage(service, state.plan.envelope.delivery_id)
         row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?',
@@ -396,10 +394,13 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                        conn=conn, execute=execute, evidence_root=evidence_root)
     bridge = NativeBridge(service, conn, session_id=session_id, profile_id=profile_id)
     worker, steps, recoveries, strikes, baselined, shown = execute or HermesWorker(), [], [], {}, False, ''
+    tid = None
 
     def note(text):
         recoveries.append(text)
         tell(session_id, delivery_id, text)
+        if tid:
+            bridge.comment(tid, text)  # handoffs and retries show as card activity on the board
     store = Path(evidence_root) / 'good' / delivery_id
     claimer = h.new_claimer()
     bridge.abandon(delivery_id)  # recover a run left bound by a crashed build
@@ -415,7 +416,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 state.plan.digest(), state.artifact, state.version, max(state.last_at, int(time.time())),
                 session_id=e.session_id, profile_id=e.profile_id))
             break
-        action = state.activity
+        action, tid = state.activity, None
         try:
             state = settle(state, store, service)
             action = state.activity

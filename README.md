@@ -68,6 +68,9 @@ Each loop in the graph has an exit condition and a bound.
 - **Session reuse:** builder and reviewer sessions are resumed across rounds. A resumed session receives only the delta: failing checks, open findings and the current task.
 - **Diff-scoped re-reviews:** after the first full review, the reviewer inspects only the diff since its last review.
 - **Your own code tools:** the coordinator and workers are asked to locate code with whatever code index or navigation tool their profile already has before broad file reads. cpipe does not require, install or configure one.
+- **Research delegation:** a coordinator that can delegate is asked to hand read-only research to a subagent and take back a short answer with paths and line numbers, not file contents.
+- **Small payloads:** proposal results carry only the approval arguments (the plan stays in cpipe's journal and the preview document), Kanban cards carry a short summary instead of the contract, and the final chat message is rendered by cpipe, so the chat model only shows it.
+- **No chat wake-ups:** cpipe's cards never subscribe the chat; step results and handovers stay on the board.
 - **Code-made decisions:** verification and routing cost no model tokens.
 - **Usage tracking:** input, output, cache-read and cache-write tokens are recorded per step and reported with the result.
 
@@ -112,7 +115,7 @@ Each loop in the graph has an exit condition and a bound.
    - **waiting on you**, e.g. the test command is not installed;
    - **out of budget.**
 
-   The message includes the check results, token usage, the worktree to review and every recovery cpipe made on its own (see below).
+   The message is a Markdown report rendered by cpipe: goal, worktree or pull request, steps taken, review rounds and tokens, one table row per check and per open finding, and every recovery cpipe made on its own (see below). When the run stopped, it ends with what to do next.
 
 ## Review
 
@@ -130,6 +133,7 @@ A delivery stops for you only when no approved action can move it forward. Other
 - **A step fails** (malformed or missing JSON, no edits, edits outside `write_paths`, a commit, branch switch or staged files, a crash, provider error or timeout): the step's changes, staging, commits and branch switch are rolled back to the last verified worktree. The same profile then retries with the reason, first in its session and then in a fresh one, with a short backoff. After 3 failures the next approved profile for that role takes over.
 - **A profile declines** (`{"status":"blocked"}`): rolled back the same way, and the next approved profile takes over at once.
 - **A loop is stuck** (no valid failing test after 3 rounds, or review findings that stop converging): the next approved builder gets the same rounds in a fresh session. After the last builder, a test loop reports `diagnosis`. A review loop with passing checks ends `locally_ready` with the open findings listed.
+- **A check cannot see its criteria:** when the same check produces no result for the same contract reason twice in a row (the runner does not print the criteria, writes no report, or reports no test cases), no builder can fix it, because the check command is frozen. The run waits with that reason instead of spending more rounds.
 - **A worker hangs:** each step is capped at a third of the budget (at least 10 minutes).
 - **Leftover edits with nothing to roll back to** (e.g. a crash before cpipe had verified anything): if they stay inside `write_paths`, cpipe continues from them and runs the checks again before any review.
 - **The repository already fails a check** (for example an unrelated failing test): on the first check run, cpipe runs every check on the base code (its own edits put aside and restored, even after a crash) and remembers what already fails. A check that later fails only on those counts as passed and says so in the report; any new failure still goes back to the builder. The behavior test never gets this pass.
@@ -145,6 +149,7 @@ A delivery stops for you only when no approved action can move it forward. Other
 
 ### Monitoring
 
+- **Kanban activity:** each step is a card titled with the step, the profile and the goal (`cpipe: implement · forge · Fix the date parser`), with a short table of delivery, worktree and plan. Handovers, retries and declines are posted as comments on the step's card, and the step's result is the card's run summary. Comments do not wake any chat.
 - **Progress line in the desktop app:** a single line above the chat input shows what the run is doing (`forge is implementing`, `running the checks`, `sentry is reviewing`) and every handover or recovery as it happens. It is display only: no model turn, no tokens. Enable **cpipe** under **Capabilities → Plugins** (use **Rescan** after installing or updating). Runs hosted outside the desktop app (gateway, terminal chat) skip it.
 
 - Every message to the chat is stored until the chat accepts it; the watchdog and the next chat turn redeliver it.

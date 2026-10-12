@@ -1,6 +1,5 @@
 """Real native Kanban claims, not a fabricated worker or live-model proof."""
 from dataclasses import replace
-import json
 import time
 
 import pytest
@@ -47,13 +46,11 @@ def test_no_task_is_scheduled_before_envelope_approval(tmp_path, board):
         assert not h.kb.list_tasks(board)
 
 
-def test_schedule_is_idempotent_pins_runtime_and_reads_back_subscription(tmp_path, board):
+def test_schedule_is_idempotent_pins_runtime_and_never_wakes_a_chat(tmp_path, board):
     journal, service, state = approved(tmp_path)
     with journal:
         approve(service, state)
-        target = dict(platform='telegram', chat_id='fixture-chat', notifier_profile='default',
-                      thread_id=None, user_id=None)
-        b = bridge(service, board, notify_target=target)
+        b = bridge(service, board)
         tid = b.schedule('d1')
         assert b.schedule('d1') == tid
         task = h.get_task(board, tid)
@@ -63,20 +60,12 @@ def test_schedule_is_idempotent_pins_runtime_and_reads_back_subscription(tmp_pat
         assert task.max_runtime_seconds > 0 and task.idempotency_key
         assert task.model_override == 'model1' and task.provider_override == 'provider1'
         from hermes_cli import kanban_db_notify as notify
-        assert notify.list_notify_subs(board, tid)[0]['delivery_mode'] == 'notify+wake'
+        assert not notify.list_notify_subs(board, tid)  # board activity only; no model turn in the chat
         assert len(h.kb.list_tasks(board)) == 1
-        packet = json.loads(task.body.split('\n', 1)[1])
-        assert packet['plan_digest'] == state.plan.digest()
-        assert packet['action'] == 'tests'
-
-
-def test_required_missing_subscription_leaves_no_runnable_task(tmp_path, board):
-    journal, service, state = approved(tmp_path)
-    with journal:
-        approve(service, state)
-        with pytest.raises(RuntimeError, match='subscription'):
-            bridge(service, board, require_notify=True).schedule('d1')
-        assert not h.kb.list_tasks(board)
+        # A short card for people; the plan stays in the journal.
+        assert len(task.body) < 1000 and state.plan.digest()[:12] in task.body and '| tests |' in task.body
+        b.comment(tid, 'builder handed over to fallback')
+        assert [c.body for c in h.kb.list_comments(board, tid)] == ['builder handed over to fallback']
 
 
 def test_native_claim_competition_binds_real_run_and_rejects_forged_owner(tmp_path, board):
