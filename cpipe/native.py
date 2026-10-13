@@ -735,16 +735,39 @@ def start_consented(session_id):
                 'message here when each is done.')
 
 
+OPERATIONS = ('prepare', 'plan', 'build', 'status', 'stop', 'spawn')
+
+
+def _intent(args):
+    """(token, operation, arguments) from a call, accepting the unambiguous shapes models send: JSON strings,
+    the arguments' fields beside them instead of inside, a missing operation that the fields make plain."""
+    from .delivery.approach import _loaded
+    args = _loaded(args)
+    if type(args) is not dict:
+        raise ValueError('send an object {token, operation, arguments}')
+    args = dict(args)
+    token, op = args.pop('token', None), args.pop('operation', None)
+    payload = _loaded(args.pop('arguments', None))
+    if payload is None:
+        payload = {}
+    if type(payload) is not dict:
+        raise ValueError('arguments must be an object')
+    payload = dict(args, **payload)  # fields (and task) sent beside arguments belong in them
+    if type(op) is str:
+        op = op.strip().lower()
+    elif op is None:
+        op = next((o for o, field in (('prepare', 'spec'), ('plan', 'draft_revision'), ('build', 'delivery_id'))
+                   if field in payload), 'status' if not set(payload) - {'task'} else None)
+    if op not in OPERATIONS:
+        raise ValueError('operation must be one of ' + ', '.join(OPERATIONS))
+    if type(token) is not str or not token.strip():
+        raise ValueError('token is required: the token from the /cp-run message')
+    return token.strip(), op, payload
+
+
 def execute(args, **kwargs):
     try:
-        if type(args) is not dict or not {'token', 'operation', 'arguments'} <= set(args) <= {
-                'token', 'operation', 'arguments', 'task'}:
-            raise ValueError('invalid intent arguments')
-        token, op, payload = args['token'], args['operation'], args['arguments']
-        if 'task' in args and type(payload) is dict:
-            payload = dict(payload, task=args['task'])
-        if type(token) is not str or not token or op not in {'prepare', 'plan', 'build', 'status', 'stop', 'spawn'} or type(payload) is not dict:
-            raise ValueError('invalid intent arguments')
+        token, op, payload = _intent(args)
         sid, key = session(kwargs.get('session_id')), session_key()
         target = _spawn_target(payload) if op == 'spawn' else None
         with scope() as (service, profile, home):
@@ -760,6 +783,7 @@ def execute(args, **kwargs):
                 if 'task' in payload:  # one /cp-run, several independent deliveries: one sub-receipt each
                     payload = dict(payload)
                     task = payload.pop('task')
+                    task = re.sub(r'[\s_]+', '-', task.strip().lower()) if type(task) is str else task
                     if type(task) is not str or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,31}', task):
                         raise ValueError('task must be a short lowercase label such as t2')
                     _check(run_record, sid, profile, key, run_record['expires'] <= time.time())
@@ -781,6 +805,10 @@ def execute(args, **kwargs):
                 if run_key == _intent_key(token) and op != 'prepare' and run_record.get('state') == 'pending':
                     tasks = sorted(k[len(run_key) + 1:] for (k,) in db.execute(
                         'SELECT id FROM intent WHERE id LIKE ?', (run_key + '-%',)))
+                    if len(tasks) == 1 or tasks and op == 'status':  # unambiguous: that task, or all of them
+                        outs = {t: json.loads(execute(dict(token=token, operation=op, arguments=dict(payload, task=t)),
+                                                      **kwargs)) for t in tasks}
+                        return json.dumps(outs[tasks[0]] if len(tasks) == 1 else {'tasks': outs})
                     if tasks:
                         raise ValueError('this /cp-run holds tasks ' + ', '.join(tasks) + ': add task to the call')
                 base = json.loads(db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()[0])
@@ -854,7 +882,8 @@ def execute(args, **kwargs):
         return json.dumps({'error': 'cpipe operation failed: ' + type(exc).__name__ +
             (' (' + str(exc)[:300] + ')' if own else '') +
             (' cpipe was being updated; send the same request again.' if isinstance(exc, ImportError) else '') +
-            '. No authority inferred; inspect the current draft or /cp-status before retrying.'})
+            '. Nothing was started or changed. Fix what the error names and call again; do not give up or '
+            'ask the user unless the error says to.'})
 
 
 def preload():

@@ -157,9 +157,11 @@ def validate_spec(spec):
         raise ValueError('spec must be an object')
     if set(spec) - {'draft_pr', 'title', 'branch'} != expected:
         # Field names are fixed schema labels, never user values.
-        missing, extra = sorted(expected - set(spec)), sorted(set(spec) - expected)
+        missing, extra = sorted(expected - set(spec)), sorted(set(spec) - expected - {'draft_pr', 'title', 'branch'})
         raise ValueError('spec fields: missing ' + (', '.join(missing) or 'none')
                          + '; unsupported ' + (', '.join(k for k in extra if k.isidentifier()) or 'none'))
+    if type(spec['worktree']) is not str:
+        raise ValueError('worktree must be the absolute path of the checkout you investigated')
     if type(spec.get('draft_pr', False)) is not bool:
         raise ValueError('draft_pr must be true or false')
     if bool(spec.get('draft_pr')) != ('branch' in spec) or 'branch' in spec and (
@@ -180,6 +182,8 @@ def validate_spec(spec):
     artifact = fingerprint(root)
     checks = []
     for item in spec['checks']:
+        if type(item) is dict and type(item.get('argv')) is not list:
+            raise ValueError('each check argv must be the command as a list, e.g. ["npm", "test"]')
         if type(item) is dict and any(type(a) is str and str(root) in a for a in item.get('argv', ())):
             raise ValueError('check commands must not name the investigated checkout: the delivery runs in a new '
                              'worktree of its own, so use commands relative to it that install what they need')

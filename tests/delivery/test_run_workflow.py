@@ -290,7 +290,10 @@ def test_task_label_may_sit_beside_the_arguments(run_context):
     wrong = json.loads(native.execute(dict(token=token, operation='plan', arguments={'draft_revision': 1}),
                                       session_id='another-chat'))
     assert 'belongs to another session' in wrong['error']
-    assert 'holds tasks t2: add task' in call(token, 'plan', {'draft_revision': 1})['error']
+    assert call(token, 'plan', {'draft_revision': 1})['delivery_id']  # the only task: no label needed
+    call(token, 'prepare', dict(spec=spec, approach=approach_, expected_revision=0, task='t3'))
+    assert 'holds tasks t2, t3: add task' in call(token, 'build', {})['error']
+    assert set(call(token, 'status', {})['tasks']) == {'t2', 't3'}
 
 
 def test_the_users_own_proceed_freezes_and_starts_the_revision_they_were_shown(run_context, monkeypatch):
