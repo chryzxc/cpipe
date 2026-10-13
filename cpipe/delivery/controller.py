@@ -548,7 +548,9 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         try:
             state = settle(state, store, service)
             action = state.activity
-            line = STEP_LINES[action].format(who=bridge._actor(state).profile if action in WORKER_STEPS else '')
+            name, place = bridge.progress(state)
+            line = (f'[{place}] ' if place else '') + f'{name} · ' + STEP_LINES[action].format(
+                who=bridge._actor(state).profile if action in WORKER_STEPS else '')
             if line != shown:
                 tell(session_id, delivery_id, shown := line)
             tid = bridge.schedule(delivery_id, claimer)

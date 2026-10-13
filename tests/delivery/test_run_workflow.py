@@ -475,9 +475,10 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
     # The chat sees each handover and recovery as a display-only line, never a model turn.
     assert {(p, e, sid, d) for p, e, sid, d, _, _ in lines} == {('cpipe', 'progress', 's1', delivery_id)}
     texts = [text for *_, text, _ in lines]
-    assert texts[:2] == ['running the new test (it must fail first)', 'builder is implementing']
+    assert texts[:2] == ['[1/4] Fix double returning the input · running the new test (it must fail first)',
+                         '[2/4] Fix double returning the input · builder is implementing']
     assert texts[2].startswith('builder declined implement')
-    assert 'reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
+    assert '[4/4] Fix double returning the input · reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
     assert 'error' in call(token, 'prepare', {})  # still no new work on an expired receipt
 
 

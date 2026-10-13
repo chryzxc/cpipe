@@ -66,11 +66,17 @@ class NativeBridge:
     @staticmethod
     def _title(state):
         """Task first, then where the delivery is: "Fix date parser — 2/4 Implementing"; the assignee names the profile."""
+        name, place = NativeBridge.progress(state)
+        label = STEPS.get(state.activity, (0, state.activity))[1]
+        return f'{name} — {place} {label}' if place else f'{name} — {label}'
+
+    @staticmethod
+    def progress(state):
+        """The task's name and the step's place, e.g. ("Fix date parser", "2/4"); "" outside the numbered steps."""
         plan = state.plan
         name = plan.title or (plan.goal if len(plan.goal) <= 60 else plan.goal[:60].rsplit(' ', 1)[0] + '…')
-        number, label = STEPS.get(state.activity, (0, state.activity))
-        step = f"{number}/{5 if plan.completion_target == 'draft' else 4} {label}" if number else label
-        return f'{name} — {step}'
+        number = STEPS.get(state.activity, (0, ''))[0]
+        return name, f"{number}/{5 if plan.completion_target == 'draft' else 4}" if number else ''
 
     @staticmethod
     def _actor(state):
