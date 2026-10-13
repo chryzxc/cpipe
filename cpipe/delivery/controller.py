@@ -645,7 +645,18 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             # Not a crash: the next approved actor takes over, or the run waits for the user. A missing
             # tool or dependency stops every actor alike, so it waits for the user straight away.
             who = bridge._actor(state).profile
-            if takeover(state, 'reviewer' if action == 'review' else 'builder') is None \
+            environment = str(exc).lower().startswith('environment')
+            if environment and not strikes.get('environment:' + action):
+                # Its shell may find other programs than the checks do: cpipe's own command is the judge.
+                strikes['environment:' + action] = 1
+                note(f'{who} declined {action}: {exc}; asking it once more with the exact check command')
+                worker.note = ('Your previous answer declined this step for the environment: ' + str(exc)
+                               + '. cpipe judges only by its own check command, with its own PATH, as given '
+                               'above; run exactly that before deciding. Decline again only if that command '
+                               'itself cannot run.')
+                bridge.abandon(delivery_id, claimer, action='fresh')
+                continue
+            if not environment and takeover(state, 'reviewer' if action == 'review' else 'builder') is None \
                     and not strikes.get('declined:' + action):
                 # The last approved actor: ask it once more in a fresh session before the run waits for the user.
                 strikes['declined:' + action] = 1
@@ -659,7 +670,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 continue
             note(f'{who} declined {action}: {exc}')
             bridge.abandon(delivery_id, claimer, kind='activity_refused',
-                           action='environment' if str(exc).lower().startswith('environment') else '')
+                           action='environment' if environment else '')
             continue
         except Exception as exc:
             current = owned(service, delivery_id, session_id, profile_id)

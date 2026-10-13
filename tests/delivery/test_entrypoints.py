@@ -614,3 +614,40 @@ def test_a_budget_stop_after_passing_checks_says_only_review_is_left():
     head = native._settled('d1', dict(phase='stopped', checks={'behavior': 'pass', 'review': 'unobserved'}), '')[0]
     assert head.startswith('implemented and its checks pass')
     assert native._settled('d1', dict(phase='stopped', checks={'behavior': 'fail'}), '')[0] == native.HEADLINES['stopped']
+
+
+def test_an_environment_refusal_is_asked_once_more_with_the_checks_own_command(repo, tmp_path):
+    """Seen live: the builder's shell found another Node than the checks use and declined for the environment."""
+    from cpipe.delivery.controller import propose, run
+    from cpipe.delivery.review import review_identity
+    from cpipe.delivery.workers import WorkerRefused
+    from cpipe.runtime import hermes_api as h
+    from .test_execution_plan import plan
+    spec = pytest_check(timeout=20)
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
+        base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=int(time.time()) + 300,
+        envelope=replace(plan().envelope, required=('behavior', 'review')),
+        checks=(spec.identity(), review_identity()), write_paths=('double.py',), interactive=False,
+        transient_retries=0)
+    h.kb.init_db(tmp_path / 'native.db')
+    conn = h.kbc.connect(tmp_path / 'native.db')
+    notes = []
+
+    class Worker:
+        def __call__(self, state, *, on_session, **kw):
+            on_session(f'session-{len(notes)}')
+            notes.append(getattr(self, 'note', ''))
+            self.note = ''
+            raise WorkerRefused('environment: npm test fails with MODULE_NOT_FOUND')
+    try:
+        with Journal(tmp_path / 'controller.db') as journal:
+            service = Service(journal)
+            state = propose(service, p, (spec,))
+            service.accept(Event('approval', 'envelope_approved', 'd1', p.digest(), state.artifact,
+                state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
+            result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn,
+                         execute=Worker(), evidence_root=tmp_path / 'evidence')
+            assert len(notes) == 2 and notes[0] == '' and 'its own check command' in notes[1]
+            assert result['phase'] == 'waiting'
+    finally:
+        conn.close()

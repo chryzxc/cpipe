@@ -85,8 +85,7 @@ def tolerant_prepare(payload, record, home):
     missing = sorted({'spec', 'approach'} - set(payload))
     extra = sorted(k for k in set(payload) - {'spec', 'approach', 'expected_revision'} if k.isidentifier())
     if missing or extra:
-        raise ValueError('prepare arguments: missing ' + (', '.join(missing) or 'none') + '; unsupported '
-                         + (', '.join(extra) or 'none') + ' (send {spec, approach, expected_revision})')
+        raise ValueError('prepare arguments: ' + _fields(missing, extra) + ' (send {spec, approach, expected_revision})')
     if type(payload['expected_revision']) is not int:
         raise ValueError('expected_revision must be a whole number: 0 for the first draft, else the current revision')
     return payload
@@ -175,13 +174,18 @@ def tolerant_approach(value):
     return value
 
 
+def _fields(missing, extra):
+    return '; '.join(f'{label} ' + ', '.join(names) for label, names in (('missing', missing), ('unsupported', extra))
+                     if names) or 'unsupported field names'
+
+
 def _approach(value):
     fields = {'kind', 'depth', 'risk', 'summary', 'evidence', 'steps', 'decisions', 'risks'}
     if type(value) is not dict:
         raise ValueError('approach must be an object')
     if set(value) != fields:  # field names are fixed schema labels, never user values
-        raise ValueError('approach fields: missing ' + (', '.join(sorted(fields - set(value))) or 'none')
-                         + '; unsupported ' + (', '.join(k for k in sorted(set(value) - fields) if k.isidentifier()) or 'none'))
+        raise ValueError('approach fields: ' + _fields(sorted(fields - set(value)),
+                                                      [k for k in sorted(set(value) - fields) if k.isidentifier()]))
     for name in ('kind', 'depth', 'risk', 'summary'):
         if type(value[name]) is not str:
             raise ValueError(f'approach {name} must be text')

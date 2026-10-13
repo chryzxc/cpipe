@@ -1,5 +1,5 @@
 """Session-bound task commands with explicit frozen-plan consent."""
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from collections import Counter
 import contextvars
 import hashlib
@@ -127,30 +127,73 @@ def _record(key, value=None, delete=False):
             return json.loads(row[0]) if row else None
 
 
-def notify(delivery_id, chat_key, text):
-    """Keep the message until the chat accepts it; the watchdog and hooks retry delivery."""
+def notify(delivery_id, chat_key, text, session_id='', profile_id=''):
+    """Keep the message until it is in the chat's own transcript; the watchdog and hooks retry delivery."""
     try:
-        _record('notice:' + delivery_id, dict(chat_key=chat_key, text=text, at=int(time.time())))
+        _record('notice:' + delivery_id, dict(chat_key=chat_key, text=text, at=int(time.time()),
+                                              session_id=session_id, profile_id=profile_id))
     except Exception:
         log.exception('cpipe: could not store the message for %s', delivery_id)
     deliver()
+
+
+RESEND = 120  # seconds an accepted message may take to reach its chat before it is sent again
+SENDS = 3  # a host can accept a message and still drop it; after this many sends it is not repeated
+
+
+def _seen(notice, delivery_id):
+    """Whether the chat (or its continuation after compression) holds the message; None if unknowable."""
+    import sqlite3
+    from .home import root
+    profile = notice.get('profile_id') or 'default'
+    db = root() / ('state.db' if profile == 'default' else f'profiles/{profile}/state.db')
+    if not notice.get('session_id') or not db.exists():
+        return None
+    try:
+        with closing(sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=5)) as conn:
+            return conn.execute(
+                'WITH RECURSIVE chat(id) AS (SELECT id FROM sessions WHERE id=? OR session_key=? UNION '
+                'SELECT s.id FROM sessions s JOIN chat ON s.parent_session_id=chat.id) '
+                'SELECT 1 FROM messages WHERE session_id IN chat AND instr(content, ?) AND timestamp >= ? LIMIT 1',
+                (notice['session_id'], notice['chat_key'], f'`{delivery_id}`', notice['sent_at'] - 5)).fetchone() is not None
+    except Exception:
+        return None
 
 
 def deliver():
     try:
         with scope() as (service, _, _home):
             rows = service.journal.db.execute("SELECT id, payload FROM intent WHERE id LIKE 'notice:%'").fetchall()
+        # A CLI host puts any message into its own conversation, whatever chat it names.
+        cli = getattr(getattr(_CTX, '_manager', None), '_cli_ref', None)
         for key, payload in rows:
-            notice = json.loads(payload)
+            notice, delivery_id = json.loads(payload), key[len('notice:'):]
+            if cli is not None and getattr(cli, 'session_id', None) not in {notice['chat_key'], notice.get('session_id')}:
+                continue  # another process hosts that chat
+            if notice.get('sent_at'):
+                seen = _seen(notice, delivery_id)
+                if seen or seen is None or notice.get('sends', 0) >= SENDS:
+                    _record(key, delete=True)
+                    log.info('cpipe: the message for %s %s', delivery_id,
+                             'reached its chat' if seen is not False else 'was sent and is not repeated')
+                    continue
+                if time.time() - notice['sent_at'] < RESEND:
+                    continue
+                log.warning('cpipe: the message for %s was accepted but never reached its chat; sending again',
+                            delivery_id)
             try:
                 sent = _CTX is not None and _CTX.inject_message(notice['text'], role='user', session_key=notice['chat_key'])
             except Exception:
                 sent = False
-            if sent:
-                _record(key, delete=True)
-                log.info('cpipe: delivered the message for %s', key[len('notice:'):])
+            if sent:  # accepted is not delivered: the next pass confirms it from the transcript, if it can
+                notice = dict(notice, sent_at=int(time.time()), sends=notice.get('sends', 0) + 1)
+                if _seen(notice, delivery_id) is None:
+                    _record(key, delete=True)
+                else:
+                    _record(key, notice)
+                log.info('cpipe: sent the message for %s', delivery_id)
             else:
-                log.warning('cpipe: the chat for %s is not reachable yet; retrying later', key[len('notice:'):])
+                log.warning('cpipe: the chat for %s is not reachable yet; retrying later', delivery_id)
     except Exception:
         log.exception('cpipe: message delivery failed')
 
@@ -262,7 +305,7 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
                         log.warning('cpipe: run %s parked for %ss after repeated crashes', delivery_id, PARK)
                         controller.tell(session_id, delivery_id, f'hit a problem; retrying every {PARK // 60} minutes')
                         if record['parks'] == 1:
-                            notify(delivery_id, chat_key, SHOW + (
+                            notify(delivery_id, chat_key, session_id=session_id, profile_id=profile_id, text=SHOW + (
                                    f'**cpipe · `{delivery_id}` hit a problem it could not fix right away.**\n\n'
                                    f'| | |\n|---|---|\n| Error | {_cell(error or "unknown")} |\n'
                                    f'| Next | retries on its own every {PARK // 60} minutes until it works or its '
@@ -289,7 +332,7 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
             if not box.get('detached'):
                 box['result'] = dict(result or {}, message=f'The run is already {head}.')
                 return
-        notify(delivery_id, chat_key, text)
+        notify(delivery_id, chat_key, text, session_id, profile_id)
     # Copy the session/profile context into the thread.
     thread = threading.Thread(target=contextvars.copy_context().run, args=(work,),
                               name='cpipe-' + delivery_id, daemon=True)
@@ -357,7 +400,8 @@ def _unresumed(delivery_id, key, record, error):
         _record(key, {**record, 'retry_at': int(time.time()) + PARK, 'error': error, 'parks': parks})
         log.warning('cpipe: run %s not resumed (%s); retrying in %ss', delivery_id, error, PARK)
         if parks == 1:
-            notify(delivery_id, record['chat_key'], SHOW + (
+            notify(delivery_id, record['chat_key'], session_id=record['session_id'], profile_id=record['profile_id'],
+                   text=SHOW + (
                 f'**cpipe · `{delivery_id}` stopped and could not be resumed yet.**\n\n'
                 f'| | |\n|---|---|\n| Error | {_cell(error)} |\n'
                 f'| Next | retries on its own every {PARK // 60} minutes (an updated cpipe is picked up), or say '
@@ -366,7 +410,8 @@ def _unresumed(delivery_id, key, record, error):
     _record(key, delete=True)
     log.info('cpipe: run %s not resumed: %s', delivery_id, error)
     if result is not None:
-        notify(delivery_id, record['chat_key'], _settled(delivery_id, result, error)[1])
+        notify(delivery_id, record['chat_key'], _settled(delivery_id, result, error)[1], record['session_id'],
+               record['profile_id'])
 
 
 def resume_orphans(**_):
@@ -880,7 +925,7 @@ def execute(args, **kwargs):
         own = (type(exc) is ValueError and tb is not None
                and Path(tb.tb_frame.f_code.co_filename).is_relative_to(Path(__file__).parent))
         return json.dumps({'error': 'cpipe operation failed: ' + type(exc).__name__ +
-            (' (' + str(exc)[:300] + ')' if own else '') +
+            (' (' + str(exc)[:600] + ')' if own else '') +
             (' cpipe was being updated; send the same request again.' if isinstance(exc, ImportError) else '') +
             '. Nothing was started or changed. Fix what the error names and call again; do not give up or '
             'ask the user unless the error says to.'})

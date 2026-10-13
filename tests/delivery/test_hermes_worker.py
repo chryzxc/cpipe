@@ -239,7 +239,9 @@ def test_the_test_writer_runs_the_exact_behavior_check_once():
     from cpipe.delivery.hermes_worker import behavior_check
     text = behavior_check((CommandCheck('regression', ('npm', 'test')),
                            CommandCheck('behavior', ('npx', 'vitest', 'run', 'a.test.ts', '--outputFile={report}'),
-                                        ('parser > rejects empty input',))))
+                                        ('parser > rejects empty input',), env=(('HOME', '/h'),))))
     assert "`npx vitest run a.test.ts '--outputFile=<any temporary file>'`" in text
     assert 'parser > rejects empty input' in text and 'npm' not in text
     assert behavior_check(()) == ''
+    pinned = CommandCheck('behavior', ('npm', 'test'), ('a',), env=(('PATH', '/nvm/bin:/usr/bin'),))
+    assert '`env PATH=/nvm/bin:/usr/bin npm test`' in behavior_check((pinned,))  # the checks' own programs

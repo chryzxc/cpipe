@@ -28,10 +28,14 @@ def github_repo(root):
     try:
         url = _git(root, 'config', '--get', 'remote.origin.url')  # as configured, before URL rewrites
     except subprocess.CalledProcessError:
-        raise ValueError('a draft PR needs an origin remote') from None
+        raise ValueError(f'a draft PR needs an origin remote and {root} has none: ask the user which GitHub repository '
+                         f'URL to push to; with their answer run git -C {root} remote add origin <url> and call '
+                         'again') from None
     match = re.fullmatch(r'(?:https://|ssh://git@|git@)github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?', url)
     if not match:
-        raise ValueError('a draft PR needs origin to be a GitHub repository')
+        raise ValueError(f'a draft PR needs origin to be a GitHub repository, and origin of {root} is not: ask the '
+                         f'user which GitHub repository URL to push to; with their answer run git -C {root} '
+                         'remote set-url origin <url> and call again')
     return match.group(1)
 
 

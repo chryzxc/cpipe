@@ -165,3 +165,15 @@ def test_later_stages_take_what_models_send(run_context):
     assert send(dict(token=token, arguments={}))['delivery_id'] == held['delivery_id']  # no operation: status
     error = send(dict(token=token, operation='build', arguments={}))['error']
     assert 'approval' in error and 'call again' in error  # never approved: build refuses, naming why
+
+
+def test_a_missing_remote_tells_the_chat_to_ask_for_it(tmp_path):
+    import subprocess
+    from cpipe.delivery.publish import github_repo
+    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+    with pytest.raises(ValueError, match='ask the user which GitHub repository URL.*remote add origin'):
+        github_repo(tmp_path)
+    subprocess.run(['git', '-C', str(tmp_path), 'remote', 'add', 'origin', 'https://t0ken@gitlab.com/a/b.git'], check=True)
+    with pytest.raises(ValueError, match='remote set-url origin') as raised:
+        github_repo(tmp_path)
+    assert 't0ken' not in str(raised.value)

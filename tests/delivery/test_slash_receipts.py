@@ -1,6 +1,7 @@
 """Production slash registration, receipt ownership and failure behavior."""
 import json
 import re
+import time
 
 from cpipe import native
 from cpipe.delivery.journal import Journal
@@ -235,3 +236,43 @@ def test_a_new_terminal_chat_binds_its_receipt_on_the_first_turn(repo, tmp_path,
     assert json.loads(native.execute(args, session_id='s1'))['delivery_id'] == 'd1'
     values.update(HERMES_SESSION_ID='s2')
     assert 'error' in json.loads(native.execute(args, session_id='s2'))  # bound to the first session only
+
+
+def test_an_accepted_message_that_never_reaches_its_chat_is_sent_again(hermes_home, monkeypatch):
+    import sqlite3
+    from cpipe import home
+    told = []
+    db = home.root() / 'state.db'
+    with sqlite3.connect(db) as conn:  # the chat's transcript, as Hermes keeps it
+        conn.execute('CREATE TABLE sessions (id TEXT, parent_session_id TEXT, session_key TEXT)')
+        conn.execute('CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+        conn.execute("INSERT INTO sessions VALUES ('s1', NULL, 'chat-one'), ('s2', 's1', NULL)")
+    ctx = Context()
+    ctx.inject_message = lambda text, **kw: told.append(text) or True  # accepted, then dropped by the host
+    native.register(ctx)
+    native.notify('d7', 'chat-one', '**cpipe · `d7` is done**', session_id='s1', profile_id='default')
+    assert len(told) == 1
+    native.deliver()
+    assert len(told) == 1  # not yet overdue
+    clock = time.time() + native.RESEND + 1
+    monkeypatch.setattr(native.time, 'time', lambda: clock)
+    native.deliver()
+    assert len(told) == 2  # never showed up: sent again
+    with sqlite3.connect(db) as conn:  # this time it arrives, in the chat's continuation after compression
+        conn.execute("INSERT INTO messages VALUES ('s2', 'user', ?, ?)", (told[1], clock))
+    native.deliver()
+    assert len(told) == 2
+    with Journal.for_profile(hermes_home) as store:
+        assert store.db.execute("SELECT count(*) FROM intent WHERE id='notice:d7'").fetchone()[0] == 0
+
+
+def test_a_cli_host_leaves_other_chats_messages_alone(hermes_home):
+    told = []
+    ctx = Context()
+    ctx.inject_message = lambda text, **kw: told.append(text) or True
+    ctx._manager = type('M', (), {'_cli_ref': type('C', (), {'session_id': 'other'})()})()
+    native.register(ctx)
+    native.notify('d8', 'chat-one', 'done', session_id='s1', profile_id='default')
+    assert told == []
+    with Journal.for_profile(hermes_home) as store:
+        assert store.db.execute("SELECT count(*) FROM intent WHERE id='notice:d8'").fetchone()[0] == 1

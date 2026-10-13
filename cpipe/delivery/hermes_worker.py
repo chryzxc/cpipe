@@ -312,6 +312,9 @@ def behavior_check(checks, outcome='failing on an assertion'):
     if check is None:
         return ''
     argv = shlex.join(check.argv).replace('{report}', '<any temporary file>')
+    path = dict(check.env).get('PATH')
+    if path:  # the same programs cpipe runs, whatever this shell's own PATH finds first
+        argv = 'env PATH=' + shlex.quote(path) + ' ' + argv
     return ('\nBefore returning, run the behavior check exactly as cpipe will, once, in the foreground: `' + argv
             + f'`. Its output must show each of these test names {outcome}: '
             + ', '.join(check.criteria) + '. If a name is missing, differs, or matches more than one test, rename '
