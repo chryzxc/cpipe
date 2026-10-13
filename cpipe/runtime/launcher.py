@@ -8,7 +8,7 @@ def module_command(module: str, *args: str) -> list[str]:
         from hermes_cli._launchers import runtime_command
     except ImportError as exc:
         raise RuntimeError('The loaded Hermes installation has no supported runtime bootstrap') from exc
-    from cpipe import home
+    from .. import home
     root = Path(hermes_cli.__file__).resolve().parent.parent
     package = Path(__file__).resolve().parents[2]
     code = (f'sys.path.insert(0, {str(package)!r}); import runpy; '

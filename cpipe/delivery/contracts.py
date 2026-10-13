@@ -1,5 +1,5 @@
 """Immutable validated engineering contracts, not an execution sandbox."""
-from dataclasses import dataclass, fields
+from dataclasses import MISSING, dataclass, fields
 from enum import Enum
 import math
 from pathlib import Path, PurePosixPath
@@ -63,9 +63,12 @@ class Versioned:
         if type(data) is not dict or type(data.get("schema")) is not int or data["schema"] != SCHEMA_VERSION:
             raise ValueError("unsupported schema")
         names = {f.name for f in fields(cls)}
-        if set(data) != names | {"schema"}:
-            raise ValueError("invalid fields")
-        return {name: data[name] for name in names}
+        # Fields added later with a default may be absent from records written before them.
+        defaults = {f.name: f.default if f.default is not MISSING else f.default_factory() for f in fields(cls)
+                    if f.default is not MISSING or f.default_factory is not MISSING}
+        if not names - set(defaults) <= set(data) - {"schema"} <= names:
+            raise ValueError(f"invalid {cls.__name__} fields")
+        return {name: data[name] if name in data else defaults[name] for name in names}
 
 
 # Why a check produced no PASS/FAIL. Hints are safe to show workers and users.

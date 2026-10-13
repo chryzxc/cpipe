@@ -3,6 +3,7 @@ import json
 from contextlib import closing
 import sys
 import re
+import sqlite3
 import stat
 import subprocess
 import time
@@ -650,3 +651,159 @@ def test_a_receipt_in_use_keeps_working_for_follow_ups_in_the_same_chat(run_cont
     assert 'error' not in call(token, 'prepare', dict(spec=run_context[2], approach=run_context[3],
                                                       expected_revision=0, task='redo'))
     assert expires() > time.time() + native.RUN_RECEIPT / 2
+
+
+def test_a_run_whose_app_restarted_is_finished_by_the_next_process(run_context, repo, hermes_home, monkeypatch, tmp_path):
+    """The desktop app restarts mid-run: its process dies with the run thread, and the new process starts with
+    other PATH/HOME/TMPDIR settings. The watchdog there must take the run over and finish it, and a delivery
+    that lost its runner record altogether must be adopted, not stranded."""
+    import os
+    from cpipe.delivery import controller
+    from cpipe.delivery.journal import encoded
+    from cpipe.delivery.review import REVIEW_AXES
+    from cpipe.delivery.workers import WorkerResult
+    from cpipe.runtime import hermes_api as h
+    ctx, token, _, _, _, _ = run_context
+    prepare(run_context)
+    frozen = call(token, 'plan', {'draft_revision': 1})
+    delivery_id = frozen['delivery_id']
+    reply(frozen['approval_arguments'], 'Yes')
+    h.kb.init_db()
+    told, workers = [], []
+    ctx.inject_message = lambda text, **kw: told.append(text) or True
+
+    def worker(state, *, on_session, **kw):
+        workers.append(state.activity)
+        on_session(state.activity + '-fixture')
+        if state.activity == 'implement':
+            (Path(state.plan.worktree) / 'double.py').write_text('def double(n): return n * 2\n')
+            return WorkerResult(state.activity + '-fixture', {'status': 'done'})
+        return WorkerResult(state.activity + '-fixture', dict(status='approved', artifact=state.artifact,
+            reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
+    original_run = controller.run
+    def controlled(service, delivery_id, **kw):
+        with closing(h.connect(None)) as conn:
+            return original_run(service, delivery_id, conn=conn, execute=worker, **kw)
+    monkeypatch.setattr(controller, 'run', controlled)
+    import socket
+    with Journal.for_profile(hermes_home) as store:  # claimed by the app process that died
+        store.db.execute('INSERT INTO intent(id,payload,acknowledged) VALUES (?,?,1)', ('runner:' + delivery_id,
+            encoded(dict(claimer=f'{socket.gethostname()}:999999:run', session_id='s1', profile_id='default',
+                         chat_key='chat-one'))))
+    other = tmp_path / 'other-process'
+    other.mkdir()
+    monkeypatch.setenv('PATH', str(other) + os.pathsep + os.environ['PATH'])
+    monkeypatch.setenv('HOME', str(other))
+    monkeypatch.setenv('TMPDIR', str(other))
+    monkeypatch.setattr(native, '_SCANNED', [0.0])
+    native.resume_orphans()  # the new process's watchdog
+    native._RUNS[delivery_id].join(60)
+    assert call(token, 'status', {})['phase'] == 'locally_ready', told
+    assert workers[:2] == ['implement', 'review'] and len(told) == 1 and 'ready for your review' in told[0]
+
+
+def test_an_approved_delivery_nothing_runs_is_adopted_by_the_watchdog(run_context, monkeypatch):
+    """The chat died right after the user approved (or a runner record was lost): nothing would ever run it."""
+    ctx, token, _, _, _, _ = run_context
+    prepare(run_context)
+    frozen = call(token, 'plan', {'draft_revision': 1})
+    delivery_id = frozen['delivery_id']
+    reply(frozen['approval_arguments'], 'Yes')
+    runs = []
+    monkeypatch.setattr(native.controller, 'run', lambda service, d, **kw: runs.append(d) or {})
+    monkeypatch.setattr(native, '_SCANNED', [0.0])
+    native.resume_orphans()
+    assert runs == [] and delivery_id not in native._RUNS  # just approved: the chat's own build starts it
+    monkeypatch.setattr(native, 'ADOPT', -1)  # nothing moved it for too long
+    monkeypatch.setattr(native, '_SCANNED', [0.0])
+    native.resume_orphans()
+    native._RUNS[delivery_id].join(30)
+    assert runs == [delivery_id]
+
+
+@pytest.mark.parametrize('failure, shown', [(ValueError('invalid Event fields'), 'invalid Event fields'),
+                                             (sqlite3.OperationalError('database is locked'), 'OperationalError')])
+def test_a_run_that_cannot_be_taken_over_stays_watched_and_resumes_once_fixed(run_context, hermes_home, monkeypatch,
+                                                                             failure, shown):
+    """A takeover refused by a bug (or an old plugin version) must not forget the run: it is parked, the chat
+    is told once, and the watchdog retries it until it works."""
+    import socket
+    from cpipe.delivery.journal import encoded
+    ctx, token, _, _, _, _ = run_context
+    prepare(run_context)
+    frozen = call(token, 'plan', {'draft_revision': 1})
+    delivery_id = frozen['delivery_id']
+    reply(frozen['approval_arguments'], 'Yes')
+    told, runs, broken = [], [], [True]
+    ctx.inject_message = lambda text, **kw: told.append(text) or True
+    ready = native.controller.ready
+    def flaky(*a):
+        if broken[0]:
+            raise failure
+        return ready(*a)
+    monkeypatch.setattr(native.controller, 'ready', flaky)
+    monkeypatch.setattr(native.controller, 'run', lambda service, d, **kw: runs.append(d) or {})
+    with Journal.for_profile(hermes_home) as store:  # left by an app process that is gone
+        store.db.execute('INSERT INTO intent(id,payload,acknowledged) VALUES (?,?,1)', ('runner:' + delivery_id,
+            encoded(dict(claimer=f'{socket.gethostname()}:999999:run', session_id='s1', profile_id='default',
+                         chat_key='chat-one'))))
+    for _ in range(2):
+        monkeypatch.setattr(native, '_SCANNED', [0.0])
+        native.resume_orphans()
+    record = json.loads(Journal.for_profile(hermes_home).__enter__().db.execute(
+        'SELECT payload FROM intent WHERE id=?', ('runner:' + delivery_id,)).fetchone()[0])
+    assert record['parks'] == 1 and record['error'] == shown and record['retry_at'] > time.time()
+    assert len(told) == 1 and 'could not be resumed yet' in told[0] and shown in told[0]
+    broken[0] = False  # an updated cpipe is installed; the retry comes due
+    with Journal.for_profile(hermes_home) as store:
+        store.db.execute('UPDATE intent SET payload=? WHERE id=?',
+                         (encoded({**record, 'retry_at': 1}), 'runner:' + delivery_id))
+    monkeypatch.setattr(native, '_SCANNED', [0.0])
+    native.resume_orphans()
+    native._RUNS[delivery_id].join(30)
+    assert runs == [delivery_id]
+
+
+def test_build_twice_never_starts_two_runs_of_one_delivery(run_context, monkeypatch):
+    import threading
+    ctx, token, _, _, _, _ = run_context
+    prepare(run_context)
+    frozen = call(token, 'plan', {'draft_revision': 1})
+    delivery_id = frozen['delivery_id']
+    reply(frozen['approval_arguments'], 'Yes')
+    gate, runs = threading.Event(), []
+    monkeypatch.setattr(native.controller, 'run', lambda service, d, **kw: (runs.append(d), gate.wait(30), True)[2])  # not a dict: still reported
+    native.launch(delivery_id, session_id='s1', profile_id='default', chat_key='chat-one')
+    assert native.launch(delivery_id, session_id='s1', profile_id='default',
+                         chat_key='chat-one')['message'] == 'Already building in the background.'
+    gate.set()
+    native._RUNS[delivery_id].join(30)
+    assert runs == [delivery_id]
+
+
+def test_directory_scope_paths_may_end_in_a_slash_and_bad_ones_are_named(run_context):
+    run_context[2]['forbidden_paths'] = ['.git', 'internal/', 'client/']
+    assert prepare(run_context)['draft_revision'] == 1
+    run_context[2]['forbidden_paths'] = ['.git', '../outside']
+    error = prepare(run_context, 1)['error']
+    assert "forbidden_paths entry '../outside'" in error
+
+
+def test_a_delivery_frozen_before_environments_were_stored_still_resumes_elsewhere(run_context, hermes_home,
+                                                                                 monkeypatch, tmp_path):
+    from cpipe.delivery import controller
+    _, token, _, _, _, _ = run_context
+    prepare(run_context)
+    frozen = call(token, 'plan', {'draft_revision': 1})
+    delivery_id = frozen['delivery_id']
+    reply(frozen['approval_arguments'], 'Yes')
+    with Journal.for_profile(hermes_home) as store:  # as an older cpipe wrote it
+        key = 'check-spec:' + frozen_plan(delivery_id).digest()
+        specs = json.loads(store.db.execute('SELECT payload FROM intent WHERE id=?', (key,)).fetchone()[0])
+        store.db.execute('UPDATE intent SET payload=? WHERE id=?',
+                         (json.dumps([{k: v for k, v in s.items() if k != 'env'} for s in specs]), key))
+    monkeypatch.setenv('HOME', str(tmp_path))  # another process
+    monkeypatch.setenv('TMPDIR', str(tmp_path))
+    with native.scope() as (service, _, _home):
+        state, checks = controller.ready(service, delivery_id, 's1', 'default')
+    assert tuple(c.identity() for c in checks) == state.plan.checks[:-1]

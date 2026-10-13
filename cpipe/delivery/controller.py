@@ -3,6 +3,7 @@
 Trusted local workers are not sandboxed. A draft PR is opened only when the approved plan grants it.
 """
 from contextlib import closing
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -138,7 +139,7 @@ def propose(service, plan, checks):
     # Specs are frozen alongside the projection; replay may never change them.
     key = 'check-spec:' + plan.digest()
     payload = encoded([dict(obligation=c.obligation, argv=list(c.argv), criteria=list(c.criteria),
-                          timeout_seconds=c.timeout_seconds) for c in checks])
+                          timeout_seconds=c.timeout_seconds, env=[list(p) for p in c.env]) for c in checks])
     row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?', (key,)).fetchone()
     if row and row[0] != payload:
         raise ValueError('check definition changed')
@@ -170,7 +171,9 @@ def validate_spec(spec):
         raise ValueError('cpipe requires a bounded 30..7200 second budget')
     for key in ('acceptance', 'non_goals', 'write_paths', 'forbidden_paths', 'checks'):
         if type(spec[key]) is not list:
-            raise ValueError('cpipe requires explicit list fields')
+            raise ValueError(f'{key} must be a list')
+    for key in ('write_paths', 'forbidden_paths'):  # "dir/" is how people write a directory
+        spec[key] = [p.rstrip('/') if type(p) is str and p.strip('/') else p for p in spec[key]]
 
     root = Path(spec['worktree'])
     if not root.is_absolute() or root.resolve() != root:
@@ -216,8 +219,14 @@ def validate_spec(spec):
         string_tuple(tuple(spec[name]), name)
     if not spec['acceptance'] or not spec['write_paths'] or not spec['forbidden_paths']:
         raise ValueError('acceptance and scope paths are required')
-    for path in spec['write_paths'] + spec['forbidden_paths']:
-        relative_path(path)
+    for key in ('write_paths', 'forbidden_paths'):
+        for path in spec[key]:
+            try:
+                relative_path(path)
+            except ValueError:
+                # The coordinator's own value, echoed back so it can fix it without reading cpipe's source.
+                raise ValueError(f'{key} entry {str(path)[:120]!r} must be a path relative to the repository root '
+                                 'with no leading "/", "./" or "..", e.g. "src/app" or "src/app/main.py"') from None
     for path in spec['write_paths']:
         for denied in spec['forbidden_paths'] + ['.git']:
             if path == denied or path.startswith(denied + '/') or denied.startswith(path + '/'):
@@ -392,9 +401,18 @@ def ready(service, delivery_id, session_id, profile_id):
                                     ('check-spec:' + state.plan.digest(),)).fetchone()
     if not row:
         raise ValueError('missing frozen check specifications')
-    checks = tuple(CommandCheck(c['obligation'], tuple(c['argv']), tuple(c['criteria']), c['timeout_seconds'])
-                   for c in json.loads(row[0]))
-    if tuple(c.identity() for c in checks) + (review_identity(),) != state.plan.checks:
+    specs = json.loads(row[0])
+    checks = tuple(CommandCheck(c['obligation'], tuple(c['argv']), tuple(c['criteria']), c['timeout_seconds'],
+                                tuple(tuple(p) for p in c.get('env', ()))) for c in specs)
+    frozen = state.plan.checks[:-1]
+    if state.plan.checks[-1:] != (review_identity(),) or [(c.obligation, c.identity().inputs, c.identity().command)
+            for c in checks] != [(a.obligation, a.inputs, a.command) for a in frozen]:
+        raise ValueError('frozen check definitions changed')
+    # Plans frozen before environments were stored ran in their host's settings: keep the approved identity
+    # instead of stranding the delivery whenever another process (or a restarted app) resumes it.
+    checks = tuple(c if 'env' in spec else replace(c, pinned=a.environment)
+                   for c, spec, a in zip(checks, specs, frozen))
+    if tuple(c.identity() for c in checks) != frozen:
         raise ValueError('frozen check environment changed')
     return state, checks
 

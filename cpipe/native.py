@@ -159,7 +159,7 @@ SHOW = '[cpipe] Show the user this message exactly as written, then stop. Do not
 
 
 def _settled(delivery_id, result, error):
-    result = result or {}
+    result = result if isinstance(result, dict) else {}
     phase = result.get('phase', '')
     head = HEADLINES.get(phase, 'stopped unexpectedly' + (f' ({error})' if error else ''))
     unresolved = sum(f['blocking'] for f in result.get('findings', ()))
@@ -208,6 +208,9 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
     with scope() as (service, _, _home):
         controller.ready(service, delivery_id, session_id, profile_id)  # refuse before anything starts
         state = service.read(delivery_id)
+        thread = _RUNS.get(delivery_id)
+        if thread and thread.is_alive():  # a repeated build or a takeover race: never two runs of one delivery
+            return dict(_status(service, state), message='Already building in the background.')
         for (key,) in service.journal.db.execute("SELECT id FROM intent WHERE id LIKE 'runner:%'").fetchall():
             other = service.read(key[len('runner:'):])
             if (state and key != _runner(delivery_id) and other and other.approved
@@ -302,6 +305,68 @@ def launch(delivery_id, *, session_id, profile_id, chat_key, wait=0):
 _SCANNED = [0.0]
 
 
+# An approved delivery that nothing has moved for this long and nothing runs is adopted by the watchdog.
+ADOPT = 600
+
+
+def adopt():
+    """Give every approved, unfinished delivery that lost its runner record (a crash between steps, a
+    chat that died after approval) one again, so the scan below resumes it instead of leaving it stranded."""
+    with scope() as (service, _, _home):
+        db = service.journal.db
+        known = {k for (k,) in db.execute("SELECT id FROM intent WHERE id LIKE 'runner:%'")}
+        for (delivery_id,) in db.execute('SELECT id FROM delivery').fetchall():
+            thread = _RUNS.get(delivery_id)
+            if _runner(delivery_id) in known or thread and thread.is_alive():
+                continue
+            try:
+                state = service.read(delivery_id)
+            except Exception:
+                log.warning('cpipe: could not read %s', delivery_id, exc_info=True)
+                continue
+            if not (state and state.approved and state.activity in controller.ACTIVE_STEPS
+                    and time.time() - state.last_at > ADOPT):
+                continue
+            e = state.plan.envelope
+            row = db.execute("SELECT payload FROM intent WHERE id LIKE 'slash:%' AND json_extract(payload, "
+                             "'$.session_id')=? AND json_extract(payload, '$.session_key') IS NOT NULL",
+                             (e.session_id,)).fetchone()
+            chat_key = json.loads(row[0])['session_key'] if row else e.session_id
+            log.warning('cpipe: run %s had no runner; adopting it', delivery_id)
+            db.execute('INSERT OR IGNORE INTO intent(id,payload,acknowledged) VALUES (?,?,1)', (_runner(delivery_id),
+                       encoded(dict(claimer='', session_id=e.session_id, profile_id=e.profile_id,
+                                     chat_key=chat_key, retry_at=1))))
+
+
+def _unresumed(delivery_id, key, record, error):
+    """A run that could not be taken over: report it if it is finished, otherwise keep it parked and
+    retried (by the newest plugin code) instead of forgetting it."""
+    try:
+        with scope() as (service, _, _home):
+            state = controller.owned(service, delivery_id, record['session_id'], record['profile_id'])
+            result = {**controller.summary(state, service), 'worktree': state.plan.worktree, 'goal': state.plan.goal}
+    except ValueError:
+        state = result = None  # gone or not ours: nothing left to run
+    except Exception:
+        log.exception('cpipe: could not read %s; retrying later', delivery_id)
+        return _record(key, {**record, 'retry_at': int(time.time()) + PARK, 'error': error})
+    if state is not None and state.approved and state.activity in controller.ACTIVE_STEPS:
+        parks = record.get('parks', 0) + 1
+        _record(key, {**record, 'retry_at': int(time.time()) + PARK, 'error': error, 'parks': parks})
+        log.warning('cpipe: run %s not resumed (%s); retrying in %ss', delivery_id, error, PARK)
+        if parks == 1:
+            notify(delivery_id, record['chat_key'], SHOW + (
+                f'**cpipe · `{delivery_id}` stopped and could not be resumed yet.**\n\n'
+                f'| | |\n|---|---|\n| Error | {_cell(error)} |\n'
+                f'| Next | retries on its own every {PARK // 60} minutes (an updated cpipe is picked up), or say '
+                f'**continue** to retry now |\n| Stop it | `/cp-stop {delivery_id}` |'))
+        return
+    _record(key, delete=True)
+    log.info('cpipe: run %s not resumed: %s', delivery_id, error)
+    if result is not None:
+        notify(delivery_id, record['chat_key'], _settled(delivery_id, result, error)[1])
+
+
 def resume_orphans(**_):
     """Hook and watchdog: relaunch runs whose host died or whose retry is due; redeliver messages."""
     import socket
@@ -310,6 +375,7 @@ def resume_orphans(**_):
     _SCANNED[0] = time.time()
     from .delivery.native_bridge import alive
     try:
+        adopt()
         with scope() as (service, _, _home):
             rows = service.journal.db.execute("SELECT id, payload FROM intent WHERE id LIKE 'runner:%'").fetchall()
         for key, payload in rows:
@@ -328,16 +394,9 @@ def resume_orphans(**_):
             try:
                 launch(delivery_id, session_id=record['session_id'], profile_id=record['profile_id'],
                        chat_key=record['chat_key'])
-            except ValueError as exc:  # no longer runnable (finished, cancelled, expired)
-                _record(key, delete=True)
-                log.info('cpipe: run %s not resumed: %s', delivery_id, exc)
-                try:
-                    with scope() as (service, _, _home):
-                        state = controller.owned(service, delivery_id, record['session_id'], record['profile_id'])
-                        result = {**controller.summary(state, service), 'worktree': state.plan.worktree, 'goal': state.plan.goal}
-                    notify(delivery_id, record['chat_key'], _settled(delivery_id, result, str(exc)[:200])[1])
-                except Exception:
-                    pass
+            except Exception as exc:  # parked and retried, never dropped; the other runs still resume
+                _unresumed(delivery_id, key, record, str(exc)[:200] if type(exc) is ValueError
+                           else type(exc).__name__)
     except Exception:
         log.exception('cpipe: resume scan failed')  # never disturb the user's turn
     deliver()
@@ -367,9 +426,10 @@ def ensure_running(delivery_id, *, session_id, profile_id, chat_key, wait=0):
 def watchdog():
     """Resume dead or parked runs and redeliver messages even when nobody is chatting."""
     def watch():
+        from .live import module
         while True:
             time.sleep(WATCH)
-            resume_orphans()
+            module('native').resume_orphans()  # the newest plugin code resumes and retries runs
     if not _short_lived() and not any(t.name == 'cpipe-watchdog' for t in threading.enumerate()):
         threading.Thread(target=contextvars.copy_context().run, args=(watch,),
                          name='cpipe-watchdog', daemon=True).start()
@@ -738,32 +798,37 @@ def execute(args, **kwargs):
                and Path(tb.tb_frame.f_code.co_filename).is_relative_to(Path(__file__).parent))
         return json.dumps({'error': 'cpipe operation failed: ' + type(exc).__name__ +
             (' (' + str(exc)[:300] + ')' if own else '') +
-            (' cpipe was updated while this chat was open; start a new chat.' if isinstance(exc, ImportError) else '') +
+            (' cpipe was being updated; send the same request again.' if isinstance(exc, ImportError) else '') +
             '. No authority inferred; inspect the current draft or /cp-status before retrying.'})
+
+
+def preload():
+    """Load every module a run needs now, so a plugin update mid-run never mixes versions."""
+    import importlib
+    for name in ('approach', 'approval', 'artifact', 'check_runner', 'contracts', 'controller', 'hermes_worker',
+                 'live_probe', 'native_bridge', 'publish', 'review', 'workers'):
+        importlib.import_module('.delivery.' + name, __package__)
+    for name in ('plan_approval', 'routing', 'runtime.envpolicy', 'runtime.launcher'):
+        importlib.import_module('.' + name, __package__)
 
 
 def register(ctx):
     global _CTX
     _CTX = ctx
     from . import plan_approval
+    from .live import entry
     plan_approval.register(ctx)
-    ctx.register_tool(name=SCHEMA['name'], toolset='cpipe', schema=SCHEMA, handler=execute)
-    # Load every module a run needs now, so a plugin update mid-run never mixes versions.
-    import importlib
-    for name in ('approach', 'approval', 'artifact', 'check_runner', 'contracts', 'hermes_worker', 'live_probe',
-                 'native_bridge', 'review', 'workers'):
-        importlib.import_module('.delivery.' + name, __package__)
-    for name in ('routing', 'runtime.envpolicy', 'runtime.launcher'):
-        importlib.import_module('.' + name, __package__)
+    ctx.register_tool(name=SCHEMA['name'], toolset='cpipe', schema=SCHEMA, handler=entry('native', 'execute'))
+    preload()
     if hasattr(ctx, 'register_hook'):
         for hook in ('on_session_start', 'pre_llm_call'):
-            ctx.register_hook(hook, resume_orphans)
+            ctx.register_hook(hook, entry('native', 'resume_orphans'))
     watchdog()
     if hasattr(ctx, 'register_command'):
         for name, about, hint in (
                 ('cp-run', 'Run a task with adaptive investigation and review', '<task>'),
                 ('cp-spawn', 'Start tasks from this chat in new chats, each with /cp-run', '<which tasks>'),
                 ('cp-status', 'cpipe: status', '[delivery_id]'), ('cp-stop', 'cpipe: stop', '<delivery_id>')):
-            ctx.register_command(name, lambda raw='', _name=name: dispatch(ctx, _name, raw),
+            ctx.register_command(name, lambda raw='', _name=name: entry('native', 'dispatch')(ctx, _name, raw),
                 description=about, args_hint=hint,
                 argument_mode='text')

@@ -59,12 +59,14 @@ def observe(tool_name='', args=None, result=None, session_id='', **_):
 
 
 def register(ctx):
+    from .live import entry, module
+
     def handler(args, **kwargs):
         try:
-            return json.dumps(request(args, kwargs.get('session_id')))
+            return json.dumps(module('plan_approval').request(args, kwargs.get('session_id')))
         except Exception as exc:
             return json.dumps({'error': 'Approval failed: ' + type(exc).__name__ +
                                '. No consent inferred; inspect the proposal before retrying.'})
     ctx.register_tool(name=NAME, toolset='cpipe', schema=SCHEMA, handler=handler)
     if hasattr(ctx, 'register_hook'):
-        ctx.register_hook('post_tool_call', observe)
+        ctx.register_hook('post_tool_call', entry('plan_approval', 'observe'))

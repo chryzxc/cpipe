@@ -44,22 +44,29 @@ def _digest(value):
     return hashlib.sha256(encoded(value).encode()).hexdigest()
 
 
-def _environment(program):
+SAFE_ENV = ('PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TMPDIR')
+
+
+def frozen_environment():
+    """The safe subprocess settings of this process, frozen into the plan at approval so every later process
+    (another chat, a restarted app, the watchdog) runs the checks the same way."""
     # Checks deliberately do not inherit arbitrary settings or credentials.
-    # Hash only the safe, explicitly selected subprocess definition. Secret
-    # values must never enter persisted identities, even through a hash.
+    # Secret values must never be persisted, even through a hash.
+    from ..runtime.envpolicy import Redactor
+    redact = Redactor(os.environ)
+    return tuple(sorted((name, os.environ[name]) for name in SAFE_ENV
+                        if name in os.environ and redact(os.environ[name]) == os.environ[name]))
+
+
+def _environment(program, frozen):
     # The resolved program is hashed, not the project's installed dependencies;
     # lockfiles are already in the artifact fingerprint.
-    from ..runtime.envpolicy import Redactor
-    safe = ('PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TMPDIR')
-    redact = Redactor(os.environ)
-    env = {name: os.environ[name] for name in safe if name in os.environ
-           and redact(os.environ[name]) == os.environ[name]}
+    env = dict(frozen)
     env['CI'] = '1'  # Non-interactive: no watch modes or prompts.
     path = program if os.path.isabs(program) else shutil.which(program, path=env.get('PATH'))
     if not path or not os.access(path, os.X_OK):
-        raise ValueError('check program is not installed or not on PATH')
-    return env, _digest([os.path.realpath(path), sorted(env.items())])
+        raise ValueError(f'check program {program!r} is not installed or not on the frozen PATH')
+    return env, _digest([path, sorted(env.items())])
 
 
 @dataclass(frozen=True)
@@ -68,8 +75,15 @@ class CommandCheck:
     argv: tuple[str, ...]
     criteria: tuple[str, ...] = ()
     timeout_seconds: int = 120
+    env: tuple[tuple[str, str], ...] = ()  # frozen at approval; empty means this process's settings
+    pinned: str = ''  # the approved environment identity of a plan frozen before environments were stored
 
     def __post_init__(self):
+        if not self.env:
+            object.__setattr__(self, 'env', frozen_environment())
+        if (type(self.env) is not tuple or any(type(p) is not tuple or len(p) != 2 or p[0] not in SAFE_ENV
+                                               or type(p[1]) is not str for p in self.env)):
+            raise ValueError('invalid frozen check environment')
         identity(self.obligation, 'obligation')
         if type(self.argv) is not tuple or not self.argv:
             raise ValueError('check command must be a non-empty argv list')
@@ -92,9 +106,12 @@ class CommandCheck:
     def command(self, report):
         return [arg.replace(REPORT, report) for arg in self.argv]
 
+    def environment(self):
+        return _environment(self.argv[0], self.env)
+
     def identity(self):
         return CheckIdentity(self.obligation, _digest([self.argv, self.criteria]),
-            _environment(self.argv[0])[1], _digest([self.argv, self.timeout_seconds]))
+            self.pinned or self.environment()[1], _digest([self.argv, self.timeout_seconds]))
 
 
 def _run(spec, worktree, env, timeout):
@@ -283,7 +300,7 @@ def take_baseline(state, specs, *, evidence_root):
     known = {}
     for spec in specs:
         remaining = deadline(state) - time.time()
-        observed = _run(spec, state.plan.worktree, _environment(spec.argv[0])[0],
+        observed = _run(spec, state.plan.worktree, spec.environment()[0],
                         min(spec.timeout_seconds, remaining))
         if observed and observed[0] > 0 and observed[0] not in _NOT_RUN:
             known[spec.obligation] = sorted(_marks(spec, observed))
@@ -327,14 +344,12 @@ def observe_check(state, spec, *, evidence_root):
     root = Path(evidence_root).absolute()
     if root.resolve() != root or root.is_relative_to(Path(state.plan.worktree)):
         raise ValueError('evidence must be outside source in a non-symlink directory')
-    env, environment = _environment(spec.argv[0])
-    if environment != definition.environment:
-        raise ValueError('environment changed before check execution')
+    env, environment = spec.environment()
     observed = _run(spec, state.plan.worktree, env, min(spec.timeout_seconds, remaining))
     after = fingerprint(state.plan.worktree)
     if after != before:
         raise ValueError('artifact changed during read-only check')
-    if _environment(spec.argv[0])[1] != environment:
+    if spec.environment()[1] != environment:
         raise ValueError('environment changed during check execution')
     outcome, reason = _outcome(spec, observed)
     if _pre_existing(evidence_root, state, spec, observed, outcome, reason):
@@ -343,7 +358,7 @@ def observe_check(state, spec, *, evidence_root):
     _remember(state, spec, observed, outcome)
     observed = None  # Never persist report text or test output.
     receipt = Receipt(spec.obligation, before.digest, state.plan.envelope.scope,
-                      definition.inputs, environment, definition.command, outcome,
+                      definition.inputs, definition.environment, definition.command, outcome,
                       outcome in {Outcome.PASS, Outcome.FAIL}, reason)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     # Parameterized IDs can embed credentials even in an approved criterion.
@@ -367,7 +382,7 @@ def reproduces(state, specs, *, evidence_root):
             remaining = deadline(state) - time.time()
             if remaining <= 0:
                 raise ValueError('execution authority expired or budget exhausted')
-            observed = _run(spec, state.plan.worktree, _environment(spec.argv[0])[0],
+            observed = _run(spec, state.plan.worktree, spec.environment()[0],
                             min(spec.timeout_seconds, remaining))
             outcome, reason = _outcome(spec, observed)
             # The behavior check judges only its criteria: other failing cases in it are new tests.

@@ -60,7 +60,8 @@ Each loop in the graph has an exit condition and a bound.
 
 - **Retry with backoff:** failed steps, check runs and setup are retried with increasing delays.
 - **Crash-loop parking:** a run that crashes repeatedly at the same point is parked and retried on a timer, similar to a circuit breaker.
-- **Watchdog:** long-running Hermes processes resume orphaned runs, and a single owner record ensures only one process resumes each run.
+- **Watchdog:** long-running Hermes processes resume orphaned runs, and a single owner record ensures only one process resumes each run. A run that cannot be resumed is parked and retried, never dropped. An approved, unfinished delivery that no run owns gets a new owner record.
+- **Live code updates:** each tool call, hook and watchdog scan loads the installed plugin code again when its files have changed, keeping run state shared. A broken update keeps the last working code.
 - **Timeouts and budgets:** each step has a wall-clock cap, and the delivery has a time and turn budget set at approval.
 
 ### Token efficiency and caching
@@ -77,7 +78,7 @@ Each loop in the graph has an exit condition and a bound.
 
 ### Safety
 
-- **Least privilege for checks:** checks run with a minimal environment (`PATH`, `HOME`, locale, `CI=1`) and no credentials.
+- **Least privilege for checks:** checks run with a minimal environment (`PATH`, `HOME`, locale, `CI=1`) and no credentials. That environment is frozen into the plan at approval, so a resumed run (another process, a restarted app) runs the checks exactly as approved.
 - **Redaction:** credentials are written as `[REDACTED]`, and review text is redacted before it is stored or shown.
 - **Local unless asked:** cpipe commits, pushes and opens a pull request only when the task asks for one and you approve it; the PR is always a draft on the delivery's own branch. It never merges or deploys.
 
@@ -150,7 +151,7 @@ A delivery stops for you only when no approved action can move it forward. Other
 - **The repository already fails a check** (for example an unrelated failing test): on the first check run, cpipe runs every check on the base code (its own edits put aside and restored, even after a crash) and remembers what already fails. A check that later fails only on those counts as passed and says so in the report; any new failure still goes back to the builder. The behavior test never gets this pass.
 - **A check run or step setup crashes:** retried with backoff; the run reports only after 3 failures in a row.
 - **The run itself crashes:** it restarts in the background as long as it keeps making progress. After repeated crashes at the same point it is parked and retried every 10 minutes until it works or its budget ends; the chat is told once.
-- **Hermes restarts or crashes:** a watchdog in every long-running Hermes process (and the next chat turn) resumes the run from its last step. Exactly one process resumes it. A worker the dead process left running is stopped first, so it neither keeps spending nor holds the session the retry needs; `/cp-stop` stops it too.
+- **Hermes restarts or crashes:** a watchdog in every long-running Hermes process (and the next chat turn) resumes the run from its last step. Exactly one process resumes it. A run that cannot be taken over is parked, the chat is told once, and it is retried every 10 minutes, so an updated cpipe or a **continue** picks it up. An approved delivery that nothing has moved for 10 minutes and that no run owns (a crash between steps) is adopted by the watchdog the same way. A worker the dead process left running is stopped first, so it neither keeps spending nor holds the session the retry needs; `/cp-stop` stops it too.
 - **Something else takes cpipe's cards** (a board automation, an older background service): a card that was reassigned, claimed by something else or left behind is archived and replaced. Cards are claimed the moment they are queued, and released cards are archived so nothing picks them up again. `hermes cpipe doctor` warns when this happens.
 - **The budget runs out while no step is running:** the next resume records the stop and reports it.
 - **"Continue" in the chat:** asking the coordinator to continue calls build again, which restarts an idle run and returns its current state. This applies to a run that stopped, is waiting, reported `diagnosis` or finished with open findings:
@@ -202,7 +203,7 @@ hermes plugins doctor cpipe --ci
 hermes cpipe doctor
 ```
 
-Start a new Hermes chat after updating; a running chat keeps the old tools loaded.
+Running chats and background runs pick up the updated code at their next tool call or watchdog scan; no new chat is needed. A Hermes process started before live updates were available needs one restart or new chat.
 
 ## Commands
 
@@ -247,7 +248,7 @@ Each check has an `obligation`, an `argv`, `criteria` and a `timeout_seconds`. E
 ["go", "test", "./...", "-run", "TestX", "-v"]
 ```
 
-Prefer commands that provision their own dependencies; otherwise install first (`sh -c "npm ci && ..."`). Checks run with a minimal environment (`PATH`, `HOME`, locale, `CI=1`) and no credentials.
+Prefer commands that provision their own dependencies; otherwise install first (`sh -c "npm ci && ..."`). Checks run with a minimal environment (`PATH`, `HOME`, locale, `CI=1`) and no credentials, frozen at approval.
 
 ## Security and limits
 

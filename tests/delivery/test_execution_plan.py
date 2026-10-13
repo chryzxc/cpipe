@@ -66,3 +66,14 @@ def test_actor_and_check_fields_are_strict():
         Actor("builder", "unknown", "forge", "m", "p")
     with pytest.raises(ValueError):
         CheckIdentity("behavior", "", "environment", "command")
+
+
+def test_a_plan_written_before_a_defaulted_field_existed_still_loads():
+    """A cpipe update that adds a field must not strand deliveries frozen by the version before it."""
+    original = plan(title='Fix it')
+    data = original.to_dict()
+    del data['title']
+    assert ExecutionPlan.from_dict(data) == replace(original, title='')
+    del data['goal']  # a required field is still required
+    with pytest.raises(ValueError, match='fields'):
+        ExecutionPlan.from_dict(data)
