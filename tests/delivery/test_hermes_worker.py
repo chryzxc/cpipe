@@ -55,14 +55,16 @@ def test_an_answer_is_kept_when_hermes_rotates_the_session_or_the_turn_limit_end
     assert out.payload == {'status': 'blocked', 'reason': 'x'}
 
 
-def test_a_worker_that_runs_out_of_turns_is_asked_for_its_answer_instead_of_failing(monkeypatch):
+@pytest.mark.parametrize('activity', ['implement', 'review'])
+def test_a_worker_that_ends_in_prose_is_not_thrown_away(monkeypatch, activity):
     # Seen live: out of turns, the worker wrote a prose summary and Hermes exited 1; cpipe threw the
-    # work away three times and handed over. Now the same session is asked for the JSON, without tools.
+    # work away three times and handed over. A build is judged by its checks, so its prose counts as done;
+    # a reviewer's session is asked for the JSON verdict, without tools.
     from dataclasses import replace
     from cpipe.delivery import hermes_worker
     from cpipe.delivery.hermes_worker import Unfinished, SALVAGE
     from .test_service import candidate
-    state = replace(candidate(), activity='implement', builder_session='')
+    state = replace(candidate(), activity=activity, builder_session='')
     prose = result(text='I fixed most of it; summary follows.', exit_code=1,
                    tokens=dict(input=10, output=1, total=11, cache_read=0, cache_write=0))
     answer = result(session='native-child', text='{"status":"done"}',
@@ -80,9 +82,12 @@ def test_a_worker_that_runs_out_of_turns_is_asked_for_its_answer_instead_of_fail
     monkeypatch.setattr(hermes_worker, 'execute_stream', stream)
     bound = []
     out = hermes_worker.HermesWorker()(state, on_session=bound.append, heartbeat=lambda: None, timeout_seconds=120)
-    assert calls == [('', hermes_worker.TURNS['implement']), ('native-child', 3)] and prompts[1] == SALVAGE
     assert out.session_id == 'native-child' == bound[0] and out.payload == {'status': 'done'}
-    assert out.tokens['total'] == 17
+    if activity == 'implement':
+        assert calls == [('', hermes_worker.TURNS['implement'])] and out.tokens['total'] == 11
+    else:
+        assert calls == [('', hermes_worker.TURNS['review']), ('native-child', 3)] and prompts[1] == SALVAGE
+        assert out.tokens['total'] == 17
     with pytest.raises(Unfinished):  # the bare stream still reports it; only the worker repairs it
         run(events(init(), prose))
 
@@ -227,16 +232,6 @@ def test_a_worker_left_running_by_a_dead_process_is_stopped(tmp_path):
     hermes_worker.stop_orphan(tmp_path)
     assert bystander.poll() is None
     bystander.kill()
-
-
-def test_the_final_review_hunts_regressions_over_the_whole_range():
-    from cpipe.delivery.hermes_worker import _prompt
-    from .test_service import candidate, claim, ready_for_review, reviewed
-    state, _ = reviewed(ready_for_review(candidate()))
-    final = _prompt(claim(state, 'sentry', 'final-review-session'), '', 'tree-a tree-b')
-    assert 'final regression review' in final and 'callers' in final
-    assert 're-review round' not in final and 'one narrow test only' not in final
-    assert 'final regression review' not in _prompt(ready_for_review(candidate()), '', '')
 
 
 def test_the_test_writer_runs_the_exact_behavior_check_once():

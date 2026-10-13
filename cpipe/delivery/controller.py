@@ -15,12 +15,12 @@ import time
 import uuid
 
 from .artifact import validate_worktree
-from .check_runner import CommandCheck, baseline_path, reproduces, take_baseline
+from .check_runner import CommandCheck, baseline_path, take_baseline
 from .contracts import Envelope, Budget, UNAVAILABLE_REASONS
 from .schema import ExecutionPlan
 from .service import Service, Event, deadline, resumable  # noqa: F401 (resumable: used by native)
 from .native_bridge import NativeBridge
-from .hermes_worker import (at_base, before_step, changed_since_base, reattach, release, HermesWorker,
+from .hermes_worker import (at_base, changed_since_base, reattach, release, HermesWorker,
                             keep, roll_back, stop_orphan)
 from .workers import observe_implementation, usage, WorkerRefused
 from .review import observe_review, review_identity
@@ -82,12 +82,12 @@ def settle(state, store, service):
             return state
     except (ValueError, OSError, subprocess.SubprocessError):
         pass
-    # Nothing verified to return to (or it is gone): continue from the worktree as it is, if it
-    # stays inside the approved paths. The checks prove it again before any review.
+    # Nothing verified to return to (or it is gone): continue from the worktree as it is, unless it
+    # touches a forbidden path. The checks prove it again before any review.
     reattach(state.plan)
     plan = state.plan
-    if any(not inside(n, plan.write_paths) or inside(n, plan.forbidden_paths) for n in changed_since_base(plan)):
-        raise ValueError('the worktree was changed outside the approved paths and could not be restored')
+    if any(inside(n, plan.forbidden_paths) for n in changed_since_base(plan)):
+        raise ValueError('the worktree has changes in a forbidden path and could not be restored')
     digest = validate_worktree(plan).digest
     bridge = NativeBridge(service, None, session_id=plan.envelope.session_id, profile_id=plan.envelope.profile_id)
     return service.accept(bridge._event(state, 'worktree_adopted', result_artifact=digest))[0]
@@ -394,8 +394,6 @@ def ready(service, delivery_id, session_id, profile_id):
     state = owned(service, delivery_id, session_id, profile_id)
     if not state.approved:
         raise ValueError('execution requires an approved frozen envelope')
-    from .approach import validate_document
-    validate_document(service, state.plan)
     row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?',
                                     ('check-spec:' + state.plan.digest(),)).fetchone()
     if not row:
@@ -461,8 +459,8 @@ def publish(service, bridge, delivery_id, tid, claimer, ask=None):
     if validate_worktree(plan).digest != state.artifact:
         raise ValueError('the worktree changed after it was verified')
     changed = changed_since_base(plan)
-    if any(not inside(n, plan.write_paths) or inside(n, plan.forbidden_paths) for n in changed):
-        raise ValueError('the worktree has changes outside the approved paths')
+    if any(inside(n, plan.forbidden_paths) for n in changed):
+        raise ValueError('the worktree has changes in a forbidden path')
 
     def heartbeat():
         if not h.heartbeat_claim(bridge.conn, tid, claimer=claimer, ttl_seconds=900):
@@ -589,10 +587,8 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 if action in {'tests', 'checks'} and not baselined and not baseline_path(evidence_root, state).exists():
                     baselined = True  # once per run: a failing baseline must not double every check
                     try:  # what already failed before this change is not its doing; runs on the base code
-                        with at_base(state.plan, [n for n in changed_since_base(state.plan)
-                                                  if inside(n, state.plan.write_paths)]):
-                            take_baseline(state, tuple(c for c in checks if c.obligation != 'behavior'),
-                                          evidence_root=Path(evidence_root))
+                        with at_base(state.plan, changed_since_base(state.plan)):
+                            take_baseline(state, checks, evidence_root=Path(evidence_root))
                     except Exception as exc:
                         note(f'could not record which checks already failed ({type(exc).__name__}); '
                                           'every failure counts')
@@ -601,11 +597,7 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
                 state = bridge.observe_checks(delivery_id, tid, claimer=claimer,
                                               checks=due, evidence_root=Path(evidence_root))
             elif action in {'write_tests', 'implement'}:
-                def prove(tests, state=state):  # the regression tests must fail without the fix
-                    with before_step(state.plan, tests):
-                        return reproduces(state, checks, evidence_root=Path(evidence_root))
-                state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker,
-                                               prove=prove)
+                state = observe_implementation(bridge, delivery_id, tid, claimer=claimer, execute=worker)
             elif action == 'publish':
                 if h.take(conn, tid, claimer=claimer, ttl_seconds=900) is None:
                     raise ValueError('task owned by another launcher; no worker started')

@@ -2,7 +2,7 @@
 
 Creates a disposable repository and native database outside the live board. It
 uses synthetic fixture-only approval, calls independently profiled Hermes
-workers, and observes RED -> edit -> GREEN -> independent review. No publication,
+workers, and observes checks -> edit -> checks -> independent review. No publication,
 ordinary project changes, credentials or personal roster configuration are saved.
 The workers are trusted, local and unsandboxed, not confined to the fixture.
 """

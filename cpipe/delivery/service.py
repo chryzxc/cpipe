@@ -68,7 +68,8 @@ class State(Versioned):
     handover_reviews: int = 0
     renewals: int = 0  # times the user granted a fresh budget to continue
     stalls: int = 0  # review rounds in a row that did not reduce the blocking findings
-    regressions_checked: str = ""  # the tree that passed the final regression review
+    regressions_checked: str = ""  # the tree the review approved
+    built: bool = True  # a builder produced the current tree (or it was adopted); False until the first build
 
     def __post_init__(self):
         if type(self.plan) is not ExecutionPlan or self.phase not in PHASES:
@@ -79,7 +80,7 @@ class State(Versioned):
             nonnegative(getattr(self, name), name)
         if self.last_at < self.started_at:
             raise ValueError("time moved backwards")
-        if type(self.approved) is not bool or type(self.readiness_requested) is not bool:
+        if type(self.approved) is not bool or type(self.readiness_requested) is not bool or type(self.built) is not bool:
             raise ValueError("invalid snapshot flags")
         for name in ("activity", "active_intent", "run_id", "worker_session", "builder_session",
                      "builder_digest", "last_reviewed_artifact", "builder", "reviewer", "regressions_checked"):
@@ -222,15 +223,8 @@ def green(state, include_review=True):
                                   and latest[name].outcome is Outcome.PASS for name in required)
 
 
-def final_pass(state):
-    """The normal review approved this exact tree; one fresh regression review is still owed."""
-    review = next((r for r in reversed(state.receipts) if r.obligation == "review"), None)
-    return bool(review and current(state, review) and review.outcome is Outcome.PASS
-                and state.regressions_checked != state.artifact)
-
-
 def verified(state):
-    """Checks green, reviewed, and the final regression review passed on this exact tree."""
+    """Checks green and the review approved this exact tree."""
     return green(state) and state.regressions_checked == state.artifact
 
 
@@ -267,13 +261,10 @@ def deadline(state):
 
 
 def resume_point(state):
-    """Where a resumed run picks up: re-observe the code, or prove the failing test first."""
-    if final_pass(state):
-        return continue_with(state, "review", "reviewing")
+    """Where a run picks up: the checks on the code as it is, which send any failure to the builder."""
     if state.plan.completion_target == "draft" and verified(state):
         return continue_with(state, "publish", "publishing")  # verified and reviewed: only the PR is left
-    proved = any(r.obligation == "behavior" and r.outcome is Outcome.FAIL for r in state.receipts)
-    return continue_with(state, "checks" if proved else "tests", "checking")
+    return continue_with(state, "checks", "checking")
 
 
 def continue_with(state, action, phase, feedback_ref=""):
@@ -313,7 +304,6 @@ def accept_review(state, event):
     if state.activity != "review" or not event.verdict or not event.evidence_ref:
         raise ValueError("review requires current verdict and evidence")
     relative_path(event.evidence_ref)
-    final = final_pass(state)
     if (event.reviewed_from != state.plan.base_commit or event.reviewed_to != state.artifact
             or len(event.receipts) != 1 or event.receipts[0].obligation != "review"
             or not current(state, event.receipts[0])):
@@ -366,8 +356,6 @@ def accept_review(state, event):
         return continue_with(state, "implement", "implementing", event.evidence_ref)
     if not green(state):
         return continue_with(state, "diagnose", "waiting", event.evidence_ref)
-    if not final:  # nothing ships on the normal review alone
-        return continue_with(state, "review", "reviewing")
     state = replace(state, regressions_checked=state.artifact)
     if state.plan.completion_target == "draft":
         return continue_with(state, "publish", "publishing")
@@ -387,7 +375,7 @@ def apply(snapshot, event):
         if event.now >= p.expires_at:
             raise ValueError("proposal expired")
         state = State(p, event.artifact, 1, "proposal", "", "", "", "", "", "", (), (),
-                      False, False, 0, "", 0, event.now, event.now)
+                      False, False, 0, "", 0, event.now, event.now, built=False)
         return continue_with(state, "approve_envelope", "proposal")
     if type(snapshot) is not State:
         raise ValueError("invalid snapshot")
@@ -449,7 +437,7 @@ def apply(snapshot, event):
         if (not state.approved or state.run_id or not event.result_artifact
                 or state.activity not in {"write_tests", "tests", "implement", "checks", "review"}):
             raise ValueError("only an unclaimed approved step can adopt the worktree")
-        state = replace(state, artifact=event.result_artifact)
+        state = replace(state, artifact=event.result_artifact, built=True)
         if state.activity == "review":
             return continue_with(state, "checks", "checking")
         return continue_with(state, state.activity, state.phase)
@@ -484,7 +472,7 @@ def apply(snapshot, event):
                 # It disputed the findings and changed nothing: the passing checks still hold.
                 return continue_with(state, "review", "reviewing")
             after = "tests" if state.activity == "write_tests" else "checks"
-            return continue_with(replace(state, artifact=event.result_artifact), after, "checking")
+            return continue_with(replace(state, artifact=event.result_artifact, built=True), after, "checking")
         if state.activity not in {"tests", "checks"} or not event.receipts:
             raise ValueError("check activity requires command observations")
         # UNAVAILABLE receipts are unobserved by design (e.g. the test does not exist yet);
@@ -493,11 +481,11 @@ def apply(snapshot, event):
                or (r.outcome is not Outcome.UNAVAILABLE and not r.observed) for r in event.receipts):
             raise ValueError("stale or misconfigured check receipt")
         earlier = sum(r.obligation == "behavior" for r in state.receipts)
-        last = {r.obligation: r.reason for r in state.receipts}
+        last = {o: [r.reason for r in state.receipts if r.obligation == o][-2:] for o in {r.obligation for r in event.receipts}}
         state = replace(state, receipts=state.receipts + event.receipts)
-        # The environment, or a frozen check command that cannot observe its criteria
-        # however the code changes (twice in a row): only the user can fix either.
-        if any(r.reason == "command_not_found" or r.reason in CONTRACT_REASONS and last.get(r.obligation) == r.reason
+        # The environment, or a frozen check command that cannot observe its criteria however the code
+        # changes (three runs in a row; the first is often before the test exists): only the user can fix either.
+        if any(r.reason == "command_not_found" or r.reason in CONTRACT_REASONS and last[r.obligation] == [r.reason] * 2
                for r in event.receipts):
             return continue_with(state, "diagnose", "waiting")
         if state.activity == "tests" and not any(r.outcome is Outcome.FAIL for r in event.receipts):
@@ -509,8 +497,10 @@ def apply(snapshot, event):
             if fresh:  # the same number of write_tests rounds as the first builder
                 return continue_with(replace(fresh, handover_tests=earlier), "write_tests", "implementing")
             return continue_with(state, "diagnose", "diagnosis")
-        if any(r.outcome in {Outcome.FAIL, Outcome.UNAVAILABLE} for r in event.receipts):
-            # Crashes, timeouts and build errors are code problems the builder can repair.
+        # Crashes, timeouts and build errors are code problems the builder can repair. Checks on code
+        # nobody has built yet only show where it starts: the builder always goes first.
+        if (any(r.outcome in {Outcome.FAIL, Outcome.UNAVAILABLE} for r in event.receipts)
+                or not state.built):
             return continue_with(state, "implement", "implementing")
         if not green(state, include_review=False):
             return continue_with(state, "diagnose", "waiting")

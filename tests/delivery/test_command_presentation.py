@@ -52,10 +52,10 @@ def test_doctor_response_is_plain(capsys):
 
 def test_doctor_warns_when_something_else_takes_cpipe_cards(board, capsys):
     from cpipe.runtime import hermes_api as h
-    tid = h.kb.create_task(board, title='cpipe: implement', assignee='cp:forge', created_by='cpipe')
-    h.kb.assign_task(board, tid, 'forge')
+    tid = h.kb.create_task(board, title='cpipe: implement', assignee='forge', created_by='cpipe')
+    assert h.claim_task(board, tid, claimer='otherhost:1:wr-x', ttl_seconds=600)
     assert main(['doctor']) == 0
-    assert 'reassigned or claimed by something else' in json.loads(capsys.readouterr().out)['warnings'][0]
+    assert 'claimed by something else' in json.loads(capsys.readouterr().out)['warnings'][0]
 
 
 @pytest.mark.parametrize('session_id,injection', [('', True), ('s1', False), ('s1', True)])

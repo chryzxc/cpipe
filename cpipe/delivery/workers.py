@@ -70,45 +70,34 @@ def _remaining(state):
 DISPUTES = {}
 
 
-def _answer(state, payload, open_ids):
-    """(tests, disputes) from {"status":"done"} plus, when fixing review findings, the regression
-    tests it added and the findings it disputes."""
-    if (type(payload) is not dict or payload.get('status') != 'done'
-            or not set(payload) <= {'status', 'tests', 'disputed'}
-            or (set(payload) != {'status'} and state.activity != 'implement')):
-        raise ValueError('worker did not return a valid implementation result')
-    tests, disputed = payload.get('tests', []), payload.get('disputed', [])
-    if (type(tests) is not list or any(type(t) is not str or not t for t in tests)
-            or type(disputed) is not list or len(disputed) > 100
-            or any(type(d) is not dict or set(d) != {'id', 'reason'} or d['id'] not in open_ids
-                   or type(d['reason']) is not str or not d['reason'].strip() for d in disputed)):
-        raise ValueError('worker listed unknown findings or invalid tests')
-    return set(tests), {d['id']: d['reason'] for d in disputed}
+def _answer(payload, open_ids):
+    """The findings a builder disputes, from its answer. The edits and the checks are the result, so an
+    answer that is not the asked-for JSON still counts as done."""
+    disputed = payload.get('disputed') if type(payload) is dict else None
+    return {d['id']: d['reason'].strip() for d in disputed if type(d) is dict and d.get('id') in open_ids
+            and type(d.get('reason')) is str and d['reason'].strip()} if type(disputed) is list else {}
 
 
 def _scope(before, after, plan, allow_same=False):
-    if before.head != after.head:
-        raise ValueError('worker cannot commit before frozen checks and review')
     old = {name: (digest, mode) for name, digest, mode in before.files}
     new = {name: (digest, mode) for name, digest, mode in after.files}
     changed = {name for name in old.keys() | new.keys() if old.get(name) != new.get(name)}
     def within(name, paths):
         return any(name == path or name.startswith(path + '/') for path in paths)
-    if any(not within(name, plan.write_paths) or within(name, plan.forbidden_paths)
-           for name in changed):
-        raise ValueError('worker changed files outside approved write scope')
+    # write_paths guide the builder; the review sees every changed file. Only forbidden paths are refused.
+    if any(within(name, plan.forbidden_paths) for name in changed):
+        raise ValueError('worker changed a forbidden path')
     if before.digest == after.digest and not allow_same:
         raise ValueError('implementation lacks an observed successor artifact')
     return changed
 
 
-def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute, prove=None):
+def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute):
     """Claim one native activity; only actual in-scope edits advance checks.
 
     execute must be a trusted adapter, not model-supplied executable code. Its
     on_session callback binds the host-observed child ID; heartbeat renews and
     revalidates the native lease throughout the bounded worker invocation.
-    prove(tests) must confirm that the listed regression tests fail without the step's other edits.
     """
     state = bridge._state(delivery_id)
     if not state.approved or state.activity not in {'write_tests', 'implement'} or state.run_id:
@@ -150,16 +139,15 @@ def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute, pr
         record_usage(bridge.service, state, state.activity, result)
         refused(result)
         from .findings import blocks
-        tests, disputes = _answer(state, result.payload, {r.finding.id for r in state.findings if blocks(r.finding)})
+        disputes = _answer(result.payload, {r.finding.id for r in state.findings if blocks(r.finding)})
         result = None
         after = validate_worktree(state.plan)
+        if after.head != before.head:  # it committed: keep the edits, uncommitted, for the checks and review
+            from .hermes_worker import reattach
+            reattach(state.plan)
+            after = validate_worktree(state.plan)
         # Disputing the findings is a valid answer that changes nothing, unless checks still fail.
-        changed = _scope(before, after, state.plan, allow_same=bool(disputes) and green(state, include_review=False))
-        if not tests <= changed:
-            raise ValueError('listed regression tests were not changed in this step')
-        if tests and prove is not None and not prove(tests):
-            raise ValueError('the listed regression tests pass without your fix, so they do not reproduce the '
-                             'findings: make each fail on the code before the fix, or dispute the finding')
+        _scope(before, after, state.plan, allow_same=bool(disputes) and green(state, include_review=False))
         if disputes:
             from .review import redacted
             if len(DISPUTES) > 500:

@@ -53,8 +53,9 @@ def test_worker_claim_of_done_without_edit_is_not_implementation(repo, tmp_path,
         assert h.get_task(board, tid).status != 'done'
 
 
-@pytest.mark.parametrize('outside', ['unauthorized.py', 'internal/report.txt', 'test_behavior.py'])
-def test_out_of_scope_writes_cannot_produce_completed_native_activity(repo, tmp_path, board, outside):
+@pytest.mark.parametrize('outside,allowed', [('unauthorized.py', True), ('test_behavior.py', True),
+                                             ('internal/report.txt', False)])
+def test_only_forbidden_paths_stop_a_builder_write_paths_are_guidance(repo, tmp_path, board, outside, allowed):
     from cpipe.delivery import workers
     journal, service, b, tid = implementing(repo, tmp_path, board)
     with journal:
@@ -64,9 +65,29 @@ def test_out_of_scope_writes_cannot_produce_completed_native_activity(repo, tmp_
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text('not approved')
             return workers.WorkerResult('builder-session', {'status': 'done'})
-        with pytest.raises(ValueError, match='write scope'):
+        if allowed:
+            workers.observe_implementation(b, 'd1', tid, claimer='controller', execute=builder)
+            assert h.get_task(board, tid).status == 'done'
+            return
+        with pytest.raises(ValueError, match='forbidden path'):
             workers.observe_implementation(b, 'd1', tid, claimer='controller', execute=builder)
         assert h.get_task(board, tid).status != 'done'
+
+
+def test_a_builder_that_commits_keeps_its_edits_uncommitted(repo, tmp_path, board):
+    from cpipe.delivery import workers
+    from .test_artifact import git
+    journal, service, b, tid = implementing(repo, tmp_path, board)
+    base = git(repo, 'rev-parse', 'HEAD')
+    with journal:
+        def builder(state, *, on_session, **kwargs):
+            on_session('builder-session')
+            (repo / 'double.py').write_text('def double(n): return n * 2\n')
+            git(repo, 'commit', '-qam', 'fix')
+            return workers.WorkerResult('builder-session', {'status': 'done'})
+        assert workers.observe_implementation(b, 'd1', tid, claimer='controller', execute=builder).activity == 'checks'
+    assert git(repo, 'rev-parse', 'HEAD') == base
+    assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'
 
 
 def test_claim_lost_during_worker_does_not_advance_engineering_state(repo, tmp_path, board):

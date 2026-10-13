@@ -2,7 +2,7 @@
 
 cpipe is a Hermes plugin that delivers a development task from request to reviewed, locally verified code.
 
-You describe the task once. cpipe investigates, presents an approach and asks for a single approval. The delivery then runs in the background: a failing test is written first, the change is implemented, the project's own tests are run, and a second Hermes profile reviews the result. When the delivery finishes, or needs a decision from you, cpipe sends one message to the originating chat.
+You describe the task once. cpipe investigates, presents an approach and asks for a single approval. The delivery then runs in the background: the builder writes the test and the change, the project's own tests are run, and a second Hermes profile reviews the result. When the delivery finishes, or needs a decision from you, cpipe sends one message to the originating chat.
 
 cpipe does not merge or deploy. It commits, pushes and opens a draft pull request only when you ask for one in the task. Each delivery runs in a new Git worktree of its own, next to your repository in `<repo>-worktrees/<delivery>` on branch `cpipe/<delivery>`, so your checkout is never changed, and several deliveries can run side by side. The result is left in that worktree for your review.
 
@@ -17,7 +17,7 @@ cpipe does not merge or deploy. It commits, pushes and opens a draft pull reques
 ### Graph engineering
 
 A delivery is a state graph driven by code, not by a model.
-- **Nodes** are activities: `write_tests`, `implement`, `checks`, `review`, plus the end states `locally_ready`, `waiting`, `diagnosis` and `stopped`.
+- **Nodes** are activities: `checks`, `implement`, `review`, plus the end states `locally_ready`, `waiting`, `diagnosis` and `stopped`.
 - **Edges** are chosen by a deterministic reducer from observed facts: test results, review verdicts, step failures and budget. A model never decides which step comes next or whether the work passed.
 
 ### Event sourcing and durability
@@ -35,18 +35,16 @@ A delivery is a state graph driven by code, not by a model.
 
 ### Test-driven delivery
 
-- **Red first:** the behavior test must fail on an assertion before implementation starts.
-- **Green by the checks:** the change is done when the approved checks pass.
-- **Proven regression tests:** a behavior fix from review must include a test that fails with the fix undone.
-- **Baseline:** failures that already exist on the base code are recorded once and never attributed to the change.
+- **Checks first:** the approved checks run once on the untouched code, which records what already fails. The builder always runs next, even when they pass.
+- **Green by the checks:** the change is done when the approved checks pass and the review approves it.
+- **Tests with fixes:** the builder writes the behavior test with the change, and a test with each behavior fix from review.
+- **Scoped to the change:** failures that already exist on the base code are recorded once and never attributed to the change, in every check (see [Self-recovery](#self-recovery)).
 
 ### Loop engineering
 
 Each loop in the graph has an exit condition and a bound.
-- **Test loop:** up to 3 rounds per builder to produce a valid failing test.
 - **Fix loop:** implement and checks repeat until every check passes, with failures returned to the builder.
 - **Review loop:** until no blocking findings remain, up to 5 rounds per builder, ending early when progress stops (see [Review](#review)).
-- **Final regression review:** an approval never ships alone. A fresh reviewer session re-reviews the whole change for bugs and regressions only, and its findings start the fix loop again.
 - **Severity triage:** only serious in-scope findings drive the loop; low findings are reported as advice.
 - **Escalation ladder:** when a loop reaches its bound, the next approved profile takes over in a fresh session. A delivery always ends in a defined state.
 
@@ -54,7 +52,7 @@ Each loop in the graph has an exit condition and a bound.
 
 - **Last-good checkpoint:** after every verified step, the worktree is recorded under a private Git ref.
 - **Rollback:** a failed or declined step is reset to that checkpoint, including staging, commits and branch switches.
-- **Scope enforcement:** edits outside `write_paths` are rejected and rolled back.
+- **Scope:** `write_paths` guide the builder and the reviewer sees every changed file; only edits to `forbidden_paths` are rejected and rolled back.
 
 ### Fault tolerance
 
@@ -90,10 +88,10 @@ Each loop in the graph has an exit condition and a bound.
        └─ approach preview (Markdown) ── your comments → new revision
             └─ freeze + approval (Yes / No / changes)  ← the only interrupt
                  └─ background run ───────────────────────────────────────────┐
-                      write_tests → tests must FAIL (RED)                     │
+                      checks on the untouched code (records old failures)    │
                       implement ⇄ checks (your test command, real JUnit)      │ self-repair:
-                      review ⇄ implement   (until no serious findings)        │ missing/misnamed/crashing
-                      locally_ready   (or, if you asked: commit → push → draft PR)  │ tests, failing checks,
+                      review ⇄ implement   (until no serious findings)        │ crashes, prose answers,
+                      locally_ready   (or, if you asked: commit → push → draft PR)  │ failing checks,
                  └─ one chat message: result, checks, tokens, worktree ◄──────┘ crashed steps
 ```
 
@@ -101,21 +99,19 @@ Each loop in the graph has an exit condition and a bound.
 2. **Approach preview.** The coordinator produces a Markdown document covering scope, non-goals, steps, decisions, risks, checks and limits. You reply with comments or changes; each produces a new immutable revision. Saying *proceed* freezes it.
 3. **One approval.** A Hermes clarify question shows the frozen scope with the choices *Yes* and *No*, or you type changes. Yes starts the run, No starts nothing, and changes produce a new revision that is asked again. Nothing runs before approval, and the time budget starts at approval.
 4. **Background run.** The chat remains available. The run uses native Kanban cards titled with the working profile:
-   - **write_tests:** the builder writes the behavior test. cpipe must observe it **fail on an assertion** before any implementation. A missing, misnamed or crashing test goes back to the builder with the exact reason, up to 3 rounds.
-   - **implement / checks:** the builder fixes the code and cpipe runs the approved test command. Failures and broken runs go back to the builder.
+   - **checks:** cpipe runs the approved checks on the untouched code and remembers what already fails there.
+   - **implement / checks:** the builder writes the behavior test and the change, and cpipe runs the approved test command. New failures and broken runs go back to the builder; failures that were already there do not.
    - **review:** a *different* profile reviews the full change against these axes:
      - goal, correctness, regressions (including callers outside the diff), integration, breaking behavior;
      - maintainability, security, accessibility, operability, evidence and simplicity.
 
      Each finding includes the concrete fix. The builder addresses all findings in one pass, the checks run again, and the reviewer inspects the fix diff.
 
-     Once the reviewer approves, a fresh reviewer session runs a **final regression review** of the whole base-to-candidate range. It traces every changed function, signature, condition and removed line to its callers outside the diff, and runs the existing tests for that code. Nothing is marked ready or published until this pass approves the exact tree. A finding sends the change back through fix, checks and review, and then a new final pass.
-
      See [Review](#review) for how findings are handled.
 5. **Draft pull request (only if you asked).** Say so in the task, e.g. `/cp-run fix the date parser and open a draft PR`.
    - **Branch:** the plan names a new branch following your instructions and the repository's conventions (its contributing guide, project instructions and recent branch names). The approval question lists the push to that branch and the draft PR.
    - **Up-front checks:** `origin` is on GitHub, `gh` is logged in, the base branch is on `origin`, and the branch name is valid and exists neither locally nor on `origin`. A PR delivery starts from the base as committed, without your uncommitted changes.
-   - **Content:** after the final regression review, the builder writes the commits (messages plus which changed files each holds), the title and the description, following your instructions and the repository's conventions. cpipe rejects content that leaves a changed file out, names cpipe internals (delivery IDs, worktree or home paths), or contains a credential, and asks once more.
+   - **Content:** after the review approves, the builder writes the commits (messages plus which changed files each holds), the title and the description, following your instructions and the repository's conventions. cpipe rejects content that leaves a changed file out, names cpipe internals (delivery IDs, worktree or home paths), or contains a credential, and asks once more.
    - **Publishing:** cpipe pushes each commit in order to the branch and opens (or reuses) the draft PR.
    - **Verification:** a reviewer reads the published PR back from GitHub (title, description, branch, base, draft state and each commit's files) and checks it against the goal, acceptance, non-goals and conventions. Problems go back to the builder, up to 2 rounds. Only a verified PR is reported done; otherwise the run waits with the problems listed.
    - **Failures:** if any step fails, the run waits with the reason; fix it and say *continue* to retry the PR step alone.
@@ -132,29 +128,29 @@ Each loop in the graph has an exit condition and a bound.
 - **Blocking findings:** in-scope critical, high and medium findings go back to the builder. Low findings are listed in the final message as advice.
 - **Re-reviews:** a new finding is medium or above only if the latest fixes caused it, and it names the file, the line and the failure.
 - **Fixes:** the builder changes only the code a finding is about, and the checks rerun after every fix.
-- **Regression tests:** a behavior fix comes with a regression test in a file the checks run. cpipe runs the checks with the fix undone; the test must fail there, otherwise the step is rolled back and retried.
-- **Disputes:** the builder may dispute a finding with a reason instead of changing code. The reviewer accepts it or keeps the finding open.
+- **Regression tests:** the builder is asked to add a test for each behavior fix in a file the checks run; the next review sees it.
+- **Disputes:** the builder may dispute a finding with a reason instead of changing code (ending with `{"status":"done","disputed":[...]}`). The reviewer accepts it or keeps the finding open.
 - **Limits:** fixing stops when the blocking findings stay the same, when their count does not drop for 2 rounds, or after 5 rounds. The next approved builder then takes over. If none resolves them and the checks pass, the run ends `locally_ready` with the open findings and disputes listed.
 
 ## Self-recovery
 
 A delivery stops for you only when no approved action can move it forward. Other failures are handled in the background:
 
-- **A step fails** (malformed or missing JSON, no edits, edits outside `write_paths`, a commit, branch switch or staged files, a crash, provider error or timeout): the step's changes, staging, commits and branch switch are rolled back to the last verified worktree. The same profile then retries with the reason in a fresh session, with a short backoff, so a failed attempt's context is not paid for again. A crashed attempt does not count against the turn budget. After 3 failures the next approved profile for that role takes over.
-- **A worker ends without its answer** (out of turns, or prose instead of the JSON): its session is resumed once with a few turns and asked for the answer as the work stands, instead of failing the step. A session id that Hermes rotated, or a run that ended with a non-zero exit after printing a valid answer, is accepted.
+- **A step fails** (no edits, edits to `forbidden_paths`, a commit, branch switch or staged files, a crash, provider error or timeout): the step's changes, staging, commits and branch switch are rolled back to the last verified worktree. The same profile then retries with the reason in a fresh session, with a short backoff, so a failed attempt's context is not paid for again. A crashed attempt does not count against the turn budget. After 3 failures the next approved profile for that role takes over.
+- **A worker ends without its answer:** a builder that answers in prose or runs out of turns is taken as done, and the checks judge its work. A reviewer is resumed once with a few turns and asked for its verdict as the work stands, instead of failing the step. A session id that Hermes rotated, or a run that ended with a non-zero exit after printing a valid answer, is accepted.
 - **A profile declines** (`{"status":"blocked"}`): rolled back the same way, and the next approved profile takes over at once. When the reason starts with `environment:` (a missing tool, dependency, browser or service), every profile would hit it, so the run waits for you with that reason instead.
-- **Workers stay cheap:** builders work in the foreground, run at most the one narrow test they work on (cpipe runs the checks and sends them the failures), and never install dependencies or debug the environment. The reviewer does not re-run checks that already passed on the same tree; the final regression review runs only the existing tests for the changed code and its callers. Each step has a turn cap (30 to write the test, 40 to implement, 30 to review). The test writer gets the behavior check's exact command and test names and runs it once before returning, so a name mismatch costs one test run instead of a whole new round. The report shows how much of the token total is cache reads, which providers bill at a fraction of the input rate.
-- **A loop is stuck** (no valid failing test after 3 rounds, or review findings that stop converging): the next approved builder gets the same rounds in a fresh session. After the last builder, a test loop reports `diagnosis`. A review loop with passing checks ends `locally_ready` with the open findings listed.
-- **A check cannot see its criteria:** when the same check produces no result for the same contract reason twice in a row (the runner does not print the criteria, writes no report, or reports no test cases), no builder can fix it, because the check command is frozen. The run waits with that reason instead of spending more rounds.
+- **Workers stay cheap:** builders work in the foreground, run at most the one narrow test they work on (cpipe runs the checks and sends them the failures), and never install dependencies or debug the environment. The reviewer does not re-run checks that already passed on the same tree. Each step has a turn cap (40 to implement, 30 to review). The builder gets the behavior check's exact command and test names, so a name mismatch costs one test run instead of a whole new round. The report shows how much of the token total is cache reads, which providers bill at a fraction of the input rate.
+- **A loop is stuck** (review findings that stop converging): the next approved builder gets the same rounds in a fresh session. A review loop with passing checks ends `locally_ready` with the open findings listed.
+- **A check cannot see its criteria:** when the same check produces no result for the same contract reason 3 times in a row (the runner does not print the criteria, writes no report, or reports no test cases), no builder can fix it, because the check command is frozen. The run waits with that reason instead of spending more rounds.
 - **A worker hangs:** each step is capped at a third of the budget (at least 10 minutes).
 - **Time runs out with turns left:** time guards against stalls and turns guard spending, so the run renews its own time budget and continues, up to 2 times. Then it stops and reports.
 - **The budget runs out during review with passing checks:** the report says the work is implemented and its checks pass, and *continue* reviews it.
-- **Leftover edits with nothing to roll back to** (e.g. a crash before cpipe had verified anything): if they stay inside `write_paths`, cpipe continues from them and runs the checks again before any review.
-- **The repository already fails a check** (for example an unrelated failing test): on the first check run, cpipe runs every check on the base code (its own edits put aside and restored, even after a crash) and remembers what already fails. A check that later fails only on those counts as passed and says so in the report; any new failure still goes back to the builder. Only failure lines are compared, with numbers and ids masked, so new passing tests or changing log output do not make an old failure look new. The builder gets the failure lines that are new since its change first, told which ones failed before and are not its own, then the end of the output. The behavior test never gets this pass.
+- **Leftover edits with nothing to roll back to** (e.g. a crash before cpipe had verified anything): if they touch no `forbidden_paths`, cpipe continues from them and runs the checks again before any review.
+- **The repository already fails a check** (for example an unrelated failing test): on the first check run, cpipe runs every check, the behavior check included, on the base code (its own edits put aside and restored, even after a crash) and remembers what already fails. A check that later fails only on those counts as passed and says so in the report; any new failure still goes back to the builder. Only failure lines are compared, with numbers and ids masked, so new passing tests or changing log output do not make an old failure look new. The builder gets the failure lines that are new since its change first, told which ones failed before and are not its own, then the end of the output. The behavior check gets this pass only while none of its own criteria fails, so the change's tests always count.
 - **A check run or step setup crashes:** retried with backoff; the run reports only after 3 failures in a row.
 - **The run itself crashes:** it restarts in the background as long as it keeps making progress. After repeated crashes at the same point it is parked and retried every 10 minutes until it works or its budget ends; the chat is told once.
 - **Hermes restarts or crashes:** a watchdog in every long-running Hermes process (and the next chat turn) resumes the run from its last step. Exactly one process resumes it. A run that cannot be taken over is parked, the chat is told once, and it is retried every 10 minutes, so an updated cpipe or a **continue** picks it up. An approved delivery that nothing has moved for 10 minutes and that no run owns (a crash between steps) is adopted by the watchdog the same way. A worker the dead process left running is stopped first, so it neither keeps spending nor holds the session the retry needs; `/cp-stop` stops it too.
-- **Something else takes cpipe's cards** (a board automation, an older background service): a card that was reassigned, claimed by something else or left behind is archived and replaced. Cards are claimed the moment they are queued, and released cards are archived so nothing picks them up again. `hermes cpipe doctor` warns when this happens.
+- **Something else takes cpipe's cards** (a board automation, an older background service): a card that was reassigned, claimed by something else or left behind is archived and replaced. Cards are queued and claimed while the board's dispatcher is paused, so it never sees them unclaimed, and released cards are archived so nothing picks them up again. If cpipe itself dies, its claim expires and Hermes blocks the card instead of retrying it, because cpipe cards allow no dispatcher retries. `hermes cpipe doctor` warns when this happens.
 - **The budget runs out while no step is running:** the next resume records the stop and reports it.
 - **"Continue" in the chat:** asking the coordinator to continue calls build again, which restarts an idle run and returns its current state. This applies to a run that stopped, is waiting, reported `diagnosis` or finished with open findings:
   - it picks up from the code as it is now, so fix the cause first if it was yours (e.g. install the test command);
@@ -163,7 +159,7 @@ A delivery stops for you only when no approved action can move it forward. Other
 
 ### Monitoring
 
-- **Kanban activity:** each step is a card titled with the task and the step's place in the delivery (`Fix the date parser — 2/4 Implementing`), assigned to `cp:<profile>`. The task name is the plan's short `title`, or its goal cut at a word when there is none, with a short table of delivery, worktree and plan. Handovers, retries and declines are posted as comments on the step's card, and the step's result is the card's run summary. Comments do not wake any chat.
+- **Kanban activity:** each step is a card titled with the task and the step's place in the delivery (`Fix the date parser — 1/3 Implementing`), assigned to the working profile. The task name is the plan's short `title`, or its goal cut at a word when there is none, with a short table of delivery, worktree and plan. Handovers, retries and declines are posted as comments on the step's card, and the step's result is the card's run summary. Comments do not wake any chat.
 - **Progress line in the desktop app:** a single line above the chat input shows what the run is doing (`forge is implementing`, `running the checks`, `sentry is reviewing`) and every handover or recovery as it happens. It is display only: no model turn, no tokens. Enable **cpipe** under **Capabilities → Plugins** (use **Rescan** after installing or updating). Runs hosted outside the desktop app (gateway, terminal chat) skip it.
 
 - Every message to the chat is stored until the chat accepts it; the watchdog and the next chat turn redeliver it.
@@ -176,7 +172,7 @@ A delivery stops and waits for you when (say "continue" once resolved):
 - the approved turn budget runs out, or the time budget after its own renewals (continuing grants a fresh one of the same size);
 - every approved builder or reviewer declined or kept failing;
 - the test command is not installed (an environment problem cpipe should not fix);
-- files outside `write_paths` were changed and cpipe cannot restore them (it never deletes work it cannot attribute).
+- files in `forbidden_paths` were changed and cpipe cannot restore them (it never deletes work it cannot attribute).
 
 Only a cancelled delivery or a changed plan document cannot continue.
 
@@ -227,13 +223,13 @@ The coordinator fills in the spec; it is shown in the preview and frozen at appr
 | `title` | Optional. A short name for the task on the kanban board, at most 60 characters. |
 | `worktree`, `repo`, `base` | The investigated checkout, which is never changed, and the branch, tag or commit the delivery's own worktree starts from. When `base` is what the checkout has checked out, its uncommitted changes are included. |
 | `goal`, `acceptance`, `non_goals` | What done means. |
-| `write_paths`, `forbidden_paths` | Edits outside `write_paths` are rejected. |
+| `write_paths`, `forbidden_paths` | `write_paths` guide the builder; edits to `forbidden_paths` are rejected. |
 | `builder`, `reviewer` | Distinct saved Hermes profiles; each may be an ordered list of up to 3 (see above). |
 | `seconds` | Execution budget, 30–7200 (3600 suggested for features). Up to 40 builder/reviewer turns. |
 | `checks` | The repository's own test commands (see below). |
 | `draft_pr`, `branch` | Only when you asked for a pull request: `branch` is a new branch name following your and the repository's conventions. |
 
-Each check has an `obligation`, an `argv`, `criteria` and a `timeout_seconds`. Exactly one check has the obligation `behavior`: it is the test proving the change, and its file must be inside `write_paths`. Plans also add a regression check that runs the existing tests for the modules the change touches and their callers, plus the repository's type checker or linter for those files, if it has one.
+Each check has an `obligation`, an `argv`, `criteria` and a `timeout_seconds`. Exactly one check has the obligation `behavior`: it is the test proving the change, written by the builder with the change. Plans also add a regression check that runs the existing tests for the modules the change touches and their callers, plus the repository's type checker or linter for those files, if it has one.
 
 - **`argv`:** the command, run in the delivery worktree. Its program must be on `PATH` or given as an absolute path. The worktree starts with copy-on-write copies of the checkout's ignored folders, such as `node_modules` or tool caches, when every lockfile matches the checkout's, so checks and workers do not reinstall them. Virtualenvs and nested repositories are never copied, and nothing is copied where the file system cannot clone, so use commands that provision their own dependencies or install only when missing (`[ -d node_modules ] || npm ci; …`).
 - **`criteria`:** the test names.
@@ -255,7 +251,7 @@ Prefer commands that provision their own dependencies; otherwise install first (
 ## Security and limits
 
 - **Not sandboxed.** Builders, reviewers and checks are trusted local processes. Scope and artifact checks detect violations; they do not prevent file or network access.
-- **Dispatcher unchanged.** cpipe's cards are assigned to `cp:<profile>`, so the normal Hermes dispatcher does not pick them up. The dispatcher itself is not modified.
+- **Dispatcher unchanged.** cpipe's cards are assigned to the real profile; cpipe claims each one while holding the board's dispatcher lock, so the normal Hermes dispatcher skips it. The dispatcher itself is not modified.
 - **No credentials kept.** Credentials must be written as `[REDACTED]`. Worker prose is never treated as evidence; only observed test results and validated review verdicts are.
 - **Runs inside Hermes.** A background run lives in a long-running Hermes process (the app, TUI or gateway). If Hermes restarts mid-run, the watchdog or the next chat resumes it; while no Hermes process is running, nothing runs, but the budget clock keeps going.
 - **Shared provider limits.** All builders and reviewers on one provider share its rate limits; a fallback on another provider makes the ladder more robust.

@@ -265,7 +265,6 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
         if payload != {'delivery_id': record.get('delivery_id')} or record['state'] not in {'proposal', 'complete'}:
             raise ValueError('build only the delivery frozen by this run receipt')
         state = controller.owned(service, record['delivery_id'], session_id, profile_id)
-        validate_document(service, state.plan)
         if record['state'] == 'complete':  # continues, resumes or asks for a fresh budget; the real state
             return launch(record['delivery_id'], again=True)
         if not state.approved:

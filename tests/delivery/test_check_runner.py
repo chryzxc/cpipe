@@ -359,3 +359,21 @@ def test_builder_sees_missing_criteria_and_redacted_output_until_the_check_passe
         assert 'never appeared in the output' in delta and 'price rounds up' in delta
         assert 'ImportError: no module price' in delta and 'DO_NOT_RETAIN_TEST_VALUE' not in delta
         assert 'ImportError' not in _delta(SimpleNamespace(**{**vars(view), 'artifact': 'other'}))
+
+
+def test_the_behavior_check_ignores_failures_from_before_the_change_while_its_criteria_pass(repo, tmp_path):
+    # Seen live: the behavior command also ran an unrelated suite whose six tests already failed at the base.
+    from dataclasses import replace as swap
+    from cpipe.delivery.check_runner import take_baseline
+    out = tmp_path / 'out'
+    out.write_text('FAIL routes/export.test.js\n  ✕ exports csv (12 ms)\n'
+                   'Tests: 6 failed, 40 passed, 46 total\n')
+    spec = swap(sh(f'cat {out}; exit 1', ('price matrix',)), obligation='behavior')
+    journal, service, state, spec = setup_check(repo, tmp_path, spec=spec)
+    with journal:
+        take_baseline(state, (spec,), evidence_root=tmp_path / 'evidence')
+        out.write_text(out.read_text() + 'PASS routes/prices.test.js\n  ✓ price matrix (31 ms)\n')
+        assert (execute(state, spec, tmp_path).outcome, execute(state, spec, tmp_path).reason) == (
+            Outcome.PASS, 'pre_existing')
+        out.write_text(out.read_text().replace('✓ price matrix', '✕ price matrix'))
+        assert execute(state, spec, tmp_path).outcome is Outcome.FAIL  # its own criterion failing still counts

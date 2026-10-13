@@ -71,7 +71,7 @@ def test_slash_status_reads_journal(repo, tmp_path, hermes_home, monkeypatch):
     assert ' cancelled |' in ctx.commands['cp-stop']('d1')
 
 
-def test_controller_uses_real_red_green_and_independent_review(repo, tmp_path):
+def test_controller_checks_builds_and_reviews_with_real_checks(repo, tmp_path):
     from cpipe.delivery.controller import propose, run
     from cpipe.delivery.workers import WorkerResult
     from cpipe.delivery.review import REVIEW_AXES
@@ -107,16 +107,17 @@ def test_controller_uses_real_red_green_and_independent_review(repo, tmp_path):
             result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn, execute=execute,
                 evidence_root=tmp_path / 'evidence')
             assert result['phase'] == 'locally_ready'
-            assert [s['activity'] for s in result['steps']] == ['tests', 'implement', 'checks', 'review', 'review']
+            # Checks on the untouched code first, then one build, its checks and one review.
+            assert [s['activity'] for s in result['steps']] == ['checks', 'implement', 'checks', 'review']
             assert result['steps'][0]['outcomes'] == ['fail']
             assert result['steps'][-1]['outcomes'][-2:] == ['pass', 'pass']
             assert all(step['native_status'] == 'done' for step in result['steps'])
-            assert result['tokens'] == dict(steps=3, input=200, output=20, total=220, cache_read=80, cache_write=0)
+            assert result['tokens'] == dict(steps=2, input=150, output=15, total=165, cache_read=80, cache_write=0)
     finally:
         conn.close()
 
 
-def test_controller_writes_a_missing_behavior_test_then_goes_red_green(repo, tmp_path):
+def test_the_builder_writes_the_missing_behavior_test_with_the_fix(repo, tmp_path):
     """The realistic path: the behavior test does not exist until the builder writes it."""
     from cpipe.delivery.controller import propose, run
     from cpipe.delivery.workers import WorkerResult
@@ -134,9 +135,8 @@ def test_controller_writes_a_missing_behavior_test_then_goes_red_green(repo, tmp
     def execute(state, *, on_session, **kw):
         session = 'review-session' if state.activity == 'review' else 'builder-session'
         on_session(session)
-        if state.activity == 'write_tests':
+        if state.activity == 'implement':
             (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
-        elif state.activity == 'implement':
             (repo / 'double.py').write_text('def double(n): return n * 2\n')
         else:
             return WorkerResult(session, dict(status='approved', artifact=state.artifact,
@@ -150,8 +150,7 @@ def test_controller_writes_a_missing_behavior_test_then_goes_red_green(repo, tmp
                 state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
             result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn, execute=execute,
                 evidence_root=tmp_path / 'evidence')
-            assert [s['activity'] for s in result['steps']] == [
-                'tests', 'write_tests', 'tests', 'implement', 'checks', 'review', 'review']
+            assert [s['activity'] for s in result['steps']] == ['checks', 'implement', 'checks', 'review']
             assert result['phase'] == 'locally_ready'
     finally:
         conn.close()
@@ -183,15 +182,13 @@ def test_a_refusing_builder_is_replaced_without_stopping_the_run(repo, tmp_path)
         if state.activity == 'review':
             return WorkerResult(session, dict(status='approved', artifact=state.artifact,
                 reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
-        if calls.count('write_tests') == 1:  # edits, then declines: its leftovers must not survive
+        if calls.count('implement') == 1:  # edits, then declines: its leftovers must not survive
             (repo / 'double.py').write_text('broken(\n')
             (repo / 'scratch.py').write_text('junk\n')
             git(repo, 'add', 'scratch.py')
             return WorkerResult(session, {'status': 'blocked', 'reason': 'my profile is read-only'})
-        if state.activity == 'write_tests':
-            (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
-        else:
-            (repo / 'double.py').write_text('def double(n): return n * 2\n')
+        (repo / 'test_behavior.py').write_text('from double import double\ndef test_double(): assert double(2) == 4\n')
+        (repo / 'double.py').write_text('def double(n): return n * 2\n')
         return WorkerResult(session, {'status': 'done'})
     try:
         with Journal(tmp_path / 'controller.db') as journal:
@@ -202,7 +199,7 @@ def test_a_refusing_builder_is_replaced_without_stopping_the_run(repo, tmp_path)
             result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn, execute=execute,
                 evidence_root=tmp_path / 'evidence')
             assert result['phase'] == 'locally_ready'
-            assert result['recoveries'] == ['sentry declined write_tests: my profile is read-only']
+            assert result['recoveries'] == ['sentry declined implement: my profile is read-only']
             assert service.read('d1').builder == 'forge'
             assert not (repo / 'scratch.py').exists() and 'n * 2' in (repo / 'double.py').read_text()
             assert git(repo, 'diff', '--cached', '--name-only') == ''
@@ -250,7 +247,7 @@ def test_controller_recovers_a_step_that_crashed(repo, tmp_path, monkeypatch):
                 state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
             result = run(service, 'd1', **kw)  # recovered inside the same run, no restart needed
             assert result['phase'] == 'locally_ready'
-            assert [s['activity'] for s in result['steps']] == ['tests', 'implement', 'checks', 'review', 'review']
+            assert [s['activity'] for s in result['steps']] == ['checks', 'implement', 'checks', 'review']
             assert result['recoveries'] == ['forge failed implement (RuntimeError); retrying']
             assert 'previous attempt at this step failed: RuntimeError' in seen_notes[0]
     finally:
@@ -289,8 +286,7 @@ def test_a_builder_that_keeps_failing_is_retried_then_replaced(repo, tmp_path, m
         on_session(session)
         if state.builder != 'atlas':
             (repo / 'double.py').write_text('half done\n')  # every failed attempt is undone
-            return WorkerResult(session, {'status': 'done', 'note': 'not json the controller can use'}
-                                ) if len(resumed) == 1 else 1 / 0
+            return 1 / 0
         (repo / 'double.py').write_text('def double(n): return n * 2\n')
         return WorkerResult(session, {'status': 'done'})
     try:
@@ -423,8 +419,8 @@ def test_a_baseline_runs_on_the_base_code_and_survives_a_crash_in_the_middle(rep
     assert (repo / 'mine.txt').read_text() == 'edited meanwhile\n'
 
 
-@pytest.mark.parametrize('drift, adopted', [('double.py', True), ('outside.py', False)])
-def test_leftovers_with_nothing_to_roll_back_to_are_adopted_only_inside_the_approved_paths(
+@pytest.mark.parametrize('drift, adopted', [('double.py', True), ('outside.py', True), ('internal/notes.py', False)])
+def test_leftovers_with_nothing_to_roll_back_to_are_adopted_unless_they_touch_a_forbidden_path(
         repo, tmp_path, monkeypatch, drift, adopted):
     """A crashed step from an earlier process left edits behind and no verified snapshot exists."""
     from cpipe.delivery import controller
@@ -457,6 +453,7 @@ def test_leftovers_with_nothing_to_roll_back_to_are_adopted_only_inside_the_appr
             state = propose(service, p, (spec,))
             service.accept(Event('approval', 'envelope_approved', 'd1', p.digest(), state.artifact,
                 state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
+            (repo / drift).parent.mkdir(exist_ok=True)
             (repo / drift).write_text('def double(n): return n + 1  # half-finished\n')
             kw = dict(session_id='s1', profile_id='default', conn=conn, execute=execute,
                       evidence_root=tmp_path / 'evidence')
@@ -464,7 +461,7 @@ def test_leftovers_with_nothing_to_roll_back_to_are_adopted_only_inside_the_appr
                 result = run(service, 'd1', **kw)
                 assert result['phase'] == 'locally_ready', result
             else:
-                with pytest.raises(ValueError, match='outside the approved paths'):
+                with pytest.raises(ValueError, match='forbidden path'):
                     run(service, 'd1', **kw)
                 assert (repo / drift).exists()  # never deletes work it cannot attribute
     finally:
@@ -495,8 +492,8 @@ def test_the_settled_message_is_a_rendered_report_not_raw_state():
         assert row in text, row
 
 
-@pytest.mark.parametrize('answer', ['prove', 'dispute'])
-def test_a_finding_is_fixed_with_a_test_that_fails_without_the_fix_or_disputed(repo, tmp_path, monkeypatch, answer):
+@pytest.mark.parametrize('answer', ['fix', 'dispute'])
+def test_a_finding_is_fixed_or_disputed_and_one_more_review_settles_it(repo, tmp_path, monkeypatch, answer):
     from cpipe.delivery import controller
     from cpipe.delivery.controller import propose, run
     from cpipe.delivery.workers import DISPUTES, WorkerResult
@@ -535,10 +532,8 @@ def test_a_finding_is_fixed_with_a_test_that_fails_without_the_fix_or_disputed(r
             return WorkerResult(session, dict(status='done', tests=[],
                                               disputed=[dict(id='REV-001', reason='negatives are out of scope')]))
         (repo / 'double.py').write_text('def double(n): return n * 2\n')
-        weak = builds.count('implement') == 2  # first try: a "regression test" that passes anyway
-        (repo / 'test_behavior.py').write_text(test + ('def test_more(): assert double(3) == 6\n' if weak else
-                                                       'def test_negative(): assert double(-1) == -2\n'))
-        return WorkerResult(session, dict(status='done', tests=['test_behavior.py'], disputed=[]))
+        (repo / 'test_behavior.py').write_text(test + 'def test_negative(): assert double(-1) == -2\n')
+        return WorkerResult(session, 'Fixed it and added test_negative.')  # prose: the checks judge
     try:
         with Journal(tmp_path / 'controller.db') as journal:
             service = Service(journal)
@@ -550,53 +545,26 @@ def test_a_finding_is_fixed_with_a_test_that_fails_without_the_fix_or_disputed(r
     finally:
         conn.close()
         DISPUTES.clear()
-    assert result['phase'] == 'locally_ready' and len(reviews) == 3, result
-    if answer == 'prove':
-        assert builds == ['implement'] * 3
-        assert any('pass without your fix' in r for r in result['recoveries']), result
-        assert 'test_negative' in (repo / 'test_behavior.py').read_text()  # kept: pins the fix
-        assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'  # restored after the proof
+    assert result['phase'] == 'locally_ready' and len(reviews) == 2, result
+    if answer == 'fix':
+        assert builds == ['implement'] * 2
+        assert 'test_negative' in (repo / 'test_behavior.py').read_text()
+        assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'
     else:
         # Nothing changed, so the passing checks still hold: straight back to the reviewer, with the reason.
-        assert [s['activity'] for s in result['steps']][-3:] == ['implement', 'review', 'review']
+        assert [s['activity'] for s in result['steps']][-3:] == ['review', 'implement', 'review']
         assert reviews[1] == {'d1:REV-001': 'negatives are out of scope'}
         assert (repo / 'double.py').read_text() == 'def double(n): return n * 2 if n > 0 else 0\n'
 
 
-def test_builder_answers_are_checked():
-    from types import SimpleNamespace
+def test_builder_answers_are_read_leniently():
     from cpipe.delivery.workers import _answer
-    implement, write = SimpleNamespace(activity='implement'), SimpleNamespace(activity='write_tests')
-    assert _answer(implement, {'status': 'done'}, set()) == (set(), {})
-    assert _answer(implement, dict(status='done', tests=['t.py'], disputed=[dict(id='REV-001', reason='r')]),
-                   {'REV-001'}) == ({'t.py'}, {'REV-001': 'r'})
-    for activity, payload, ids in [(write, dict(status='done', tests=[]), set()),
-                                   (implement, dict(status='done', disputed=[dict(id='REV-009', reason='r')]), set()),
-                                   (implement, dict(status='done', disputed=[dict(id='REV-001', reason=' ')]), {'REV-001'}),
-                                   (implement, dict(status='done', extra=1), set())]:
-        with pytest.raises(ValueError):
-            _answer(activity, payload, ids)
-
-
-def test_the_proof_puts_the_fix_back_even_after_a_crash_in_the_middle(repo, monkeypatch):
-    from cpipe.delivery import hermes_worker
-    from cpipe.delivery.hermes_worker import _good, before_step, release, snapshot
-    from .test_execution_plan import plan
-    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'), base_commit=git(repo, 'rev-parse', 'HEAD'))
-    (repo / 'double.py').write_text('def double(n): return n * 2 if n > 0 else 0\n')
-    git(repo, 'update-ref', _good(p), snapshot(str(repo)))  # verified before the fix step
-    (repo / 'double.py').write_text('def double(n): return n * 2\n')
-    (repo / 'test_x.py').write_text('regression\n')
-    with pytest.raises(KeyboardInterrupt):
-        with before_step(p, {'test_x.py'}):
-            assert (repo / 'double.py').read_text() == 'def double(n): return n * 2 if n > 0 else 0\n'
-            assert (repo / 'test_x.py').exists()
-            monkeypatch.setattr(hermes_worker, 'release', lambda plan: None)  # the process dies here
-            raise KeyboardInterrupt
-    monkeypatch.undo()
-    release(p)  # the next run puts the fix back
-    assert (repo / 'double.py').read_text() == 'def double(n): return n * 2\n'
-    assert (repo / 'test_x.py').read_text() == 'regression\n'
+    assert _answer({'status': 'done'}, set()) == {}
+    assert _answer('Done, tests pass.', {'REV-001'}) == {}  # prose is fine: the checks judge the result
+    assert _answer(dict(status='done', tests=['t.py'], disputed=[dict(id='REV-001', reason='r')]),
+                   {'REV-001'}) == {'REV-001': 'r'}
+    assert _answer(dict(disputed=[dict(id='REV-009', reason='r'), dict(id='REV-001', reason=' '), 'x']),
+                   {'REV-001'}) == {}  # unknown ids and empty reasons are dropped, not fatal
 
 
 def test_spawn_opens_one_chat_per_task_running_cp_run(hermes_home, monkeypatch):

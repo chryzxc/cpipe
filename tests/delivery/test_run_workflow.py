@@ -261,20 +261,6 @@ def test_a_delivery_starts_from_what_was_investigated_in_a_worktree_of_its_own(r
     assert 'cpipe/' + frozen['delivery_id'] in git('branch', '--list', 'cpipe/*')
 
 
-def test_document_edit_after_consent_blocks_even_direct_controller_execution(run_context, hermes_home):
-    from cpipe.delivery import controller
-    draft = prepare(run_context)
-    frozen = call(run_context[1], 'plan', {'draft_revision': 1})
-    assert reply(frozen['approval_arguments'], 'Yes')['status'] == 'approved'
-    with Journal.for_profile(hermes_home) as store:
-        service = Service(store)
-        Path(draft['document_path']).write_text('changed after consent')
-        with pytest.raises(ValueError, match='changed'):
-            controller.run(service, frozen['delivery_id'], session_id='s1', profile_id='default',
-                           evidence_root=hermes_home / 'evidence')
-    assert 'error' in call(run_context[1], 'build', {'delivery_id': frozen['delivery_id']})
-
-
 @pytest.mark.parametrize('choice', ['Yes', 'No'])
 def test_one_receipt_through_the_users_answer_and_red_green_review(
         run_context, repo, hermes_home, monkeypatch, choice):
@@ -330,17 +316,17 @@ def test_one_receipt_through_the_users_answer_and_red_green_review(
         assert len(told) == 1 and told[0][1] == {'role': 'user', 'session_key': 'chat-one'}
         text = told[0][0]
         assert text.startswith(native.SHOW + f'**cpipe · `{delivery_id}` is done and ready for your review.**')
-        assert '| Steps | tests, implement, checks, review ×2 |' in text
+        assert '| Steps | checks ×2, implement, review |' in text
         assert '| lint | pass: it still fails, but only on failures' in text
         with native.scope() as (service, _, _home):
             state = service.read(delivery_id)
             out = dict(native.controller.summary(state, service), worktree=state.plan.worktree)
         assert out['phase'] == 'locally_ready'
         assert out['outcomes'] == ['fail', 'pass', 'pass', 'pass', 'pass']
-        assert workers == ['implement', 'review', 'review']
+        assert workers == ['implement', 'review']
         again = call(token, 'build', {'delivery_id': delivery_id})  # the real state, not the cached 'running'
         assert again['phase'] == 'locally_ready' and 'background' not in again
-        assert workers == ['implement', 'review', 'review']  # No duplicate launches on retry.
+        assert workers == ['implement', 'review']  # No duplicate launches on retry.
         # Built in a worktree of its own; the investigated checkout is untouched.
         assert (repo / 'double.py').read_text() == 'def double(n): return n\n'
         assert Path(out['worktree']).parent == repo.parent / (repo.name + '-worktrees')  # next to the repository
@@ -472,14 +458,14 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
     assert build()['phase'] == 'running'
     native._RUNS[delivery_id].join(60)
     assert call(token, 'status', {})['phase'] == 'locally_ready'
-    assert workers == ['implement', 'implement', 'review', 'review']
+    assert workers == ['implement', 'implement', 'review']
     # The chat sees each handover and recovery as a display-only line, never a model turn.
     assert {(p, e, sid, d) for p, e, sid, d, _, _ in lines} == {('cpipe', 'progress', 's1', delivery_id)}
     texts = [text for *_, text, _ in lines]
-    assert texts[:2] == ['[1/4] Fix double returning the input · running the new test (it must fail first)',
-                         '[2/4] Fix double returning the input · builder is implementing']
+    assert texts[:2] == ['[1/3] Fix double returning the input · running the checks',
+                         '[1/3] Fix double returning the input · builder is implementing']
     assert texts[2].startswith('builder declined implement')
-    assert '[4/4] Fix double returning the input · reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
+    assert '[3/3] Fix double returning the input · reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
     assert 'error' in call(token, 'prepare', {})  # still no new work on an expired receipt
 
 
@@ -604,14 +590,14 @@ def test_asked_for_a_draft_pr_it_opens_one_after_review_and_retries_only_that_st
     assert first.startswith(native.SHOW + f'**cpipe · `{delivery_id}` is verified and reviewed, but its draft pull request')
     assert '| Pull request |' not in first and '**continue**' in first
     assert any('draft pull request is not done' in r and 'HTTP 503' in r for r in first.splitlines())
-    assert workers == ['implement', 'review', 'review']
+    assert workers == ['implement', 'review']
 
     (tmp_path / 'gh-down').unlink()  # fixed; "continue" retries the PR step alone
     build()
     done = told[-1]
     assert done.startswith(native.SHOW + f'**cpipe · `{delivery_id}` is done: its draft pull request is open')
     assert '| Pull request | https://github.com/acme/widget/pull/1 |' in done and '**continue**' not in done
-    assert workers == ['implement', 'review', 'review']  # no rebuild or second review
+    assert workers == ['implement', 'review']  # no rebuild or second review
     pr, = json.loads(prs.read_text())
     assert pr['title'] == 'Double numbers correctly' and pr['baseRefName'] == 'feature' and delivery_id not in pr['body']
     # GitHub down: content refused (leaked id) and rewritten, push fails. Continue: written, published, verified,
@@ -845,6 +831,6 @@ def test_a_crashing_worker_and_an_old_noisy_failure_still_end_ready_without_aski
                                  execute=worker, evidence_root=hermes_home / 'evidence')
         state = service.read(delivery_id)
     assert out['phase'] == 'locally_ready', out
-    assert workers == ['implement', 'implement', 'review', 'review']
-    assert state.calls_used == 3  # the crash cost no call
+    assert workers == ['implement', 'implement', 'review']
+    assert state.calls_used == 2  # the crash cost no call
     assert not any('approve' in text.lower() for text in told)

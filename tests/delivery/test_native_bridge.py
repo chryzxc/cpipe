@@ -63,8 +63,8 @@ def test_schedule_is_idempotent_pins_runtime_and_never_wakes_a_chat(tmp_path, bo
         assert not notify.list_notify_subs(board, tid)  # board activity only; no model turn in the chat
         assert len(h.kb.list_tasks(board)) == 1
         # A short card for people; the plan stays in the journal.
-        assert len(task.body) < 1000 and state.plan.digest()[:12] in task.body and '| tests |' in task.body
-        assert task.title == f'{state.plan.goal} — 1/4 Proving test'
+        assert len(task.body) < 1000 and state.plan.digest()[:12] in task.body and '| checks |' in task.body
+        assert task.title == f'{state.plan.goal} — 1/3 Running checks'
         b.comment(tid, 'builder handed over to fallback')
         assert [c.body for c in h.kb.list_comments(board, tid)] == ['builder handed over to fallback']
 
@@ -107,7 +107,7 @@ def test_observed_checks_complete_native_run_and_emit_one_successor(tmp_path, bo
         next_tid = b.schedule('d1')
         assert next_tid != tid and b.schedule('d1') == next_tid
         next_task = h.get_task(board, next_tid)
-        assert next_task.assignee == 'cp:forge'
+        assert next_task.assignee == 'forge'  # the real profile; cpipe claims it at once
 
 
 def test_lost_or_reclaimed_native_run_cannot_advance_journal(tmp_path, board):
@@ -177,7 +177,7 @@ def test_native_completion_is_reconciled_after_journal_write_interruption(tmp_pa
         assert h.get_task(board, tid).status == 'done'
         assert service.read('d1') == state
         after = b.finish(event, tid, claimer='owner', summary='Observed behavior PASS')
-        assert after.activity == 'write_tests'  # a first-run PASS is not a RED
+        assert after.activity == 'implement'  # passing checks on untouched code: the builder still goes first
         assert len(h.kb.list_runs(board, tid)) == 1
         assert b.finish(event, tid, claimer='owner', summary='Observed behavior PASS') == after
 
@@ -240,6 +240,30 @@ def test_schedule_claims_its_card_at_once(tmp_path, board):
         assert h.take(board, tid, claimer=claimer, ttl_seconds=60)
 
 
+def test_the_card_is_queued_and_claimed_while_the_boards_dispatcher_is_paused(tmp_path, board, monkeypatch):
+    # The card names a real profile: Hermes' dispatcher must not see it ready and unclaimed.
+    from contextlib import contextmanager
+    from pathlib import Path
+    from hermes_cli import kanban_db_connect as kbc
+    seen, held = [], []
+    @contextmanager
+    def tick_lock(path):
+        held.append(Path(path))
+        yield True
+        held.pop()
+    monkeypatch.setattr(kbc, '_dispatch_tick_lock', tick_lock, raising=False)
+    real_unblock, real_take = h.kb.unblock_task, h.take
+    monkeypatch.setattr(h.kb, 'unblock_task', lambda *a, **k: seen.append(('unblock_task', list(held))) or real_unblock(*a, **k))
+    monkeypatch.setattr(h, 'take', lambda *a, **k: seen.append(('take', list(held))) or real_take(*a, **k))
+    journal, service, state = approved(tmp_path)
+    with journal:
+        approve(service, state)
+        tid = bridge(service, board).schedule('d1', h.new_claimer())
+    db = Path(board.execute('PRAGMA database_list').fetchone()[2])
+    assert seen == [('unblock_task', [db]), ('take', [db])]
+    assert h.get_task(board, tid).status == 'running'
+
+
 @pytest.mark.parametrize('takeover', ['reassigned', 'foreign_claim', 'dead_claim'])
 def test_a_card_something_else_took_or_changed_is_replaced(tmp_path, board, takeover):
     import subprocess
@@ -249,7 +273,7 @@ def test_a_card_something_else_took_or_changed_is_replaced(tmp_path, board, take
         b = bridge(service, board)
         tid = b.schedule('d1')
         if takeover == 'reassigned':  # e.g. another service re-routing cpipe's cards to a real profile
-            h.kb.assign_task(board, tid, 'forge')
+            h.kb.assign_task(board, tid, 'someone-else')
         elif takeover == 'foreign_claim':
             h.claim_task(board, tid, claimer='otherhost:1:wr-x', ttl_seconds=600)
         else:
@@ -283,8 +307,8 @@ def test_card_title_leads_with_the_task_and_shows_the_step(tmp_path):
     from cpipe.delivery.native_bridge import NativeBridge
     _, _, state = approved(tmp_path)
     titled = replace(state, activity='implement', plan=replace(state.plan, title='Fix date parser'))
-    assert NativeBridge._title(titled) == 'Fix date parser — 2/4 Implementing'
+    assert NativeBridge._title(titled) == 'Fix date parser — 1/3 Implementing'
     long = replace(state, activity='review', plan=replace(state.plan, goal='word ' * 30))  # no title: the goal, cut at a word
-    assert NativeBridge._title(long) == 'word ' * 11 + 'word… — 4/4 Review'
+    assert NativeBridge._title(long) == 'word ' * 11 + 'word… — 3/3 Review'
     with pytest.raises(ValueError, match='title'):
         replace(state.plan, title='x' * 61)

@@ -4,7 +4,7 @@ import pytest
 from cpipe.delivery.contracts import Outcome, Receipt
 from cpipe.delivery.findings import Finding
 from cpipe.delivery.schema import ExecutionPlan
-from cpipe.delivery.service import WRITE_TEST_ROUNDS, Event, State, Verification, apply
+from cpipe.delivery.service import Event, State, Verification, apply
 from .test_execution_plan import plan
 
 
@@ -51,7 +51,7 @@ def receipt(state, name="behavior", outcome=Outcome.PASS, **changes):
 
 def candidate(**changes):
     state = start(**changes)
-    state, _ = step(state, "envelope_approved", "tests")
+    state, _ = step(state, "envelope_approved", "checks")
     state = claim(state)
     state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
     state = claim(state, "forge", "builder-session")
@@ -71,10 +71,8 @@ def reviewed(state, **changes):
 
 
 def passed(state, actor_id="sentry", **changes):
-    """The normal review approves, then the final regression review approves the same tree."""
-    state, intents = reviewed(state, actor_id=actor_id, **changes)
-    assert state.phase == "reviewing" and intents[0][1]["action"] == "review"
-    return reviewed(claim(state, actor_id, "final-review-session"), actor_id=actor_id)
+    """One approving review ends the run."""
+    return reviewed(state, actor_id=actor_id, **changes)
 
 
 def ready_for_review(state):
@@ -83,15 +81,10 @@ def ready_for_review(state):
     return claim(state, "sentry", "review-session")
 
 
-def test_approval_tests_implementation_checks_candidate_then_independent_readiness():
+def test_approval_checks_builds_and_one_independent_review_makes_it_ready():
     state = candidate()
     assert not any(r.obligation == "review" for r in state.receipts)
     state = ready_for_review(state)
-    state, intents = reviewed(state)
-    assert state.phase == "reviewing" and intents[0][1]["action"] == "review"  # approval alone never ships
-    with pytest.raises(ValueError, match="quiescent"):
-        step(state, "feedback_received", action="publish")
-    state = claim(state, "sentry", "final-review-session")
     finding = Finding("", "regressions", "a caller outside the diff breaks", "medium", True, "open")
     back, intents = reviewed(state, receipts=(receipt(state, "review", Outcome.FAIL),), findings=(finding,))
     assert back.phase == "implementing" and intents[0][1]["action"] == "implement"
@@ -141,7 +134,7 @@ def test_stale_or_cross_delivery_events_are_rejected(field, value):
 
 
 def test_unclaimed_wrong_run_and_cancelled_results_cannot_continue():
-    state, _ = step(start(), "envelope_approved", "tests")
+    state, _ = step(start(), "envelope_approved", "checks")
     with pytest.raises(ValueError, match="claimed"):
         apply(state, event(state, "activity_observed", receipts=(receipt(state),)))
     state = claim(state)
@@ -158,30 +151,28 @@ def test_unclaimed_wrong_run_and_cancelled_results_cannot_continue():
     {"environment": "old"}, {"command": "old"}, {"observed": False},
 ])
 def test_checks_require_current_artifact_and_full_configuration(changes):
-    state, _ = step(start(), "envelope_approved", "tests")
+    state, _ = step(start(), "envelope_approved", "checks")
     state = claim(state)
     with pytest.raises(ValueError, match="receipt"):
         apply(state, event(state, "activity_observed", receipts=(replace(receipt(state), **changes),)))
 
 
 def test_missing_observation_or_setup_failure_never_creates_red_or_green():
-    state, _ = step(start(), "envelope_approved", "tests")
+    state, _ = step(start(), "envelope_approved", "checks")
     state = claim(state)
     with pytest.raises(ValueError, match="observations"):
         apply(state, event(state, "activity_observed"))
-    unavailable, intents = step(state, "activity_observed", "write_tests",
+    unavailable, intents = step(state, "activity_observed", "implement",
                                 receipts=(receipt(state, outcome=Outcome.UNAVAILABLE),))
     assert unavailable.phase == "implementing"
     assert unavailable.receipts[-1].outcome is Outcome.UNAVAILABLE
-    again = unavailable
-    for round_ in range(2, WRITE_TEST_ROUNDS + 2):
-        written = claim(again, actor_id="forge", worker_session="builder-1")
-        retest, _ = step(written, "activity_observed", "tests", actor_id="forge", result_artifact=f"tree{round_}")
-        retest = claim(retest)
-        last = round_ == WRITE_TEST_ROUNDS + 1
-        again, _ = step(retest, "activity_observed", "diagnose" if last else "write_tests",
-                        receipts=(receipt(retest, outcome=Outcome.PASS),))
-    assert again.phase == "diagnosis"  # still no RED after every write_tests round
+
+
+def test_checks_that_already_pass_before_any_change_still_send_the_task_to_the_builder():
+    state = claim(step(start(), "envelope_approved", "checks")[0])
+    names = [c.obligation for c in state.plan.checks if c.obligation != "review"]
+    state, _ = step(state, "activity_observed", "implement", receipts=tuple(receipt(state, n) for n in names))
+    assert state.phase == "implementing"
 
 
 def test_reviewer_cannot_use_builder_session_or_old_partial_range():
@@ -228,7 +219,7 @@ def test_budget_and_expiry_stop_without_new_worker():
 
 def test_execution_budget_starts_at_approval_not_at_freeze():
     state = start()
-    approved, _ = step(state, "envelope_approved", "tests", now=state.started_at + 200)
+    approved, _ = step(state, "envelope_approved", "checks", now=state.started_at + 200)
     assert approved.started_at == state.started_at + 200
     claimed, _ = step(approved, "activity_claimed", now=approved.started_at + 250, run_id="run-1")
     assert claimed.phase != "stopped"
@@ -277,7 +268,7 @@ def test_changed_contract_must_not_resume_old_builder_session():
     changed = replace(state.plan, goal="A materially different acceptance goal")
     proposal, intents = step(state, "feedback_received", "approve_envelope", plan=changed)
     assert intents[0][1]["resume"] == ""
-    approved, _ = step(proposal, "envelope_approved", "tests")
+    approved, _ = step(proposal, "envelope_approved", "checks")
     approved = claim(approved)
     building, intents = step(approved, "activity_observed", "implement",
                              receipts=(receipt(approved, outcome=Outcome.FAIL),))
@@ -332,7 +323,7 @@ def test_event_roundtrip_keeps_complete_provenance_and_rejects_unknown_authority
 
 def test_broken_checks_go_back_to_the_builder_but_a_missing_command_waits():
     state = start()
-    state, _ = step(state, "envelope_approved", "tests")
+    state, _ = step(state, "envelope_approved", "checks")
     state = claim(state)
     state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
     state = claim(state, "forge", "builder-session")
@@ -344,29 +335,30 @@ def test_broken_checks_go_back_to_the_builder_but_a_missing_command_waits():
     missing, _ = step(checking, "activity_observed", "diagnose",
                       receipts=(receipt(checking, outcome=Outcome.UNAVAILABLE, observed=False, reason="command_not_found"),))
     assert missing.phase == "waiting"
-    first = claim(step(start(), "envelope_approved", "tests")[0])
+    first = claim(step(start(), "envelope_approved", "checks")[0])
     assert step(first, "activity_observed", "diagnose", receipts=(receipt(
         first, outcome=Outcome.UNAVAILABLE, observed=False, reason="command_not_found"),))[0].phase == "waiting"
 
 
 
-def test_a_check_that_cannot_see_its_criteria_twice_in_a_row_waits_for_the_user():
+def test_a_check_that_cannot_see_its_criteria_three_times_in_a_row_waits_for_the_user():
     unseen = dict(outcome=Outcome.UNAVAILABLE, observed=False, reason="criteria_not_in_output")
-    state = claim(step(start(), "envelope_approved", "tests")[0])
-    state, _ = step(state, "activity_observed", "write_tests", receipts=(receipt(state, **unseen),))
-    assert state.phase == "implementing"  # the test may simply not exist yet
-    state = claim(state, "forge", "builder-session")
-    state, _ = step(state, "activity_observed", "tests", actor_id="forge", result_artifact="tree2")
-    state = claim(state)
+    state = claim(step(start(), "envelope_approved", "checks")[0])
+    for tree in ("tree2", "tree3"):  # before the test exists, and once more after the builder's first try
+        state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, **unseen),))
+        state = claim(state, "forge", "builder-session")
+        state, _ = step(state, "activity_observed", "checks", actor_id="forge", result_artifact=tree)
+        state = claim(state)
     stuck, _ = step(state, "activity_observed", "diagnose", receipts=(receipt(state, **unseen),))
     assert stuck.phase == "waiting"  # the frozen command never prints them; no builder can fix that
+
 
 def test_a_refusing_builder_hands_over_to_the_next_approved_one_then_the_run_waits():
     from cpipe.delivery.schema import Actor
     actors = (Actor("builder", "hermes", "sentry", "m", "p"), Actor("builder", "hermes", "forge", "m", "p"),
               Actor("reviewer", "hermes", "aegis", "m", "p"))
     state = start(actors=actors)
-    state, _ = step(state, "envelope_approved", "tests")
+    state, _ = step(state, "envelope_approved", "checks")
     state = claim(state)
     state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
     state = claim(state, "sentry", "sentry-session")
@@ -400,32 +392,11 @@ def test_a_refusing_reviewer_hands_over_to_the_next_approved_reviewer():
     assert state.phase == "locally_ready"
 
 
-def test_a_stuck_test_writer_hands_over_to_the_next_builder_before_diagnosis():
-    from cpipe.delivery.schema import Actor
-    from cpipe.delivery.service import actor
-    actors = (Actor("builder", "hermes", "forge", "m", "p"), Actor("builder", "hermes", "atlas", "m", "p"),
-              Actor("reviewer", "hermes", "sentry", "m", "p"))
-    from cpipe.delivery.contracts import Budget
-    state, _ = step(start(actors=actors, budget=Budget(300, 12)), "envelope_approved", "tests")
-    state = claim(state)
-    state, _ = step(state, "activity_observed", "write_tests", receipts=(receipt(state, outcome=Outcome.PASS),))
-    writers = []
-    for round_ in range(2 * WRITE_TEST_ROUNDS):
-        builder = actor(state, "builder").profile
-        writers.append(builder)
-        state = claim(state, builder, state.builder_session or f"{builder}-session")
-        state, _ = step(state, "activity_observed", "tests", actor_id=builder, result_artifact=f"tree{round_}")
-        state = claim(state)
-        state, _ = step(state, "activity_observed", receipts=(receipt(state, outcome=Outcome.PASS),))
-    assert writers == ["forge"] * WRITE_TEST_ROUNDS + ["atlas"] * WRITE_TEST_ROUNDS
-    assert state.phase == "diagnosis"  # every builder had its rounds; only now the user is asked
-
-
 def test_continue_picks_a_waiting_run_up_with_every_builder_again():
     from cpipe.delivery.schema import Actor
     actors = (Actor("builder", "hermes", "sentry", "m", "p"), Actor("builder", "hermes", "forge", "m", "p"),
               Actor("reviewer", "hermes", "aegis", "m", "p"))
-    state, _ = step(start(actors=actors), "envelope_approved", "tests")
+    state, _ = step(start(actors=actors), "envelope_approved", "checks")
     state = claim(state)
     state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
     for builder in ("sentry", "forge"):
@@ -456,7 +427,7 @@ def test_continue_after_the_budget_ran_out_renews_it_without_asking_again():
 
 def test_a_crashed_worker_step_spends_no_call():
     state = start()
-    state, _ = step(state, "envelope_approved", "tests")
+    state, _ = step(state, "envelope_approved", "checks")
     state = claim(state)
     state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
     used = state.calls_used
@@ -475,7 +446,7 @@ def test_a_missing_environment_waits_for_the_user_instead_of_handing_over():
     actors = (Actor("builder", "hermes", "sentry", "m", "p"), Actor("builder", "hermes", "forge", "m", "p"),
               Actor("reviewer", "hermes", "aegis", "m", "p"))
     state = start(actors=actors)
-    state, _ = step(state, "envelope_approved", "tests")
+    state, _ = step(state, "envelope_approved", "checks")
     state = claim(state)
     state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
     state = claim(state, "sentry", "sentry-session")

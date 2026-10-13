@@ -341,9 +341,12 @@ def _known(root, state, spec):
 
 
 def _pre_existing(root, state, spec, observed, outcome, reason):
-    """Failures all already there before the change (never the behavior check)."""
-    if (spec.obligation == 'behavior' or not observed or observed[0] <= 0
-            or not (reason == 'other_failures' or (outcome is Outcome.FAIL and not spec.reported))):
+    """Failures all already there before the change, outside the change's own tests: the behavior
+    check's criteria must still pass (reported) or appear in no failure line (output only)."""
+    if not observed or observed[0] <= 0 or not (reason == 'other_failures' or (outcome is Outcome.FAIL and not spec.reported)):
+        return False
+    if spec.obligation == 'behavior' and reason != 'other_failures' and any(
+            c.encode() in line for line in observed[1].splitlines() if _FAILED.search(line) for c in spec.criteria):
         return False
     try:
         known = json.loads(baseline_path(root, state).read_text()).get(spec.obligation)
@@ -398,26 +401,3 @@ def observe_check(state, spec, *, evidence_root):
     with os.fdopen(fd, 'w') as stream:
         stream.write(encoded(evidence))
     return receipt
-
-
-def reproduces(state, specs, *, evidence_root):
-    """Whether a check fails on the current files, beyond failures the repository already had.
-    Read-only and never evidence: it only tells whether new regression tests catch something."""
-    before = fingerprint(state.plan.worktree)
-    try:
-        for spec in specs:
-            remaining = deadline(state) - time.time()
-            if remaining <= 0:
-                raise ValueError('execution authority expired or budget exhausted')
-            observed = _run(spec, state.plan.worktree, spec.environment()[0],
-                            min(spec.timeout_seconds, remaining))
-            outcome, reason = _outcome(spec, observed)
-            # The behavior check judges only its criteria: other failing cases in it are new tests.
-            caught = outcome is Outcome.FAIL or (spec.obligation == 'behavior' and reason == 'other_failures')
-            if caught and not _pre_existing(evidence_root, state, spec, observed, outcome, reason):
-                return True
-        return False
-    finally:
-        observed = None
-        if fingerprint(state.plan.worktree) != before:
-            raise ValueError('artifact changed during read-only check')

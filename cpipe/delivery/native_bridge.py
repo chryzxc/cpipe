@@ -19,9 +19,9 @@ from .service import Event, apply, actor as active, deadline
 
 RUNNABLE = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 RESULT_KINDS = frozenset({'activity_observed', 'review_received', 'publication_observed'})
-# Card titles: the step's place in the delivery and its name. Writing and running the proving test are one step.
-STEPS = {'tests': (1, 'Proving test'), 'write_tests': (1, 'Writing tests'), 'implement': (2, 'Implementing'),
-         'checks': (3, 'Running checks'), 'review': (4, 'Review'), 'publish': (5, 'Opening draft PR')}
+# Card titles: the step's place in the delivery and its name. The first checks, on the untouched code, share step 2.
+STEPS = {'tests': (2, 'Running checks'), 'write_tests': (1, 'Implementing'), 'implement': (1, 'Implementing'),
+         'checks': (2, 'Running checks'), 'review': (3, 'Review'), 'publish': (4, 'Opening draft PR')}
 
 
 def alive(claimer):
@@ -65,18 +65,19 @@ class NativeBridge:
 
     @staticmethod
     def _title(state):
-        """Task first, then where the delivery is: "Fix date parser — 2/4 Implementing"; the assignee names the profile."""
+        """Task first, then where the delivery is: "Fix date parser — 1/3 Implementing"; the assignee names the profile."""
         name, place = NativeBridge.progress(state)
         label = STEPS.get(state.activity, (0, state.activity))[1]
         return f'{name} — {place} {label}' if place else f'{name} — {label}'
 
     @staticmethod
     def progress(state):
-        """The task's name and the step's place, e.g. ("Fix date parser", "2/4"); "" outside the numbered steps."""
+        """The task's name and the step's place, e.g. ("Fix date parser", "1/3"); "" outside the numbered steps."""
         plan = state.plan
         name = plan.title or (plan.goal if len(plan.goal) <= 60 else plan.goal[:60].rsplit(' ', 1)[0] + '…')
-        number = STEPS.get(state.activity, (0, ''))[0]
-        return name, f"{number}/{5 if plan.completion_target == 'draft' else 4}" if number else ''
+        # Checks on the untouched code belong to the build step, so the count never runs backwards.
+        number = 1 if state.activity == 'checks' and not state.built else STEPS.get(state.activity, (0, ''))[0]
+        return name, f"{number}/{4 if plan.completion_target == 'draft' else 3}" if number else ''
 
     @staticmethod
     def _actor(state):
@@ -84,9 +85,7 @@ class NativeBridge:
 
     @staticmethod
     def _lane(profile):
-        # A non-profile assignee: Hermes' dispatcher never spawns it, so only
-        # cpipe claims these cards (Hermes stores assignees lowercased).
-        return 'cp:' + profile.lower()
+        return profile.lower()  # Hermes stores assignees lowercased
 
     def _task(self, state, task_id):
         task = h.get_task(self.conn, task_id)
@@ -129,6 +128,7 @@ class NativeBridge:
                     workspace_kind='dir', workspace_path=state.plan.worktree,
                     project_id='', session_id=self.session_id,
                     idempotency_key=self._key(state), max_runtime_seconds=math.ceil(remaining),
+                    # 0: if cpipe dies and its claim expires, Hermes blocks the card instead of spawning a worker.
                     max_retries=state.plan.transient_retries,
                     model_override=actor.model, provider_override=actor.provider,
                     initial_status='blocked', completion_contract='local-only')
@@ -142,11 +142,13 @@ class NativeBridge:
         else:
             raise ValueError('native activity is not queueable')
         task = self._task(state, tid)
-        if task.status == 'blocked' and not h.kb.unblock_task(self.conn, tid):
-            raise RuntimeError('native task could not be queued')
-        # Claim at once, so nothing else picks up a ready cpipe card in between.
-        if claimer and not h.take(self.conn, tid, claimer=claimer, ttl_seconds=120):
-            raise ValueError('native activity already claimed')
+        # The card names the real profile, so Hermes' dispatcher would spawn its own worker on it while it
+        # is ready: queue and claim it while holding the dispatcher's lock, which makes it skip that tick.
+        with h.dispatch_paused(self.conn):
+            if task.status == 'blocked' and not h.kb.unblock_task(self.conn, tid):
+                raise RuntimeError('native task could not be queued')
+            if claimer and not h.take(self.conn, tid, claimer=claimer, ttl_seconds=120):
+                raise ValueError('native activity already claimed')
         fresh = self._task(state, tid)
         if fresh.status not in {'ready', 'running'}:
             raise ValueError('native activity is not queueable')

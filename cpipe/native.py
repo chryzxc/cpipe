@@ -42,8 +42,8 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
                 'commands that provision their own dependencies (uv run, go test, cargo test) or install only when '
                 'missing, e.g. ["sh","-c","[ -d node_modules ] || npm ci; npx vitest run ..."]; never name the '
                 'investigated checkout in a command. '
-                'Exactly one check has obligation behavior: the test proving the change; it must fail before implementing, '
-                'and the builder writes it first, so its file must be inside write_paths. '
+                'Exactly one check has obligation behavior: the test proving the change; the builder writes it with '
+                'the change, so put its file in write_paths. '
                 'Also add a regression check running the existing tests for every module the change touches and '
                 'their callers (and the type checker or linter for those files, if the repository has one), so a '
                 'change cannot pass while breaking code next to it. '
@@ -86,7 +86,7 @@ log = logging.getLogger('cpipe')
 HEADLINES = {'locally_ready': 'done and ready for your review',
              'completed': 'done: its draft pull request is open for your review',
              'stopped': 'stopped: its time or turn budget ran out',
-             'diagnosis': 'stopped: every approved builder got stuck (no valid failing test, or review findings none could resolve)',
+             'diagnosis': 'stopped: every approved builder got stuck (checks that never passed, or review findings none could resolve)',
              'waiting': 'stopped: it needs you (every approved builder or reviewer declined or kept failing, or the environment is missing something)',
              'cancelled': 'cancelled'}
 

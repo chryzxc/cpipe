@@ -43,7 +43,7 @@ def test_real_passing_checks_reach_readiness_gate_through_native_results(repo, t
         assert len(h.kb.list_tasks(board)) == 3
 
 
-def test_behavior_test_that_already_passes_gets_one_write_tests_pass(repo, tmp_path, board):
+def test_checks_that_already_pass_on_untouched_code_still_go_to_the_builder(repo, tmp_path, board):
     (repo / 'double.py').write_text('def double(n): return n * 2\n')
     journal, service, state, spec = setup_check(repo, tmp_path)
     with journal:
@@ -53,8 +53,8 @@ def test_behavior_test_that_already_passes_gets_one_write_tests_pass(repo, tmp_p
         b.bind_claim('d1', tid, claimer='controller', worker_session='check-green')
         after = b.observe_checks('d1', tid, claimer='controller', checks=(spec,),
                                  evidence_root=tmp_path / 'evidence')
-        assert after.activity == 'write_tests' and after.phase == 'implementing'
-        assert h.get_task(board, b.schedule('d1')).assignee == 'cp:forge'
+        assert after.activity == 'implement' and after.phase == 'implementing'
+        assert h.get_task(board, b.schedule('d1')).assignee == 'forge'  # the real profile, as on any card
 
 
 def test_lost_native_claim_after_real_check_cannot_apply_observation(repo, tmp_path, board, monkeypatch):

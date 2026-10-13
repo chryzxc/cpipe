@@ -33,12 +33,12 @@ def handle(args):
                 from . import hermes_api as h
                 with closing(h.connect(None)) as conn:
                     taken = conn.execute("SELECT count(*) FROM tasks WHERE created_by='cpipe' AND status!='archived' "
-                        "AND (assignee NOT LIKE 'cp:%' OR (status='running' AND claim_lock NOT LIKE '%:cpipe-%'))"
+                        "AND status='running' AND claim_lock NOT LIKE '%:cpipe-%'"
                         ).fetchone()[0]
                 if taken:
-                    warnings.append(f'{taken} cpipe card(s) were reassigned or claimed by something else, such as an '
+                    warnings.append(f"{taken} cpipe card(s) were claimed by something else, such as an "
                                     'older cpipe background service or a board automation; stop it, or exclude '
-                                    "cards created by cpipe (assignee cp:*) from it")
+                                    "cards created by cpipe from it")
             except Exception as exc:
                 warnings.append('could not inspect the board: ' + type(exc).__name__)
             print(json.dumps(dict(version=__version__, native_interfaces=ready,

@@ -210,8 +210,8 @@ def _delta(state):
                      + '. Their output is below; re-run a check only to confirm your fix.')
     broken = sorted((o, r.reason) for o, r in latest.items() if r.outcome is Outcome.UNAVAILABLE)
     if broken:
-        lines.append('Checks that produced no pass/fail result (fix the code or tests inside write_paths from the '
-                     'output below; never change the approved commands or criteria):')
+        lines.append('Checks that produced no pass/fail result (fix the code or tests from the output below; '
+                     'never change the approved commands or criteria):')
         lines += [f'- {o}: ' + UNAVAILABLE_REASONS.get(reason, 'no result') for o, reason in broken]
     for o in failed + [o for o, _ in broken]:
         artifact, missing, tail = TAILS.get(state.plan.envelope.delivery_id + ':' + o, (None, (), ''))
@@ -222,8 +222,6 @@ def _delta(state):
                          'each exactly): ' + ', '.join(missing))
         if tail.strip():
             lines.append(f'{o} output (redacted):\n```\n{tail.strip()}\n```')
-    if state.activity == 'write_tests':
-        lines.append('The behavior test names must match the approved criteria exactly (describe prefixes are fine).')
     from .findings import blocks
     open_ = [r.finding for r in state.findings if blocks(r.finding)]
     disputed = {f.id: DISPUTES.get(state.plan.envelope.delivery_id + ':' + f.id) for f in open_}
@@ -234,37 +232,31 @@ def _delta(state):
                   + (f' (builder disputes it and left it unchanged: {disputed[f.id]})'
                      if state.activity == 'review' and disputed[f.id] else '') for f in open_]
         if state.activity == 'implement':
-            lines.append('For each finding about behavior (a wrong result, a crash, an unhandled case), first add a '
-                         'regression test, in a file the approved check commands already run, that fails on the code '
-                         'before your fix; cpipe runs it without your fix to confirm. Keep it: it stops later fixes '
-                         'from breaking this again. If you find a finding is wrong (the code already behaves '
-                         'correctly, or it asks for something outside the approach), change nothing for it and '
-                         'dispute it with a one-line reason. Return {"status":"done","tests":[<regression test '
-                         'files you added or changed>],"disputed":[{"id":"REV-…","reason":"…"}]} (empty lists when '
-                         'none).')
+            lines.append('For each finding about behavior (a wrong result, a crash, an unhandled case), add a '
+                         'test for it in a file the approved check commands already run. If a finding is wrong (the '
+                         'code already behaves correctly, or it asks for something outside the approach), change '
+                         'nothing for it and end with {"status":"done","disputed":[{"id":"REV-…","reason":"<one '
+                         'line>"}]}.')
     return '\n'.join(lines) + '\n' if lines else ''
 
 
 def _prompt(state, resume, since=''):
     """Stable contract on a fresh session; on resume only the delta, since the session holds the rest."""
-    if state.activity == 'write_tests':
-        task = ('Write or fix only the behavior check\'s test (its exact command and criteria are in the '
-                'approach) so it fails on the current code for the reason the change addresses. It must fail on an '
-                'assertion, not a crash: if the code under test does not exist yet, add only a minimal stub '
-                '(right signature, wrong result). Do not implement the change yet. Return only {"status":"done"}; the controller observes RED.')
-    elif state.activity == 'implement':
-        task = ('Make the minimum authorized correction for the failing checks and open findings. Fix every '
-                'listed finding you do not dispute at its root cause in this one pass, changing only the code each one is about: '
+    if state.activity in {'write_tests', 'implement'}:  # write_tests: runs approved before builds wrote tests
+        task = ('Make the change the approach describes, with its tests: add or update the behavior check\'s '
+                'tests (named exactly as its criteria) so they cover the change, then make them pass. On later '
+                'rounds, fix the failing checks and open findings. Fix every listed finding you do not dispute at its root cause in this one pass, changing only the code each one is about: '
                 'no unrelated refactors, renames or extra features, since every changed line is reviewed again. '
                 'Inspect the callers of anything you changed so the fix introduces no regression. '
-                'Return only {"status":"done"}, or the answer asked for above when there are review findings. '
-                'Passing checks and completion are the controller’s job, not a prose assertion.')
+                'End with {"status":"done"}, or the answer asked for above when there are review findings. '
+                'cpipe judges the result by running the checks, not by your answer.')
     if state.activity in {'write_tests', 'implement'} and resume:
         return 'Same delivery, next round. Activity: ' + state.activity + '.\n' + _delta(state) + RULES + task
     prompt = ('You are a directly executing worker in an explicitly selected cpipe workflow. '
         'Do the assigned work with your own tools; do not delegate, invoke external coding CLIs, '
         'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
-        'Do not commit, push, open PRs, or modify files outside write_paths. '
+        'Do not commit, push or open PRs. Keep edits to write_paths unless the change needs another file; never '
+        'touch forbidden_paths. '
         'Follow project instructions such as AGENTS.md; use installed skills only when clearly relevant. '
         'If you have a code index or code-navigation tool, locate code with it before broad file reads or searches; then read only the lines you need. '
         'Credentials must never be written; replace any encountered values with [REDACTED]. '
@@ -275,27 +267,14 @@ def _prompt(state, resume, since=''):
     if state.activity != 'review':
         return prompt + RULES + task
     from .review import REVIEW_AXES
-    from .service import final_pass
-    if final_pass(state):
-        since = ''
-        scope = ('This is the final regression review: another reviewer already approved this tree, and '
-            'nothing ships until you approve it too. Assume bugs remain. Review the whole base-to-candidate '
-            'range again with fresh eyes, but hunt only for bugs and regressions: for every changed function, '
-            'signature, default, query, condition or removed line, find its callers and dependents outside the '
-            'diff and confirm they still behave correctly; check error paths, empty/null and boundary inputs, '
-            'concurrency, data migrations and backwards compatibility. Run the existing tests that cover the '
-            'changed code and its callers (not the whole suite), in the foreground. Any wrong behavior is medium '
-            'or above. Report simplifications as low at most. ')
-    else:
-        scope = ''
     schema = dict(status='approved|changes_requested', artifact=state.artifact,
         reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES),
         findings=[], verified_ids=[])
     return prompt + ('Read-only independent review: inspect the complete frozen base-to-candidate '
         'range, goal, acceptance, preserved behavior and evidence. Do not edit anything. '
         'The approved checks already passed on this exact tree: do not run them or the full suite again; '
-        + (scope or 'run one narrow test only to confirm a bug you suspect, in the foreground, with no background '
-           'jobs or polling. ') +
+        'Run one narrow test only to confirm a bug you suspect, in the foreground, with no background '
+        'jobs or polling. '
         'Every coverage axis requires actual inspection, not a checkbox assertion. Look for: regressions '
         '(check callers and behavior outside the diff), new bugs and unhandled '
         'edge cases, security issues, and code to simplify (duplication, dead code, needless abstraction, '
@@ -324,14 +303,14 @@ def _prompt(state, resume, since=''):
         + encoded(schema))
 
 
-def behavior_check(checks):
-    """The exact command and names cpipe will judge RED by, so the writer gets them right in one round."""
+def behavior_check(checks, outcome='failing on an assertion'):
+    """The exact command and names cpipe judges by, so the builder gets them right in one round."""
     check = next((c for c in checks if c.obligation == 'behavior'), None)
     if check is None:
         return ''
     argv = shlex.join(check.argv).replace('{report}', '<any temporary file>')
     return ('\nBefore returning, run the behavior check exactly as cpipe will, once, in the foreground: `' + argv
-            + '`. Its output must show each of these test names failing on an assertion: '
+            + f'`. Its output must show each of these test names {outcome}: '
             + ', '.join(check.criteria) + '. If a name is missing, differs, or matches more than one test, rename '
             'the test and run it again; this is the one test you may run. A mismatch costs a whole new round.\n')
 
@@ -510,16 +489,6 @@ def at_base(plan, names, tree=None):
         release(plan)
 
 
-@contextmanager
-def before_step(plan, keep):
-    """Run with this step's changes undone, except the files in keep (e.g. its new tests)."""
-    tree = _git(plan.worktree, 'rev-parse', '-q', '--verify', _good(plan) + '^{tree}', check=False)
-    if not tree:
-        raise ValueError('no verified state from before this step')
-    with at_base(plan, sorted(_diff(plan.worktree, tree, snapshot(plan.worktree)) - set(keep)), tree):
-        yield
-
-
 def _ref(state):
     return 'refs/cpipe/reviewed/' + state.plan.envelope.delivery_id
 
@@ -544,8 +513,8 @@ class HermesWorker:
             except (OSError, subprocess.SubprocessError):
                 now = ''
         prompt = _prompt(state, resume, since)
-        if state.activity == 'write_tests':
-            prompt += behavior_check(getattr(self, 'checks', ()))
+        if state.activity in {'write_tests', 'implement'} and not resume:
+            prompt += behavior_check(getattr(self, 'checks', ()), 'passing')
         note, self.note = getattr(self, 'note', ''), ''
         if note:  # the controller's reason the previous attempt failed (a fixed label, never worker text)
             prompt += '\n' + note
@@ -559,6 +528,8 @@ class HermesWorker:
                 expected_session=resume, on_session=on_session, heartbeat=heartbeat,
                 timeout_seconds=timeout_seconds, pidfile=pidfile)
         except Unfinished as exc:
+            if state.activity != 'review':  # the checks judge a build, not its answer
+                return WorkerResult(exc.origin, {'status': 'done'}, exc.tokens)
             # Self-repair: ask the same session for its answer (a few turns, no tools) instead of
             # throwing the work away and paying for a fresh attempt.
             left = min(300, timeout_seconds - (time.monotonic() - started))
