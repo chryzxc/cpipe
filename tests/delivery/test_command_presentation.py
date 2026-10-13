@@ -72,7 +72,7 @@ def test_run_responses_and_injected_prompt_are_plain(hermes_home, monkeypatch, s
     plain(out)
     for prompt in queued:
         plain(prompt)
-    if session_id and injection:
+    if injection:  # a new terminal chat has no session yet; its first turn binds the receipt
         assert out == 'cpipe: /cp-run queued in this session.'
     else:
         assert 'no work started' in out

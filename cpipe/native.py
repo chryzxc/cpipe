@@ -491,9 +491,11 @@ def _intent_key(token):
 
 def dispatch(ctx, name, raw=''):
     sid, key = session(), session_key()
-    if not sid or not key:
-        return 'cpipe: a live session is required; no work started.'
     op = name[3:]
+    # A new terminal chat has no session until its first model turn: the receipt is bound by the first
+    # cpipe call from the turn this command queues (its token is only ever shown to this chat).
+    if not sid and op not in {'run', 'plan', 'build'}:
+        return 'cpipe: a live session is required; no work started.'
     if op in {'run', 'spawn'} and not raw.strip():
         return f'Usage: /{name} <task>. No work started.'
     if op in {'status', 'stop'}:
@@ -701,6 +703,10 @@ def execute(args, **kwargs):
         with scope() as (service, profile, home):
             db = service.journal.db
             row = db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()
+            if row and sid and json.loads(row[0]).get('session_id') == '':  # queued before the chat had a session
+                db.execute('UPDATE intent SET payload=? WHERE id=?', (encoded(
+                    dict(json.loads(row[0]), session_id=sid, session_key=key)), _intent_key(token)))
+                row = db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()
             run_record = json.loads(row[0]) if row else None
             if run_record and run_record.get('operation') == 'run':
                 run_key = _intent_key(token)

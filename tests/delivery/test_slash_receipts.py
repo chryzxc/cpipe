@@ -213,3 +213,25 @@ def test_a_repeated_build_restarts_a_run_nothing_is_working_on(hermes_home, monk
     assert out['phase'] == 'running'  # nothing ran it (e.g. its process died): started again
     native._RUNS['d3'].join(30)
     assert runs[0] == 'd3'
+
+
+def test_a_new_terminal_chat_binds_its_receipt_on_the_first_turn(repo, tmp_path, hermes_home, monkeypatch):
+    from gateway import session_context
+    journal, _, state, _ = setup_check(repo, tmp_path)
+    proposal = Event.from_dict(journal.event('d1', 'proposal')['fact'])
+    journal.db.close()
+    values = {}  # /cp-run typed first: the chat has no session until its first model turn
+    monkeypatch.setattr(session_context, 'get_session_env', lambda key: values.get(key, ''))
+    monkeypatch.setattr(native.controller, 'from_spec', lambda service, payload, **kw: service.accept(proposal)[0])
+    queued = []
+    ctx = Context()
+    ctx.inject_message = lambda text, **kw: queued.append(text) or True
+    native.register(ctx)
+    assert native.dispatch(ctx, 'cp-plan', 'Fix approved behavior') == 'cpipe: /cp-plan queued in this session.'
+    assert native.dispatch(ctx, 'cp-status', '').startswith('cpipe: a live session is required')
+    token = re.search(r'using token ([A-Za-z0-9_-]+), operation', queued[0]).group(1)
+    args = dict(token=token, operation='plan', arguments={})
+    values.update(HERMES_SESSION_ID='s1')  # the queued turn runs in the new session
+    assert json.loads(native.execute(args, session_id='s1'))['delivery_id'] == 'd1'
+    values.update(HERMES_SESSION_ID='s2')
+    assert 'error' in json.loads(native.execute(args, session_id='s2'))  # bound to the first session only
