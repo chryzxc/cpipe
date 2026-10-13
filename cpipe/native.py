@@ -718,6 +718,9 @@ def start_consented(session_id):
             record, label = json.loads(payload), key.partition('-')[2] or 'the delivery'
             if record.get('consent') != record.get('draft_revision') or record.get('profile_id') != profile:
                 continue
+            if record['expires'] <= time.time():
+                started.append(f'{label}: not started (the run receipt expired; start again with /cp-run)')
+                continue
             try:
                 out = execute_run(service, record, key, 'plan', {'draft_revision': record['draft_revision']},
                     home=home, session_id=session_id, profile_id=profile,
