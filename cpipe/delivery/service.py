@@ -228,6 +228,17 @@ def verified(state):
     return green(state) and state.regressions_checked == state.artifact
 
 
+# Review axes whose open findings may be handed to the user when the builder's environment cannot
+# resolve them; security, and findings of no named axis, always stop the run instead.
+HANDOVER_AXES = frozenset({"goal_alignment", "correctness", "regressions", "integration", "breaking_behavior",
+                           "maintainability", "accessibility", "operability", "evidence_quality", "simplicity"})
+
+
+def handover_safe(state):
+    open_ = [r.finding for r in state.findings if blocks(r.finding)]
+    return bool(open_) and all(f.criterion in HANDOVER_AXES for f in open_)
+
+
 def actor(state, role):
     """The approved actor in charge of role: the first, until it hands over."""
     current = getattr(state, role)
@@ -454,6 +465,11 @@ def apply(snapshot, event):
     if event.kind == "activity_refused":
         if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
             raise ValueError("refusal does not match claimed activity")
+        if (event.action == "environment" and state.activity == "implement" and green(state, include_review=False)
+                and handover_safe(state)):
+            # The review asked for evidence this environment cannot produce (a browser, a device) and the
+            # checks pass: hand over the working code with the finding listed, never publish it.
+            return quiescent(state, "locally_ready")
         if state.activity == "publish" or event.action == "environment":
             # Push or PR failed, or a tool or dependency is missing: the work waits for "continue".
             return quiescent(state, "waiting")

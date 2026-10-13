@@ -211,13 +211,16 @@ def _settled(delivery_id, result, error):
     unresolved = sum(f['blocking'] for f in result.get('findings', ()))
     checks = result.get('checks') or {}
     if phase == 'waiting' and 'review' in checks and all(v.startswith('pass') for v in checks.values()):
-        head = 'verified and reviewed, but its draft pull request could not be opened (see recoveries)'
+        pr = result.get('pull_request')
+        head = ('verified and reviewed; its draft pull request ' + str(pr) + ' is open, but its title, commits '
+                'or description did not pass verification yet (see what happened on the way)' if pr else
+                'verified and reviewed, but its draft pull request could not be opened (see what happened on the way)')
     built = {k: v for k, v in checks.items() if k != 'review'}
     if phase == 'stopped' and built and all(v.startswith('pass') for v in built.values()):
         head = 'implemented and its checks pass, but its time ran out before the review finished'
     if phase == 'locally_ready' and unresolved:
         head = (f'ready for your review with {unresolved} unresolved review finding(s): checks pass, but '
-                'more fix rounds kept trading one finding for another')
+                'the builder could not resolve them (see what happened on the way)')
     return head, SHOW + report(delivery_id, head, result)
 
 

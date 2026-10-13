@@ -141,3 +141,20 @@ def test_unrecognized_credential_values_in_reviewer_prose_are_never_retained(rep
         assert 'opaque-credential' not in json.dumps(after.to_dict())
         for path in (tmp_path / 'evidence').glob('*.json'):
             assert 'opaque-credential' not in path.read_text()
+
+
+@pytest.mark.parametrize('criterion, accepted', [('security', True), ('evidence_quality', True), ('style', False)])
+def test_a_finding_names_the_axis_it_breaks(repo, tmp_path, board, criterion, accepted):
+    from cpipe.delivery.review import observe_review
+    journal, s, b, tid = reviewing(repo, tmp_path, board)
+    with journal:
+        finding = dict(id='', criterion=criterion, root_cause='lookup reachable without login',
+                       severity='high', in_scope=True, disposition='open')
+        run = lambda: observe_review(b, 'd1', tid, claimer='controller',
+            execute=reviewer(lambda state: verdict(state, status='changes_requested', findings=[finding])),
+            evidence_root=tmp_path / 'evidence')
+        if accepted:
+            assert run().findings[0].finding.criterion == criterion
+        else:
+            with pytest.raises(ValueError):
+                run()

@@ -80,7 +80,7 @@ def _parse(state, payload):
     for value in payload['findings']:
         if (type(value) is not dict
                 or set(value) != {'id', 'criterion', 'root_cause', 'severity', 'in_scope', 'disposition'}
-                or value['id'] != '' or value['criterion'] != 'review'
+                or value['id'] != '' or value['criterion'] not in {'review', *REVIEW_AXES}
                 or type(value['root_cause']) is not str or not value['root_cause'].strip()
                 or len(value['root_cause']) > 4000 or value['disposition'] != 'open'):
             raise ValueError('invalid structured finding')

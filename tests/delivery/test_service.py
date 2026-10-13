@@ -455,3 +455,16 @@ def test_a_missing_environment_waits_for_the_user_instead_of_handing_over():
     state = claim(state, "sentry", "sentry-session")
     state, intents = step(state, "activity_refused", action="environment")
     assert state.phase == "waiting" and not intents and state.builder != "forge"
+
+
+@pytest.mark.parametrize("axis, phase", [("evidence_quality", "locally_ready"), ("security", "waiting"),
+                                         ("review", "waiting")])
+def test_a_review_fix_the_environment_cannot_do_hands_over_working_code_but_never_a_security_finding(axis, phase):
+    # Seen live: the review asked for browser runs of three screens and the builder had no browser.
+    state = ready_for_review(candidate())
+    finding = Finding("", axis, "no browser run of the three screens", "medium", True, "open")
+    state, _ = reviewed(state, receipts=(receipt(state, "review", Outcome.FAIL),), findings=(finding,))
+    state = claim(state, "forge", "builder-session")
+    state, intents = step(state, "activity_refused", action="environment")
+    assert (state.phase, intents) == (phase, ())
+    assert state.findings[0].finding.disposition == "open"  # listed for the user, never dropped

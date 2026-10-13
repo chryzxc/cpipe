@@ -300,7 +300,7 @@ def _prompt(state, resume, since=''):
         'listed above, confirm it is resolved before putting it in verified_ids; otherwise leave it unresolved. '
         'Return exactly the following JSON schema, with status changes_requested if any finding is medium or '
         'above (or a prior one is unresolved), else approved; each new finding has exactly id (empty string), criterion '
-        '(review), root_cause (the problem and the concrete fix, no credentials), severity '
+        '(the one coverage axis it breaks, e.g. security or correctness), root_cause (the problem and the concrete fix, no credentials), severity '
         '(low/medium/high/critical), in_scope (boolean), disposition (open). '
         'Only existing prior IDs may appear in verified_ids. Do not add fields.\n'
         + encoded(schema))

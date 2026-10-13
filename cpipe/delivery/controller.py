@@ -490,11 +490,16 @@ def publish(service, bridge, delivery_id, tid, claimer, ask=None):
     def heartbeat():
         if not h.heartbeat_claim(bridge.conn, tid, claimer=claimer, ttl_seconds=900):
             raise ValueError('native ownership could not be renewed')
-    latest = {r.obligation: r.outcome.value for r in state.receipts}
+    import shlex
+    latest = {r.obligation: r.outcome.value + (f' ({UNAVAILABLE_REASONS.get(r.reason, r.reason)})' if r.reason else '')
+              for r in state.receipts}
+    # The exact commands and what they observed, so the description can say how it was verified.
+    checks = {c.obligation: dict(command=shlex.join(c.argv).replace('{report}', '<report file>'),
+                                 result=latest.get(c.obligation, 'not run'))
+              for c in ready(service, delivery_id, bridge.session_id, bridge.profile_id)[1]}
     brief = encoded(dict(goal=plan.goal, acceptance=list(plan.acceptance), non_goals=list(plan.non_goals),
-                         base=plan.envelope.base, branch=plan.envelope.branch, changed=changed,
-                         checks={c.obligation: latest.get(c.obligation, 'not run') for c in plan.checks},
-                         review_rounds=state.review_cycles))
+                         base=plan.envelope.base, branch=plan.envelope.branch, changed=changed, checks=checks,
+                         review=latest.get('review', 'not run')))
     problems, url = [], ''
     for _ in range(PR_ROUNDS):
         prompt = ('The change in this worktree is finished: its checks and an independent code review passed. '
