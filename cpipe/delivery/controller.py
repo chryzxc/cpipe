@@ -39,8 +39,6 @@ CALLS = 40
 # next failure the next approved actor takes over. Retries back off for provider hiccups.
 FAILURES = 3
 
-# Times a run that is still within its calls renews its own time budget before it stops and tells the user.
-AUTO_RENEWALS = 2
 ACTIVE_STEPS = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 BACKOFF = 15
 WORKER_STEPS = frozenset({'write_tests', 'implement', 'review'})
@@ -402,7 +400,7 @@ def cancel(service, delivery_id, *, session_id, profile_id):
     return summary(state)
 
 
-def resume(service, delivery_id, *, session_id, profile_id):
+def resume(service, delivery_id, *, session_id, profile_id, action=''):
     """Continue a delivery that stopped or waits, from the code as it is now. Out of time or
     calls, it goes back to approval for a fresh budget instead."""
     state = owned(service, delivery_id, session_id, profile_id)
@@ -410,7 +408,8 @@ def resume(service, delivery_id, *, session_id, profile_id):
     e = state.plan.envelope
     state, _ = service.accept(Event('resume:' + uuid.uuid4().hex, 'resumed', delivery_id,
         state.plan.digest(), state.artifact, state.version, max(state.last_at, int(time.time())),
-        session_id=e.session_id, profile_id=e.profile_id, result_artifact=validate_worktree(state.plan).digest))
+        session_id=e.session_id, profile_id=e.profile_id, result_artifact=validate_worktree(state.plan).digest,
+        action=action))
     return state
 
 
@@ -588,10 +587,10 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
             state, _ = service.accept(Event('deadline:' + state.active_intent, 'deadline_reached', delivery_id,
                 state.plan.digest(), state.artifact, state.version, max(state.last_at, int(time.time())),
                 session_id=e.session_id, profile_id=e.profile_id))
-            if state.renewals >= AUTO_RENEWALS or state.calls_used >= state.plan.budget.calls:
+            if state.calls_used >= state.plan.budget.calls:
                 break
-            # Time is a stall guard, calls are the spend guard: with calls left, keep going.
-            resume(service, delivery_id, session_id=session_id, profile_id=profile_id)
+            # Time is a stall guard (every step has its own limit), calls are the spend guard: with calls left, keep going.
+            resume(service, delivery_id, session_id=session_id, profile_id=profile_id, action='time')
             note('the time budget ran out with calls left; renewed it and continuing')
             continue
         action, tid = state.activity, None

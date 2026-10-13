@@ -217,7 +217,10 @@ def _settled(delivery_id, result, error):
                 'verified and reviewed, but its draft pull request could not be opened (see what happened on the way)')
     built = {k: v for k, v in checks.items() if k != 'review'}
     if phase == 'stopped' and built and all(v.startswith('pass') for v in built.values()):
-        head = 'implemented and its checks pass, but its time ran out before the review finished'
+        head = ('verified and reviewed, but its time ran out before the draft pull request was finished; say continue '
+                'for a fresh budget' if checks.get('review', '').startswith('pass') else
+                'implemented and its checks pass, but its time ran out before the review finished; say continue '
+                'for a fresh budget')
     if phase == 'locally_ready' and unresolved:
         head = (f'ready for your review with {unresolved} unresolved review finding(s): checks pass, but '
                 'the builder could not resolve them (see what happened on the way)')

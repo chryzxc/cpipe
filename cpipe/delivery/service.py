@@ -265,6 +265,10 @@ def resumable(state):
             or state.phase == "locally_ready" and blocking(r.finding for r in state.findings))
 
 
+# A step started in time finishes and its result counts: the deadline only stops new work.
+FINISHING = frozenset({"activity_claimed", "activity_observed", "review_received", "publication_observed"})
+
+
 def deadline(state):
     """When the approved time runs out. A renewal restarts the budget past the plan's own expiry."""
     end = state.started_at + state.plan.budget.seconds
@@ -404,18 +408,20 @@ def apply(snapshot, event):
     if event.kind == "resumed":
         # "Continue" after a stop: every approved builder and reviewer gets its full rounds again,
         # from the code as it is now (result_artifact). Out of time or calls, the same plan gets a
-        # fresh budget of the approved size: asking to continue is the consent for it.
+        # fresh budget of the approved size: asking to continue is the consent for it, whatever was left.
         if (not state.approved or not resumable(state)
                 or state.activity not in {"", "diagnose", "clarify"}):
             raise ValueError("only an approved delivery that stopped or waits can be resumed")
+        if event.action == "time":  # the run renews its own clock: same sessions, the calls stay spent
+            return resume_point(replace(state, artifact=event.result_artifact or state.artifact,
+                                        started_at=event.now, renewals=state.renewals + 1))
         state = replace(state, artifact=event.result_artifact or state.artifact, builder="", reviewer="",
                         builder_session="", builder_digest="", stalls=0,
                         handover_tests=sum(r.obligation == "behavior" for r in state.receipts),
                         handover_reviews=state.review_cycles)
-        if event.now >= deadline(state) or state.calls_used >= state.plan.budget.calls:
-            state = replace(state, started_at=event.now, calls_used=0, renewals=state.renewals + 1)
+        state = replace(state, started_at=event.now, calls_used=0, renewals=state.renewals + 1)
         return resume_point(state)
-    if event.now >= deadline(state):
+    if event.now >= deadline(state) and event.kind not in FINISHING:
         return quiescent(state, "stopped")
     if event.kind == "deadline_reached":
         raise ValueError("the budget has not run out")

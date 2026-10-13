@@ -306,7 +306,7 @@ def test_a_builder_that_keeps_failing_is_retried_then_replaced(repo, tmp_path, m
         conn.close()
 
 
-def test_a_run_past_its_budget_records_the_stop_instead_of_crashing(repo, tmp_path, monkeypatch):
+def test_a_run_out_of_time_and_calls_records_the_stop_instead_of_crashing(repo, tmp_path, monkeypatch):
     from cpipe.delivery import controller
     from cpipe.delivery.controller import propose, run
     from cpipe.delivery.review import review_identity
@@ -328,7 +328,8 @@ def test_a_run_past_its_budget_records_the_stop_instead_of_crashing(repo, tmp_pa
                 state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
             later = time.time() + 3600  # e.g. the run was parked or Hermes was down meanwhile
             monkeypatch.setattr(controller.time, 'time', lambda: later)
-            monkeypatch.setattr(controller, 'AUTO_RENEWALS', 0)  # its own renewals are used up
+            accept = service.accept  # and every call is spent
+            monkeypatch.setattr(service, 'accept', lambda ev: (lambda r: (replace(r[0], calls_used=p.budget.calls), r[1]))(accept(ev)))
             result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn,
                          execute=lambda *a, **kw: 1 / 0, evidence_root=tmp_path / 'evidence')
             assert result['phase'] == 'stopped' and result['steps'] == [] and 'recoveries' not in result
@@ -613,6 +614,8 @@ def test_a_budget_stop_after_passing_checks_says_only_review_is_left():
     from cpipe import native
     head = native._settled('d1', dict(phase='stopped', checks={'behavior': 'pass', 'review': 'unobserved'}), '')[0]
     assert head.startswith('implemented and its checks pass')
+    head = native._settled('d1', dict(phase='stopped', checks={'behavior': 'pass', 'review': 'pass'}), '')[0]
+    assert head.startswith('verified and reviewed, but its time ran out before the draft pull request')
     assert native._settled('d1', dict(phase='stopped', checks={'behavior': 'fail'}), '')[0] == native.HEADLINES['stopped']
 
 

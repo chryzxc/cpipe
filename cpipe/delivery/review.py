@@ -20,7 +20,7 @@ from .findings import Finding, blocks
 from .journal import encoded
 from .schema import CheckIdentity
 from .service import Verification
-from .workers import WorkerResult, _remaining, _step_seconds, record_usage, refused
+from .workers import WorkerResult, _step_seconds, record_usage, refused
 from ..runtime import hermes_api as h
 
 REVIEW_AXES = ('goal_alignment', 'correctness', 'regressions', 'integration',
@@ -133,7 +133,7 @@ def observe_review(bridge, delivery_id, task_id, *, claimer, execute, evidence_r
             raise ValueError('engineering authority changed during review')
         bridge._owned(expected, task_id, claimer)
         if not h.heartbeat_claim(bridge.conn, task_id, claimer=claimer,
-                                 ttl_seconds=math.ceil(_remaining(expected)) + 5):
+                                 ttl_seconds=math.ceil(timeout) + 5):
             raise ValueError('native review ownership could not be renewed')
 
     try:

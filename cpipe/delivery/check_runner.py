@@ -321,9 +321,7 @@ def take_baseline(state, specs, *, evidence_root):
     before = fingerprint(state.plan.worktree)
     known = {}
     for spec in specs:
-        remaining = deadline(state) - time.time()
-        observed = _run(spec, state.plan.worktree, spec.environment()[0],
-                        min(spec.timeout_seconds, remaining))
+        observed = _run(spec, state.plan.worktree, spec.environment()[0], spec.timeout_seconds)
         if observed and observed[0] > 0 and observed[0] not in _NOT_RUN:
             known[spec.obligation] = sorted(_marks(spec, observed))
         observed = None
@@ -377,7 +375,7 @@ def observe_check(state, spec, *, evidence_root):
     if root.resolve() != root or root.is_relative_to(Path(state.plan.worktree)):
         raise ValueError('evidence must be outside source in a non-symlink directory')
     env, environment = spec.environment()
-    observed = _run(spec, state.plan.worktree, env, min(spec.timeout_seconds, remaining))
+    observed = _run(spec, state.plan.worktree, env, spec.timeout_seconds)
     after = fingerprint(state.plan.worktree)
     if after != before:
         raise ValueError('artifact changed during read-only check')

@@ -54,7 +54,8 @@ def usage(service, delivery_id):
 
 def _step_seconds(state):
     """One worker step's wall clock: a hung worker cannot spend the whole budget."""
-    return min(_remaining(state), max(600, state.plan.budget.seconds / 3))
+    _remaining(state)  # only starting needs time left; a started step runs to its own limit
+    return max(600, state.plan.budget.seconds / 3)
 
 
 def _remaining(state):
@@ -124,9 +125,8 @@ def observe_implementation(bridge, delivery_id, task_id, *, claimer, execute):
         if current != expected:
             raise ValueError('engineering authority changed during worker execution')
         bridge._owned(expected, task_id, claimer)
-        _remaining(expected)
         if not h.heartbeat_claim(bridge.conn, task_id, claimer=claimer,
-                                 ttl_seconds=math.ceil(_remaining(expected)) + 5):
+                                 ttl_seconds=math.ceil(timeout) + 5):
             raise ValueError('native ownership could not be renewed')
 
     try:

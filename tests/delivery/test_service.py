@@ -428,6 +428,25 @@ def test_continue_after_the_budget_ran_out_renews_it_without_asking_again():
     assert claimed.phase != "stopped"  # past the plan's own expiry, inside the new budget
 
 
+def test_a_step_that_finishes_after_the_deadline_still_counts():
+    # Seen live: a draft PR finished 2 minutes past the deadline and the finished work was thrown away.
+    state, _ = step(candidate(), "feedback_received", "review", action="ready")
+    done, _ = passed(claim(state, "sentry", "review-session"), now=state.plan.expires_at + 120)
+    assert done.phase == "locally_ready"
+
+
+@pytest.mark.parametrize("action, calls, session", [("", 0, ""), ("time", 6, "builder-session")])
+def test_continue_always_gets_a_fresh_budget_and_the_runs_own_renewal_only_time(action, calls, session):
+    # "Continue" is consent to the full approved budget, whatever was left; the run renewing its own
+    # clock keeps its spent calls (the spend guard) and the builder's session.
+    spent = replace(candidate(), calls_used=6)
+    stopped, _ = step(spent, "feedback_received", action="change", evidence_ref="feedback/change.json")
+    assert stopped.phase == "stopped" and stopped.last_at < stopped.started_at + 300  # time was left
+    resumed, _ = step(stopped, "resumed", "checks", action=action)
+    assert resumed.calls_used == calls and resumed.builder_session == session
+    assert resumed.started_at == resumed.last_at and resumed.renewals == 1
+
+
 def test_a_crashed_worker_step_spends_no_call():
     state = start()
     state, _ = step(state, "envelope_approved", "checks")
