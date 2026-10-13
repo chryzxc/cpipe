@@ -82,3 +82,11 @@ def test_invalid_intent_response_is_plain():
     out = native.execute({})
     plain(out)
     assert 'error' in json.loads(out)
+
+
+def test_live_probe_says_it_needs_pytest_when_hermes_python_lacks_it(monkeypatch, capsys):
+    import importlib.util
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, 'find_spec', lambda name, *a: None if name == 'pytest' else real(name, *a))
+    assert main(['live-probe', '--builder', 'forge', '--reviewer', 'sentry']) == 1
+    assert 'needs pytest' in capsys.readouterr().err

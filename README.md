@@ -263,7 +263,7 @@ Prefer commands that provision their own dependencies; otherwise install first (
 hermes cpipe doctor
 hermes cpipe status
 hermes cpipe smoke
-# Runs live models and consumes usage.
+# Runs live models and consumes usage. Needs pytest in Hermes' Python.
 hermes cpipe live-probe --builder <profile> --reviewer <profile> --seconds 480
 ```
 

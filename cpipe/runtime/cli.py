@@ -63,6 +63,10 @@ def handle(args):
             print(json.dumps(run(), indent=2))
             return 0
         if command == 'live-probe':
+            import importlib.util
+            if importlib.util.find_spec('pytest') is None:  # only the probe's fixture needs it
+                print("live-probe needs pytest in Hermes' Python; install it there first", file=sys.stderr)
+                return 1
             from ..delivery.live_probe import observe_actor, run
             actors = (observe_actor('builder', args.builder), observe_actor('reviewer', args.reviewer))
             print(json.dumps(run(actors=actors, seconds=args.seconds), indent=2))
