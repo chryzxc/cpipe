@@ -280,6 +280,19 @@ def test_a_delivery_continues_an_earlier_deliverys_worktree_with_all_its_work_re
     assert subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True).stdout.strip() == base
 
 
+def test_task_label_may_sit_beside_the_arguments(run_context):
+    """Models put the task label at either level; both reach the same sub-receipt."""
+    _, token, spec, approach_, _, _ = run_context
+    first = call(token, 'prepare', dict(spec=spec, approach=approach_, expected_revision=0, task='t2'))
+    beside = json.loads(native.execute(dict(token=token, operation='prepare', task='t2',
+        arguments=dict(spec=spec, approach=approach_, expected_revision=0)), session_id='s1'))
+    assert beside == first
+    wrong = json.loads(native.execute(dict(token=token, operation='plan', arguments={'draft_revision': 1}),
+                                      session_id='another-chat'))
+    assert 'belongs to another session' in wrong['error']
+    assert 'holds tasks t2: add task' in call(token, 'plan', {'draft_revision': 1})['error']
+
+
 def test_the_users_own_proceed_freezes_and_starts_the_revision_they_were_shown(run_context, monkeypatch):
     """No second question: the user's chat reply (as the host hands it to plugins) is the consent."""
     from cpipe import plan_approval

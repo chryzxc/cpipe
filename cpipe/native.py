@@ -20,7 +20,8 @@ SCHEMA = dict(name='cpipe_execute_intent', description='Optional cpipe workflow.
     'Ordinary requests use normal tools. Plans require explicit worktree, scope, test-command checks and distinct saved '
     'builder/reviewer profiles. Prepare a reviewable Markdown draft, then freeze and approve before build. Never merges; opens a draft PR only when the user asked for one.',
     parameters=dict(type='object', additionalProperties=False,
-        properties=dict(token=dict(type='string'), operation=dict(type='string', enum=['prepare', 'plan', 'build', 'status', 'stop', 'spawn']),
+        properties=dict(token=dict(type='string'), task=dict(type='string', description='Short label such as t2 '
+            'for one of several deliveries in one /cp-run (may also go inside arguments).'), operation=dict(type='string', enum=['prepare', 'plan', 'build', 'status', 'stop', 'spawn']),
             arguments=dict(type='object', description='prepare: {spec, approach, expected_revision} (0 initially; current revision for edits). '
                 'approach: kind (bug|feature|change), depth (focused|detailed), risk (normal|high), summary; '
                 'evidence, steps, decisions, risks are string lists. Bugs need evidence; feature/high-risk work needs detailed decisions. '
@@ -693,11 +694,26 @@ def spawn(tasks, server, caller):
     return {'chats': started, 'next': 'Each started chat investigates its task and asks for approval there.'}
 
 
+def _check(record, sid, profile, key, lapsed):
+    """Refuse a run receipt this chat does not own, naming what differs (never the values)."""
+    if record.get('kind') != 'slash':
+        raise ValueError('no /cp-run receipt for this token')
+    if lapsed:
+        raise ValueError('run receipt expired: the user starts again with /cp-run')
+    differs = [name for name, mine, theirs in (('session', sid, record['session_id']), ('profile', profile,
+               record['profile_id']), ('chat', key, record['session_key'])) if mine != theirs]
+    if differs:
+        raise ValueError('run receipt belongs to another ' + ' and '.join(differs))
+
+
 def execute(args, **kwargs):
     try:
-        if type(args) is not dict or set(args) != {'token', 'operation', 'arguments'}:
+        if type(args) is not dict or not {'token', 'operation', 'arguments'} <= set(args) <= {
+                'token', 'operation', 'arguments', 'task'}:
             raise ValueError('invalid intent arguments')
         token, op, payload = args['token'], args['operation'], args['arguments']
+        if 'task' in args and type(payload) is dict:
+            payload = dict(payload, task=args['task'])
         if type(token) is not str or not token or op not in {'prepare', 'plan', 'build', 'status', 'stop', 'spawn'} or type(payload) is not dict:
             raise ValueError('invalid intent arguments')
         sid, key = session(kwargs.get('session_id')), session_key()
@@ -717,9 +733,7 @@ def execute(args, **kwargs):
                     task = payload.pop('task')
                     if type(task) is not str or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,31}', task):
                         raise ValueError('task must be a short lowercase label such as t2')
-                    if (run_record.get('kind') != 'slash' or run_record['expires'] <= time.time() or
-                            (run_record['session_id'], run_record['profile_id'], run_record['session_key']) != (sid, profile, key)):
-                        raise ValueError('missing, expired or wrong-session run receipt')
+                    _check(run_record, sid, profile, key, run_record['expires'] <= time.time())
                     run_key += '-' + task
                     row = db.execute('SELECT payload FROM intent WHERE id=?', (run_key,)).fetchone()
                     if row is None:
@@ -734,9 +748,12 @@ def execute(args, **kwargs):
                 # The receipt's expiry bounds starting work; a frozen delivery can always be continued.
                 lapsed = run_record['expires'] <= time.time() and not (
                     op in {'build', 'status'} and run_record.get('delivery_id'))
-                if (run_record.get('kind') != 'slash' or lapsed
-                    or (run_record['session_id'], run_record['profile_id'], run_record['session_key']) != (sid, profile, key)):
-                    raise ValueError('missing, expired or wrong-session run receipt')
+                _check(run_record, sid, profile, key, lapsed)
+                if run_key == _intent_key(token) and op != 'prepare' and run_record.get('state') == 'pending':
+                    tasks = sorted(k[len(run_key) + 1:] for (k,) in db.execute(
+                        'SELECT id FROM intent WHERE id LIKE ?', (run_key + '-%',)))
+                    if tasks:
+                        raise ValueError('this /cp-run holds tasks ' + ', '.join(tasks) + ': add task to the call')
                 base = json.loads(db.execute('SELECT payload FROM intent WHERE id=?', (_intent_key(token),)).fetchone()[0])
                 if base['expires'] - time.time() < RUN_RECEIPT / 2:  # in use: follow-ups in this chat need no new /cp-run
                     base = dict(base, expires=time.time() + RUN_RECEIPT)
