@@ -18,7 +18,7 @@ from .artifact import validate_worktree
 from .check_runner import CommandCheck, baseline_path, take_baseline
 from .contracts import Envelope, Budget, UNAVAILABLE_REASONS
 from .schema import ExecutionPlan
-from .service import Service, Event, deadline, resumable  # noqa: F401 (resumable: used by native)
+from .service import Service, Event, deadline, resumable, takeover  # noqa: F401 (resumable: used by native)
 from .native_bridge import NativeBridge
 from .hermes_worker import (at_base, changed_since_base, reattach, release, HermesWorker,
                             keep, roll_back, stop_orphan)
@@ -640,7 +640,20 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         except WorkerRefused as exc:
             # Not a crash: the next approved actor takes over, or the run waits for the user. A missing
             # tool or dependency stops every actor alike, so it waits for the user straight away.
-            note(f'{bridge._actor(state).profile} declined {action}: {exc}')
+            who = bridge._actor(state).profile
+            if takeover(state, 'reviewer' if action == 'review' else 'builder') is None \
+                    and not strikes.get('declined:' + action):
+                # The last approved actor: ask it once more in a fresh session before the run waits for the user.
+                strikes['declined:' + action] = 1
+                note(f'{who} declined {action}: {exc}; asking it once more')
+                worker.note = (f'Your previous answer declined this step: {exc}. Nothing else can take it over. '
+                               'cpipe records your final JSON answer on the card as your verdict, so Kanban '
+                               'verdict rules are met by it. If something is missing that you can set up or '
+                               'install inside the worktree, do that yourself. Decline again only for a decision '
+                               'that needs the user.')
+                bridge.abandon(delivery_id, claimer, action='fresh')
+                continue
+            note(f'{who} declined {action}: {exc}')
             bridge.abandon(delivery_id, claimer, kind='activity_refused',
                            action='environment' if str(exc).lower().startswith('environment') else '')
             continue

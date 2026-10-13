@@ -465,7 +465,7 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
     reply(frozen['approval_arguments'], 'Yes')
     build()
     native._RUNS[delivery_id].join(60)
-    assert call(token, 'status', {})['phase'] == 'waiting'  # the only builder declined
+    assert call(token, 'status', {})['phase'] == 'waiting'  # the only builder declined twice
     with Journal.for_profile(hermes_home) as store:  # a day later: the receipt no longer starts work
         row = store.db.execute('SELECT payload FROM intent WHERE id=?', (native._intent_key(token),)).fetchone()
         store.db.execute('UPDATE intent SET payload=? WHERE id=?',
@@ -477,13 +477,14 @@ def test_continue_restarts_a_run_that_waits_even_after_its_receipt_expired(run_c
     assert build()['phase'] == 'running'
     native._RUNS[delivery_id].join(60)
     assert call(token, 'status', {})['phase'] == 'locally_ready'
-    assert workers == ['implement', 'implement', 'review']
+    assert workers == ['implement', 'implement', 'implement', 'review']  # asked once more before waiting
     # The chat sees each handover and recovery as a display-only line, never a model turn.
     assert {(p, e, sid, d) for p, e, sid, d, _, _ in lines} == {('cpipe', 'progress', 's1', delivery_id)}
     texts = [text for *_, text, _ in lines]
     assert texts[:2] == ['[1/3] Fix double returning the input · running the checks',
                          '[1/3] Fix double returning the input · builder is implementing']
-    assert texts[2].startswith('builder declined implement')
+    assert texts[2].startswith('builder declined implement') and texts[2].endswith('asking it once more')
+    assert texts[3].startswith('builder declined implement') and not texts[3].endswith('asking it once more')
     assert '[3/3] Fix double returning the input · reviewer is reviewing' in texts and lines[-1][4:] == (f'{delivery_id} is done and ready for your review', True)
     assert 'error' in call(token, 'prepare', {})  # still no new work on an expired receipt
 

@@ -254,7 +254,9 @@ def _prompt(state, resume, since=''):
         return 'Same delivery, next round. Activity: ' + state.activity + '.\n' + _delta(state) + RULES + task
     prompt = ('You are a directly executing worker in an explicitly selected cpipe workflow. '
         'Do the assigned work with your own tools; do not delegate, invoke external coding CLIs, '
-        'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority. '
+        'create tasks, or call cpipe/kanban lifecycle tools. The controller owns authority: it records your '
+        'final JSON answer on this card as your verdict or completion (for example complete, request changes '
+        'or block), so instructions of yours that require a Kanban verdict or transition are met by that answer. '
         'Do not commit, push or open PRs. Keep edits to write_paths unless the change needs another file; never '
         'touch forbidden_paths. '
         'Follow project instructions such as AGENTS.md; use installed skills only when clearly relevant. '
@@ -272,7 +274,8 @@ def _prompt(state, resume, since=''):
         findings=[], verified_ids=[])
     return prompt + ('Read-only independent review: inspect the complete frozen base-to-candidate '
         'range, goal, acceptance, preserved behavior and evidence. Do not edit anything. '
-        'The approved checks already passed on this exact tree: do not run them or the full suite again; '
+        'The approved checks already passed on this exact tree, apart from failures that also fail on the base '
+        '(not this change\'s doing, and not findings): do not run them or the full suite again; '
         'Run one narrow test only to confirm a bug you suspect, in the foreground, with no background '
         'jobs or polling. '
         'Every coverage axis requires actual inspection, not a checkbox assertion. Look for: regressions '
