@@ -261,6 +261,25 @@ def test_a_delivery_starts_from_what_was_investigated_in_a_worktree_of_its_own(r
     assert 'cpipe/' + frozen['delivery_id'] in git('branch', '--list', 'cpipe/*')
 
 
+def test_a_delivery_continues_an_earlier_deliverys_worktree_with_all_its_work_reviewed(run_context, repo, hermes_home):
+    import subprocess
+    prepare(run_context)  # the earlier delivery carried the untracked behavior test from the checkout
+    earlier = Path(frozen_plan(call(run_context[1], 'plan', {'draft_revision': 1})['delivery_id']).worktree)
+    (earlier / 'double.py').write_text('def double(n): return n * 2\n')  # its partial, uncommitted work
+    base = subprocess.run(['git', 'rev-parse', 'feature'], cwd=repo, capture_output=True, text=True).stdout.strip()
+    _, token, spec, approach, _, _ = run_context
+    draft = call(token, 'prepare', dict(spec={**spec, 'worktree': str(earlier)}, approach=approach,
+                                        expected_revision=0, task='continue'))
+    assert 'continuing all the work in that checkout' in Path(draft['document_path']).read_text()
+    plan = frozen_plan(call(token, 'plan', {'draft_revision': 1, 'task': 'continue'})['delivery_id'])
+    root = Path(plan.worktree)
+    assert root != earlier and plan.base_commit == base  # checked and reviewed from the original base
+    assert (root / 'double.py').read_text() == 'def double(n): return n * 2\n'
+    changed = subprocess.run(['git', 'diff', '--name-only', base], cwd=root, capture_output=True, text=True).stdout
+    assert changed.split() == ['double.py', 'test_behavior.py']
+    assert subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True).stdout.strip() == base
+
+
 @pytest.mark.parametrize('choice', ['Yes', 'No'])
 def test_one_receipt_through_the_users_answer_and_red_green_review(
         run_context, repo, hermes_home, monkeypatch, choice):

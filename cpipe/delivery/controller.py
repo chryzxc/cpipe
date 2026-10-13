@@ -240,15 +240,22 @@ def _git(root, *args, env=None, timeout=300):
                           capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=timeout).stdout.strip()
 
 
+STARTS = ('cpipe: start from the uncommitted changes in ', 'cpipe: continue the work in ')
+
+
 def starting_point(source, base, carry=True):
-    """(commit, carried) a delivery starts from: base, plus the checkout's uncommitted work when base is what
-    the checkout has checked out (never for a draft PR). Nothing in the checkout or its index changes."""
+    """(commit, carried, base_commit) a delivery starts from: base, plus the checkout's uncommitted work when base
+    is what the checkout has checked out (never for a draft PR). A checkout that is an earlier delivery's
+    worktree (only cpipe's own start commits on top of base) is continued: all its work comes along as
+    uncommitted edits on base, so the checks and the review cover it too. Nothing in the checkout changes."""
     try:
         commit = _git(source, 'rev-parse', '--verify', '-q', base + '^{commit}')
     except subprocess.CalledProcessError:
         raise ValueError('base must be a branch, tag or commit in the repository') from None
-    if not carry or commit != _git(source, 'rev-parse', 'HEAD'):
-        return commit, False
+    head = _git(source, 'rev-parse', 'HEAD')
+    continued = commit != head and _continues(source, commit, head)
+    if not continued and (not carry or commit != head):
+        return commit, False, commit
     # Other repositories inside the checkout (worktrees, clones) are not part of this one.
     nested = [n[:-1] for n in _git(source, 'ls-files', '-z', '--others', '--exclude-standard').split('\0')
               if n.endswith('/')]
@@ -257,10 +264,20 @@ def starting_point(source, base, carry=True):
         _git(source, 'read-tree', 'HEAD', env=env)
         _git(source, 'add', '-A', '--', '.', *(':(exclude,literal)' + n for n in nested), env=env)
         tree = _git(source, 'write-tree', env=env)
-    if tree == _git(source, 'rev-parse', 'HEAD^{tree}'):
-        return commit, False
-    return _git(source, '-c', 'user.name=cpipe', '-c', 'user.email=cpipe@localhost', 'commit-tree', '--no-gpg-sign',
-                tree, '-p', commit, '-m', 'cpipe: start from the uncommitted changes in ' + str(source)), True
+    if tree == _git(source, 'rev-parse', commit + '^{tree}'):
+        return commit, False, commit
+    start = _git(source, '-c', 'user.name=cpipe', '-c', 'user.email=cpipe@localhost', 'commit-tree', '--no-gpg-sign',
+                 tree, '-p', commit, '-m', STARTS[continued] + str(source))
+    return start, True, commit if continued else start
+
+
+def _continues(source, base, head):
+    """Whether head is base plus only cpipe's own start commits: the checkout is an earlier delivery's worktree."""
+    try:
+        _git(source, 'merge-base', '--is-ancestor', base, head)
+    except subprocess.CalledProcessError:
+        return False
+    return all(line.startswith(STARTS) for line in _git(source, 'log', '--format=%s', base + '..' + head).splitlines())
 
 
 def isolate(source, start, delivery_id, branch=''):
@@ -321,18 +338,22 @@ def discard(source, path, branch=''):
             pass
 
 
-def from_spec(service, spec, *, session_id, profile_id, approach='', start=None):
+def from_spec(service, spec, *, session_id, profile_id, approach='', start=None, base_commit=None):
     if not session_id or not profile_id:
         raise ValueError('missing initiating session/profile')
     _, checks, actors = validate_spec(spec)
-    start = start or starting_point(spec['worktree'], spec['base'], carry=not spec.get('draft_pr'))[0]
+    if not start:
+        start, _, base_commit = starting_point(spec['worktree'], spec['base'], carry=not spec.get('draft_pr'))
+    base_commit = base_commit or start
     if spec.get('draft_pr'):
         from .publish import preflight
-        preflight(spec['worktree'], spec['base'], start, spec['branch'])
+        preflight(spec['worktree'], spec['base'], base_commit, spec['branch'])
     delivery_id = 'cp-' + uuid.uuid4().hex
     root = isolate(spec['worktree'], start, delivery_id, spec.get('branch', ''))
     try:
-        return propose(service, _plan(spec, checks, actors, root, start, delivery_id, session_id, profile_id,
+        if base_commit != start:  # continued work: uncommitted edits on base, checked and reviewed with the rest
+            _git(root, 'reset', '-q', '--soft', base_commit)
+        return propose(service, _plan(spec, checks, actors, root, base_commit, delivery_id, session_id, profile_id,
                                       approach), checks)
     except BaseException:
         discard(spec['worktree'], root, spec.get('branch', ''))

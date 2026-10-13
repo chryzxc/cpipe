@@ -53,9 +53,11 @@ def render(spec, approach, revision, start=None):
              f"Task: {approach['kind']} · Approach: {approach['depth']} · Risk: {approach['risk']}",
              '', approach['summary'], '', '## Context',
              'Repository: ' + spec['repo'], 'Investigated in: ' + spec['worktree'],
-             'Base: ' + spec['base'] + (f' at {start[0][:12]}' if start else ''),
-             'Runs in a new worktree of its own' + (', including the uncommitted changes in that checkout'
-                                                     if start and start[1] else '') + '.']
+             'Base: ' + spec['base'] + (f' at {start[2][:12]}' if start else ''),
+             'Runs in a new worktree of its own' + (
+                 '' if not (start and start[1]) else ', including the uncommitted changes in that checkout'
+                 if start[0] == start[2] else ', continuing all the work in that checkout (checked and reviewed '
+                 'with the new changes)') + '.']
     def section(title, items):
         lines.extend(['', '## ' + title, *('- ' + item for item in items)])
     if approach['evidence']:
@@ -212,7 +214,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
         start = controller.starting_point(spec['worktree'], spec['base'], carry=not spec.get('draft_pr'))
         if spec.get('draft_pr'):
             from .publish import preflight
-            preflight(spec['worktree'], spec['base'], start[0], spec['branch'])
+            preflight(spec['worktree'], spec['base'], start[2], spec['branch'])
         revision = record.get('draft_revision', 0) + 1
         text = render(spec, approach, revision, start)
         # The directory is outside the worktree: Markdown cannot invalidate source identity.
@@ -245,7 +247,7 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
                           'Revise using prepare with expected_revision; after the user is ready, plan with draft_revision. '
                           'Preview approval is not execution consent.')
             record.update(state='draft', spec=spec, approach=approach, text=text,
-                          start=start[0], draft_revision=revision, request_digest=request_digest, result=result)
+                          start=start[0], base_commit=start[2], draft_revision=revision, request_digest=request_digest, result=result)
             _save(db, key, record)
             db.execute('COMMIT')
             return result
@@ -285,7 +287,8 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
         raise
     if op == 'plan':
         state = controller.from_spec(service, record['spec'], session_id=session_id, profile_id=profile_id,
-                                     approach=record['text'], start=record.get('start'))
+                                     approach=record['text'], start=record.get('start'),
+                                     base_commit=record.get('base_commit'))
         remember_roles(home, record['spec'])  # the next /cp-run reuses these without asking
         binding = {'document_path': record['result']['document_path']}
         db.execute('INSERT INTO intent(id,payload,acknowledged) VALUES (?,?,1)',

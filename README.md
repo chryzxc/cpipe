@@ -110,7 +110,7 @@ Each loop in the graph has an exit condition and a bound.
      See [Review](#review) for how findings are handled.
 5. **Draft pull request (only if you asked).** Say so in the task, e.g. `/cp-run fix the date parser and open a draft PR`.
    - **Branch:** the plan names a new branch following your instructions and the repository's conventions (its contributing guide, project instructions and recent branch names). The approval question lists the push to that branch and the draft PR.
-   - **Up-front checks:** `origin` is on GitHub, `gh` is logged in, the base branch is on `origin`, and the branch name is valid and exists neither locally nor on `origin`. A PR delivery starts from the base as committed, without your uncommitted changes.
+   - **Up-front checks:** `origin` is on GitHub, `gh` is logged in, the base branch is on `origin`, and the branch name is valid and exists neither locally nor on `origin`. A PR delivery starts from the base as committed, without your uncommitted changes (a continued delivery keeps its work, which is reviewed).
    - **Content:** after the review approves, the builder writes the commits (messages plus which changed files each holds), the title and the description, following your instructions and the repository's conventions. cpipe rejects content that leaves a changed file out, names cpipe internals (delivery IDs, worktree or home paths), or contains a credential, and asks once more.
    - **Publishing:** cpipe pushes each commit in order to the branch and opens (or reuses) the draft PR.
    - **Verification:** a reviewer reads the published PR back from GitHub (title, description, branch, base, draft state and each commit's files) and checks it against the goal, acceptance, non-goals and conventions. Problems go back to the builder, up to 2 rounds. Only a verified PR is reported done; otherwise the run waits with the problems listed.
@@ -221,7 +221,7 @@ The coordinator fills in the spec; it is shown in the preview and frozen at appr
 | Field | Meaning |
 |---|---|
 | `title` | Optional. A short name for the task on the kanban board, at most 60 characters. |
-| `worktree`, `repo`, `base` | The investigated checkout, which is never changed, and the branch, tag or commit the delivery's own worktree starts from. When `base` is what the checkout has checked out, its uncommitted changes are included. |
+| `worktree`, `repo`, `base` | The investigated checkout, which is never changed, and the branch, tag or commit the delivery's own worktree starts from. When `base` is what the checkout has checked out, its uncommitted changes are included. An earlier delivery's worktree with the same `base` is continued: all its work comes along as uncommitted edits, and the checks and the review cover it with the new changes. |
 | `goal`, `acceptance`, `non_goals` | What done means. |
 | `write_paths`, `forbidden_paths` | `write_paths` guide the builder; edits to `forbidden_paths` are rejected. |
 | `builder`, `reviewer` | Distinct saved Hermes profiles; each may be an ordered list of up to 3 (see above). |
