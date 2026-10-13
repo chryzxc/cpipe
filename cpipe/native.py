@@ -592,11 +592,12 @@ def dispatch(ctx, name, raw=''):
             'Herm comments may say revise in place: for a cpipe-managed draft, instead create a new revision '
             'through prepare, leaving the reviewed file intact. Explain the new link. '
             'Never change the document directly: every edit needs a new tool-generated revision.\n'
-            'When the user says proceed (or go ahead), at once use operation plan with only {draft_revision: '
-            'current_revision}, for every delivery they approved. cpipe sees the user\'s own reply: plan freezes '
-            'the revision they were shown and starts it; consent cannot be inferred or supplied by you. Call plan '
-            'only after their reply. If a result carries approval_arguments instead (their reply was not a plain '
-            'go-ahead, or a stopped run asks for more time), call '
+            'When the user replies with a plain go-ahead such as proceed, cpipe itself freezes and starts every '
+            'revision they were shown and says so in their message: confirm what started and call nothing. '
+            'If they approve in other words, use operation plan with only {draft_revision: current_revision} '
+            '(and its task) for every delivery they approved; consent cannot be inferred or supplied by you. '
+            'If a result carries approval_arguments (their reply was not a plain go-ahead, or a stopped run asks '
+            'for more time), call '
             'cpipe_approve_plan with them and ask its returned question and choices with clarify, unchanged; only for '
             'a Yes call build with the SAME token and arguments {delivery_id}. '
             'The run returns within seconds and works in the background, repairing failing or broken checks itself. If its '
@@ -704,6 +705,31 @@ def _check(record, sid, profile, key, lapsed):
                record['profile_id']), ('chat', key, record['session_key'])) if mine != theirs]
     if differs:
         raise ValueError('run receipt belongs to another ' + ' and '.join(differs))
+
+
+def start_consented(session_id):
+    """The user's own go-ahead starts every draft of this chat they were shown, without a model call in between."""
+    from .delivery.approach import execute as execute_run
+    started = []
+    with scope() as (service, profile, home):
+        for key, payload in service.journal.db.execute(
+                "SELECT id, payload FROM intent WHERE id LIKE 'slash:%' AND json_extract(payload, '$.session_id')=? "
+                "AND json_extract(payload, '$.state') IN ('draft', 'proposal')", (session_id,)).fetchall():
+            record, label = json.loads(payload), key.partition('-')[2] or 'the delivery'
+            if record.get('consent') != record.get('draft_revision') or record.get('profile_id') != profile:
+                continue
+            try:
+                out = execute_run(service, record, key, 'plan', {'draft_revision': record['draft_revision']},
+                    home=home, session_id=session_id, profile_id=profile,
+                    launch=lambda d, again=False, chat=record['session_key']: (ensure_running if again else launch)(
+                        d, session_id=session_id, profile_id=profile, chat_key=chat))
+                started.append(f"{label}: {out.get('delivery_id')} {out.get('phase')}")
+            except Exception as exc:
+                started.append(f'{label}: not started ({exc})')
+    if started:
+        return ('[cpipe] The user\'s go-ahead was applied by cpipe itself; do not call plan or build for these: '
+                + '; '.join(started) + '. Tell the user in one line what started (or why not); they get a '
+                'message here when each is done.')
 
 
 def execute(args, **kwargs):

@@ -294,41 +294,46 @@ def test_task_label_may_sit_beside_the_arguments(run_context):
 
 
 def test_the_users_own_proceed_freezes_and_starts_the_revision_they_were_shown(run_context, monkeypatch):
-    """No second question: the user's chat reply (as the host hands it to plugins) is the consent."""
+    """No second question and no model call: the user's chat reply (as the host hands it to plugins) starts it."""
     from cpipe import plan_approval
-    from cpipe.delivery import approach
     launched = []
     monkeypatch.setattr(native, 'launch', lambda d, **kw: launched.append(d) or {'phase': 'running', 'delivery_id': d})
     token = run_context[1]
     prepare(run_context)
     for words in ('yes', 'what about floats?', 'proceed but also handle floats', 'go ' * 30):
-        plan_approval.consent(session_id='s1', user_message=words)
+        assert plan_approval.consent(session_id='s1', user_message=words) is None
     plan_approval.consent(session_id='other-chat', user_message='proceed')
     plan_approval.consent(session_id='s1', user_message=['proceed'])
+    assert not launched
+    told = plan_approval.consent(session_id='s1', user_message='Looks good, go ahead!')
+    assert len(launched) == 1 and launched[0] in told['context'] and 'do not call plan' in told['context']
+    assert plan_approval.consent(session_id='s1', user_message='proceed') is None and len(launched) == 1
+    out = call(token, 'plan', {'draft_revision': 1})  # a model that calls plan anyway gets the same start
+    assert out['phase'] == 'running' and out['delivery_id'] == launched[0] and len(launched) == 1
     with native.scope() as (service, _, _home):
-        assert not service.journal.db.execute("SELECT 1 FROM intent WHERE payload LIKE '%\"consent\"%'").fetchone()
-    plan_approval.consent(session_id='s1', user_message='Looks good, go ahead!')
-    run_context[3]['steps'].append('Preserve negative and zero inputs.')
-    prepare(run_context, 1)  # revised after the go-ahead: the new revision was never shown
-    held = call(token, 'plan', {'draft_revision': 2})
-    assert held['approved'] is False and 'approval_arguments' in held and not launched
-    plan_approval.consent(session_id='s1', user_message='proceed')  # said after seeing the frozen preview
-    out = call(token, 'plan', {'draft_revision': 2})
-    assert out['phase'] == 'running' and launched == [held['delivery_id']]
-    assert out['preview_attachment'] == held['preview_attachment']
-    with native.scope() as (service, _, _home):
-        assert service.read(held['delivery_id']).approved is True
+        assert service.read(launched[0]).approved is True
 
 
-def test_a_proceed_before_plan_starts_it_in_the_same_call(run_context, monkeypatch):
+def test_a_proceed_after_a_frozen_preview_starts_it(run_context, monkeypatch):
     from cpipe import plan_approval
     launched = []
     monkeypatch.setattr(native, 'launch', lambda d, **kw: launched.append(d) or {'phase': 'running', 'delivery_id': d})
     prepare(run_context)
+    held = call(run_context[1], 'plan', {'draft_revision': 1})
+    assert held['approved'] is False and 'approval_arguments' in held and not launched
     plan_approval.consent(session_id='s1', user_message='lgtm, start it')
-    out = call(run_context[1], 'plan', {'draft_revision': 1})
-    assert out['phase'] == 'running' and launched == [out['delivery_id']]
-    assert call(run_context[1], 'plan', {'draft_revision': 1}) == out and len(launched) == 1
+    assert launched == [held['delivery_id']]
+
+
+def test_one_proceed_starts_every_task_of_the_run(run_context, monkeypatch):
+    from cpipe import plan_approval
+    launched = []
+    monkeypatch.setattr(native, 'launch', lambda d, **kw: launched.append(d) or {'phase': 'running', 'delivery_id': d})
+    _, token, spec, approach_, _, _ = run_context
+    for task in ('t1', 't2'):
+        call(token, 'prepare', dict(spec=spec, approach=approach_, expected_revision=0, task=task))
+    told = plan_approval.consent(session_id='s1', user_message='proceed')
+    assert len(set(launched)) == 2 and 't1:' in told['context'] and 't2:' in told['context']
 
 
 @pytest.mark.parametrize('choice', ['Yes', 'No'])

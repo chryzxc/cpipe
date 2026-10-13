@@ -87,6 +87,15 @@ def consent(session_id='', user_message=None, **_):
                            (encoded(dict(record, consent=record['draft_revision'])), key, payload))
     except Exception as exc:
         log.warning('cpipe: proceed not recorded (%s)', type(exc).__name__)
+        return
+    try:
+        from .native import start_consented
+        context = start_consented(session_id)
+    except Exception as exc:
+        log.warning('cpipe: proceed not started (%s)', type(exc).__name__)
+        return
+    if context:
+        return {'context': context}
 
 
 def register(ctx):
