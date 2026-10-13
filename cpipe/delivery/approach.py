@@ -83,9 +83,8 @@ def render(spec, approach, revision, start=None):
          'Local development only; no commits, pushes, PRs, merging, deployment or credential changes.'),
         'Workers are trusted local processes, not sandboxed. Scope checks detect violations; they do not prevent access.'])
     section('Approval boundary', ['Use Open preview to review this document, then reply in the originating chat with any comments or changes.',
-        'Comments revise the approach. Preview approval means the approach looks good; it does not grant execution authority.',
-        'After review, cpipe freezes this exact approach and asks you to approve it.',
-        'Only the user\'s approval of the current frozen plan can launch workers.'])
+        'Comments revise the approach into a new revision.',
+        'Saying proceed in the chat freezes this exact revision and starts it; nothing else can launch workers.'])
     text = '\n'.join(lines) + '\n'
     if len(text.encode()) > MAX_DOCUMENT:
         raise ValueError('approach document is too large')
@@ -244,8 +243,8 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
                           preview_attachment='MEDIA:' + delimiter + str(path) + delimiter,
                           next_step='Present preview_attachment on its own line in the assistant reply for the clickable Open preview card. '
                           'Plain file links may be disabled. Wait for the user\'s comments or proceed. '
-                          'Revise using prepare with expected_revision; after the user is ready, plan with draft_revision. '
-                          'Preview approval is not execution consent.')
+                          'Revise using prepare with expected_revision; when the user says proceed, plan with '
+                          'draft_revision: it freezes and starts this revision.')
             record.update(state='draft', spec=spec, approach=approach, text=text,
                           start=start[0], base_commit=start[2], draft_revision=revision, request_digest=request_digest, result=result)
             _save(db, key, record)
@@ -257,8 +256,14 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
     if op == 'plan':
         if set(payload) != {'draft_revision'} or type(payload['draft_revision']) is not int or payload['draft_revision'] != record.get('draft_revision'):
             raise ValueError('freeze only the exact reviewed draft revision')
-        if record['state'] == 'proposal':
+        if record['state'] == 'complete':  # already started by the user's go-ahead
             return record['result']
+        if record['state'] == 'proposal':
+            state = controller.owned(service, record['delivery_id'], session_id, profile_id)
+            if record.get('consent') != record['draft_revision'] or state.approved or state.phase != 'proposal':
+                return record['result']
+            # Frozen before the user's go-ahead was recognised; their later proceed starts it.
+            return _start(service, db, key, record, state, session_id, profile_id, launch)
         if record['state'] != 'draft':
             raise ValueError('run requires an approach draft before freezing')
         if _document(record['result']['document_path']) != record['text']:
@@ -298,8 +303,23 @@ def execute(service, record, key, op, payload, *, home, session_id, profile_id, 
                       preview_attachment=record['result']['preview_attachment'],
                       draft_revision=record['draft_revision'])
         record.update(state='proposal', delivery_id=result['delivery_id'], result=result)
-    else:
-        result = launch(record['delivery_id'])
-        record.update(state='complete', result=result)
+        _save(db, key, record)
+        if record.get('consent') != record['draft_revision']:
+            return result  # no go-ahead seen for this revision: approval_arguments ask the user instead
+        return _start(service, db, key, record, state, session_id, profile_id, launch)
+    result = launch(record['delivery_id'])
+    record.update(state='complete', result=result)
+    _save(db, key, record)
+    return result
+
+
+def _start(service, db, key, record, state, session_id, profile_id, launch):
+    """The user said proceed to this exact revision in this chat (seen by the host, not the model): start it."""
+    from .approval import grant
+    if not grant(service, state, 'consent:' + key, session_id, profile_id):
+        return record['result']
+    result = dict(launch(record['delivery_id']), **{k: record['result'][k] for k in (
+        'document_path', 'preview_link', 'preview_attachment', 'draft_revision')})
+    record.update(state='complete', result=result)
     _save(db, key, record)
     return result

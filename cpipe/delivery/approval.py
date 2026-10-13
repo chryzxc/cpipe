@@ -118,6 +118,17 @@ def request(service, args, *, session_id, profile_id):
             'clarify': {'question': question(state.plan, args['plan_revision']), 'choices': CHOICES}}
 
 
+def grant(service, state, key, session_id, profile_id):
+    """Approve the frozen envelope for the user's own consent; False if the plan changed meanwhile."""
+    try:
+        event = Event(key, 'envelope_approved', state.plan.envelope.delivery_id,
+            state.plan.digest(), state.artifact, state.version, int(time.time()),
+            session_id=session_id, profile_id=profile_id, activity_id=state.active_intent)
+        return service.accept(event)[0].approved
+    except (ValueError, RuntimeError):
+        return False
+
+
 def answer(service, args, *, session_id, profile_id, asked, response):
     """Record a user's own clarify answer to the exact approval question; None if it is not one."""
     if not _valid(args, session_id, profile_id) or type(response) is not str:
@@ -135,14 +146,7 @@ def answer(service, args, *, session_id, profile_id, asked, response):
     result = {'delivery_id': args['delivery_id'],
               'status': {'yes': 'approved', 'no': 'rejected'}.get(reply, 'changes_requested')}
     if reply == 'yes':
-        try:
-            event = Event(_key(args), 'envelope_approved', args['delivery_id'],
-                state.plan.digest(), state.artifact, state.version, int(time.time()),
-                session_id=session_id, profile_id=profile_id, activity_id=state.active_intent)
-            accepted, _ = service.accept(event)
-            result['status'] = 'approved' if accepted.approved else 'stale_plan'
-        except (ValueError, RuntimeError):
-            result['status'] = 'stale_plan'
+        result['status'] = 'approved' if grant(service, state, _key(args), session_id, profile_id) else 'stale_plan'
     record = {'schema': 1, 'kind': 'approval_answer', 'session_id': session_id,
               'profile_id': profile_id, 'result': result}
     # Archived immediately: an answer is never a launchable outbox intent. User text is not kept.

@@ -2,7 +2,7 @@
 
 cpipe is a Hermes plugin that delivers a development task from request to reviewed, locally verified code.
 
-You describe the task once. cpipe investigates, presents an approach and asks for a single approval. The delivery then runs in the background: the builder writes the test and the change, the project's own tests are run, and a second Hermes profile reviews the result. When the delivery finishes, or needs a decision from you, cpipe sends one message to the originating chat.
+You describe the task once. cpipe investigates (for a feature, it plans the design with you one question at a time), presents an approach, and starts when you say proceed. The delivery then runs in the background: the builder writes the test and the change, the project's own tests are run, and a second Hermes profile reviews the result. When the delivery finishes, or needs a decision from you, cpipe sends one message to the originating chat.
 
 cpipe does not merge or deploy. It commits, pushes and opens a draft pull request only when you ask for one in the task. Each delivery runs in a new Git worktree of its own, next to your repository in `<repo>-worktrees/<delivery>` on branch `cpipe/<delivery>`, so your checkout is never changed, and several deliveries can run side by side. The result is left in that worktree for your review.
 
@@ -10,9 +10,9 @@ cpipe does not merge or deploy. It commits, pushes and opens a draft pull reques
 
 ### Contract first
 
-- **Clarify once:** open questions are batched into one round before planning; anything else becomes a stated assumption.
+- **Ask only what matters:** a clear bug or small change gets no questions; a feature is planned with you one question per message, with context gathered between answers and any installed planning skill used. Anything else becomes a stated assumption.
 - **Frozen contract:** the approved approach (goal, acceptance, scope, checks, profiles, budget) is immutable and identified by a content digest. Every later step is bound to it.
-- **Bound consent:** approval is your own answer in Hermes clarify to the exact frozen plan, tied to the plan digest, the worktree fingerprint and the chat session. The model cannot answer for you.
+- **Bound consent:** approval is your own chat reply saying proceed (as the host passes it to plugins, before the model runs), and it covers only the preview revision you were shown before it, in that chat session. The model cannot answer for you.
 
 ### Graph engineering
 
@@ -84,9 +84,9 @@ Each loop in the graph has an exit condition and a bound.
 
 ```
 /cp-run <task>
-  └─ coordinator (your chat): investigate read-only, ask at most one batched question
+  └─ coordinator (your chat): investigate read-only; plan a feature with you, one question at a time
        └─ approach preview (Markdown) ── your comments → new revision
-            └─ freeze + approval (Yes / No / changes)  ← the only interrupt
+            └─ you say proceed → freeze + start            ← the only interrupt
                  └─ background run ───────────────────────────────────────────┐
                       checks on the untouched code (records old failures)    │
                       implement ⇄ checks (your test command, real JUnit)      │ self-repair:
@@ -95,9 +95,9 @@ Each loop in the graph has an exit condition and a bound.
                  └─ one chat message: result, checks, tokens, worktree ◄──────┘ crashed steps
 ```
 
-1. **Clarify once.** The coordinator reads the project instructions and only the code the task touches. It asks a single batched question only for things tools cannot resolve; anything else becomes a stated assumption in the approach.
-2. **Approach preview.** The coordinator produces a Markdown document covering scope, non-goals, steps, decisions, risks, checks and limits. You reply with comments or changes; each produces a new immutable revision. Saying *proceed* freezes it.
-3. **One approval.** A Hermes clarify question shows the frozen scope with the choices *Yes* and *No*, or you type changes. Yes starts the run, No starts nothing, and changes produce a new revision that is asked again. Nothing runs before approval, and the time budget starts at approval.
+1. **Investigate and plan.** The coordinator reads the project instructions and only the code the task touches. A clear bug or small change gets no questions. A feature, or a request to plan step by step, is planned with you: one question per message with a recommended answer, context gathered between your answers, following an installed planning or brainstorming skill when one fits. Anything left becomes a stated assumption in the approach.
+2. **Approach preview.** The coordinator produces a Markdown document covering scope, non-goals, steps, decisions, risks, checks and limits. You reply with comments or changes; each produces a new immutable revision.
+3. **One approval.** Saying *proceed* (or *go ahead*, *lgtm, start it*) freezes the revision you were shown and starts the run at once. A reply with any other content is taken as changes. Nothing runs before you say proceed, and the time budget starts then.
 4. **Background run.** The chat remains available. The run uses native Kanban cards titled with the working profile:
    - **checks:** cpipe runs the approved checks on the untouched code and remembers what already fails there.
    - **implement / checks:** the builder writes the behavior test and the change, and cpipe runs the approved test command. New failures and broken runs go back to the builder; failures that were already there do not.
@@ -109,7 +109,7 @@ Each loop in the graph has an exit condition and a bound.
 
      See [Review](#review) for how findings are handled.
 5. **Draft pull request (only if you asked).** Say so in the task, e.g. `/cp-run fix the date parser and open a draft PR`.
-   - **Branch:** the plan names a new branch following your instructions and the repository's conventions (its contributing guide, project instructions and recent branch names). The approval question lists the push to that branch and the draft PR.
+   - **Branch:** the plan names a new branch following your instructions and the repository's conventions (its contributing guide, project instructions and recent branch names). The preview lists the push to that branch and the draft PR.
    - **Up-front checks:** `origin` is on GitHub, `gh` is logged in, the base branch is on `origin`, and the branch name is valid and exists neither locally nor on `origin`. A PR delivery starts from the base as committed, without your uncommitted changes (a continued delivery keeps its work, which is reviewed).
    - **Content:** after the review approves, the builder writes the commits (messages plus which changed files each holds), the title and the description, following your instructions and the repository's conventions. cpipe rejects content that leaves a changed file out, names cpipe internals (delivery IDs, worktree or home paths), or contains a credential, and asks once more.
    - **Publishing:** cpipe pushes each commit in order to the branch and opens (or reuses) the draft PR.
@@ -205,14 +205,14 @@ Running chats and background runs pick up the updated code at their next tool ca
 
 ## Commands
 
-- `/cp-run <task>`: starts a delivery. One session-bound receipt carries investigation, revisions, approval and the run. You never copy IDs or type a second command. Follow-up work in the same chat (a redo, another branch name, a related fix) gets its own approach and approval question, but needs no new `/cp-run`. A request with several tasks (for example *work on 2 and 3*) becomes one delivery per independent task, each in its own worktree and running in parallel; related tasks that touch the same files become one delivery. All their approval questions are asked together.
+- `/cp-run <task>`: starts a delivery. One session-bound receipt carries investigation, revisions, approval and the run. You never copy IDs or type a second command. Follow-up work in the same chat (a redo, another branch name, a related fix) gets its own approach and preview, but needs no new `/cp-run`. A request with several tasks (for example *work on 2 and 3*) becomes one delivery per independent task, each in its own worktree and running in parallel; related tasks that touch the same files become one delivery. One proceed starts all of them.
 - `/cp-spawn <which tasks>`: hands tasks from the current conversation to new chats, for example *task 1,2* after a list or an audit earlier in the chat. The chat's model works out which tasks are meant and writes a self-contained brief for each one (repository, goal, evidence with paths, acceptance, what must not change). cpipe then opens one new desktop chat per brief, titled after the change it makes, and starts `/cp-run` there, so each plan is reviewed and approved in its own chat. It needs the Hermes desktop app.
 - `/cp-status [delivery_id]`: a table of this chat's deliveries with their state, each check's result (with the reason when a check produced no result), review rounds and tokens, followed by open findings.
 - `/cp-stop <delivery_id>`: cancel a delivery.
 
 Ordinary chat requests never start cpipe. The model sees exactly two tools:
 - `cpipe_execute_intent`;
-- `cpipe_approve_plan`. Approval binds to the frozen plan, session and profile; no model-provided flag counts as consent.
+- `cpipe_approve_plan`: a clarify question for a frozen plan that could not start on your proceed (for example one that changed meanwhile). Approval binds to the frozen plan, session and profile; no model-provided flag counts as consent.
 
 ## The execution spec
 

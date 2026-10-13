@@ -79,7 +79,7 @@ def test_one_task_entry_and_adaptive_installed_capabilities(run_context):
     for text in ('investigate', 'AGENTS.md', 'reply with any comments or changes', 'cpipe_approve_plan'):
         assert text in prompt
     assert 'skills_list' not in prompt
-    assert 'Human consent cannot be inferred' in prompt
+    assert 'consent cannot be inferred' in prompt and 'one focused question per reply' in prompt
 
 
 def test_draft_generates_private_preview_file_without_execution(run_context, repo, hermes_home):
@@ -278,6 +278,44 @@ def test_a_delivery_continues_an_earlier_deliverys_worktree_with_all_its_work_re
     changed = subprocess.run(['git', 'diff', '--name-only', base], cwd=root, capture_output=True, text=True).stdout
     assert changed.split() == ['double.py', 'test_behavior.py']
     assert subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True).stdout.strip() == base
+
+
+def test_the_users_own_proceed_freezes_and_starts_the_revision_they_were_shown(run_context, monkeypatch):
+    """No second question: the user's chat reply (as the host hands it to plugins) is the consent."""
+    from cpipe import plan_approval
+    from cpipe.delivery import approach
+    launched = []
+    monkeypatch.setattr(native, 'launch', lambda d, **kw: launched.append(d) or {'phase': 'running', 'delivery_id': d})
+    token = run_context[1]
+    prepare(run_context)
+    for words in ('yes', 'what about floats?', 'proceed but also handle floats', 'go ' * 30):
+        plan_approval.consent(session_id='s1', user_message=words)
+    plan_approval.consent(session_id='other-chat', user_message='proceed')
+    plan_approval.consent(session_id='s1', user_message=['proceed'])
+    with native.scope() as (service, _, _home):
+        assert not service.journal.db.execute("SELECT 1 FROM intent WHERE payload LIKE '%\"consent\"%'").fetchone()
+    plan_approval.consent(session_id='s1', user_message='Looks good, go ahead!')
+    run_context[3]['steps'].append('Preserve negative and zero inputs.')
+    prepare(run_context, 1)  # revised after the go-ahead: the new revision was never shown
+    held = call(token, 'plan', {'draft_revision': 2})
+    assert held['approved'] is False and 'approval_arguments' in held and not launched
+    plan_approval.consent(session_id='s1', user_message='proceed')  # said after seeing the frozen preview
+    out = call(token, 'plan', {'draft_revision': 2})
+    assert out['phase'] == 'running' and launched == [held['delivery_id']]
+    assert out['preview_attachment'] == held['preview_attachment']
+    with native.scope() as (service, _, _home):
+        assert service.read(held['delivery_id']).approved is True
+
+
+def test_a_proceed_before_plan_starts_it_in_the_same_call(run_context, monkeypatch):
+    from cpipe import plan_approval
+    launched = []
+    monkeypatch.setattr(native, 'launch', lambda d, **kw: launched.append(d) or {'phase': 'running', 'delivery_id': d})
+    prepare(run_context)
+    plan_approval.consent(session_id='s1', user_message='lgtm, start it')
+    out = call(run_context[1], 'plan', {'draft_revision': 1})
+    assert out['phase'] == 'running' and launched == [out['delivery_id']]
+    assert call(run_context[1], 'plan', {'draft_revision': 1}) == out and len(launched) == 1
 
 
 @pytest.mark.parametrize('choice', ['Yes', 'No'])

@@ -58,6 +58,37 @@ def observe(tool_name='', args=None, result=None, session_id='', **_):
         log.warning('cpipe: approval answer not recorded (%s)', type(exc).__name__)
 
 
+# A reply that only says to go ahead, such as "proceed", "looks good, go ahead" or "lgtm, start it".
+# Anything else (a question, a change, a bare "yes" to some other question) is not consent.
+_GO = {'proceed', 'go', 'start', 'begin', 'build', 'approve', 'approved', 'lgtm', 'ship'}
+_FILLER = {'ok', 'okay', 'yes', 'yep', 'yeah', 'sure', 'looks', 'good', 'great', 'perfect', 'fine', 'sounds',
+           'ahead', 'it', 'do', 'lets', 'let', 's', 'please', 'thanks', 'thank', 'you', 'now', 'with', 'that',
+           'this', 'the', 'plan', 'and', 'all', 'right', 'alright'}
+
+
+def consent(session_id='', user_message=None, **_):
+    """pre_llm_call: the user's own chat message saying to go ahead approves the draft revisions this chat
+    was shown before it. The host passes the user's text; the model cannot write it."""
+    if not session_id or type(user_message) is not str or len(user_message) > 80:
+        return
+    words = re.findall(r"[a-z]+", user_message.casefold())
+    if not words or not _GO & set(words) or not set(words) <= _GO | _FILLER:
+        return
+    try:
+        from .delivery.journal import encoded
+        journal, _ = _scope()
+        with journal:
+            db = journal.db
+            for key, payload in db.execute(
+                    "SELECT id, payload FROM intent WHERE id LIKE 'slash:%' AND json_extract(payload, '$.session_id')=? "
+                    "AND json_extract(payload, '$.state') IN ('draft', 'proposal')", (session_id,)).fetchall():
+                record = json.loads(payload)
+                db.execute('UPDATE intent SET payload=? WHERE id=? AND payload=?',
+                           (encoded(dict(record, consent=record['draft_revision'])), key, payload))
+    except Exception as exc:
+        log.warning('cpipe: proceed not recorded (%s)', type(exc).__name__)
+
+
 def register(ctx):
     from .live import entry, module
 
@@ -70,3 +101,4 @@ def register(ctx):
     ctx.register_tool(name=NAME, toolset='cpipe', schema=SCHEMA, handler=handler)
     if hasattr(ctx, 'register_hook'):
         ctx.register_hook('post_tool_call', entry('plan_approval', 'observe'))
+        ctx.register_hook('pre_llm_call', entry('plan_approval', 'consent'))
