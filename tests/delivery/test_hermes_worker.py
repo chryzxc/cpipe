@@ -36,14 +36,55 @@ def test_observes_host_init_before_result():
     assert out.payload == {'status': 'done'}
 
 
-@pytest.mark.parametrize('argv', [events(result()), events(init(), result(session='other')),
+@pytest.mark.parametrize('argv', [events(result()),
     events(init(model='other'), result()), events(init(), init(), result()),
-    events(init(), result(), result()), events(init(), result(error='private diagnostic')),
-    events(init(), result(text='not structured')),
+    events(init(), result(), result()), events(init(), result(text='not structured')),
     events(init(), result(text='{"status":"done","status":"failed"}'))])
 def test_missing_mismatched_duplicate_or_failed_results_fail_closed(argv):
     with pytest.raises(ValueError):
         run(argv)
+
+
+def test_an_answer_is_kept_when_hermes_rotates_the_session_or_the_turn_limit_ends_the_run():
+    # Seen live: a worker that answered {"status":"blocked",...} on its last allowed turn exits 1, and
+    # context compression gives the result a new session id. Both answers are the worker's own.
+    out, _ = run(events(init(), result(session='compressed-child')))
+    assert out.session_id == 'native-child' and out.payload == {'status': 'done'}
+    out, _ = run(events(init(), result(text='{"status":"blocked","reason":"x"}', exit_code=1,
+                                       error='max iterations')))
+    assert out.payload == {'status': 'blocked', 'reason': 'x'}
+
+
+def test_a_worker_that_runs_out_of_turns_is_asked_for_its_answer_instead_of_failing(monkeypatch):
+    # Seen live: out of turns, the worker wrote a prose summary and Hermes exited 1; cpipe threw the
+    # work away three times and handed over. Now the same session is asked for the JSON, without tools.
+    from dataclasses import replace
+    from cpipe.delivery import hermes_worker
+    from cpipe.delivery.hermes_worker import Unfinished, SALVAGE
+    from .test_service import candidate
+    state = replace(candidate(), activity='implement', builder_session='')
+    prose = result(text='I fixed most of it; summary follows.', exit_code=1,
+                   tokens=dict(input=10, output=1, total=11, cache_read=0, cache_write=0))
+    answer = result(session='native-child', text='{"status":"done"}',
+                    tokens=dict(input=5, output=1, total=6, cache_read=4, cache_write=0))
+    calls = []
+    def command(actor, cwd, resume, timeout, turns):
+        calls.append((resume, turns))
+        return events(init(model=actor.model), prose) if not resume else events(init(resume, actor.model), answer)
+    monkeypatch.setattr(hermes_worker, 'command', command)
+    real = hermes_worker.execute_stream
+    prompts = []
+    def stream(argv, **kw):
+        prompts.append(kw['prompt'])
+        return real(argv, **{**kw, 'cwd': '.', 'pidfile': None})
+    monkeypatch.setattr(hermes_worker, 'execute_stream', stream)
+    bound = []
+    out = hermes_worker.HermesWorker()(state, on_session=bound.append, heartbeat=lambda: None, timeout_seconds=120)
+    assert calls == [('', hermes_worker.TURNS['implement']), ('native-child', 3)] and prompts[1] == SALVAGE
+    assert out.session_id == 'native-child' == bound[0] and out.payload == {'status': 'done'}
+    assert out.tokens['total'] == 17
+    with pytest.raises(Unfinished):  # the bare stream still reports it; only the worker repairs it
+        run(events(init(), prose))
 
 
 def test_builder_resume_must_report_the_bound_native_session():
@@ -168,7 +209,7 @@ def test_builders_work_cheaply_and_steps_cap_their_turns():
     review = hermes_worker._prompt(replace(state, activity='review'), '')
     assert 'do not run them or the full suite again' in review
     argv = hermes_worker.command(state.plan.actors[0], '/w', '', 60, hermes_worker.TURNS['write_tests'])
-    assert argv[argv.index('--max-turns') + 1] == '20'
+    assert argv[argv.index('--max-turns') + 1] == '30'
 
 
 def test_a_worker_left_running_by_a_dead_process_is_stopped(tmp_path):

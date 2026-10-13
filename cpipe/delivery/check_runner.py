@@ -257,7 +257,7 @@ TAILS = {}
 TAIL = 3000
 
 
-def _remember(state, spec, observed, outcome):
+def _remember(state, spec, observed, outcome, known=()):
     key = state.plan.envelope.delivery_id + ':' + spec.obligation
     if outcome is Outcome.PASS or observed is None:
         TAILS.pop(key, None)
@@ -269,7 +269,17 @@ def _remember(state, spec, observed, outcome):
     seen = output + (raw or b'')
     missing = [c for c in spec.criteria if c.encode() not in seen]
     tail = output[-TAIL:].decode(errors='replace')
-    TAILS[key] = (state.artifact, [redacted(c, 200) for c in missing], redacted(tail, TAIL))
+    # The failing test names and assertions, wherever the runner printed them (often far above the tail),
+    # split from what already failed before the change, so the builder fixes only its own failures.
+    failed = [line.rstrip() for line in output.splitlines() if _FAILED.search(line) and line.strip()]
+    new = [line for line in failed if _mark(line) not in known]
+    if new:
+        lines = b'\n'.join(dict.fromkeys(new))[:TAIL].decode(errors='replace')
+        old = len(failed) - len(new)
+        tail = ('Failure lines new since the change:\n' + lines
+                + (f'\n({old} more failure lines also failed before the change: not yours, leave them)' if old else '')
+                + '\n\nEnd of the output:\n' + tail)
+    TAILS[key] = (state.artifact, [redacted(c, 200) for c in missing], redacted(tail, 2 * TAIL + 200))
 
 
 def _marks(spec, observed):
@@ -283,9 +293,19 @@ def _marks(spec, observed):
                     if c.find('failure') is not None or c.find('error') is not None}
         except ET.ParseError:
             return set()
-    # A new error matching an old line except for its numbers is missed; JUnit reports have no such gap.
-    lines = (re.sub(rb'\d+', b'#', line.strip()) for line in output.splitlines())
-    return {_digest(line.decode(errors='replace')) for line in lines if line}
+    # Only lines that report a failure, numbers and ids masked: new tests that pass print new lines too, and must not make an
+    # old failure look new. A new error matching an old line except for its numbers is missed; JUnit
+    # reports have no such gap.
+    return {_mark(line) for line in output.splitlines() if _FAILED.search(line) and line.strip()}
+
+
+def _mark(line):
+    return _digest(re.sub(rb'[0-9a-f]{8,}|\d+', b'#', line.strip()).decode(errors='replace'))
+
+
+# How common runners (pytest, jest, vitest, mocha, go, cargo, unittest) mark a failing test or an error.
+_FAILED = re.compile(rb'fail|error|exception|traceback|panic|assert|expected|\u2715|\u2717|\u00d7|\u25cf'
+                     .decode('unicode_escape').encode(), re.I)
 
 
 def baseline_path(root, state):
@@ -311,6 +331,13 @@ def take_baseline(state, specs, *, evidence_root):
     temp = path.with_suffix('.tmp')
     temp.write_text(encoded(known))
     os.replace(temp, path)
+
+
+def _known(root, state, spec):
+    try:
+        return set(json.loads(baseline_path(root, state).read_text()).get(spec.obligation) or ())
+    except (OSError, ValueError, AttributeError):
+        return set()
 
 
 def _pre_existing(root, state, spec, observed, outcome, reason):
@@ -355,7 +382,7 @@ def observe_check(state, spec, *, evidence_root):
     if _pre_existing(evidence_root, state, spec, observed, outcome, reason):
         outcome, reason = Outcome.PASS, 'pre_existing'
     code = observed[0] if observed else None
-    _remember(state, spec, observed, outcome)
+    _remember(state, spec, observed, outcome, _known(evidence_root, state, spec))
     observed = None  # Never persist report text or test output.
     receipt = Receipt(spec.obligation, before.digest, state.plan.envelope.scope,
                       definition.inputs, definition.environment, definition.command, outcome,

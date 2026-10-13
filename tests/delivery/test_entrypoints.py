@@ -332,9 +332,44 @@ def test_a_run_past_its_budget_records_the_stop_instead_of_crashing(repo, tmp_pa
                 state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
             later = time.time() + 3600  # e.g. the run was parked or Hermes was down meanwhile
             monkeypatch.setattr(controller.time, 'time', lambda: later)
+            monkeypatch.setattr(controller, 'AUTO_RENEWALS', 0)  # its own renewals are used up
             result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn,
                          execute=lambda *a, **kw: 1 / 0, evidence_root=tmp_path / 'evidence')
             assert result['phase'] == 'stopped' and result['steps'] == [] and 'recoveries' not in result
+    finally:
+        conn.close()
+
+
+def test_a_run_out_of_time_with_calls_left_renews_its_time_and_keeps_going(repo, tmp_path, monkeypatch):
+    from cpipe.delivery import controller
+    from cpipe.delivery.controller import propose, run
+    from cpipe.delivery.review import review_identity
+    from cpipe.runtime import hermes_api as h
+    from .test_execution_plan import plan
+    spec = pytest_check(timeout=20)
+    p = plan(worktree=str(repo), common_git_dir=str(repo / '.git'),
+        base_commit=git(repo, 'rev-parse', 'HEAD'), expires_at=int(time.time()) + 300,
+        envelope=replace(plan().envelope, required=('behavior', 'review')),
+        checks=(spec.identity(), review_identity()), write_paths=('double.py',), interactive=False,
+        transient_retries=0)
+    h.kb.init_db(tmp_path / 'native.db')
+    conn = h.kbc.connect(tmp_path / 'native.db')
+    try:
+        with Journal(tmp_path / 'controller.db') as journal:
+            service = Service(journal)
+            state = propose(service, p, (spec,))
+            service.accept(Event('approval', 'envelope_approved', 'd1', p.digest(), state.artifact,
+                state.version, state.last_at, session_id='s1', profile_id='default', activity_id=state.active_intent))
+            later = time.time() + 3600  # e.g. the run was parked or Hermes was down meanwhile
+            monkeypatch.setattr(controller.time, 'time', lambda: later)
+            from cpipe.delivery.workers import WorkerRefused
+            def worker(*a, **kw):
+                raise WorkerRefused('environment: stop here')
+            result = run(service, 'd1', session_id='s1', profile_id='default', conn=conn,
+                         execute=worker, evidence_root=tmp_path / 'evidence')
+            # Seen live: the run stopped on time while most calls were left, and asked the user again.
+            assert result['recoveries'][0] == 'the time budget ran out with calls left; renewed it and continuing'
+            assert service.read('d1').renewals == 1 and result['phase'] != 'stopped'
     finally:
         conn.close()
 

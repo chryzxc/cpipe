@@ -27,7 +27,7 @@ MAX_LINE = 256 * 1024
 MAX_STREAM = 32 * 1024 * 1024
 MAX_RESULT = 64 * 1024
 # Model turns per step: a worker that cannot finish in these is lost, and a fresh attempt is cheaper.
-TURNS = {'write_tests': 20, 'implement': 40, 'review': 30}
+TURNS = {'write_tests': 30, 'implement': 40, 'review': 30}
 # How builders work: every background job, poll loop or reinstall is paid for in tokens on every later turn.
 RULES = ('Work in the foreground: no background jobs, polling loops, sleeps or watch modes. cpipe runs the '
          'approved checks after you return and sends you any failures, so do not run the full suite; at most run '
@@ -71,6 +71,19 @@ def structured(text):
     if type(value) is not dict:
         raise ValueError('structured worker result must be an object')
     return value
+
+
+class Unfinished(ValueError):
+    """The worker's turn ended without the JSON answer (out of turns, or prose): its session can still give it."""
+    def __init__(self, origin, session, tokens):
+        super().__init__('worker ended without a structured result')
+        self.origin, self.session, self.tokens = origin, session, tokens  # started as origin, resumable as session
+
+
+# Sent to a session that ran out of turns: no more work, only the answer it owes.
+SALVAGE = ('You ran out of turns. Do not call any tools. Reply now with only the JSON this step asks for, '
+           'describing the work as it stands; if it is not finished, use {"status":"blocked","reason":"<what is '
+           'left and why>"}.')
 
 
 def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
@@ -145,23 +158,26 @@ def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
                             on_session(sid)
                             session = sid
                         elif event.get('type') == 'result':
-                            if (not session or final is not None
-                                    or event.get('session_id') != session
-                                    or type(event.get('exit_code')) is not int
-                                    or event['exit_code'] != 0 or event.get('error')):
+                            # Context compression may rotate the session id mid-run; the answer is still this run's.
+                            sid = event.get('session_id')
+                            if (not session or final is not None or type(sid) is not str or not sid
+                                    or any(ord(c) < 32 for c in sid) or type(event.get('exit_code')) is not int):
                                 raise ValueError('worker terminal result session/status mismatch')
-                            final = structured(event.get('text'))
                             tokens = event.get('tokens')
                             if type(tokens) is dict and all(type(v) is int for v in tokens.values()):
                                 usage = {k: tokens.get(k, 0) for k in
                                          ('input', 'output', 'total', 'cache_read', 'cache_write')}
+                            try:  # a run that hit its turn limit exits 1, but its last answer may be the JSON
+                                final = structured(event.get('text'))
+                            except ValueError:
+                                raise Unfinished(session, sid, usage) from None
                     if len(buffer) > MAX_LINE:
                         raise ValueError('worker record bound exceeded')
             try:
-                rc = proc.wait(timeout=max(.001, deadline - time.monotonic()))
+                proc.wait(timeout=max(.001, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
                 raise ValueError('worker timeout after stream closed') from None
-        if rc != 0 or final is None:
+        if final is None:
             raise ValueError('worker exited without a successful observed result')
         heartbeat()
         return WorkerResult(session, final, usage)
@@ -182,7 +198,7 @@ def execute_stream(argv, *, prompt, cwd, env, model, expected_session,
 
 def _delta(state):
     """What changed since the worker last looked: failing checks and open findings."""
-    from .check_runner import TAIL, TAILS
+    from .check_runner import TAILS
     from .contracts import Outcome, UNAVAILABLE_REASONS
     from .review import NOTES
     from .workers import DISPUTES
@@ -205,7 +221,7 @@ def _delta(state):
             lines.append(f'{o}: these approved criteria never appeared in the output (the test name must contain '
                          'each exactly): ' + ', '.join(missing))
         if tail.strip():
-            lines.append(f'{o} output (last {TAIL} characters, redacted):\n```\n{tail.strip()}\n```')
+            lines.append(f'{o} output (redacted):\n```\n{tail.strip()}\n```')
     if state.activity == 'write_tests':
         lines.append('The behavior test names must match the approved criteria exactly (describe prefixes are fine).')
     from .findings import blocks
@@ -535,11 +551,26 @@ class HermesWorker:
             prompt += '\n' + note
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(('HERMES_KANBAN_', 'GIT_')) and k != 'PYTHONPATH'}
-        result = execute_stream(command(actor, state.plan.worktree, resume, timeout_seconds,
-                                        TURNS.get(state.activity, 50)),
-            prompt=prompt, cwd=state.plan.worktree, env=env, model=actor.model,
-            expected_session=resume, on_session=on_session, heartbeat=heartbeat,
-            timeout_seconds=timeout_seconds, pidfile=pidfile)
+        started = time.monotonic()
+        try:
+            result = execute_stream(command(actor, state.plan.worktree, resume, timeout_seconds,
+                                            TURNS.get(state.activity, 50)),
+                prompt=prompt, cwd=state.plan.worktree, env=env, model=actor.model,
+                expected_session=resume, on_session=on_session, heartbeat=heartbeat,
+                timeout_seconds=timeout_seconds, pidfile=pidfile)
+        except Unfinished as exc:
+            # Self-repair: ask the same session for its answer (a few turns, no tools) instead of
+            # throwing the work away and paying for a fresh attempt.
+            left = min(300, timeout_seconds - (time.monotonic() - started))
+            if left < 30:
+                raise ValueError('worker ran out of turns and time; no result accepted') from None
+            result = execute_stream(command(actor, state.plan.worktree, exc.session, left, 3),
+                prompt=SALVAGE, cwd=state.plan.worktree, env=env, model=actor.model,
+                expected_session=exc.session, on_session=lambda _: None, heartbeat=heartbeat,
+                timeout_seconds=left, pidfile=pidfile)
+            tokens = ({k: exc.tokens[k] + result.tokens[k] for k in exc.tokens}
+                      if exc.tokens and result.tokens else exc.tokens or result.tokens)
+            result = WorkerResult(exc.origin, result.payload, tokens)  # the session this step was bound to
         if now:  # the next re-review diffs from this tree
             _git(state.plan.worktree, 'update-ref', _ref(state), now, check=False)
         return result

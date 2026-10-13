@@ -38,6 +38,9 @@ CALLS = 40
 # A failing worker is resumed with the reason, then retried in a fresh session; on the
 # next failure the next approved actor takes over. Retries back off for provider hiccups.
 FAILURES = 3
+
+# Times a run that is still within its calls renews its own time budget before it stops and tells the user.
+AUTO_RENEWALS = 2
 ACTIVE_STEPS = frozenset({'tests', 'checks', 'write_tests', 'implement', 'review', 'publish'})
 BACKOFF = 15
 WORKER_STEPS = frozenset({'write_tests', 'implement', 'review'})
@@ -110,10 +113,6 @@ def summary(state, service=None):
                               for f in sorted(found, key=lambda f: not blocks(f))]
     if state.phase == 'proposal' and not state.approved:
         result['approval_arguments'] = arguments(state)
-        if state.renewals:  # the plan is unchanged; only the budget needs consent again
-            result['message'] = ('The approved time or calls ran out. To continue, call cpipe_approve_plan with '
-                                 'approval_arguments and ask its question with clarify (the user approves a fresh '
-                                 'budget), then build again.')
     if service is not None:
         result['tokens'] = usage(service, state.plan.envelope.delivery_id)
         row = service.journal.db.execute('SELECT payload FROM intent WHERE id=?',
@@ -558,10 +557,15 @@ def run(service, delivery_id, *, session_id, profile_id, conn=None, execute=None
         if time.time() >= deadline(state):
             # Record the stop instead of failing every step on the expired budget.
             e = state.plan.envelope
-            service.accept(Event('deadline:' + state.active_intent, 'deadline_reached', delivery_id,
+            state, _ = service.accept(Event('deadline:' + state.active_intent, 'deadline_reached', delivery_id,
                 state.plan.digest(), state.artifact, state.version, max(state.last_at, int(time.time())),
                 session_id=e.session_id, profile_id=e.profile_id))
-            break
+            if state.renewals >= AUTO_RENEWALS or state.calls_used >= state.plan.budget.calls:
+                break
+            # Time is a stall guard, calls are the spend guard: with calls left, keep going.
+            resume(service, delivery_id, session_id=session_id, profile_id=profile_id)
+            note('the time budget ran out with calls left; renewed it and continuing')
+            continue
         action, tid = state.activity, None
         try:
             state = settle(state, store, service)

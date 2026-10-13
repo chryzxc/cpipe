@@ -439,19 +439,30 @@ def test_continue_picks_a_waiting_run_up_with_every_builder_again():
         step(state, "resumed")  # only a stopped or waiting run
 
 
-def test_continue_after_the_budget_ran_out_needs_approval_for_a_fresh_one():
+def test_continue_after_the_budget_ran_out_renews_it_without_asking_again():
+    # Seen live: "continue" after a timeout showed the whole plan for approval again. Asking to continue
+    # is the consent: the same plan gets a fresh budget of the approved size and picks up where it stopped.
     state = candidate()
     stopped, _ = step(state, "feedback_received", now=state.plan.expires_at, action="change")
     assert stopped.phase == "stopped"
     with pytest.raises(ValueError, match="terminal"):
         step(stopped, "feedback_received", action="change")
-    renewal, _ = step(stopped, "resumed", "approve_envelope")
-    assert renewal.phase == "proposal" and not renewal.approved and renewal.renewals == 1
-    assert renewal.calls_used == 0
-    later = renewal.last_at + 50
-    resumed, _ = step(renewal, "envelope_approved", "checks", now=later)
+    later = stopped.last_at + 50
+    resumed, _ = step(stopped, "resumed", "checks", now=later)
+    assert resumed.approved and resumed.renewals == 1 and resumed.started_at == later
     claimed, _ = step(resumed, "activity_claimed", now=later + 299, run_id="run-1")
     assert claimed.phase != "stopped"  # past the plan's own expiry, inside the new budget
+
+
+def test_a_crashed_worker_step_spends_no_call():
+    state = start()
+    state, _ = step(state, "envelope_approved", "tests")
+    state = claim(state)
+    state, _ = step(state, "activity_observed", "implement", receipts=(receipt(state, outcome=Outcome.FAIL),))
+    used = state.calls_used
+    state = claim(state, "forge", "builder-session")
+    retried, _ = step(state, "activity_abandoned", "implement", action="fresh")
+    assert retried.calls_used == used
 
 
 def test_a_proposal_that_was_never_approved_cannot_be_resumed():

@@ -313,6 +313,38 @@ def test_failures_already_there_before_the_change_do_not_block(repo, tmp_path):
         (tmp_path / 'checks.db').unlink()
 
 
+def test_new_passing_tests_do_not_make_an_old_failure_look_new(repo, tmp_path):
+    # Seen live: a regression run already failed six tests in an unrelated suite at the base. The change
+    # added tests matched by the same command; their passing lines were new, so the old failure was
+    # charged to the change and every builder was asked to fix code outside its scope.
+    from dataclasses import replace as swap
+    from cpipe.delivery.check_runner import take_baseline
+    out = tmp_path / 'out'
+    out.write_text('FAIL routes/__tests__/phiAudit.test.js (5.2 s)\n  \u25cf phiAudit \u203a deletes equipment\n'
+                   '    Expected: 200\n  \u2715 deletes equipment (12 ms)\nPASS service/a.test.js\n'
+                   '  \u2713 reads (3 ms)\nTests: 6 failed, 40 passed, 46 total\n')
+    spec = swap(sh(f'cat {out}; exit 1', ()), obligation='regression')
+    journal, service, state, spec = setup_check(repo, tmp_path, spec=spec)
+    with journal:
+        take_baseline(state, (spec,), evidence_root=tmp_path / 'evidence')
+        out.write_text(out.read_text().replace('46 total', '74 total').replace('40 passed', '68 passed')
+                       + 'PASS routes/__tests__/allergies.routes.test.js (9.1 s)\n  \u2713 allergy matrix (31 ms)\n'
+                       '  console.log\n    seeded 652f1a9b3c4d5e6f7a8b9c0d\n')
+        assert (execute(state, spec, tmp_path).outcome, execute(state, spec, tmp_path).reason) == (
+            Outcome.PASS, 'pre_existing')
+        out.write_text(out.read_text() + '  \u2715 allergy denies another client (8 ms)\n')
+        receipt = execute(state, spec, tmp_path)
+        assert receipt.outcome is Outcome.FAIL  # a new failure still blocks
+        # The builder gets the new failure by name, apart from the ones that were already there.
+        from types import SimpleNamespace
+        from cpipe.delivery.hermes_worker import _delta
+        delta = _delta(SimpleNamespace(receipts=[receipt], artifact=state.artifact, activity='implement',
+                                       findings=(), plan=state.plan))
+        new = delta.split('Failure lines new since the change:')[1].split('End of the output')[0]
+        assert 'allergy denies another client' in new and 'deletes equipment' not in new
+        assert 'also failed before the change' in new
+
+
 def test_builder_sees_missing_criteria_and_redacted_output_until_the_check_passes(repo, tmp_path):
     from types import SimpleNamespace
     from cpipe.delivery.hermes_worker import _delta

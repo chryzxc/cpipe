@@ -404,8 +404,8 @@ def apply(snapshot, event):
         return quiescent(state, "cancelled")
     if event.kind == "resumed":
         # "Continue" after a stop: every approved builder and reviewer gets its full rounds again,
-        # from the code as it is now (result_artifact). Within budget it just runs; more time
-        # or calls need the same approval as the first time, for a fresh budget.
+        # from the code as it is now (result_artifact). Out of time or calls, the same plan gets a
+        # fresh budget of the approved size: asking to continue is the consent for it.
         if (not state.approved or not resumable(state)
                 or state.activity not in {"", "diagnose", "clarify"}):
             raise ValueError("only an approved delivery that stopped or waits can be resumed")
@@ -414,8 +414,7 @@ def apply(snapshot, event):
                         handover_tests=sum(r.obligation == "behavior" for r in state.receipts),
                         handover_reviews=state.review_cycles)
         if event.now >= deadline(state) or state.calls_used >= state.plan.budget.calls:
-            return continue_with(replace(state, approved=False, started_at=event.now, calls_used=0,
-                                         renewals=state.renewals + 1), "approve_envelope", "proposal")
+            state = replace(state, started_at=event.now, calls_used=0, renewals=state.renewals + 1)
         return resume_point(state)
     if event.now >= deadline(state):
         return quiescent(state, "stopped")
@@ -457,10 +456,12 @@ def apply(snapshot, event):
     if event.kind == "activity_abandoned":
         if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
             raise ValueError("abandon does not match claimed activity")
-        # A crashed step is re-issued on a fresh card; builder steps spend a call.
+        # A crashed step is re-issued on a fresh card. It spends no call: the attempt produced nothing,
+        # and the controller's strike limit bounds the retries.
         if event.action == "fresh":  # the bound session itself may be the problem
             state = replace(state, builder_session="", builder_digest="")
-        return continue_with(state, state.activity, state.phase)
+        refund = int(state.activity in {"write_tests", "implement", "review"})
+        return continue_with(replace(state, calls_used=state.calls_used - refund), state.activity, state.phase)
     if event.kind == "activity_refused":
         if not state.run_id or event.run_id != state.run_id or event.activity_id != state.active_intent:
             raise ValueError("refusal does not match claimed activity")

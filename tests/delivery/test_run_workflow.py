@@ -807,3 +807,44 @@ def test_a_delivery_frozen_before_environments_were_stored_still_resumes_elsewhe
     with native.scope() as (service, _, _home):
         state, checks = controller.ready(service, delivery_id, 's1', 'default')
     assert tuple(c.identity() for c in checks) == state.plan.checks[:-1]
+
+
+def test_a_crashing_worker_and_an_old_noisy_failure_still_end_ready_without_asking(
+        run_context, repo, hermes_home, monkeypatch):
+    """Seen live: a worker crash, then an old failure whose output changed, stopped the run for the user."""
+    from cpipe.delivery import controller
+    from cpipe.delivery.review import REVIEW_AXES
+    from cpipe.delivery.workers import WorkerResult
+    from cpipe.runtime import hermes_api as h
+    ctx, token, _, _, _, _ = run_context
+    # Fails before and after the change; the change adds passing lines and a fresh id to its output.
+    noisy = ('echo "PASS other"; [ -f double.py ] && grep -q "n \\* 2" double.py && echo "PASS new $(date +%s%N)"; '
+             'echo "x deletes equipment 1:1 error"; exit 1')
+    run_context[2]['checks'].append(dict(obligation='suite', argv=['sh', '-c', noisy], timeout_seconds=20))
+    prepare(run_context)
+    frozen = call(token, 'plan', {'draft_revision': 1})
+    delivery_id = frozen['delivery_id']
+    h.kb.init_db()
+    told, workers = [], []
+    ctx.inject_message = lambda text, **kw: told.append(text) or True
+    def worker(state, *, on_session, **kw):
+        workers.append(state.activity)
+        session = state.activity + '-fixture'
+        on_session(session)
+        if state.activity == 'implement':
+            if workers.count('implement') == 1:
+                raise RuntimeError('worker process died')
+            (Path(state.plan.worktree) / 'double.py').write_text('def double(n): return n * 2\n')
+            return WorkerResult(session, {'status': 'done'})
+        return WorkerResult(session, dict(status='approved', artifact=state.artifact,
+            reviewed_from=state.plan.base_commit, coverage=list(REVIEW_AXES), findings=[], verified_ids=[]))
+    with native.scope() as (service, _, _home):
+        reply(frozen['approval_arguments'], 'Yes')
+        with closing(h.connect(None)) as conn:
+            out = controller.run(service, delivery_id, session_id='s1', profile_id='default', conn=conn,
+                                 execute=worker, evidence_root=hermes_home / 'evidence')
+        state = service.read(delivery_id)
+    assert out['phase'] == 'locally_ready', out
+    assert workers == ['implement', 'implement', 'review', 'review']
+    assert state.calls_used == 3  # the crash cost no call
+    assert not any('approve' in text.lower() for text in told)
