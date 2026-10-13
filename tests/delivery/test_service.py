@@ -168,8 +168,11 @@ def test_missing_observation_or_setup_failure_never_creates_red_or_green():
     assert unavailable.receipts[-1].outcome is Outcome.UNAVAILABLE
 
 
-def test_checks_that_already_pass_before_any_change_still_send_the_task_to_the_builder():
-    state = claim(step(start(), "envelope_approved", "checks")[0])
+@pytest.mark.parametrize("frozen_earlier", [False, True])  # a proposal journaled before `built` loads as built
+def test_checks_that_already_pass_before_any_change_still_send_the_task_to_the_builder(frozen_earlier):
+    from dataclasses import replace
+    proposal = start()
+    state = claim(step(replace(proposal, built=True) if frozen_earlier else proposal, "envelope_approved", "checks")[0])
     names = [c.obligation for c in state.plan.checks if c.obligation != "review"]
     state, _ = step(state, "activity_observed", "implement", receipts=tuple(receipt(state, n) for n in names))
     assert state.phase == "implementing"

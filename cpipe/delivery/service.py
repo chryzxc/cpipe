@@ -412,7 +412,8 @@ def apply(snapshot, event):
         if state.phase != "proposal" or event.activity_id != state.active_intent:
             raise ValueError("approval does not match pending proposal")
         # The execution budget starts at consent, not while the plan awaits it.
-        return resume_point(replace(state, approved=True, started_at=event.now))
+        # Nothing is built at consent, also for a proposal frozen before `built` existed.
+        return resume_point(replace(state, approved=True, started_at=event.now, built=False))
     if event.kind == "activity_claimed":
         if (state.activity not in {"tests", "write_tests", "implement", "checks", "review", "publish"}
                 or event.activity_id != state.active_intent or state.run_id or not event.run_id):
