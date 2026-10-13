@@ -377,3 +377,21 @@ def test_the_behavior_check_ignores_failures_from_before_the_change_while_its_cr
             Outcome.PASS, 'pre_existing')
         out.write_text(out.read_text().replace('✓ price matrix', '✕ price matrix'))
         assert execute(state, spec, tmp_path).outcome is Outcome.FAIL  # its own criterion failing still counts
+
+
+def test_a_regression_check_with_prose_criteria_is_judged_by_its_exit_code_and_the_baseline(repo, tmp_path):
+    # Seen live: a chat model wrote "existing server test suite passes" as the criterion of an npm test
+    # regression check whose suite already had one failing test; the run stopped for the user.
+    from dataclasses import replace as swap
+    from cpipe.delivery.check_runner import take_baseline
+    out = tmp_path / 'out'
+    out.write_text('✔ diagnoses require auth (1ms)\n✖ invoice totals include tax (2ms)\n# fail 1\n')
+    spec = swap(sh(f'cat {out}; exit 1', ('existing server test suite passes',)), obligation='regression')
+    journal, service, state, spec = setup_check(repo, tmp_path, spec=spec)
+    with journal:
+        take_baseline(state, (spec,), evidence_root=tmp_path / 'evidence')
+        out.write_text('✔ lookups require auth (1ms)\n' + out.read_text())
+        receipt = execute(state, spec, tmp_path)
+        assert (receipt.outcome, receipt.reason) == (Outcome.PASS, 'pre_existing')
+        out.write_text(out.read_text() + '✖ diagnoses require auth (1ms)\n')
+        assert execute(state, spec, tmp_path).outcome is Outcome.FAIL  # something new broke

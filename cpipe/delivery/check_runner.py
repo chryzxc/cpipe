@@ -243,9 +243,11 @@ def _outcome(spec, observed):
         return Outcome.UNAVAILABLE, 'killed'
     if spec.reported:
         return _junit(spec, code, raw)
-    # Exit code alone cannot tell a failing test from one that never ran
-    # (compile/import error), so every criterion must appear in the output.
-    if not all(c.encode() in output for c in spec.criteria):
+    # Exit code alone cannot tell a failing test from one that never ran (compile/import error),
+    # so the behavior check's criteria must appear in the output. Any other check guards what
+    # already exists: its exit code, against the baseline's failures, is the answer, whatever
+    # its criteria say.
+    if spec.obligation == 'behavior' and not all(c.encode() in output for c in spec.criteria):
         return Outcome.UNAVAILABLE, 'criteria_not_in_output'
     return (Outcome.PASS if code == 0 else Outcome.FAIL), ''
 
@@ -304,7 +306,7 @@ def _mark(line):
 
 
 # How common runners (pytest, jest, vitest, mocha, go, cargo, unittest) mark a failing test or an error.
-_FAILED = re.compile(rb'fail|error|exception|traceback|panic|assert|expected|\u2715|\u2717|\u00d7|\u25cf'
+_FAILED = re.compile(rb'fail|error|exception|traceback|panic|assert|expected|\u2715|\u2716|\u2717|\u2718|\u00d7|\u25cf'
                      .decode('unicode_escape').encode(), re.I)
 
 

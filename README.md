@@ -237,7 +237,7 @@ Each check has an `obligation`, an `argv`, `criteria` and a `timeout_seconds`. E
   - `name`;
   - `classname::name`;
   - the title under describe blocks (vitest's `describe > title`, jest's `describe title`).
-- **Without `{report}`:** the exit code decides, and every criterion must appear in the output. That way a build error is never mistaken for a failing test. Runners that do not print every test name (jest running several files) need `{report}`.
+- **Without `{report}`:** the exit code decides. The behavior check's criteria must also appear in the output, so a build error is never mistaken for a failing test. Other checks are judged by the exit code alone, against the failures that were there before the change. Runners that do not print every test name (jest running several files) need `{report}`.
 
 ```text
 ["uv", "run", "pytest", "tests/test_x.py", "--junitxml={report}"]
