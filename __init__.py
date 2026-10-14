@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-SKILLS = ("run", "plan", "build", "verify", "review", "report")
+SKILLS = ("run", "plan", "design", "build", "verify", "qa", "review", "report")
 START = "Load the skill cpipe:run with skill_view and follow it to deliver this task:\n\n"
 
 
@@ -12,7 +12,7 @@ def register(ctx):
         ctx.register_skill(name, skills / name / "SKILL.md")
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cp-run", lambda raw="": _start(ctx, raw),
-                             description="Deliver a task: plan, build, verify, review, report",
+                             description="Deliver a task: explore, design, plan, build, verify, QA, review, report",
                              args_hint="<task>", argument_mode="text")
 
 

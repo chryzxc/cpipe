@@ -27,17 +27,22 @@ hermes plugins enable cpipe
 ## Flow
 
 ```
-understand → clarify once → plan → approve → worktree + dependencies
+set up (worktree + dependencies) → explore → design → clarify once → plan → approve
    → tests first (RED) → build (GREEN, one verified change at a time) → verify
-   → independent review (≤ 2 rounds) → clean up → verify → commit → report
+   → QA on the real surface → independent review (≤ 2 rounds) → clean up → verify → commit → report
 ```
+
+Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change)
+is skipped with its reason in the run log. The checks and the report are always done by the chat itself.
 
 | Skill | Step |
 |---|---|
 | `cpipe:run` | The flow, the rules, the run log, playbooks per task kind |
-| `cpipe:plan` | Understand the code, find the checks and their baseline, clarify once, plan, approval |
-| `cpipe:build` | Worktree and dependencies, tests first, implement, cleanup pass |
+| `cpipe:plan` | Worktree and dependencies, explore the code, the checks and their baseline, clarify once, plan, approval |
+| `cpipe:design` | States, flow, copy, accessibility and edge cases of anything user-facing |
+| `cpipe:build` | Tests first, implement, cleanup pass |
 | `cpipe:verify` | Run the checks with honest states, work around checks that will not run, completion gate |
+| `cpipe:qa` | Use the change on the real surface, walk the acceptance criteria, try to break it, broader suite |
 | `cpipe:review` | Independent review by a subagent, findings sorted into act, consider, noted and dismissed |
 | `cpipe:report` | Commit, a draft pull request only when asked, the report |
 
@@ -48,8 +53,11 @@ profiles, create `~/.hermes/cpipe.yaml`:
 
 ```yaml
 roles:
+  explore: <profile>    # maps the code before planning
+  design: <profile>     # designs the user-facing side
   plan: <profile>       # drafts the plan
   build: <profile>      # writes the tests and the code
+  qa: <profile>         # uses the change like a user would
   review: <profile>     # reviews the change
   security: <profile>   # second reviewer for security-sensitive changes
 ```

@@ -1,7 +1,7 @@
 ---
 name: build
-description: "cpipe: worktree, tests first, implement, clean up."
-version: 3.0.0
+description: "cpipe: tests first, implement, clean up."
+version: 3.1.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -12,41 +12,32 @@ metadata:
 
 # cpipe: build
 
-Steps 4, 5 and 8 of `cpipe:run`.
+Steps 6 and 10 of `cpipe:run`. If the roles file names a `build` profile, hand both steps to it (`roles.md` in
+`cpipe:run`), then verify what it reports with `cpipe:verify`. Otherwise do them yourself.
 
-## 4. Worktree
+## 6. Build
 
-1. Create a branch and worktree from the plan's base, beside the repository:
-   `git worktree add -b cp/<short-slug> <repo>-worktrees/cp-<short-slug> <base>`. Follow the project's own
-   worktree convention instead if its instructions name one. Never build in the user's own checkout.
-2. **Dependencies.** A fresh worktree has none installed. Install them inside the worktree the way the project
-   does (its lockfile and CI show how): `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable`,
-   `uv sync`, `pip install -e .` into the project's virtual environment, and so on. Never install globally, and do
-   not change the lockfile unless the task is about dependencies. Copy local env files the project needs
-   (`.env`) from the user's checkout only if the checks need them, and never print their contents.
-3. Start the run log (see `cpipe:run`).
+Follow the playbook from the plan. In every playbook:
 
-## 5. Build
+1. **Tests first.** Write the tests for the acceptance criteria and see them fail for the right reason (an
+   assertion, not an import error) before writing the change. The playbook says what proof the kind needs.
+2. **Climb the ladder** before writing code: does it need to exist, does the codebase already have it, does the
+   standard library or an installed dependency do it. Then write the minimum that works.
+3. **One change at a time.** Make a change, run the narrow test, keep it if it moves toward the acceptance
+   criteria, otherwise undo it and try a different idea. Never stack two unverified changes.
+4. **Narrow tests while working**, the plan's full checks at the end of each round (`cpipe:verify`).
+5. **A round** ends with a row in the run log: what changed, why, the check results.
 
-If the roles file names a `build` profile, hand this step and the cleanup to it (`roles.md` in `cpipe:run`)
-and verify what it reports. Otherwise follow the playbook from the plan. In every playbook:
-
-- **Climb the ladder** before writing code: does it need to exist, does the codebase already have it, does the
-  standard library or an installed dependency do it. Then write the minimum that works.
-- **One change at a time.** Make a change, run the narrow test, keep it if it moves toward the acceptance
-  criteria, otherwise undo it and try a different idea. Never stack two unverified changes.
-- **Narrow tests while working**, the plan's full checks at the end of each round (`cpipe:verify`). Do not rerun
-  the whole suite after every edit; it costs time and tokens.
-- **Side discoveries** that block the acceptance (a broken helper, a wrong fixture): fix them inside the scope and
-  note them. Anything outside the scope goes in the report.
-- **A round** ends with a row in the run log: what changed, why, the check results.
+Side discoveries that block the acceptance (a broken helper, a wrong fixture): fix them inside the scope and note
+them. Anything outside the scope goes in the report.
 
 Commands you cannot run as written (an approval policy blocks inline `-c`/`-e` code, `sh -c` or heredocs): write
 the script to a file and run the file, or call the program directly with its arguments. This never ends a step.
 
-## 8. Clean
+## 10. Clean
 
-Once, after the review is clean. Read your whole diff (`git diff <base>...HEAD`) as a stranger would and remove:
+Once, after the review. Read the whole diff (`git diff <base>...HEAD` plus uncommitted changes) as a stranger
+would and remove:
 
 - dead code, debug output, commented-out code;
 - duplicates of helpers the codebase already has (reuse them);
@@ -54,3 +45,17 @@ Once, after the review is clean. Read your whole diff (`git diff <base>...HEAD`)
 - comments that restate the code; keep the ones that explain why.
 
 Then run the checks again. If anything turns red, undo the cleanup change that caused it.
+
+## Rules
+
+- Only the plan's scope. Never reformat, rename or "improve" code the task does not need.
+- Follow the project's style, patterns and instructions over your own preferences.
+- Never skip, weaken or delete a test, and never add `.only`, `skip` or expected-failure markers.
+- Never hard-code secrets, test credentials or environment-specific paths.
+- No new dependency unless the plan names it.
+- Do not commit in this step; the report step commits.
+
+## Done when
+
+Every acceptance criterion has a test or a recorded check, the narrow tests pass, and the round is in the run
+log. For step 10: the cleanup pass is done and the checks are back to their state before it.

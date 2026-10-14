@@ -8,45 +8,69 @@ Optional. Without a roles file, you run every step yourself in this chat.
 
 ```yaml
 roles:
-  plan: <profile>       # drafts the plan (step 3)
-  build: <profile>      # writes the tests and the code (steps 5 and 8)
-  review: <profile>     # the reviewer (step 7)
-  security: <profile>   # second reviewer when the change touches security-sensitive code
+  explore: <profile>    # maps the code (step 2)
+  design: <profile>     # the user-facing design note (step 3)
+  plan: <profile>       # drafts the plan (step 5)
+  build: <profile>      # writes the tests and the code, and the cleanup (steps 6 and 10)
+  qa: <profile>         # uses the change like a user would (step 8)
+  review: <profile>     # the reviewer (step 9)
+  security: <profile>   # second reviewer when the change touches security-sensitive code (step 9)
 ```
 
-Every key is optional. A role that is missing or empty is done by you in this chat, as usual. Read the file
-once at step 1, record the roles in the run log, and tell the user in one line who does each step, for example:
-`Roles: plan → archon, build → forge, review → this chat (no profile set), security → this chat (no profile set)`.
-Without a roles file, say `Roles: no cpipe.yaml, every step runs in this chat`. This is a notice, not a
-question: keep going.
+Every key is optional; a role that is missing or empty is done by you in this chat. Read the file once in step 1,
+write the roles in the run log, and tell the user in one line who does each step:
+
+`Roles: explore → <profile>, design → this chat (no profile set), plan → <profile>, build → <profile>, …`
+
+Without a roles file: `Roles: no cpipe.yaml, every step runs in this chat`. This is a notice, not a question:
+keep going.
 
 ## Handing a step to a role
 
-You stay in charge of the run: you run the flow, the checks, the run log and every decision. A role only does
-the work of its step and reports back.
+You stay in charge: the flow, the checks, the run log and every decision are yours. A role does the work of its
+step and reports back.
 
-1. Write the brief to a file in the run log's directory (`brief-<step>.md`). It starts with: "Direct request
-   from a delivery run, no task board: do this work and reply with the result." Then:
-   - **plan:** the request, the repository, what you found in step 1 (instructions, code, checks, baseline).
-     Ask for the plan in the format of `cpipe:plan`.
-   - **build:** the approved plan, the worktree path, the playbook, the run log path. Ask it to build in that
-     worktree only, commit nothing, and reply with what changed and which tests it ran.
+1. **Brief.** Write it to a file next to the run log (`brief-<role>.md`). Start with:
+
+   ```
+   Direct request from a delivery run. No task board, no cards: do this work and reply with the result.
+   Work only in <worktree>. Do not commit, push, merge, open pull requests or message anyone.
+   Do not skip or weaken tests. Never print secrets or .env contents.
+   ```
+
+   Then the role's part:
+   - **explore:** the request and the worktree. Ask for a read-only map: the instructions that apply, the files
+     to change and their callers, helpers to reuse, the check commands. Paths and line numbers, no edits.
+   - **design:** the request, the explore map, and the steps of `cpipe:design`. Ask for the design note.
+   - **plan:** the request, the explore map, the baseline and the design note. Ask for a plan in the format of
+     `cpipe:plan` step 5.
+   - **build:** the approved plan, the playbook, the run log path. Ask it to follow `cpipe:build` and reply with
+     what changed and which tests it ran with their results.
+   - **qa:** the acceptance criteria, the design note, how to start the app. Ask it to follow `cpipe:qa`
+     without editing code and reply with each item's result and evidence.
    - **review / security:** the reviewer brief from `cpipe:review`.
-2. Run it in the worktree:
-   `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds>`.
-   Use your terminal's background mode with a completion notification when it has one; otherwise a long
-   timeout. Keep the session id it prints.
-3. Follow-ups to the same role (a fix round, a delta review) resume its session:
-   `hermes -p <profile> chat -Q --resume <session id> --query-file <brief>`.
+
+2. **Run** it in the worktree:
+   `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds>`
+   Budgets: explore, design and plan 900; review and security 1200; qa 1800; build 3600. Use your terminal's
+   background mode with a completion notification when it has one; otherwise a timeout above the budget. Keep the
+   session id it prints.
+
+3. **Follow-ups** to the same role (a fix round, a delta review) resume its session:
+   `hermes -p <profile> chat -Q --resume <session id> --query-file <brief>`
 
 ## What comes back is a claim
 
-Read the result against the worktree yourself. After a build, run `cpipe:verify`: its states are the truth, not
-the role's summary. After a review, sort the findings yourself as `cpipe:review` says.
+- After explore: open the files it cites before you rely on them.
+- After design or plan: check the draft against the code and the baseline; you write the final version.
+- After build: `git status` and the diff in the worktree, then `cpipe:verify`. Its states are the truth, not the
+  role's summary. Undo anything outside the plan's scope.
+- After QA: reproduce a failure yourself before acting on it.
+- After review: sort the findings yourself as `cpipe:review` says.
 
 ## When a role fails
 
-The profile does not exist, the command errors, it times out, or it returns nothing usable: try once more with
-a shorter brief, then do the step yourself in this chat. Tell the user in one line when it happens
-(`build: forge failed (<reason>), running it in this chat`) and note it in the run log and the report. A role
+The profile does not exist, the command errors, it times out, it returns nothing usable, or it broke a rule in
+the brief: try once more with a shorter brief, then do the step yourself in this chat. Tell the user in one line
+(`build: <profile> failed (<reason>), running it in this chat`) and note it in the run log and the report. A role
 failing is never a reason to stop the run.

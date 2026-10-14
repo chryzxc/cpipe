@@ -1,28 +1,27 @@
 ---
 name: run
 description: "Deliver a coding task to reviewed, verified code."
-version: 3.0.0
+version: 3.1.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [delivery, tdd, code-review, verification, autonomous]
-    related_skills: [cpipe:plan, cpipe:build, cpipe:verify, cpipe:review, cpipe:report]
+    related_skills: [cpipe:plan, cpipe:design, cpipe:build, cpipe:verify, cpipe:qa, cpipe:review, cpipe:report]
 ---
 
 # cpipe: run
 
-Takes one development task from request to code that is ready for the user's review: clarify once, plan, one
-approval, tests first, build, verify with the project's own checks, independent review, a cleanup pass, and an
-honest report. You run every step yourself in this chat, with your normal tools. The skills are your
-instructions; nothing else drives the flow.
+Takes one development task from request to code that is ready for the user's review. You run the flow in this
+chat with your normal tools; the cpipe skills are your instructions and nothing else drives it. Steps can be
+handed to the user's own profiles (see Roles), but you stay in charge of the run.
 
 ## The one rule: keep going
 
 An obstacle is something to work around, never a reason to stop. A blocked command, a broken test runner, a
-missing dependency, a flaky check, a tool error, a subagent that returns nothing, a reviewer asking for evidence
-this machine cannot produce: work around it (the table in `cpipe:verify` covers the common ones), write what you
-could not verify in the run log, and continue with the next step.
+missing dependency, a flaky check, a tool error, a profile or subagent that returns nothing, a reviewer asking
+for evidence this machine cannot produce: work around it (`cpipe:verify` has a table for the common ones), write
+what you could not verify in the run log, and continue with the next step.
 
 Stop and ask the user only for:
 
@@ -32,34 +31,39 @@ Stop and ask the user only for:
    question that the request, the code and a sensible default do not settle.
 3. **An open security finding** you cannot fix inside the scope.
 
-Everything else is yours to solve. When you are unsure, pick the reversible default, note it as an assumption,
-and keep going. A message from the user mid-run is steering, not a stop: answer it in one line and continue.
+Everything else is yours to solve. When unsure, pick the reversible default, note it as an assumption and keep
+going. A message from the user mid-run is steering, not a stop: answer it in one line and continue.
 
 The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run or debug
 anything, and never end with "fix the cause and say continue". If you can do it, do it. A question to the user is
-only ever a decision from the list above, asked once with your proposed default.
+only ever a decision from the list above, asked once, with your proposed default.
 
 ## Flow
 
-Track the steps with your todo tool if you have one, one step active at a time.
+Track the steps with your todo tool if you have one, one step active at a time. Load each skill with
+`skill_view` when you reach its step, not before.
 
-| Step | Do | Skill |
-|---|---|---|
-| 1. Understand | Find the repo, read its instructions, read only the code the task touches, find the checks, run a baseline. | `cpipe:plan` |
-| 2. Clarify | One batched question, only for decisions you cannot default. Everything else becomes an assumption. | `cpipe:plan` |
-| 3. Plan | Short plan: goal, kind, scope, acceptance, checks with baseline, assumptions. Ask for approval once. | `cpipe:plan` |
-| 4. Worktree | A new branch and worktree from the base; install the project's dependencies there. | `cpipe:build` |
-| 5. Build | Follow the playbook for the task kind (below). One verified change at a time. | `cpipe:build` |
-| 6. Verify | Run the plan's checks, record an honest state for each, run the completion gate. | `cpipe:verify` |
-| 7. Review | Independent review in a fresh context; act on findings; at most two rounds. | `cpipe:review` |
-| 8. Clean | One cleanup pass over your own diff, then verify again. | `cpipe:build` |
-| 9. Report | Commit, open a draft pull request only if asked, and report. | `cpipe:report` |
+| Step | Do | Skill | Role |
+|---|---|---|---|
+| 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log. | `cpipe:plan` | |
+| 2. Explore | Read the instructions, map the code the task touches, find the checks, run a baseline. | `cpipe:plan` | explore |
+| 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `cpipe:design` | design |
+| 4. Clarify | One batched question, only for decisions you cannot default. | `cpipe:plan` | |
+| 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. Approval once. | `cpipe:plan` | plan |
+| 6. Build | Tests first, then the change, following the playbook. One verified change at a time. | `cpipe:build` | build |
+| 7. Verify | Run the plan's checks with honest states; completion gate. | `cpipe:verify` | |
+| 8. QA | Use the change on the real surface, try to break it, run the broader suite. | `cpipe:qa` | qa |
+| 9. Review | Independent review in a fresh context; act on findings; at most two rounds. | `cpipe:review` | review, security |
+| 10. Clean | One cleanup pass over the diff, then verify again. | `cpipe:build` | build |
+| 11. Report | Commit, a draft pull request only if asked, the report. | `cpipe:report` | |
 
-Load each skill with `skill_view` when you reach its step, not before.
+Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
+skipped with a one-line reason in the run log, never silently. Steps 7 and 11 are always yours: the checks and
+the final word are never handed to anyone else.
 
 ## Playbooks
 
-Pick one from the task in step 1 and load it with
+Pick the kind in step 2 and load its playbook with
 `skill_view(name='cpipe:run', file_path='playbooks/<kind>.md')`:
 
 | Kind | When | Playbook |
@@ -71,23 +75,23 @@ Pick one from the task in step 1 and load it with
 
 A task that mixes kinds uses the stricter playbook (bug or feature over refactor or chore).
 
-## Roles (optional)
+## Roles
 
-If `${HERMES_HOME:-~/.hermes}/cpipe.yaml` exists, it names a Hermes profile for some roles (plan, build,
-review, security). Hand those steps to the named profiles as described in
-`skill_view(name='cpipe:run', file_path='roles.md')`; you still run the flow and verify their work. Without the
-file, or for a role it does not name, do the step yourself. Either way, tell the user once at the start who
-does each step.
+If `${HERMES_HOME:-~/.hermes}/cpipe.yaml` exists, it names a Hermes profile for some of the roles in the flow
+table. Hand those steps to the named profiles as `skill_view(name='cpipe:run', file_path='roles.md')` describes.
+Without the file, or for a role it does not name, do the step yourself. Either way, tell the user once at the
+start who does each step.
 
 ## Run log
 
-Keep one log per run at `$(git rev-parse --git-dir)/cpipe/run.md` in the delivery worktree. It is never
-committed and survives a restart. Append, never rewrite:
+One log per run at `$(git rev-parse --git-dir)/cpipe/run.md`, run inside the delivery worktree. Never committed;
+it survives a restart. Append, never rewrite:
 
-- the plan (or a link to it) and the approval;
+- the task, the roles, the base and the worktree;
+- the explore map, the baseline, the design note, the plan and the approval;
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
-- review findings and what you did with each.
+- QA results, review findings and what you did with each.
 
 ## Continue
 
@@ -96,17 +100,32 @@ check results in the worktree, and pick up at the first unfinished step. Do not 
 
 ## Limits
 
-These keep a run from grinding. Reaching one is not a stop: hand over what you have, with the open items listed.
+These keep a run from grinding. Reaching one is not a stop: record the open items and move to the next step.
 
-- A failing check: three fix attempts with a different idea each, then record it as open and move on.
+- A failing check: three fix attempts, each with a different idea, then record it as open.
+- QA failures: two fix rounds, then record what is still failing.
 - Review: two rounds. The second checks only the changes since the first.
-- No progress for three rounds in a row: step back, change the approach once, then hand over.
+- No progress for three rounds in a row: step back, change the approach once, then go to the report.
 
-## Never
+## Guard rails
 
-- Merge, push, open a pull request, deploy or message anyone unless the user asked for it in this task.
-- Skip, weaken, delete or mark as expected-failure a test to make a check pass.
-- Touch the user's own checkout, other branches, or files outside the plan's scope (say so if scope must grow).
-- Put credentials, tokens or secrets in code, commits, logs or the report.
-- Report a check as passed that you did not run and read.
-- Add AI attribution to commits or pull requests.
+**Scope**
+- Work only in the delivery worktree. Never edit the user's own checkout, other branches or other worktrees.
+- Change only what the plan's scope names. If the scope must grow, say so in one line and note it; ask only if
+  the growth is destructive or a product decision.
+
+**Safety**
+- Never merge, push, open a pull request, deploy or message anyone unless the user asked for it in this task.
+- Never put credentials, tokens or secrets in code, commits, logs, briefs or the report. Never print `.env`
+  contents.
+- Never run destructive commands outside the worktree (deleting data, resetting branches, dropping databases).
+- Never add AI attribution to commits or pull requests.
+
+**Honesty**
+- Never report a check as passed that you did not run and read on the current tree.
+- Never skip, weaken, delete or mark as expected-failure a test to make a check pass.
+- A profile's or subagent's "done" is a claim until you have checked it yourself.
+
+**Cost**
+- Read once, in explore; do not re-read the repository in later steps.
+- Narrow tests while building; the full checks once per round.

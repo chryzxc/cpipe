@@ -1,7 +1,7 @@
 ---
 name: verify
 description: "cpipe: run checks honestly and work around blockers."
-version: 3.0.0
+version: 3.1.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -12,7 +12,8 @@ metadata:
 
 # cpipe: verify
 
-Step 6 of `cpipe:run`, and whenever a playbook says to verify.
+Step 7 of `cpipe:run`, and whenever a playbook or another step says to verify. Always yours: never handed to a
+profile, because its states are what the report trusts.
 
 ## Run the checks
 
@@ -62,3 +63,15 @@ Before the review and before the report, check the diff (`git diff <base>...HEAD
 - The acceptance criteria each have proof: a test, a check, or a recorded manual verification.
 
 Fix what fails the gate, then verify again.
+
+## Rules
+
+- A state is only what you saw on this tree. No result is carried over from before a change.
+- Never fake a pass, never skip or delete a test, never edit a check's command or config to make it pass.
+- Never run checks against production systems or real customer data.
+- Workarounds are recorded, every one, with what they prove and what they do not.
+
+## Done when
+
+Every check from the plan has a state on the current tree, every new failure is fixed or recorded as open after
+three attempts, and the completion gate passes.

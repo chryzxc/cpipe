@@ -1,7 +1,7 @@
 ---
 name: review
 description: "cpipe: independent review in a fresh context."
-version: 3.0.0
+version: 3.1.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -12,7 +12,7 @@ metadata:
 
 # cpipe: review
 
-Step 7 of `cpipe:run`. The builder never approves its own work: the review runs in a fresh context that did not
+Step 9 of `cpipe:run`. The builder never approves its own work: the review runs in a fresh context that did not
 write the code.
 
 ## 1. Brief the reviewer
@@ -66,4 +66,18 @@ Fix the **act** findings, run `cpipe:verify`, then one more review round. Round 
 reviewer the diff since the first review and the list of earlier findings to confirm as resolved.
 
 After two rounds, stop reviewing. Anything still open goes into the report with its disposition. Then go to the
-cleanup step (`cpipe:build`, step 8).
+cleanup step (`cpipe:build`, step 10).
+
+## Rules
+
+- The reviewer reads; it never edits the code. You make every fix.
+- Brief the reviewer with facts (goal, acceptance, diff, check states), not your reasoning or your verdict.
+- Never dismiss a finding without evidence in the run log, and never dismiss a security finding by judgment
+  alone.
+- Never widen the scope to satisfy a reviewer: an out-of-scope finding is **consider**.
+- Two rounds at most.
+
+## Done when
+
+Every finding has a disposition in the run log, every **act** finding is fixed and verified, and the review is
+clean or its open items are recorded for the report.

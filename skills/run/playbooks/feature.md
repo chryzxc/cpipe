@@ -11,9 +11,8 @@ and the behavior exercised on the real surface where it is reachable.
    assertion. Record the output.
 4. **GREEN.** Implement in small verified steps: one change, run the narrow test, next change. Never two
    unverified changes in a row.
-5. **Surface.** Exercise the feature where a user meets it when you can: the CLI, an API call, the page. Tests
-   alone do not prove a feature. If the surface is not reachable here (no browser, no service), record it.
-6. **Verify** with `cpipe:verify`.
+5. **Verify** with `cpipe:verify`, then exercise the feature where a user meets it with `cpipe:qa`. Tests alone
+   do not prove a feature.
 
 Large features: split into units that never touch the same file. Do them in order yourself, or hand independent
 units to subagents in parallel with exact file lists, and review every diff they return yourself.
