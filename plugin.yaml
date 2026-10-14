@@ -1,10 +1,10 @@
 name: cpipe
-version: 2.1.0
+version: 3.0.0
 manifest_version: 2
 api_version: 1
-provides_tools: [cpipe_execute_intent, cpipe_approve_plan]
+provides_tools: []
 provides_hooks: []
-description: "Delivers a development task to reviewed, locally verified code: one approval, background runs checked by your own tests, independent review and self-recovery."
+description: "Delivers a coding task to reviewed, verified code: clarify once, plan, tests first, build, verify, independent review, report. Skills only; the model runs every step."
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
-tags: [hermes-agent, development-workflow, testing, code-review, tdd, ai-agents]
+tags: [hermes-agent, development-workflow, testing, code-review, tdd, skills]
