@@ -28,7 +28,8 @@ Steps 4, 5 and 8 of `cpipe:run`.
 
 ## 5. Build
 
-Follow the playbook from the plan. In every playbook:
+If the roles file names a `build` profile, hand this step and the cleanup to it (`roles.md` in `cpipe:run`)
+and verify what it reports. Otherwise follow the playbook from the plan. In every playbook:
 
 - **Climb the ladder** before writing code: does it need to exist, does the codebase already have it, does the
   standard library or an installed dependency do it. Then write the minimum that works.

@@ -41,6 +41,22 @@ understand → clarify once → plan → approve → worktree + dependencies
 | `cpipe:review` | Independent review by a subagent, findings sorted into act, consider, noted and dismissed |
 | `cpipe:report` | Commit, a draft pull request only when asked, the report |
 
+### Roles (optional)
+
+By default the chat does every step itself, with a subagent as the reviewer. To hand steps to your own Hermes
+profiles, create `~/.hermes/cpipe.yaml`:
+
+```yaml
+roles:
+  plan: <profile>       # drafts the plan
+  build: <profile>      # writes the tests and the code
+  review: <profile>     # reviews the change
+  security: <profile>   # second reviewer for security-sensitive changes
+```
+
+Every role is optional. The chat still runs the flow, runs the checks itself and treats each profile's answer as
+a claim to verify. If a profile fails or times out, the chat retries once and then does the step itself.
+
 ### Playbooks
 
 | Kind | Proof |

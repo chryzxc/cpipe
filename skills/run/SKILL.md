@@ -71,6 +71,13 @@ Pick one from the task in step 1 and load it with
 
 A task that mixes kinds uses the stricter playbook (bug or feature over refactor or chore).
 
+## Roles (optional)
+
+If `${HERMES_HOME:-~/.hermes}/cpipe.yaml` exists, it names a Hermes profile for some roles (plan, build,
+review, security). Hand those steps to the named profiles as described in
+`skill_view(name='cpipe:run', file_path='roles.md')`; you still run the flow and verify their work. Without the
+file, or for a role it does not name, do the step yourself.
+
 ## Run log
 
 Keep one log per run at `$(git rev-parse --git-dir)/cpipe/run.md` in the delivery worktree. It is never

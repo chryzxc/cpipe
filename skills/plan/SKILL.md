@@ -40,7 +40,8 @@ If the request and the code settle everything, ask nothing.
 
 ## 3. Plan
 
-Write a short plan in the chat (save it to the run log too):
+If the roles file names a `plan` profile, have it draft the plan (`roles.md` in `cpipe:run`) and check the draft
+against what you found. Write a short plan in the chat (save it to the run log too):
 
 - **Goal:** one sentence, in the user's words.
 - **Kind** and playbook.

@@ -19,7 +19,8 @@ write the code.
 
 Use your subagent tool (`delegate_task` or equivalent) for one reviewer. Use two in parallel when the change
 touches authentication, permissions, payments, data deletion or migrations; findings both report are high
-confidence. If the user named a reviewer profile or model, use that.
+confidence. If the roles file names a `review` (and, for those areas, a `security`) profile, the reviewer is
+that profile instead (`roles.md` in `cpipe:run`).
 
 Give the reviewer only what it needs, not your reasoning:
 
