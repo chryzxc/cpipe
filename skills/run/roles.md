@@ -15,7 +15,10 @@ roles:
 ```
 
 Every key is optional. A role that is missing or empty is done by you in this chat, as usual. Read the file
-once at step 1 and record the roles in the run log.
+once at step 1, record the roles in the run log, and tell the user in one line who does each step, for example:
+`Roles: plan → archon, build → forge, review → this chat (no profile set), security → this chat (no profile set)`.
+Without a roles file, say `Roles: no cpipe.yaml, every step runs in this chat`. This is a notice, not a
+question: keep going.
 
 ## Handing a step to a role
 
@@ -44,5 +47,6 @@ the role's summary. After a review, sort the findings yourself as `cpipe:review`
 ## When a role fails
 
 The profile does not exist, the command errors, it times out, or it returns nothing usable: try once more with
-a shorter brief, then do the step yourself in this chat. Note it in the run log and the report. A role
+a shorter brief, then do the step yourself in this chat. Tell the user in one line when it happens
+(`build: forge failed (<reason>), running it in this chat`) and note it in the run log and the report. A role
 failing is never a reason to stop the run.

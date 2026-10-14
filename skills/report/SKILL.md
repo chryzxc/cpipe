@@ -47,6 +47,7 @@ Then, briefly:
 | Branch | the branch and worktree path |
 | Commit | short SHA and subject; the pull request link if one was opened |
 | Changes | `git diff --stat` summary |
+| Roles | who did each step (a profile or this chat), and any fallback |
 
 - **Checks:** each with its state (pass, fail, baseline, not run here), and for "not run here" what was done
   instead.

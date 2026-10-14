@@ -55,7 +55,8 @@ roles:
 ```
 
 Every role is optional. The chat still runs the flow, runs the checks itself and treats each profile's answer as
-a claim to verify. If a profile fails or times out, the chat retries once and then does the step itself.
+a claim to verify. At the start of each run it tells you who does each step; a role with no profile runs in the
+chat. If a profile fails or times out, the chat retries once, tells you, and does the step itself.
 
 ### Playbooks
 
