@@ -1,7 +1,7 @@
 ---
 name: design
-description: "cpipe: design the user-facing side before planning."
-version: 3.5.0
+description: "Step 3 of /cpipe: states, flow, copy, accessibility."
+version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

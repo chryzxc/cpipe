@@ -13,7 +13,7 @@ def register(ctx):
         ctx.register_skill(name, skills / name / "SKILL.md")
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
-                             description="Deliver a task: explore, design, plan, build, verify, QA, review, report",
+                             description="Deliver a coding task unattended, from request to report",
                              args_hint="<task>", argument_mode="text")
 
 

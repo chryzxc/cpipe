@@ -1,7 +1,7 @@
 ---
 name: review
-description: "cpipe: independent review in a fresh context."
-version: 3.5.0
+description: "Step 9 of /cpipe: independent review of the diff."
+version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

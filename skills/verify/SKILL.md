@@ -1,7 +1,7 @@
 ---
 name: verify
-description: "cpipe: run checks honestly and work around blockers."
-version: 3.5.0
+description: "Step 7 of /cpipe: run the checks, honest results."
+version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

@@ -1,7 +1,7 @@
 ---
 name: run
-description: "Deliver a coding task to reviewed, verified code."
-version: 3.5.0
+description: "Deliver a coding task unattended, from request to report."
+version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

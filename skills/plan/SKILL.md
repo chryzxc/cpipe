@@ -1,7 +1,7 @@
 ---
 name: plan
-description: "cpipe: set up, explore, decide open questions, plan."
-version: 3.5.0
+description: "Steps 1-2, 4-5 of /cpipe: worktree, explore, plan."
+version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

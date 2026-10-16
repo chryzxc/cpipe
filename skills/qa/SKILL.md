@@ -1,7 +1,7 @@
 ---
 name: qa
-description: "cpipe: exercise the change like a user would."
-version: 3.5.0
+description: "Step 8 of /cpipe: use the change like a real user."
+version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

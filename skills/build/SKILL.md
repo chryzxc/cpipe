@@ -1,7 +1,7 @@
 ---
 name: build
-description: "cpipe: tests first, implement, clean up."
-version: 3.5.0
+description: "Steps 6 and 10 of /cpipe: tests first, build, clean up."
+version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
