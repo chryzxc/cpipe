@@ -1,7 +1,7 @@
 ---
 name: design
 description: "cpipe: design the user-facing side before planning."
-version: 3.2.0
+version: 3.3.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

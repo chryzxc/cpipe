@@ -1,7 +1,7 @@
 ---
 name: plan
 description: "cpipe: set up, explore, clarify once, plan, approval."
-version: 3.2.0
+version: 3.3.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -20,16 +20,21 @@ not repeat it.
 1. **Repository and base.** `git rev-parse --show-toplevel`, `git remote -v`, `git status --short --branch`, the
    default branch. If the task names a repository, path or base branch, use it; if several repositories match,
    pick the one the conversation used. Fetch the base so it is current.
-2. **Worktree.** A new branch and worktree from the base, beside the repository:
-   `git worktree add -b cp/<short-slug> <repo>-worktrees/cp-<short-slug> <base>`. Follow the project's own
+2. **Branch name.** Name the branch the way the project does: its instructions, your skills, or the pattern of
+   its recent branches (`git branch -r --sort=-committerdate | head -20`), such as `<area>/fix/<slug>`. With no
+   pattern, use `<type>/<short-slug>` with the type of the change (`fix`, `feat`, `refactor`, `chore`). Pull
+   request tooling often reads the type from the branch name, so it must match the change: if step 2 finds a
+   different kind, rename the branch with `git branch -m` before anything is pushed.
+3. **Worktree.** A new branch and worktree from the base, beside the repository:
+   `git worktree add -b <branch> <repo>-worktrees/<branch with / replaced by -> <base>`. Follow the project's own
    worktree convention instead if its instructions name one. If the name exists, add a suffix; never reuse or
    reset someone else's branch.
-3. **Dependencies.** Install them inside the worktree the way the project does (its lockfile and CI show how):
+4. **Dependencies.** Install them inside the worktree the way the project does (its lockfile and CI show how):
    `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable`, `uv sync`, `pip install -e .` into
    the project's virtual environment. Never install globally; do not change the lockfile unless the task is about
    dependencies. Copy local env files (`.env`) from the user's checkout only if the checks need them, and never
    print their contents.
-4. **Run log.** Start it (`cpipe:run`) with the task, the base, the worktree and the roles line.
+5. **Run log.** Start it (`cpipe:run`) with the task, the base, the worktree and the roles line.
 
 If the install fails, try the next way from `cpipe:verify` and record it; a failed install never ends the run.
 
@@ -49,7 +54,8 @@ files it cites to confirm. Otherwise do it yourself:
 4. **Baseline.** Run those checks once in the worktree, before any change, and record each result: pass, fail
    (which tests) or not run here (why). A check already red is the baseline, not your job, unless the task is to
    fix it. If a check will not run, work through `cpipe:verify` now, so the plan names commands that work.
-5. **Kind.** bug, feature, refactor or chore (`cpipe:run`). Load the playbook.
+5. **Kind.** bug, feature, refactor or chore (`cpipe:run`). Load the playbook. If the branch type from step 1
+   does not match the kind, rename the branch now.
 
 ## 4. Clarify once
 

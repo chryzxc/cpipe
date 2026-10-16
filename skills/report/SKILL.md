@@ -1,7 +1,7 @@
 ---
 name: report
 description: "cpipe: commit, optional draft PR, honest report."
-version: 3.2.0
+version: 3.3.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

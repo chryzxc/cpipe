@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task to reviewed, verified code."
-version: 3.2.0
+version: 3.3.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -68,7 +68,8 @@ your skill list for a skill that covers that step's work (writing a pull request
 security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`. Where it
 and a cpipe skill differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
 still decides the flow and the guard rails: a user skill never authorizes a push, merge or message the task did
-not ask for. Note in the run log which user skills you used.
+not ask for. Take from a user skill how the work is done, not a different flow: skip its parts about task
+boards, cards or handing work to other agents. Note in the run log which user skills you used.
 
 ## Playbooks
 
