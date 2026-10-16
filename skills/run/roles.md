@@ -45,7 +45,7 @@ step and reports back.
    - **design:** the request, the explore map, and the steps of `cpipe:design`. Ask for the design note.
    - **plan:** the request, the explore map, the baseline and the design note. Ask for a plan in the format of
      `cpipe:plan` step 5.
-   - **build:** the approved plan, the playbook, the run log path. Ask it to follow `cpipe:build` and reply with
+   - **build:** the plan, the playbook, the run log path. Ask it to follow `cpipe:build` and reply with
      what changed and which tests it ran with their results.
    - **qa:** the acceptance criteria, the design note, how to start the app. Ask it to follow `cpipe:qa`
      without editing code and reply with each item's result and evidence.

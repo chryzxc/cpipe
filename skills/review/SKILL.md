@@ -1,7 +1,7 @@
 ---
 name: review
 description: "cpipe: independent review in a fresh context."
-version: 3.3.0
+version: 3.4.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -55,7 +55,7 @@ Read every finding against the code yourself, then give each one a disposition a
 | **dismissed** | Wrong: the code already handles it | Write the evidence (file, line, test) in the run log. |
 
 Nothing is dropped silently. A security finding is never dismissed without evidence, and an open security finding
-you cannot fix inside the scope is one of the few reasons to stop and ask the user.
+you cannot fix inside the scope leads the report.
 
 A finding that asks for evidence this machine cannot produce (a browser run, a device, a live service): do what
 you can locally, then list it as **consider** with what is left for the user to check. Do not stop for it.

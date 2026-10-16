@@ -1,7 +1,7 @@
 # cpipe
 
 A [Hermes Agent](https://hermes-agent.nousresearch.com) plugin that delivers a coding task to reviewed, verified
-code. You hand over the task; cpipe clarifies once, plans, gets one approval, writes the tests first, builds,
+code. You hand over the task and wait; cpipe decides open questions itself, plans, writes the tests first, builds,
 verifies with the project's own checks, has the change reviewed in a fresh context, cleans up, commits and
 reports back.
 
@@ -27,7 +27,7 @@ hermes plugins enable cpipe
 ## Flow
 
 ```
-set up (worktree + dependencies) → explore → design → clarify once → plan → approve
+set up (worktree + dependencies) → explore → design → decide open questions → plan
    → tests first (RED) → build (GREEN, one verified change at a time) → verify
    → QA on the real surface → independent review (≤ 2 rounds) → clean up → verify → commit → report
 ```
@@ -42,7 +42,7 @@ cpipe's defaults. cpipe's guard rails still apply.
 | Skill | Step |
 |---|---|
 | `cpipe:run` | The flow, the rules, the run log, playbooks per task kind |
-| `cpipe:plan` | Worktree and dependencies, explore the code, the checks and their baseline, clarify once, plan, approval |
+| `cpipe:plan` | Worktree and dependencies, explore the code, the checks and their baseline, open questions decided as assumptions, plan |
 | `cpipe:design` | States, flow, copy, accessibility and edge cases of anything user-facing |
 | `cpipe:build` | Tests first, implement, cleanup pass |
 | `cpipe:verify` | Run the checks with honest states, work around checks that will not run, completion gate |
@@ -79,11 +79,12 @@ chat. If a profile fails or times out, the chat retries once, tells you, and doe
 | refactor | The same checks green before and after |
 | chore | Checks green, change read back |
 
-### When it stops
+### It runs to the end
 
-Only for: the plan approval (once), a decision only you can make (credentials, anything destructive or
-irreversible, anything leaving your machine you did not ask for, a product question without a sensible default),
-or an open security finding it cannot fix inside the scope. It never asks you to fix or run anything itself.
+It does not stop: the task is the last message you send. Open questions are decided and listed as assumptions
+at the top of the report. Things only you may do (credentials, anything destructive or irreversible, anything
+leaving your machine you did not ask for) are skipped and listed under "Needs your decision", as is an open
+security finding it cannot fix inside the scope. It never asks you to fix or run anything.
 
 ### Honest states
 

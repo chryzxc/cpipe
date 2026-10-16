@@ -1,7 +1,7 @@
 ---
 name: verify
 description: "cpipe: run checks honestly and work around blockers."
-version: 3.3.0
+version: 3.4.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

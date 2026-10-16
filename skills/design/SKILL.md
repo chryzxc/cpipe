@@ -1,7 +1,7 @@
 ---
 name: design
 description: "cpipe: design the user-facing side before planning."
-version: 3.3.0
+version: 3.4.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -39,8 +39,8 @@ chore), write `Design: not needed (<reason>)` in the run log and go to step 4.
 ## Output
 
 A design note in the run log: the surfaces, each state, the copy, the edge cases. Each item becomes an
-acceptance criterion in the plan. Product questions you cannot default go into the one clarify message in
-step 4, each with your proposed answer.
+acceptance criterion in the plan. Product questions the code does not settle are decided in step 4 and recorded
+as assumptions.
 
 ## Rules
 

@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task to reviewed, verified code."
-version: 3.3.0
+version: 3.4.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -23,20 +23,31 @@ missing dependency, a flaky check, a tool error, a profile or subagent that retu
 for evidence this machine cannot produce: work around it (`cpipe:verify` has a table for the common ones), write
 what you could not verify in the run log, and continue with the next step.
 
-Stop and ask the user only for:
+## Unattended: the task is the last message
 
-1. **Approval of the plan**, once (skip it when the user already said to go ahead without one).
-2. **A decision only the user can make:** credentials or secrets, anything destructive or irreversible, anything
-   that leaves this machine that the user did not ask for (push, pull request, deploy, messages), or a product
-   question that the request, the code and a sensible default do not settle.
-3. **An open security finding** you cannot fix inside the scope.
+The user sends the task and waits for the report. Never ask a question and never wait for an answer: no plan
+approval, no clarifying questions, no "should I". Never call a tool that waits for the user (a clarify or
+question tool, a command that needs the user's approval): it halts the run until they answer. Use another way,
+or skip that part and report it. Every choice is yours:
 
-Everything else is yours to solve. When unsure, pick the reversible default, note it as an assumption and keep
-going. A message from the user mid-run is steering, not a stop: answer it in one line and continue.
+- **Open questions** (which base, which of two behaviors, a product detail): decide from the request, the code,
+  the project's history and the conversation; pick the most likely and reversible answer, record it as an
+  assumption, and keep going.
+- **Things only the user may do** (credentials or secrets, anything destructive or irreversible, anything that
+  leaves this machine that the task did not ask for: push, pull request, deploy, messages): never do them. Skip
+  that part, finish everything else, and list it under "Needs your decision" in the report.
+- **A security finding you cannot fix inside the scope:** finish the rest and lead the report with it.
+
+A push or pull request happens only when the task message asks for one. A message from the user mid-run is
+steering, not a stop: answer it in one line and continue.
+
+**Do not end your turn before the report.** A reply without a tool call ends your turn and the run stops
+silently. Progress updates go in the same reply as your next tool call. When you wait for a background process
+or a profile, wait on it with your process tool; if your turn does end, the completion notification resumes the
+run at the first unfinished step.
 
 The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run or debug
-anything, and never end with "fix the cause and say continue". If you can do it, do it. A question to the user is
-only ever a decision from the list above, asked once, with your proposed default.
+anything, and never end with "fix the cause and say continue". If you can do it, do it.
 
 ## Flow
 
@@ -48,8 +59,8 @@ Track the steps with your todo tool if you have one, one step active at a time. 
 | 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log. | `cpipe:plan` | |
 | 2. Explore | Read the instructions, map the code the task touches, find the checks, run a baseline. | `cpipe:plan` | explore |
 | 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `cpipe:design` | design |
-| 4. Clarify | One batched question, only for decisions you cannot default. | `cpipe:plan` | |
-| 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. Approval once. | `cpipe:plan` | plan |
+| 4. Decide | Settle open questions yourself and record them as assumptions. Never ask. | `cpipe:plan` | |
+| 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `cpipe:plan` | plan |
 | 6. Build | Tests first, then the change, following the playbook. One verified change at a time. | `cpipe:build` | build |
 | 7. Verify | Run the plan's checks with honest states; completion gate. | `cpipe:verify` | |
 | 8. QA | Use the change on the real surface, try to break it, run the broader suite. | `cpipe:qa` | qa |
@@ -98,7 +109,7 @@ One log per run at `$(git rev-parse --git-dir)/cpipe/run.md`, run inside the del
 it survives a restart. Append, never rewrite:
 
 - the task, the roles, the base and the worktree;
-- the explore map, the baseline, the design note, the plan and the approval;
+- the explore map, the baseline, the design note, the plan and its assumptions;
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
 - QA results, review findings and what you did with each.

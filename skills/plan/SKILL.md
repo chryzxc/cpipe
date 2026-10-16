@@ -1,7 +1,7 @@
 ---
 name: plan
-description: "cpipe: set up, explore, clarify once, plan, approval."
-version: 3.3.0
+description: "cpipe: set up, explore, decide open questions, plan."
+version: 3.4.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -57,12 +57,14 @@ files it cites to confirm. Otherwise do it yourself:
 5. **Kind.** bug, feature, refactor or chore (`cpipe:run`). Load the playbook. If the branch type from step 1
    does not match the kind, rename the branch now.
 
-## 4. Clarify once
+## 4. Decide the open questions
 
-Ask only what you cannot default and what changes the result: a product decision, which of two behaviors is
-wanted, an external system you have no access to. Put every question in one message, each with your proposed
-default, so the user can answer "defaults are fine". Everything else becomes an assumption in the plan. If the
-request and the code settle everything, ask nothing.
+Never ask the user (`cpipe:run`, Unattended). List what the request leaves open: a product decision, which of
+two behaviors is wanted, which base or tenant, an external system you have no access to. Settle each from the
+request, the code, the project's history and the conversation: pick the most likely answer, and of two equally
+likely ones the more reversible. Each becomes an assumption in the plan with a one-line reason. Something only
+the user may do (credentials, destructive actions, an unasked push) is left out of the scope and goes in the
+report.
 
 ## 5. Plan
 
@@ -78,18 +80,18 @@ draft against the code and the baseline yourself. Write the plan in the chat and
 - **Assumptions** and **risks.**
 - **Deliverable:** a local commit on the delivery branch (default), or a draft pull request if asked.
 
-Then ask once: "Approve and I will build it." "Yes", "proceed", "go" and similar are approval. Changes to the plan
-get a revised plan and one more approval. If the user already said to go ahead without a plan review, show the
-plan and start. If the user cancels, remove the worktree and branch you created (nothing is committed on them).
+Post the plan in one message together with your next tool call and start building; do not wait for approval.
+If the user steers mid-run, revise the plan in the run log and continue. If the user cancels, remove the
+worktree and branch you created (nothing is committed on them).
 
 ## Rules
 
 - Nothing outside the worktree changes in these steps; exploring is read-only.
-- The plan is for approval in a minute, not a specification: keep it short.
+- The plan is a short record for the user's later review, not a specification.
 - Every acceptance criterion must be checkable by a test, a command or a QA step.
-- Never ask the user something the code or a sensible default answers.
+- Never ask the user anything; every open question ends as a recorded assumption.
 
 ## Done when
 
-The worktree exists with dependencies installed, the baseline is recorded, the plan is in the run log and it is
-approved.
+The worktree exists with dependencies installed, the baseline is recorded, the plan and its assumptions are in
+the run log.

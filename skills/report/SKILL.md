@@ -1,7 +1,7 @@
 ---
 name: report
 description: "cpipe: commit, optional draft PR, honest report."
-version: 3.3.0
+version: 3.4.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -40,8 +40,11 @@ One message in the chat. Lead with the headline:
 - **Ready for your review:** every check passes, QA passes and the review is clean.
 - **Ready for your review, with gaps:** the work is done, and some checks or QA items were not run here, or some
   findings are open. Name them in the headline.
-- **Needs your decision:** you stopped for one of the reasons in `cpipe:run`. Ask the one question, with your
-  proposed default.
+- **Needs your decision:** the work is done except for things only the user may do (`cpipe:run`, Unattended)
+  or an open security finding. List each with what you would do and why.
+
+Always list the assumptions you made for open questions right after the headline, so the user can check them
+first.
 
 Then, briefly:
 
