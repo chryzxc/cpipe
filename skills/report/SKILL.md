@@ -1,7 +1,7 @@
 ---
 name: report
 description: "cpipe: commit, optional draft PR, honest report."
-version: 3.1.0
+version: 3.2.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -13,6 +13,10 @@ metadata:
 # cpipe: report
 
 Step 11 of `cpipe:run`.
+
+Before writing the commit or the pull request, check your skill list for the user's own skill for commit
+messages or pull-request content and load it. If one exists, it decides the title, body, template and any lint
+script to run before `gh pr create` or `gh pr edit`; the sections below are the fallback.
 
 ## Commit
 
@@ -67,6 +71,7 @@ could have done yourself; if you could do it, do it before reporting.
   you did not mean to change.
 - Never push, open a pull request, merge or message anyone unless the user asked for it in this task.
 - Never claim a state the run log does not show.
+- Never write a pull request or commit message by hand when the user has a skill for it.
 - No secrets, local paths or chat details in the commit message or pull request.
 
 ## Done when

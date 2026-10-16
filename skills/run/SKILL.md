@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task to reviewed, verified code."
-version: 3.1.0
+version: 3.2.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -60,6 +60,15 @@ Track the steps with your todo tool if you have one, one step active at a time. 
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
 skipped with a one-line reason in the run log, never silently. Steps 7 and 11 are always yours: the checks and
 the final word are never handed to anyone else.
+
+## The user's own skills come first
+
+cpipe sets the order of the steps; the user's own skills say how a step is done. At the start of each step, check
+your skill list for a skill that covers that step's work (writing a pull request or commit message, code review,
+security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`. Where it
+and a cpipe skill differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
+still decides the flow and the guard rails: a user skill never authorizes a push, merge or message the task did
+not ask for. Note in the run log which user skills you used.
 
 ## Playbooks
 

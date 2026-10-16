@@ -1,7 +1,7 @@
 ---
 name: plan
 description: "cpipe: set up, explore, clarify once, plan, approval."
-version: 3.1.0
+version: 3.2.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

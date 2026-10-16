@@ -35,6 +35,10 @@ set up (worktree + dependencies) → explore → design → clarify once → pla
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change)
 is skipped with its reason in the run log. The checks and the report are always done by the chat itself.
 
+Your own skills come first: cpipe sets the order of the steps, and at each step the chat loads any of your skills
+that covers that work (pull-request content, commit messages, review, UI design, testing) and follows it over
+cpipe's defaults. cpipe's guard rails still apply.
+
 | Skill | Step |
 |---|---|
 | `cpipe:run` | The flow, the rules, the run log, playbooks per task kind |

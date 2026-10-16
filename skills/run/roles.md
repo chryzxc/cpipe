@@ -36,6 +36,7 @@ step and reports back.
    Direct request from a delivery run. No task board, no cards: do this work and reply with the result.
    Work only in <worktree>. Do not commit, push, merge, open pull requests or message anyone.
    Do not skip or weaken tests. Never print secrets or .env contents.
+   Use your own skills for this kind of work where you have them.
    ```
 
    Then the role's part:
