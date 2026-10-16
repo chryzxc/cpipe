@@ -18,8 +18,8 @@ checks cover) gets `QA: not needed (<reason>)` in the run log.
 3. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,
    a user without permission.
 4. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task
-   named, and check each must-not-change item. Repeat the permission-sensitive ones as each role on the path (a
-   seeded or test user per role). Then run the broader test suite once. Compare its failures with the baseline: only new failures count.
+   named, and check each must-not-change item and each risk whose check is a QA step. Where behavior differs by role,
+   tenant, locale or state, repeat it for each (a seeded or test user per role). Then run the broader test suite once. Compare its failures with the baseline: only new failures count.
 5. **Clean up** what you started: stop the servers, remove temporary data.
 
 ## Results
@@ -27,7 +27,8 @@ checks cover) gets `QA: not needed (<reason>)` in the run log.
 Record each item in the run log as **pass**, **fail** or **not run here**, with the evidence: the command and its
 output, the request and response, a screenshot path.
 
-- **fail:** reproduce it, then go back to step 6 to fix it. Each fix is a round; verify and QA the fix again.
+- **fail:** reproduce it, then go back to step 6 to fix it. If the plan did not foresee it, write a lesson
+  (`cpipe:run`, Lessons). Each fix is a round; verify and QA the fix again.
 - **not run here:** the surface needs something this machine does not have (a login, a device, a live
   service). Use the closest stand-in (a test double, a seeded user, a direct call), then list what is left in
   the report's "For you to check". Never stop for it.
@@ -43,5 +44,5 @@ output, the request and response, a screenshot path.
 
 ## Done when
 
-Every acceptance criterion, design state and must-not-change item has a QA result with evidence, the broader suite is compared with the
+Every acceptance criterion, design state, must-not-change item and QA risk has a QA result with evidence, the broader suite is compared with the
 baseline, and nothing started for QA is still running.

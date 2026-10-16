@@ -19,17 +19,18 @@ Goal: <the plan's goal, one sentence>
 Acceptance: <the plan's acceptance criteria>
 Repository: <worktree path>   Diff: git diff <base>...HEAD
 Checks run: <each check with its state from the run log>
-Flow map: <entrances, exits, guards and the must-not-change list from the plan>
+Flow map and risks: <entrances, exits, guards, must-not-change list and premortem from the plan>
 
 Review against:
 - Correctness: does it meet each acceptance criterion? Logic errors, edge cases, error paths.
 - Proof: do the tests fail without the change and assert the real behavior?
 - Regressions: do not trust the flow map. Search the whole repository for every usage of what the diff changed
   (functions, types, fields, routes, events, config) and list any entrance or consumer the map missed. For each
-  one, and for each must-not-change item, does it still behave the same? Follow changes across the boundary: a
-  server change to the client that calls it, and the reverse.
-- Permissions: for each role, permission level and tenant on the path, can it still do exactly what it could,
-  no more and no less, on the server and in what the client shows?
+  one, and for each must-not-change item, does it still behave the same? Follow changes across boundaries
+  (server and client, services, packages, stored data).
+- Missed risks: before reading the plan's risks, write your own premortem of how this diff could break in use
+  (contracts, data and state, roles and environments, failure paths, user-facing states, cost, anything else).
+  Then report each risk the plan did not cover, or covered without a real check.
 - Security: injection, access control, secrets, unsafe input handling.
 - Simplicity: needless abstraction, duplicated helpers, dead code, comments that restate code.
 
@@ -48,8 +49,8 @@ Read every finding against the code yourself, then give each one a disposition a
 | **noted** | Minor or stylistic | List it in the report. |
 | **dismissed** | Wrong: the code already handles it | Write the evidence (file, line, test) in the run log. |
 
-A path the reviewer found that the flow map missed is added to the map in the run log, and its regression
-check is added to the plan; a regression on it is **act**, even if the code sits outside the scope's files.
+A path or risk the reviewer found that the plan missed is added to the plan with its check; a regression on it
+is **act**, even if the code sits outside the scope's files. Write a lesson for it (`cpipe:run`, Lessons).
 
 Nothing is dropped silently. A security finding is never dismissed without evidence, and an open security finding
 you cannot fix inside the scope leads the report.

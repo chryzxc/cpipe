@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.7.0
+version: 3.8.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -112,7 +112,26 @@ it survives a restart. Append, never rewrite:
 - the flow map, the baseline, the design note, the plan and its assumptions;
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
-- QA results, review findings and what you did with each.
+- QA results, review findings and what you did with each;
+- the lessons written.
+
+## Lessons
+
+Every miss teaches the next run. The project's lessons live at
+`$(git rev-parse --git-common-dir)/cpipe/lessons.md`, shared by all its worktrees and never committed. Explore
+reads them; the premortem turns each into a question for this change.
+
+Write a lesson whenever something was caught later than it should have been: a review or QA finding the plan did
+not foresee, a check that failed for a reason explore could have seen, or a correction from the user after the
+report. One line, as a rule about the project rather than the task: where to look, what to check, why
+(`Changes to <area> must also be checked in <other area>: <reason>.`). Merge it into a matching lesson instead of
+adding a near-duplicate. Never put secrets or customer data in a lesson.
+
+## After the report
+
+A message after the report about the same work (a correction, a missed case, more context) is a follow-up, not a
+new task: reuse the worktree and the run log, write a lesson if it reveals a miss, update the plan, then run
+build, verify, QA and a delta review on the follow-up only, and report again. A different task starts a new run.
 
 ## Continue
 

@@ -33,7 +33,8 @@ files it cites to confirm. Otherwise do it yourself:
 
 1. **Instructions.** Read the project's agent and contributor instructions (`AGENTS.md`, `CLAUDE.md`,
    `CONTRIBUTING.md`, the README's development section). They win over these skills where they conflict, except
-   for the guard rails in `cpipe:run`.
+   for the guard rails in `cpipe:run`. Read the project's lessons too (`cpipe:run`, Lessons): each one is a
+   question this run must answer.
 2. **Code.** If you have a code index or code-navigation tool, locate the code with it first. Read the code the
    task touches and the helpers you could reuse. Skip code that is not on a path below.
 3. **Flow map.** Trace every path through the code you will change, end to end, so nothing breaks out of sight:
@@ -48,13 +49,26 @@ files it cites to confirm. Otherwise do it yourself:
      or hides).
    - **Behavior to keep:** what each entrance and consumer does today that must still work after the change.
    Record the map in the run log with paths and line numbers. A path you cannot trace is a risk in the plan.
-4. **Checks.** Find the project's own commands: `package.json` scripts, `Makefile`, `pyproject.toml`, the CI
+4. **Premortem.** Imagine the change shipped and something broke that the task never mentioned. List the most
+   likely ways, looking through each lens that applies:
+   - **Contracts:** API, schema, types, config, file formats, URLs; old clients, old data and old config still
+     work.
+   - **Data and state:** existing records, migrations, caches, sessions, concurrent or repeated runs, partial
+     writes.
+   - **Who and where:** each role, tenant, locale, time zone, platform, device, feature-flag state, environment.
+   - **Failure paths:** errors, timeouts, retries, empty and huge input, a dependency down.
+   - **User-facing:** loading, empty and error states, navigation, accessibility, wording.
+   - **Cost:** queries in loops, large inputs, work on every request or render.
+   - **The project's lessons** and anything its instructions warn about.
+   Each risk gets a check (a test, a command or a QA step), or a one-line reason it cannot happen here, citing
+   the code. These are prompts, not a form: find the risks this change has, including ones no lens names.
+5. **Checks.** Find the project's own commands: `package.json` scripts, `Makefile`, `pyproject.toml`, the CI
    workflow files (they show how CI installs and tests). Pick the narrowest command that covers the change, plus
    the build or typecheck if the project has one, plus the broader suite for QA.
-5. **Baseline.** Run those checks once in the worktree, before any change, and record each result: pass, fail
+6. **Baseline.** Run those checks once in the worktree, before any change, and record each result: pass, fail
    (which tests) or not run here (why). A check already red is the baseline, not your job, unless the task is to
    fix it. If a check will not run, work through `steps/verify.md` now, so the plan names commands that work.
-6. **Kind.** bug, feature, refactor or chore (`cpipe:run`). Load the playbook. If the branch type from step 1
+7. **Kind.** bug, feature, refactor or chore (`cpipe:run`). Load the playbook. If the branch type from step 1
    does not match the kind, rename the branch now.
 
 ## 4. Decide the open questions
@@ -78,7 +92,8 @@ draft against the code and the baseline yourself. Write the plan in the chat and
 - **Flow map:** the entrances, exits and guards from explore, in short.
 - **Acceptance:** observable criteria, each one checkable, including the design note's states.
 - **Must not change:** for each entrance, consumer and guard in the map, the behavior that has to stay, with the
-  check, test or QA step that proves it. Each role or permission level on the path gets its own line.
+  check, test or QA step that proves it.
+- **Risks:** the premortem, each with its check or the reason it cannot happen.
 - **Checks:** the exact commands, with the baseline result of each.
 - **Assumptions** and **risks.**
 - **Deliverable:** a local commit on the delivery branch (default), or a draft pull request if asked.
@@ -96,5 +111,5 @@ worktree and branch you created (nothing is committed on them).
 
 ## Done when
 
-The worktree exists with dependencies installed, the baseline and the flow map are recorded, the plan with its
-must-not-change list and assumptions is in the run log.
+The worktree exists with dependencies installed, the baseline, the flow map and the premortem are recorded, the plan
+with its must-not-change list, risks and assumptions is in the run log.

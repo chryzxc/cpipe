@@ -44,12 +44,12 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 | File | Step |
 |---|---|
 | `SKILL.md` | The flow, the rules, the run log, playbooks per task kind |
-| `steps/plan.md` | Worktree and dependencies, a flow map of every entrance, exit, consumer and permission guard, the checks and their baseline, open questions decided as assumptions, plan |
+| `steps/plan.md` | Worktree and dependencies, a flow map of every entrance, exit, consumer and guard, a premortem of what could break, the checks and their baseline, open questions decided as assumptions, plan |
 | `steps/design.md` | States, flow, copy, accessibility and edge cases of anything user-facing |
 | `steps/build.md` | Tests first, implement, cleanup pass |
 | `steps/verify.md` | Run the checks with honest states, work around checks that will not run, completion gate |
 | `steps/qa.md` | Use the change on the real surface, walk the acceptance criteria, try to break it, broader suite |
-| `steps/review.md` | Independent review by a subagent that hunts regressions the flow map missed, findings sorted into act, consider, noted and dismissed |
+| `steps/review.md` | Independent review by a subagent that hunts regressions and risks the plan missed, findings sorted into act, consider, noted and dismissed |
 | `steps/report.md` | Commit, a draft pull request only when asked, the report |
 
 ### Roles (optional)
@@ -87,6 +87,13 @@ It does not stop: the task is the last message you send. Open questions are deci
 at the top of the report. Things only you may do (credentials, anything destructive or irreversible, anything
 leaving your machine you did not ask for) are skipped and listed under "Needs your decision", as is an open
 security finding it cannot fix inside the scope. It never asks you to fix or run anything.
+
+### It learns from misses
+
+When review, QA or you catch something the plan should have seen, the run writes a one-line lesson for the
+project at `<git-common-dir>/cpipe/lessons.md` (shared by all its worktrees, never committed). Every later run
+reads the lessons before planning and checks each one. A message after the report is a follow-up on the same
+worktree: it is fixed, verified and reviewed, then reported again.
 
 ### Honest states
 

@@ -50,7 +50,9 @@ Then, briefly:
 - **Design:** the note's states and copy, or why it was not needed.
 - **QA:** what you exercised on the real surface and the result of each, or why it was not needed.
 - **Review:** findings by disposition (act and fixed, consider, noted, dismissed with its evidence).
+- **Risks:** each premortem risk with its check result.
 - **Assumptions** you made and **workarounds** you used.
+- **Lessons** written in this run, one line each.
 - **For you to check:** anything only the user can verify (a browser flow, a live service), as a short list.
 
 Facts only, from the run log. No essay. The report never asks the user to fix, install or run anything you
