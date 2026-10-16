@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task to reviewed, verified code."
-version: 3.4.0
+version: 3.5.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

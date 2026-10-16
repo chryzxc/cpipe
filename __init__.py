@@ -12,14 +12,14 @@ def register(ctx):
     for name in SKILLS:
         ctx.register_skill(name, skills / name / "SKILL.md")
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
-        ctx.register_command("cp-run", lambda raw="": _start(ctx, raw),
+        ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a task: explore, design, plan, build, verify, QA, review, report",
                              args_hint="<task>", argument_mode="text")
 
 
 def _start(ctx, raw):
     if not raw.strip():
-        return "Usage: /cp-run <task>"
+        return "Usage: /cpipe <task>"
     from gateway.session_context import get_session_env
     key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
     try:

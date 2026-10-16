@@ -19,7 +19,7 @@ hermes plugins enable cpipe
 ## Use
 
 ```
-/cp-run <task>
+/cpipe <task>
 ```
 
 `/cpipe:run <task>` does the same. Say **continue** in the chat to resume a run after a restart.
