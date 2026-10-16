@@ -44,12 +44,12 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 | File | Step |
 |---|---|
 | `SKILL.md` | The flow, the rules, the run log, playbooks per task kind |
-| `steps/plan.md` | Worktree and dependencies, explore the code, the checks and their baseline, open questions decided as assumptions, plan |
+| `steps/plan.md` | Worktree and dependencies, a flow map of every entrance, exit, consumer and permission guard, the checks and their baseline, open questions decided as assumptions, plan |
 | `steps/design.md` | States, flow, copy, accessibility and edge cases of anything user-facing |
 | `steps/build.md` | Tests first, implement, cleanup pass |
 | `steps/verify.md` | Run the checks with honest states, work around checks that will not run, completion gate |
 | `steps/qa.md` | Use the change on the real surface, walk the acceptance criteria, try to break it, broader suite |
-| `steps/review.md` | Independent review by a subagent, findings sorted into act, consider, noted and dismissed |
+| `steps/review.md` | Independent review by a subagent that hunts regressions the flow map missed, findings sorted into act, consider, noted and dismissed |
 | `steps/report.md` | Commit, a draft pull request only when asked, the report |
 
 ### Roles (optional)

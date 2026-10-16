@@ -34,15 +34,27 @@ files it cites to confirm. Otherwise do it yourself:
 1. **Instructions.** Read the project's agent and contributor instructions (`AGENTS.md`, `CLAUDE.md`,
    `CONTRIBUTING.md`, the README's development section). They win over these skills where they conflict, except
    for the guard rails in `cpipe:run`.
-2. **Code.** If you have a code index or code-navigation tool, locate the code with it first. Read only the code
-   the task touches, its direct callers and the helpers you could reuse. About fifteen reads is plenty here.
-3. **Checks.** Find the project's own commands: `package.json` scripts, `Makefile`, `pyproject.toml`, the CI
+2. **Code.** If you have a code index or code-navigation tool, locate the code with it first. Read the code the
+   task touches and the helpers you could reuse. Skip code that is not on a path below.
+3. **Flow map.** Trace every path through the code you will change, end to end, so nothing breaks out of sight:
+   - **Entrances:** everything that reaches it: routes and endpoints, pages and UI actions, jobs, event and queue
+     handlers, CLI commands, other modules and packages. Search for every usage across the whole repository, not
+     only the direct callers.
+   - **Exits:** everything it produces and who consumes it: responses and their shape, data written, events
+     emitted, UI rendered, and the code on the other side that reads them (the client of a server change, the
+     server of a client change, other services, shared types, generated clients).
+   - **Guards on the way:** authentication, permissions and roles, tenancy, feature flags, validation, rate
+     limits. Note which role or state may do what, on both sides (the server's check and what the client shows
+     or hides).
+   - **Behavior to keep:** what each entrance and consumer does today that must still work after the change.
+   Record the map in the run log with paths and line numbers. A path you cannot trace is a risk in the plan.
+4. **Checks.** Find the project's own commands: `package.json` scripts, `Makefile`, `pyproject.toml`, the CI
    workflow files (they show how CI installs and tests). Pick the narrowest command that covers the change, plus
    the build or typecheck if the project has one, plus the broader suite for QA.
-4. **Baseline.** Run those checks once in the worktree, before any change, and record each result: pass, fail
+5. **Baseline.** Run those checks once in the worktree, before any change, and record each result: pass, fail
    (which tests) or not run here (why). A check already red is the baseline, not your job, unless the task is to
    fix it. If a check will not run, work through `steps/verify.md` now, so the plan names commands that work.
-5. **Kind.** bug, feature, refactor or chore (`cpipe:run`). Load the playbook. If the branch type from step 1
+6. **Kind.** bug, feature, refactor or chore (`cpipe:run`). Load the playbook. If the branch type from step 1
    does not match the kind, rename the branch now.
 
 ## 4. Decide the open questions
@@ -63,7 +75,10 @@ draft against the code and the baseline yourself. Write the plan in the chat and
 - **Kind** and playbook.
 - **Base** (branch and commit) and **worktree**.
 - **Scope:** the files or directories you expect to change. **Non-goals:** what you will not touch.
+- **Flow map:** the entrances, exits and guards from explore, in short.
 - **Acceptance:** observable criteria, each one checkable, including the design note's states.
+- **Must not change:** for each entrance, consumer and guard in the map, the behavior that has to stay, with the
+  check, test or QA step that proves it. Each role or permission level on the path gets its own line.
 - **Checks:** the exact commands, with the baseline result of each.
 - **Assumptions** and **risks.**
 - **Deliverable:** a local commit on the delivery branch (default), or a draft pull request if asked.
@@ -81,5 +96,5 @@ worktree and branch you created (nothing is committed on them).
 
 ## Done when
 
-The worktree exists with dependencies installed, the baseline is recorded, the plan and its assumptions are in
-the run log.
+The worktree exists with dependencies installed, the baseline and the flow map are recorded, the plan with its
+must-not-change list and assumptions is in the run log.

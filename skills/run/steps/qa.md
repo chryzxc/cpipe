@@ -17,8 +17,9 @@ checks cover) gets `QA: not needed (<reason>)` in the run log.
    saw for each.
 3. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,
    a user without permission.
-4. **Look next door.** Use the features beside the change that share its code, and run the broader test suite
-   once. Compare its failures with the baseline: only new failures count.
+4. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task
+   named, and check each must-not-change item. Repeat the permission-sensitive ones as each role on the path (a
+   seeded or test user per role). Then run the broader test suite once. Compare its failures with the baseline: only new failures count.
 5. **Clean up** what you started: stop the servers, remove temporary data.
 
 ## Results
@@ -42,5 +43,5 @@ output, the request and response, a screenshot path.
 
 ## Done when
 
-Every acceptance criterion and design state has a QA result with evidence, the broader suite is compared with the
+Every acceptance criterion, design state and must-not-change item has a QA result with evidence, the broader suite is compared with the
 baseline, and nothing started for QA is still running.

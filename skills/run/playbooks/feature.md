@@ -1,6 +1,6 @@
 # Feature playbook
 
-**Proof required:** new tests that failed before the change and pass after it, the existing checks still green,
+**Proof required:** new tests that failed before the change and pass after it, every must-not-change item still holding, the existing checks still green,
 and the behavior exercised on the real surface where it is reachable.
 
 1. **Understand what exists.** Read the modules the feature touches and reuse their helpers, types and patterns.

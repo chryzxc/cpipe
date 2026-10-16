@@ -1,6 +1,6 @@
 # Bug playbook
 
-**Proof required:** a test that failed before the fix (RED) and passes after it (GREEN), plus the plan's checks.
+**Proof required:** a test that failed before the fix (RED) and passes after it (GREEN), plus the plan's checks and every must-not-change item still holding.
 
 1. **Reproduce first.** Hit the bug yourself: a test, a command, a small script that calls the code. A bug you
    cannot trigger is a bug you cannot prove you fixed. If it will not reproduce, write down what you tried, make

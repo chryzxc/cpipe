@@ -43,7 +43,8 @@ step and reports back.
 
    Then the role's part:
    - **explore:** the request and the worktree. Ask for a read-only map: the instructions that apply, the files
-     to change and their callers, helpers to reuse, the check commands. Paths and line numbers, no edits.
+     to change, the flow map as `steps/plan.md` step 2 describes (entrances, exits and their consumers, guards,
+     behavior to keep), helpers to reuse, the check commands. Paths and line numbers, no edits.
    - **design:** the request, the explore map, and the steps of `steps/design.md`. Ask for the design note.
    - **plan:** the request, the explore map, the baseline and the design note. Ask for a plan in the format of
      `steps/plan.md` step 5.

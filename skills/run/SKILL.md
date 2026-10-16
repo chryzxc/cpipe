@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.6.0
+version: 3.7.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -57,7 +57,7 @@ step, not before.
 | Step | Do | File | Role |
 |---|---|---|---|
 | 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log. | `steps/plan.md` | |
-| 2. Explore | Read the instructions, map the code the task touches, find the checks, run a baseline. | `steps/plan.md` | explore |
+| 2. Explore | Read the instructions, map every entrance, exit and guard of the code, find the checks, run a baseline. | `steps/plan.md` | explore |
 | 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `steps/design.md` | design |
 | 4. Decide | Settle open questions yourself and record them as assumptions. Never ask. | `steps/plan.md` | |
 | 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `steps/plan.md` | plan |
@@ -109,7 +109,7 @@ One log per run at `$(git rev-parse --git-dir)/cpipe/run.md`, run inside the del
 it survives a restart. Append, never rewrite:
 
 - the task, the roles, the base and the worktree;
-- the explore map, the baseline, the design note, the plan and its assumptions;
+- the flow map, the baseline, the design note, the plan and its assumptions;
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
 - QA results, review findings and what you did with each.

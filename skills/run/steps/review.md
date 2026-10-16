@@ -19,11 +19,17 @@ Goal: <the plan's goal, one sentence>
 Acceptance: <the plan's acceptance criteria>
 Repository: <worktree path>   Diff: git diff <base>...HEAD
 Checks run: <each check with its state from the run log>
+Flow map: <entrances, exits, guards and the must-not-change list from the plan>
 
 Review against:
 - Correctness: does it meet each acceptance criterion? Logic errors, edge cases, error paths.
 - Proof: do the tests fail without the change and assert the real behavior?
-- Blast radius: callers and users of the changed code outside the diff.
+- Regressions: do not trust the flow map. Search the whole repository for every usage of what the diff changed
+  (functions, types, fields, routes, events, config) and list any entrance or consumer the map missed. For each
+  one, and for each must-not-change item, does it still behave the same? Follow changes across the boundary: a
+  server change to the client that calls it, and the reverse.
+- Permissions: for each role, permission level and tenant on the path, can it still do exactly what it could,
+  no more and no less, on the server and in what the client shows?
 - Security: injection, access control, secrets, unsafe input handling.
 - Simplicity: needless abstraction, duplicated helpers, dead code, comments that restate code.
 
@@ -41,6 +47,9 @@ Read every finding against the code yourself, then give each one a disposition a
 | **consider** | Real, but a judgment call or outside the scope | List it in the report. |
 | **noted** | Minor or stylistic | List it in the report. |
 | **dismissed** | Wrong: the code already handles it | Write the evidence (file, line, test) in the run log. |
+
+A path the reviewer found that the flow map missed is added to the map in the run log, and its regression
+check is added to the plan; a regression on it is **act**, even if the code sits outside the scope's files.
 
 Nothing is dropped silently. A security finding is never dismissed without evidence, and an open security finding
 you cannot fix inside the scope leads the report.
@@ -62,7 +71,8 @@ cleanup step (`steps/build.md`, step 10).
 - Brief the reviewer with facts (goal, acceptance, diff, check states), not your reasoning or your verdict.
 - Never dismiss a finding without evidence in the run log, and never dismiss a security finding by judgment
   alone.
-- Never widen the scope to satisfy a reviewer: an out-of-scope finding is **consider**.
+- Never widen the scope to satisfy a reviewer: an out-of-scope finding is **consider**. A regression the change
+  caused is never out of scope.
 - Two rounds at most.
 
 ## Done when
