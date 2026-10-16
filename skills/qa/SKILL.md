@@ -1,6 +1,6 @@
 ---
 name: qa
-description: "Step 8 of /cpipe: use the change like a real user."
+description: "Use the change like a real user and try to break it."
 version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]

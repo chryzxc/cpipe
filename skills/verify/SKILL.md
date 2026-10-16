@@ -1,6 +1,6 @@
 ---
 name: verify
-description: "Step 7 of /cpipe: run the checks, honest results."
+description: "Run the project's checks and report honest results."
 version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]

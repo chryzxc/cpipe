@@ -1,6 +1,6 @@
 ---
 name: design
-description: "Step 3 of /cpipe: states, flow, copy, accessibility."
+description: "Design states, flow, copy and accessibility."
 version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]

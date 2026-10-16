@@ -1,6 +1,6 @@
 ---
 name: build
-description: "Steps 6 and 10 of /cpipe: tests first, build, clean up."
+description: "Write the tests first, build, then clean up."
 version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]

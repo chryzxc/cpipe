@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Step 9 of /cpipe: independent review of the diff."
+description: "Independent review of the diff in a fresh context."
 version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]

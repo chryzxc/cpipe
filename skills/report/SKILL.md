@@ -1,6 +1,6 @@
 ---
 name: report
-description: "Step 11 of /cpipe: commit, PR if asked, the report."
+description: "Commit, open a PR if asked, and write the report."
 version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]

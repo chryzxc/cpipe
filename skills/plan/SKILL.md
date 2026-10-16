@@ -1,6 +1,6 @@
 ---
 name: plan
-description: "Steps 1-2, 4-5 of /cpipe: worktree, explore, plan."
+description: "Set up the worktree, explore the code, and plan."
 version: 3.5.1
 license: MIT
 platforms: [linux, macos, windows]
