@@ -1,16 +1,4 @@
----
-name: design
-description: "Design states, flow, copy and accessibility."
-version: 3.5.1
-license: MIT
-platforms: [linux, macos, windows]
-metadata:
-  hermes:
-    tags: [delivery, design, ux, accessibility]
-    related_skills: [cpipe:run, cpipe:plan, cpipe:qa]
----
-
-# cpipe: design
+# cpipe: the design step
 
 Step 3 of `cpipe:run`. Decides what the user will see or call before anything is built, so the plan has concrete
 acceptance criteria and QA has something to check. If the roles file names a `design` profile, hand this step to

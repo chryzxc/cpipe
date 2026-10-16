@@ -1,16 +1,4 @@
----
-name: review
-description: "Independent review of the diff in a fresh context."
-version: 3.5.1
-license: MIT
-platforms: [linux, macos, windows]
-metadata:
-  hermes:
-    tags: [delivery, code-review, security, quality]
-    related_skills: [cpipe:run, cpipe:verify]
----
-
-# cpipe: review
+# cpipe: the review step
 
 Step 9 of `cpipe:run`. The builder never approves its own work: the review runs in a fresh context that did not
 write the code.
@@ -62,11 +50,11 @@ you can locally, then list it as **consider** with what is left for the user to 
 
 ## 3. Fix and re-review
 
-Fix the **act** findings, run `cpipe:verify`, then one more review round. Round two is delta-only: give the
+Fix the **act** findings, run `steps/verify.md`, then one more review round. Round two is delta-only: give the
 reviewer the diff since the first review and the list of earlier findings to confirm as resolved.
 
 After two rounds, stop reviewing. Anything still open goes into the report with its disposition. Then go to the
-cleanup step (`cpipe:build`, step 10).
+cleanup step (`steps/build.md`, step 10).
 
 ## Rules
 

@@ -1,19 +1,7 @@
----
-name: build
-description: "Write the tests first, build, then clean up."
-version: 3.5.1
-license: MIT
-platforms: [linux, macos, windows]
-metadata:
-  hermes:
-    tags: [delivery, tdd, implementation, refactor]
-    related_skills: [cpipe:run, cpipe:verify]
----
-
-# cpipe: build
+# cpipe: the build step
 
 Steps 6 and 10 of `cpipe:run`. If the roles file names a `build` profile, hand both steps to it (`roles.md` in
-`cpipe:run`), then verify what it reports with `cpipe:verify`. Otherwise do them yourself.
+`cpipe:run`), then verify what it reports with `steps/verify.md`. Otherwise do them yourself.
 
 ## 6. Build
 
@@ -25,7 +13,7 @@ Follow the playbook from the plan. In every playbook:
    standard library or an installed dependency do it. Then write the minimum that works.
 3. **One change at a time.** Make a change, run the narrow test, keep it if it moves toward the acceptance
    criteria, otherwise undo it and try a different idea. Never stack two unverified changes.
-4. **Narrow tests while working**, the plan's full checks at the end of each round (`cpipe:verify`).
+4. **Narrow tests while working**, the plan's full checks at the end of each round (`steps/verify.md`).
 5. **A round** ends with a row in the run log: what changed, why, the check results.
 
 Side discoveries that block the acceptance (a broken helper, a wrong fixture): fix them inside the scope and note

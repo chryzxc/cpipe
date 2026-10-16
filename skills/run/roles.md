@@ -39,17 +39,19 @@ step and reports back.
    Use your own skills for this kind of work where you have them.
    ```
 
+   A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`.
+
    Then the role's part:
    - **explore:** the request and the worktree. Ask for a read-only map: the instructions that apply, the files
      to change and their callers, helpers to reuse, the check commands. Paths and line numbers, no edits.
-   - **design:** the request, the explore map, and the steps of `cpipe:design`. Ask for the design note.
+   - **design:** the request, the explore map, and the steps of `steps/design.md`. Ask for the design note.
    - **plan:** the request, the explore map, the baseline and the design note. Ask for a plan in the format of
-     `cpipe:plan` step 5.
-   - **build:** the plan, the playbook, the run log path. Ask it to follow `cpipe:build` and reply with
+     `steps/plan.md` step 5.
+   - **build:** the plan, the playbook, the run log path. Ask it to follow `steps/build.md` and reply with
      what changed and which tests it ran with their results.
-   - **qa:** the acceptance criteria, the design note, how to start the app. Ask it to follow `cpipe:qa`
+   - **qa:** the acceptance criteria, the design note, how to start the app. Ask it to follow `steps/qa.md`
      without editing code and reply with each item's result and evidence.
-   - **review / security:** the reviewer brief from `cpipe:review`.
+   - **review / security:** the reviewer brief from `steps/review.md`.
 
 2. **Run** it in the worktree:
    `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds>`
@@ -64,10 +66,10 @@ step and reports back.
 
 - After explore: open the files it cites before you rely on them.
 - After design or plan: check the draft against the code and the baseline; you write the final version.
-- After build: `git status` and the diff in the worktree, then `cpipe:verify`. Its states are the truth, not the
+- After build: `git status` and the diff in the worktree, then `steps/verify.md`. Its states are the truth, not the
   role's summary. Undo anything outside the plan's scope.
 - After QA: reproduce a failure yourself before acting on it.
-- After review: sort the findings yourself as `cpipe:review` says.
+- After review: sort the findings yourself as `steps/review.md` says.
 
 ## When a role fails
 

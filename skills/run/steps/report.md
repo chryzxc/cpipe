@@ -1,16 +1,4 @@
----
-name: report
-description: "Commit, open a PR if asked, and write the report."
-version: 3.5.1
-license: MIT
-platforms: [linux, macos, windows]
-metadata:
-  hermes:
-    tags: [delivery, commit, pull-request, report]
-    related_skills: [cpipe:run, cpipe:verify]
----
-
-# cpipe: report
+# cpipe: the report step
 
 Step 11 of `cpipe:run`.
 

@@ -3,8 +3,8 @@
 cpipe is a general-purpose Hermes plugin made of skills. Other people run it with their own profiles, tools,
 models and repositories.
 
-- **Skills drive the flow.** The model runs every step from the skills in `skills/`. `__init__.py` only registers
-  them and the `/cpipe` command. Do not add code that decides the next step, calls a model, or stops a run;
+- **Skills drive the flow.** The model runs every step from `skills/run`: the flow in `SKILL.md`, each step in
+  `steps/`. `__init__.py` only registers that one skill and the `/cpipe` command. Do not add code that decides the next step, calls a model, or stops a run;
   change the skill text instead.
 - **Keep going.** A skill change must never add a new reason to stop or a message that asks the user to fix or
   run something. A run never waits for the user (Unattended in `skills/run/SKILL.md`).

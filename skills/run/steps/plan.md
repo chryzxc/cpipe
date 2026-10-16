@@ -1,18 +1,6 @@
----
-name: plan
-description: "Set up the worktree, explore the code, and plan."
-version: 3.5.1
-license: MIT
-platforms: [linux, macos, windows]
-metadata:
-  hermes:
-    tags: [delivery, planning, clarify]
-    related_skills: [cpipe:run, cpipe:design, cpipe:build]
----
+# cpipe: the plan step
 
-# cpipe: plan
-
-Steps 1, 2, 4 and 5 of `cpipe:run` (step 3 is `cpipe:design`). Spend the reading here, once, so the build does
+Steps 1, 2, 4 and 5 of `cpipe:run` (step 3 is `steps/design.md`). Spend the reading here, once, so the build does
 not repeat it.
 
 ## 1. Set up
@@ -36,7 +24,7 @@ not repeat it.
    print their contents.
 5. **Run log.** Start it (`cpipe:run`) with the task, the base, the worktree and the roles line.
 
-If the install fails, try the next way from `cpipe:verify` and record it; a failed install never ends the run.
+If the install fails, try the next way from `steps/verify.md` and record it; a failed install never ends the run.
 
 ## 2. Explore
 
@@ -53,7 +41,7 @@ files it cites to confirm. Otherwise do it yourself:
    the build or typecheck if the project has one, plus the broader suite for QA.
 4. **Baseline.** Run those checks once in the worktree, before any change, and record each result: pass, fail
    (which tests) or not run here (why). A check already red is the baseline, not your job, unless the task is to
-   fix it. If a check will not run, work through `cpipe:verify` now, so the plan names commands that work.
+   fix it. If a check will not run, work through `steps/verify.md` now, so the plan names commands that work.
 5. **Kind.** bug, feature, refactor or chore (`cpipe:run`). Load the playbook. If the branch type from step 1
    does not match the kind, rename the branch now.
 

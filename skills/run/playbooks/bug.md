@@ -11,9 +11,9 @@
    for the right reason (an assertion, not an import error). Record the RED output in the run log.
 4. **Fix it** with the smallest change the evidence justifies. Every line traces to the root cause; "might help"
    is a second bug.
-5. **Run the test again** (GREEN), then the plan's checks via `cpipe:verify`.
+5. **Run the test again** (GREEN), then the plan's checks via `steps/verify.md`.
 6. **Commit order:** the failing test first, then the fix, when the project accepts several commits. Otherwise
    one commit.
 
-If the test cannot run here at all, see `cpipe:verify`: prove the fix another way (a script, the build, a
+If the test cannot run here at all, see `steps/verify.md`: prove the fix another way (a script, the build, a
 narrower runner) and record that the test is unverified. Never stop for it.

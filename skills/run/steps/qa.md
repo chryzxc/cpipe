@@ -1,16 +1,4 @@
----
-name: qa
-description: "Use the change like a real user and try to break it."
-version: 3.5.1
-license: MIT
-platforms: [linux, macos, windows]
-metadata:
-  hermes:
-    tags: [delivery, qa, testing, regression]
-    related_skills: [cpipe:run, cpipe:verify, cpipe:design]
----
-
-# cpipe: qa
+# cpipe: the qa step
 
 Step 8 of `cpipe:run`, after the checks pass. Checks prove the code; QA proves the behavior. If the roles file
 names a `qa` profile, hand this step to it (`roles.md` in `cpipe:run`). Otherwise do it yourself.

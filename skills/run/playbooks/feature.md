@@ -11,7 +11,7 @@ and the behavior exercised on the real surface where it is reachable.
    assertion. Record the output.
 4. **GREEN.** Implement in small verified steps: one change, run the narrow test, next change. Never two
    unverified changes in a row.
-5. **Verify** with `cpipe:verify`, then exercise the feature where a user meets it with `cpipe:qa`. Tests alone
+5. **Verify** with `steps/verify.md`, then exercise the feature where a user meets it with `steps/qa.md`. Tests alone
    do not prove a feature.
 
 Large features: split into units that never touch the same file. Do them in order yourself, or hand independent

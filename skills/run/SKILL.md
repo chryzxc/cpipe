@@ -1,26 +1,25 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.5.1
+version: 3.6.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [delivery, tdd, code-review, verification, autonomous]
-    related_skills: [cpipe:plan, cpipe:design, cpipe:build, cpipe:verify, cpipe:qa, cpipe:review, cpipe:report]
 ---
 
 # cpipe: run
 
 Takes one development task from request to code that is ready for the user's review. You run the flow in this
-chat with your normal tools; the cpipe skills are your instructions and nothing else drives it. Steps can be
+chat with your normal tools; this skill and its files are your instructions and nothing else drives it. Steps can be
 handed to the user's own profiles (see Roles), but you stay in charge of the run.
 
 ## The one rule: keep going
 
 An obstacle is something to work around, never a reason to stop. A blocked command, a broken test runner, a
 missing dependency, a flaky check, a tool error, a profile or subagent that returns nothing, a reviewer asking
-for evidence this machine cannot produce: work around it (`cpipe:verify` has a table for the common ones), write
+for evidence this machine cannot produce: work around it (`steps/verify.md` has a table for the common ones), write
 what you could not verify in the run log, and continue with the next step.
 
 ## Unattended: the task is the last message
@@ -51,22 +50,23 @@ anything, and never end with "fix the cause and say continue". If you can do it,
 
 ## Flow
 
-Track the steps with your todo tool if you have one, one step active at a time. Load each skill with
-`skill_view` when you reach its step, not before.
+Track the steps with your todo tool if you have one, one step active at a time. Each step's instructions are a
+file in this skill: load it with `skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach the
+step, not before.
 
-| Step | Do | Skill | Role |
+| Step | Do | File | Role |
 |---|---|---|---|
-| 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log. | `cpipe:plan` | |
-| 2. Explore | Read the instructions, map the code the task touches, find the checks, run a baseline. | `cpipe:plan` | explore |
-| 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `cpipe:design` | design |
-| 4. Decide | Settle open questions yourself and record them as assumptions. Never ask. | `cpipe:plan` | |
-| 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `cpipe:plan` | plan |
-| 6. Build | Tests first, then the change, following the playbook. One verified change at a time. | `cpipe:build` | build |
-| 7. Verify | Run the plan's checks with honest states; completion gate. | `cpipe:verify` | |
-| 8. QA | Use the change on the real surface, try to break it, run the broader suite. | `cpipe:qa` | qa |
-| 9. Review | Independent review in a fresh context; act on findings; at most two rounds. | `cpipe:review` | review, security |
-| 10. Clean | One cleanup pass over the diff, then verify again. | `cpipe:build` | build |
-| 11. Report | Commit, a draft pull request only if asked, the report. | `cpipe:report` | |
+| 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log. | `steps/plan.md` | |
+| 2. Explore | Read the instructions, map the code the task touches, find the checks, run a baseline. | `steps/plan.md` | explore |
+| 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `steps/design.md` | design |
+| 4. Decide | Settle open questions yourself and record them as assumptions. Never ask. | `steps/plan.md` | |
+| 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `steps/plan.md` | plan |
+| 6. Build | Tests first, then the change, following the playbook. One verified change at a time. | `steps/build.md` | build |
+| 7. Verify | Run the plan's checks with honest states; completion gate. | `steps/verify.md` | |
+| 8. QA | Use the change on the real surface, try to break it, run the broader suite. | `steps/qa.md` | qa |
+| 9. Review | Independent review in a fresh context; act on findings; at most two rounds. | `steps/review.md` | review, security |
+| 10. Clean | One cleanup pass over the diff, then verify again. | `steps/build.md` | build |
+| 11. Report | Commit, a draft pull request only if asked, the report. | `steps/report.md` | |
 
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
 skipped with a one-line reason in the run log, never silently. Steps 7 and 11 are always yours: the checks and
@@ -77,7 +77,7 @@ the final word are never handed to anyone else.
 cpipe sets the order of the steps; the user's own skills say how a step is done. At the start of each step, check
 your skill list for a skill that covers that step's work (writing a pull request or commit message, code review,
 security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`. Where it
-and a cpipe skill differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
+and a cpipe step differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
 still decides the flow and the guard rails: a user skill never authorizes a push, merge or message the task did
 not ask for. Take from a user skill how the work is done, not a different flow: skip its parts about task
 boards, cards or handing work to other agents. Note in the run log which user skills you used.

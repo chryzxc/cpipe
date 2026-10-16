@@ -1,16 +1,4 @@
----
-name: verify
-description: "Run the project's checks and report honest results."
-version: 3.5.1
-license: MIT
-platforms: [linux, macos, windows]
-metadata:
-  hermes:
-    tags: [delivery, verification, testing, evidence]
-    related_skills: [cpipe:run, cpipe:build]
----
-
-# cpipe: verify
+# cpipe: the verify step
 
 Step 7 of `cpipe:run`, and whenever a playbook or another step says to verify. Always yours: never handed to a
 profile, because its states are what the report trusts.
@@ -40,7 +28,7 @@ Never stop the run for this. Work down the list; the first thing that works wins
 | Obstacle | Do |
 |---|---|
 | The approval policy blocks the command (`sh -c`, inline `-c`/`-e`, heredoc, pipes) | Run the program directly with its arguments, or write a script file and run it. |
-| Command or module not found | Install the project's dependencies in the worktree (`cpipe:build`), use the project's own binary (`node_modules/.bin/…`, `.venv/bin/…`, `npx`, `uv run`), or the runner the CI workflow uses. |
+| Command or module not found | Install the project's dependencies in the worktree (`steps/build.md`), use the project's own binary (`node_modules/.bin/…`, `.venv/bin/…`, `npx`, `uv run`), or the runner the CI workflow uses. |
 | Wrong runtime version | Use the version the project pins (`.nvmrc`, `.tool-versions`, `engines`, `requires-python`) through the version manager that is installed. |
 | The test framework itself crashes on the base too (a tooling mismatch, an old transpiler) | Baseline problem. Run the test another way: a single file, the project's other runner, or a small script that imports and calls the code. Typecheck and build count as partial proof. Record the original check as not run here. |
 | Needs a service (database, browser, device, network API) that is not available | Use the project's test doubles or in-memory setup if it has one. Otherwise verify the logic with unit tests and record the end-to-end part as not run here. |
