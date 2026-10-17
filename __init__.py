@@ -11,12 +11,12 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended, from request to report",
-                             args_hint="<task>", argument_mode="text")
+                             args_hint="[--kanban] <task>", argument_mode="text")
 
 
 def _start(ctx, raw):
-    if not raw.strip():
-        return "Usage: /cpipe <task>"
+    if not raw.strip().removeprefix("--kanban").strip():
+        return "Usage: /cpipe [--kanban] <task>"
     from gateway.session_context import get_session_env
     key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
     try:

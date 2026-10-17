@@ -22,7 +22,8 @@ hermes plugins enable cpipe
 /cpipe <task>
 ```
 
-`/cpipe:run <task>` does the same. Say **continue** in the chat to resume a run after a restart.
+`/cpipe:run <task>` does the same. Start the task with `--kanban` to hand the role steps to your profiles as
+cards on your Hermes kanban board (see Roles). Say **continue** in the chat to resume a run after a restart.
 
 ## Flow
 
@@ -71,6 +72,10 @@ roles:
 Every role is optional. The chat still runs the flow, runs the checks itself and treats each profile's answer as
 a claim to verify. At the start of each run it tells you who does each step; a role with no profile runs in the
 chat. If a profile fails or times out, the chat retries once, tells you, and does the step itself.
+
+With `--kanban`, each handed-over step is a card assigned to its profile, run by the board's dispatcher, so
+the work shows on the board. A card that is blocked, times out or is not picked up within 10 minutes counts as a
+failed role.
 
 ### Playbooks
 

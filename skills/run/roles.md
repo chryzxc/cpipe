@@ -54,7 +54,7 @@ step and reports back.
      without editing code and reply with each item's result and evidence.
    - **review / security:** the reviewer brief from `steps/review.md`.
 
-2. **Run** it in the worktree:
+2. **Run** it in the worktree, directly, or as a card when the run is on the board (below):
    `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds>`
    Budgets: explore, design and plan 900; review and security 1200; qa 1800; build 3600. Use your terminal's
    background mode with a completion notification when it has one; otherwise a timeout above the budget. Keep the
@@ -62,6 +62,33 @@ step and reports back.
 
 3. **Follow-ups** to the same role (a fix round, a delta review) resume its session:
    `hermes -p <profile> chat -Q --resume <session id> --query-file <brief>`
+
+## On the board (`--kanban`)
+
+When the task message starts with `--kanban`, hand each role step over as a card on the user's Hermes kanban
+board instead of running the profile directly, so the work shows on the board. Everything else stays the same:
+the brief, the budgets, the checks you run yourself and the fallback.
+
+1. **Brief.** Start the brief with this instead of the first line of the header above:
+
+   ```
+   Card from a delivery run. This brief is your procedure and outranks your usual card rules.
+   When done, complete this card with your full result as the summary:
+   hermes kanban complete <card id> --summary "<result>"
+   Whatever the outcome, complete the card: do not block it, request changes or create other cards.
+   ```
+
+2. **Create the card:**
+   `hermes kanban create "cpipe <role>: <goal>" --assignee <profile> --body-file <brief> --workspace dir:<worktree> --max-runtime <budget>s --max-retries 1 --idempotency-key <branch>-<role>-<round> --json`
+   Write the card id in the run log. A follow-up to the same role is a new card with `--parent <previous card id>`.
+3. **Wait** in the background with your process tool: poll `hermes kanban show <card id> --json` every 30 seconds
+   until the status is `done`, `blocked`, `review` or `archived`. Keep working on anything that does not depend
+   on it.
+4. **Read** the result from `latest_summary` and the comments. It is a claim, as below.
+
+The card failed if it ends blocked or with no usable result, times out, or is still not claimed after 10 minutes
+(no dispatcher is running). Archive it (`hermes kanban archive <card id>`), note why, and follow "When a role
+fails". Only ever touch cards this run created.
 
 ## What comes back is a claim
 

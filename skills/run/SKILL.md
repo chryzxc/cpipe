@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.8.0
+version: 3.9.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -101,14 +101,16 @@ A task that mixes kinds uses the stricter playbook (bug or feature over refactor
 If `${HERMES_HOME:-~/.hermes}/cpipe.yaml` exists, it names a Hermes profile for some of the roles in the flow
 table. Hand those steps to the named profiles as `skill_view(name='cpipe:run', file_path='roles.md')` describes.
 Without the file, or for a role it does not name, do the step yourself. Either way, tell the user once at the
-start who does each step.
+start who does each step. When the task message starts with `--kanban`, the named profiles get their steps as
+cards on the user's kanban board (`roles.md`, On the board); without a roles file there is nothing to hand over,
+so say that in the roles line and continue.
 
 ## Run log
 
 One log per run at `$(git rev-parse --git-dir)/cpipe/run.md`, run inside the delivery worktree. Never committed;
 it survives a restart. Append, never rewrite:
 
-- the task, the roles, the base and the worktree;
+- the task, the roles, the base and the worktree, and every card id when on the board;
 - the flow map, the baseline, the design note, the plan and its assumptions;
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
