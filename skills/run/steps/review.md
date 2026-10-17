@@ -67,7 +67,9 @@ When both the review and QA are back, fix the **act** findings and the QA failur
 `steps/verify.md`, then one more review round alongside a QA re-run of the failed items. Round two is delta-only: give the
 reviewer the diff since the first review and the list of earlier findings to confirm as resolved.
 
-After two rounds, stop reviewing. Anything still open goes into the report with its disposition. Then go to the
+After two rounds, stop reviewing. Anything still open goes into the report with its disposition. If the second
+round led to another fix, have that fix alone reviewed once more (the diff of the fix, the finding it answers), so
+no change reaches the report unreviewed. Then go to the
 cleanup step (`steps/build.md`, step 10).
 
 ## Rules
@@ -78,7 +80,7 @@ cleanup step (`steps/build.md`, step 10).
   alone.
 - Never widen the scope to satisfy a reviewer: an out-of-scope finding is **consider**. A regression the change
   caused is never out of scope.
-- Two rounds at most.
+- Two rounds at most, plus a review of a fix made after the last round.
 
 ## Done when
 

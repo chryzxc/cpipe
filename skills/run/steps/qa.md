@@ -36,7 +36,7 @@ output, the request and response, a screenshot path.
   alongside the delta review.
 - **not run here:** the surface needs something this machine does not have (a login, a device, a live
   service). Use the closest stand-in (a test double, a seeded user, a direct call), then list what is left in
-  the report's "For you to check". Never stop for it.
+  the report's Manual testing table, with exact steps and the expected result. Never stop for it.
 
 ## Rules
 

@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.11.0
+version: 3.12.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -34,7 +34,7 @@ or skip that part and report it. Every choice is yours:
   assumption, and keep going.
 - **Things only the user may do** (credentials or secrets, anything destructive or irreversible, anything that
   leaves this machine that the task did not ask for: push, pull request, deploy, messages): never do them. Skip
-  that part, finish everything else, and list it under "Needs your decision" in the report.
+  that part, finish everything else, and name it in the report's `⚠️ Done except` status line.
 - **A security finding you cannot fix inside the scope:** finish the rest and lead the report with it.
 
 A push or pull request happens only when the task message asks for one. A message from the user mid-run is
@@ -150,7 +150,8 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 
 - A failing check: three fix attempts, each with a different idea, then record it as open.
 - QA failures: two fix rounds, then record what is still failing.
-- Review: two rounds. The second checks only the changes since the first.
+- Review: two rounds. The second checks only the changes since the first. A fix made after the last round still
+  gets a short review of that fix alone; no change reaches the report unreviewed.
 - No progress for three rounds in a row: step back, change the approach once, then go to the report.
 
 ## Guard rails

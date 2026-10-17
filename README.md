@@ -51,7 +51,7 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 | `steps/verify.md` | Run the checks with honest states, work around checks that will not run, completion gate |
 | `steps/qa.md` | Use the change on the real surface, walk the acceptance criteria, try to break it, broader suite |
 | `steps/review.md` | Independent review by a subagent that hunts regressions and risks the plan missed, findings sorted into act, consider, noted and dismissed |
-| `steps/report.md` | Commit, a draft pull request only when asked, the report |
+| `steps/report.md` | Commit, a draft pull request only when asked (then waits for CI), the report |
 
 ### Roles (optional)
 
@@ -89,10 +89,23 @@ failed role.
 
 ### It runs to the end
 
-It does not stop: the task is the last message you send. Open questions are decided and listed as assumptions
-at the top of the report. Things only you may do (credentials, anything destructive or irreversible, anything
-leaving your machine you did not ask for) are skipped and listed under "Needs your decision", as is an open
-security finding it cannot fix inside the scope. It never asks you to fix or run anything.
+It does not stop: the task is the last message you send. Open questions are decided and listed with their reason
+in the report's Decisions table. Things only you may do (credentials, anything destructive or irreversible,
+anything leaving your machine you did not ask for) are skipped and named in the report's status line, as is an
+open security finding it cannot fix inside the scope. It never asks you to fix or run anything.
+
+### The report
+
+The run reports only once the work is finished: findings fixed, the last fix reviewed, CI waited for when a pull
+request was asked for. The report has a status line (`✅ Done`, `✅ Done, test by hand` or `⚠️ Done except …`),
+then:
+
+- **Summary:** for a bug, what happened, the cause and the fix; for a feature, what was added and how; for an
+  improvement, before, after and why.
+- **Decisions:** each choice made, what it was chosen over, and why.
+- **Work:** every item from reproduction to CI with ✅, ⚠️, ⏳, ❌ or — and its proof.
+- **Manual testing:** only what this machine could not verify, with steps and the expected result.
+- **Not in this change** and **Details** (branch, commit, pull request, files, roles, lessons).
 
 ### It learns from misses
 
