@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.10.0
+version: 3.11.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -63,10 +63,14 @@ step, not before.
 | 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `steps/plan.md` | plan |
 | 6. Build | Tests first, then the change, following the playbook. One verified change at a time. | `steps/build.md` | build |
 | 7. Verify | Run the plan's checks with honest states; completion gate. | `steps/verify.md` | |
-| 8. QA | Use the change on the real surface, try to break it, run the broader suite. | `steps/qa.md` | qa |
-| 9. Review | Independent review in a fresh context; act on findings; at most two rounds. | `steps/review.md` | review, security |
+| 8. QA | Use the change on the real surface, try to break it, run the broader suite. Runs alongside 9. | `steps/qa.md` | qa |
+| 9. Review | Independent review in a fresh context; act on findings; at most two rounds. Runs alongside 8. | `steps/review.md` | review, security |
 | 10. Clean | One cleanup pass over the diff, then verify again. | `steps/build.md` | build |
 | 11. Report | Commit, a draft pull request only if asked, the report. | `steps/report.md` | |
+
+QA and review run at the same time: both only read the same verified change. Start them together (the review
+in the background while you or the QA role do QA), wait for both, then fix everything they found in one round,
+verify, and re-run only the QA items that failed together with the delta review.
 
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
 skipped with a one-line reason in the run log, never silently. Steps 7 and 11 are always yours: the checks and

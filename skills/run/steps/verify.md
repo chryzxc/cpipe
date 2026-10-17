@@ -42,7 +42,7 @@ The report shows it plainly; that is enough. Never fake a pass, never skip or de
 
 ## Completion gate
 
-Before the review and before the report, check the diff (`git diff <base>...HEAD`):
+Before QA and the review, and before the report, check the diff (`git diff <base>...HEAD`):
 
 - Tests you added actually assert something, and none are skipped, focused (`.only`) or marked to fail.
 - No `TODO`, `FIXME`, `NotImplemented`, placeholder values or debug output left in changed lines.

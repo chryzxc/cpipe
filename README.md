@@ -30,7 +30,7 @@ cards on your Hermes kanban board (see Roles). Say **continue** in the chat to r
 ```
 set up (worktree + dependencies) → explore → design → decide open questions → plan
    → tests first (RED) → build (GREEN, one verified change at a time) → verify
-   → QA on the real surface → independent review (≤ 2 rounds) → clean up → verify → commit → report
+   → QA on the real surface + independent review, side by side (≤ 2 rounds) → clean up → verify → commit → report
 ```
 
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change)
@@ -71,7 +71,8 @@ roles:
 
 Every role is optional. The chat still runs the flow, runs the checks itself and treats each profile's answer as
 a claim to verify. At the start of each run it tells you who does each step; a role with no profile runs in the
-chat. If a profile fails or times out, the chat retries once, tells you, and does the step itself.
+chat. If a profile fails, the chat retries once, tells you, and does the step itself; a profile that runs past its time
+budget is stopped and the chat does the step at once.
 
 With `--kanban`, each handed-over step is a card assigned to its profile, run by the board's dispatcher, so
 the work shows on the board. A card that is blocked, times out or is not picked up within 10 minutes counts as a

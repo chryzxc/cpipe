@@ -1,6 +1,7 @@
 # cpipe: the review step
 
-Step 9 of `cpipe:run`. The builder never approves its own work: the review runs in a fresh context that did not
+Step 9 of `cpipe:run`, at the same time as QA (`steps/qa.md`): start the reviewers in the background, then do
+or hand over QA while they work. The builder never approves its own work: the review runs in a fresh context that did not
 write the code.
 
 ## 1. Brief the reviewer
@@ -62,7 +63,8 @@ you can locally, then list it as **consider** with what is left for the user to 
 
 ## 3. Fix and re-review
 
-Fix the **act** findings, run `steps/verify.md`, then one more review round. Round two is delta-only: give the
+When both the review and QA are back, fix the **act** findings and the QA failures in one round, run
+`steps/verify.md`, then one more review round alongside a QA re-run of the failed items. Round two is delta-only: give the
 reviewer the diff since the first review and the list of earlier findings to confirm as resolved.
 
 After two rounds, stop reviewing. Anything still open goes into the report with its disposition. Then go to the

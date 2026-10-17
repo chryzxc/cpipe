@@ -37,6 +37,9 @@ step and reports back.
    Work only in <worktree>. Do not commit, push, merge, open pull requests or message anyone.
    Do not skip or weaken tests. Never print secrets or .env contents.
    Use your own skills for this kind of work where you have them.
+   Keep it lean: the project's own dev server, test runner and tools first; evidence is the command and its
+   result; no hash manifests, integrity receipts or copies of the tree. At your time budget, stop and reply
+   with what you have and what is left.
    ```
 
    A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`.
@@ -56,9 +59,10 @@ step and reports back.
 
 2. **Run** it in the worktree, directly, or as a card when the run is on the board (below):
    `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds>`
-   Budgets: explore, design and plan 900; review and security 1200; qa 1800; build 3600. Use your terminal's
+   Budgets in seconds: explore, design and plan 600; review, security and qa 900; build 2400. Use your terminal's
    background mode with a completion notification when it has one; otherwise a timeout above the budget. Keep the
-   session id it prints.
+   session id it prints. The budget is a hard limit: if the profile has not replied two minutes after it, stop the
+   process yourself and treat the role as failed. Never wait longer.
 
 3. **Follow-ups** to the same role (a fix round, a delta review) resume its session:
    `hermes -p <profile> chat -Q --resume <session id> --query-file <brief>`
@@ -86,7 +90,8 @@ the brief, the budgets, the checks you run yourself and the fallback.
    on it.
 4. **Read** the result from `latest_summary` and the comments. It is a claim, as below.
 
-The card failed if it ends blocked or with no usable result, times out, or is still not claimed after 10 minutes
+The card failed if it ends blocked or with no usable result, is still running two minutes past its budget, or is
+still not claimed after 10 minutes
 (no dispatcher is running). Archive it (`hermes kanban archive <card id>`), note why, and follow "When a role
 fails". Only ever touch cards this run created.
 
@@ -101,7 +106,8 @@ fails". Only ever touch cards this run created.
 
 ## When a role fails
 
-The profile does not exist, the command errors, it times out, it returns nothing usable, or it broke a rule in
-the brief: try once more with a shorter brief, then do the step yourself in this chat. Tell the user in one line
+The profile does not exist, the command errors, it returns nothing usable, or it broke a rule in the brief: try
+once more with a shorter brief, then do the step yourself in this chat. If it timed out, do not retry: do the step
+yourself right away. Tell the user in one line
 (`build: <profile> failed (<reason>), running it in this chat`) and note it in the run log and the report. A role
 failing is never a reason to stop the run.

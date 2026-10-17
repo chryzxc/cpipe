@@ -1,6 +1,6 @@
 # cpipe: the qa step
 
-Step 8 of `cpipe:run`, after the checks pass. Checks prove the code; QA proves the behavior. If the roles file
+Step 8 of `cpipe:run`, after the checks pass, at the same time as the review (`steps/review.md`). Checks prove the code; QA proves the behavior. If the roles file
 names a `qa` profile, hand this step to it (`roles.md` in `cpipe:run`). Otherwise do it yourself.
 
 ## When it applies
@@ -9,6 +9,10 @@ Every change with behavior a user or another system can reach. A change with non
 checks cover) gets `QA: not needed (<reason>)` in the run log.
 
 ## Steps
+
+Use the project's own dev server, test runner and tools. Write your own harness only for a behavior they cannot
+reach, and keep it small. Evidence is the command or action and what you saw; no hash manifests or copies of the
+tree.
 
 1. **Use it on the real surface.** Start the app, CLI or service from the worktree the way the project does (its
    scripts, its dev-server setup) and use the change as a user would: the page in a browser if you have one, the
@@ -27,8 +31,9 @@ checks cover) gets `QA: not needed (<reason>)` in the run log.
 Record each item in the run log as **pass**, **fail** or **not run here**, with the evidence: the command and its
 output, the request and response, a screenshot path.
 
-- **fail:** reproduce it, then go back to step 6 to fix it. If the plan did not foresee it, write a lesson
-  (`cpipe:run`, Lessons). Each fix is a round; verify and QA the fix again.
+- **fail:** reproduce it, then fix it in step 6 together with the review's **act** findings, in one round. If the
+  plan did not foresee it, write a lesson (`cpipe:run`, Lessons). Verify, then QA the failed items again
+  alongside the delta review.
 - **not run here:** the surface needs something this machine does not have (a login, a device, a live
   service). Use the closest stand-in (a test double, a seeded user, a direct call), then list what is left in
   the report's "For you to check". Never stop for it.

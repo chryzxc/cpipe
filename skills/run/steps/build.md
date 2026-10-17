@@ -27,7 +27,7 @@ the script to a file and run the file, or call the program directly with its arg
 
 ## 10. Clean
 
-Once, after the review. Read the whole diff (`git diff <base>...HEAD` plus uncommitted changes) as a stranger
+Once, after the review and QA. Read the whole diff (`git diff <base>...HEAD` plus uncommitted changes) as a stranger
 would and remove:
 
 - dead code, debug output, commented-out code;
