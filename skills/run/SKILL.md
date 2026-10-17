@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.12.0
+version: 3.12.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -45,7 +45,7 @@ silently. Progress updates go in the same reply as your next tool call. When you
 or a profile, wait on it with your process tool; if your turn does end, the completion notification resumes the
 run at the first unfinished step.
 
-The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run or debug
+The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run, debug or review
 anything, and never end with "fix the cause and say continue". If you can do it, do it.
 
 ## Flow

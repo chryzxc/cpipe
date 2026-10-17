@@ -11,6 +11,10 @@ touches authentication, permissions, payments, data deletion or migrations; find
 confidence. If the roles file names a `review` (and, for those areas, a `security`) profile, the reviewer is
 that profile instead (`roles.md` in `cpipe:run`).
 
+A review always happens. If the profile fails or runs out of time, use a subagent; if that fails too or you have
+no subagent tool, start a fresh review yourself: read only the brief below and the diff, not your earlier
+reasoning, and note in the run log that the review was not independent. Never leave a review for the user.
+
 Give the reviewer only what it needs, not your reasoning:
 
 ```
@@ -81,6 +85,7 @@ cleanup step (`steps/build.md`, step 10).
 - Never widen the scope to satisfy a reviewer: an out-of-scope finding is **consider**. A regression the change
   caused is never out of scope.
 - Two rounds at most, plus a review of a fix made after the last round.
+- Every review gap is closed by the run, never handed to the user.
 
 ## Done when
 

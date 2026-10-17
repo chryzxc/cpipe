@@ -98,7 +98,8 @@ not needed (why). Proof is the evidence in a few words: test names, counts, the 
 | Commit, pull request, CI | the SHA; the link and CI result if a pull request was asked for |
 
 **Manual testing**: only what this machine could not verify (a signed-in session, a device, a live service,
-visual judgment), each with exact steps and the expected result, so the user can run it in a few minutes. When
+visual judgment), each with exact steps and the expected result, so the user can run it in a few minutes. Never a
+code review, a re-review, reading a diff, running a check or command, or confirming a result: the run does those. When
 nothing is left: `None needed: <why>`.
 
 **Not in this change**: out-of-scope problems found, **consider** and **noted** findings, known limits. One
@@ -107,8 +108,9 @@ line each, or omit the section.
 **Details**: the branch and worktree, the commit SHA and subject, the pull request link, `git diff --stat` in one
 line, who did each step (a profile or this chat) and any fallback, and the lessons written.
 
-The report never asks the user to fix, install or run anything you could have done yourself; if you could do it,
-do it before reporting.
+The report never asks the user to fix, install, run, review or verify anything you could have done yourself, and
+has no "next steps" or "remaining" list for the user beyond Manual testing and what only the user may do. If you
+could do it, do it before reporting.
 
 ## Rules
 
