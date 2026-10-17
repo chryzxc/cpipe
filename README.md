@@ -124,6 +124,9 @@ is run and read.
 
 Each run keeps an append-only log at `<git-dir>/cpipe/run.md` in its worktree: the plan, one row per round,
 every workaround, the review findings and their dispositions. It is never committed, and it is how a run resumes.
+The log also marks the worktree as cpipe's: each new run removes cpipe worktrees whose pull request is merged and
+that hold no uncommitted or unpushed work, so finished worktrees do not fill the disk. Other worktrees are never
+touched.
 
 ### Cost
 

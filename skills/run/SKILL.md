@@ -56,7 +56,7 @@ step, not before.
 
 | Step | Do | File | Role |
 |---|---|---|---|
-| 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log. | `steps/plan.md` | |
+| 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log, remove merged worktrees. | `steps/plan.md` | |
 | 2. Explore | Read the instructions, map every entrance, exit and guard of the code, find the checks, run a baseline. | `steps/plan.md` | explore |
 | 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `steps/design.md` | design |
 | 4. Decide | Settle open questions yourself and record them as assumptions. Never ask. | `steps/plan.md` | |
@@ -136,7 +136,8 @@ adding a near-duplicate. Never put secrets or customer data in a lesson.
 ## After the report
 
 A message after the report about the same work (a correction, a missed case, more context) is a follow-up, not a
-new task: reuse the worktree and the run log, write a lesson if it reveals a miss, update the plan, then run
+new task: reuse the worktree and the run log (or, if it was removed after its merge, a new worktree from the
+base), write a lesson if it reveals a miss, update the plan, then run
 build, verify, QA and a delta review on the follow-up only, and report again. A different task starts a new run.
 
 ## Continue
@@ -157,7 +158,8 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 ## Guard rails
 
 **Scope**
-- Work only in the delivery worktree. Never edit the user's own checkout, other branches or other worktrees.
+- Work only in the delivery worktree. Never edit the user's own checkout, other branches or other worktrees; the
+  one exception is removing cpipe's own merged worktrees in set up (`steps/plan.md`).
 - Change only what the plan's scope names. If the scope must grow, say so in one line and note it; ask only if
   the growth is destructive or a product decision.
 
@@ -165,7 +167,8 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 - Never merge, push, open a pull request, deploy or message anyone unless the user asked for it in this task.
 - Never put credentials, tokens or secrets in code, commits, logs, briefs or the report. Never print `.env`
   contents.
-- Never run destructive commands outside the worktree (deleting data, resetting branches, dropping databases).
+- Never run destructive commands outside the worktree (deleting data, resetting branches, dropping databases),
+  apart from the set-up tidy-up.
 - Never add AI attribution to commits or pull requests.
 
 **Honesty**

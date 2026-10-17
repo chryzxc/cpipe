@@ -23,6 +23,19 @@ not repeat it.
    dependencies. Copy local env files (`.env`) from the user's checkout only if the checks need them, and never
    print their contents.
 5. **Run log.** Start it (`cpipe:run`) with the task, the base, the worktree and the roles line.
+6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A worktree from
+   `git worktree list` is cpipe's when its git dir holds a run log (`$(git -C <path> rev-parse --git-dir)/cpipe/run.md`);
+   never touch any other worktree, the user's checkout or this run's worktree. Remove one only when all hold:
+   - its pull request is merged and its `HEAD` is the pull request's head commit
+     (`gh pr view <branch> --json state,headRefOid`), or, with no pull request, its branch is merged into the
+     fetched base (`git branch --merged`);
+   - `git status --porcelain` is empty, apart from tracked runtime output such as log files, which you restore
+     with `git restore` first;
+   - no process has its working directory inside it (`lsof -d cwd -Fn`).
+
+   Then `git worktree remove <path>` (never `--force`), `git branch -D <branch>` when the merged pull request's
+   head is the branch tip (squash merges) or `git branch -d` otherwise, and `git worktree prune`. Name what was
+   removed in the run log. Anything unclear stays; a failed removal is noted and never ends the run.
 
 If the install fails, try the next way from `steps/verify.md` and record it; a failed install never ends the run.
 
@@ -111,7 +124,7 @@ worktree and branch you created (nothing is committed on them).
 
 ## Rules
 
-- Nothing outside the worktree changes in these steps; exploring is read-only.
+- Nothing outside the worktree changes in these steps except the tidy-up; exploring is read-only.
 - The plan is a short record for the user's later review, not a specification.
 - Every acceptance criterion must be checkable by a test, a command or a QA step.
 - Every new test must name the break it catches (Tests above); no test is added for coverage alone.
