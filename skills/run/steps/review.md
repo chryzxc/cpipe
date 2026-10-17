@@ -23,7 +23,9 @@ Flow map and risks: <entrances, exits, guards, must-not-change list and premorte
 
 Review against:
 - Correctness: does it meet each acceptance criterion? Logic errors, edge cases, error paths.
-- Proof: do the tests fail without the change and assert the real behavior?
+- Proof: does each new test fail when the code it covers breaks, and assert the real behavior? Flag tests that
+  catch no realistic break (duplicates, constants, getters, the framework, their own mocks, loose assertions) for
+  removal, and real breaks no test catches.
 - Regressions: do not trust the flow map. Search the whole repository for every usage of what the diff changed
   (functions, types, fields, routes, events, config) and list any entrance or consumer the map missed. For each
   one, and for each must-not-change item, does it still behave the same? Follow changes across boundaries

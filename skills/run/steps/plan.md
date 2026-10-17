@@ -92,8 +92,15 @@ draft against the code and the baseline yourself. Write the plan in the chat and
 - **Flow map:** the entrances, exits and guards from explore, in short.
 - **Acceptance:** observable criteria, each one checkable, including the design note's states.
 - **Must not change:** for each entrance, consumer and guard in the map, the behavior that has to stay, with the
-  check, test or QA step that proves it.
-- **Risks:** the premortem, each with its check or the reason it cannot happen.
+  check, test or QA step that proves it. An existing test or check that already covers it is named, not
+  duplicated.
+- **Risks:** the premortem, each with its check or the reason it cannot happen. A new test only where nothing
+  existing would catch the break.
+- **Tests:** the new tests, each with the break it catches: the line or behavior that, when broken, makes it
+  fail. Before adding one, look for an existing test that already fails on that break; then it covers the item
+  and nothing is added. Extend an existing test before writing a new file. A test that fails on no realistic
+  break of this change is not planned (rendering a constant, a getter, the framework, a mock returning what it
+  was told). Fewer, sharper tests over many.
 - **Checks:** the exact commands, with the baseline result of each.
 - **Assumptions** and **risks.**
 - **Deliverable:** a local commit on the delivery branch (default), or a draft pull request if asked.
@@ -107,6 +114,7 @@ worktree and branch you created (nothing is committed on them).
 - Nothing outside the worktree changes in these steps; exploring is read-only.
 - The plan is a short record for the user's later review, not a specification.
 - Every acceptance criterion must be checkable by a test, a command or a QA step.
+- Every new test must name the break it catches (Tests above); no test is added for coverage alone.
 - Never ask the user anything; every open question ends as a recorded assumption.
 
 ## Done when

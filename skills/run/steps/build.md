@@ -7,8 +7,11 @@ Steps 6 and 10 of `cpipe:run`. If the roles file names a `build` profile, hand b
 
 Follow the playbook from the plan. In every playbook:
 
-1. **Tests first.** Write the tests for the acceptance criteria and see them fail for the right reason (an
-   assertion, not an import error) before writing the change. The playbook says what proof the kind needs.
+1. **Tests first.** Write only the tests the plan lists, and see each fail for the right reason (an assertion,
+   not an import error) before writing the change. The playbook says what proof the kind needs.
+   A test of behavior that already exists (pinning a must-not-change item) passes from the start, so prove it
+   instead: break the line it guards for a moment, see the test fail, and restore it. A test that still passes
+   with its code broken catches nothing: fix it or delete it.
 2. **Climb the ladder** before writing code: does it need to exist, does the codebase already have it, does the
    standard library or an installed dependency do it. Then write the minimum that works.
 3. **One change at a time.** Make a change, run the narrow test, keep it if it moves toward the acceptance
@@ -30,7 +33,9 @@ would and remove:
 - dead code, debug output, commented-out code;
 - duplicates of helpers the codebase already has (reuse them);
 - abstractions with one caller, configuration for a value that never changes;
-- comments that restate the code; keep the ones that explain why.
+- comments that restate the code; keep the ones that explain why;
+- tests that catch no break: duplicates of an existing test, tests of constants, getters, the framework or
+  their own mocks, assertions so loose any output passes. Merge near-duplicates into one table-driven test.
 
 Then run the checks again. If anything turns red, undo the cleanup change that caused it.
 

@@ -5,8 +5,8 @@ and the behavior exercised on the real surface where it is reachable.
 
 1. **Understand what exists.** Read the modules the feature touches and reuse their helpers, types and patterns.
    Name the data shape before writing logic.
-2. **Pin what must not change.** If a change could hide a regression, make sure a test covers the current
-   behavior first.
+2. **Pin what must not change.** If a change could hide a regression and no existing test would catch it, add
+   one test for the current behavior first, and prove it fails when that behavior breaks.
 3. **RED.** Write tests for the new behavior from the plan's acceptance criteria. Run them; they must fail on an
    assertion. Record the output.
 4. **GREEN.** Implement in small verified steps: one change, run the narrow test, next change. Never two
