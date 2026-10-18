@@ -33,6 +33,9 @@ set up (worktree + dependencies) → explore → design → decide open question
    → QA on the real surface + independent review, side by side (≤ 2 rounds) → clean up → verify → commit → report
 ```
 
+A task with several issues becomes one delivery per issue: its own branch, worktree, commit and pull request,
+run one after another and reported together. Issues ship together only when one cannot work without the other.
+
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change)
 is skipped with its reason in the run log. The checks and the report are always done by the chat itself.
 

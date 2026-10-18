@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.12.1
+version: 3.14.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -47,6 +47,15 @@ run at the first unfinished step.
 
 The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run, debug or review
 anything, and never end with "fix the cause and say continue". If you can do it, do it.
+
+## One issue, one delivery
+
+A task that names several issues (issue numbers or links, or a list of unrelated bugs, features or changes) is
+several deliveries, never one. Each issue gets its own branch, worktree, run log and commit, and its own pull
+request when pull requests are asked for, each branched from the base, not from another delivery. Run them one
+after another, each through the whole flow; each run log names the others (`Delivery 2 of 3; others: <branches>`).
+Deliver two issues together only when one cannot work without the other (the same root cause or the same lines)
+or the user asked for a single pull request, and record why in Decisions.
 
 ## Flow
 
@@ -143,7 +152,8 @@ build, verify, QA and a delta review on the follow-up only, and report again. A 
 ## Continue
 
 When the user says "continue", or the chat restarted mid-run: read the run log, check `git status` and the last
-check results in the worktree, and pick up at the first unfinished step. Do not redo finished steps.
+check results in the worktree, and pick up at the first unfinished step. Do not redo finished steps. With
+several deliveries, finish the unfinished one first, then start the next one its run log names.
 
 ## Limits
 
