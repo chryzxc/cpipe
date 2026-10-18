@@ -146,10 +146,73 @@ The log also marks the worktree as cpipe's: each new run removes cpipe worktrees
 that hold no uncommitted or unpushed work, so finished worktrees do not fill the disk. Other worktrees are never
 touched.
 
-### Cost
+## How it works
 
-Reading happens once, in planning. While building, only the narrow tests run; the full checks run once per
-round. The second review round sees only the changes since the first.
+### A graph of steps
+
+A run is a graph. Each step is a node with its own instructions file, loaded only when the run reaches it. Each
+edge is a condition the chat checks on the current tree: a gate that passes, a check that fails, findings that
+come back. Nothing outside the model picks the next step; the graph is written in the skill, and the run log
+holds where the run is.
+
+```
+set up → explore → design → decide → plan
+                                       │ plan gate
+                                       ▼
+                    ┌─────────────►  build  ◄──────┐
+                    │                  ▼           │ a check fails
+                    │                verify ───────┘
+                    │                  │ completion gate
+                    │           ┌──────┴──────┐
+                    │           ▼             ▼
+                    │          QA          review          side by side
+                    │           └──────┬──────┘
+                    │ findings         │
+                    └── one fix round ◄┤
+                                       │ nothing left to act on, or a limit reached
+                                       ▼
+                         clean → verify → commit → report
+```
+
+- **Gates** guard the two expensive edges. The plan gate checks the plan before any code is written; the
+  completion gate checks the change before anyone reviews it. A failed gate item is fixed on the spot, never a
+  stop.
+- **Fork and join.** QA and review only read the same verified change, so they run at the same time. Their
+  findings join into one fix round, then a delta review runs alongside a QA re-run of the items that failed.
+- **Pass-through.** A step that does not apply (design for an internal fix, QA for a docs change) is passed with
+  its reason in the run log.
+- **Re-entry.** The run log is the graph's state. **continue** re-enters at the first unfinished step; a
+  message after the report re-enters at the plan for the follow-up only; a task with several issues runs one graph
+  per delivery, one after another.
+
+### Bounded loops
+
+Every loop has an exit, and reaching it records the open items and moves on; it never ends the run.
+
+| Loop | Bound |
+|---|---|
+| Build: change, narrow test, keep or undo | One change at a time; never two unverified changes stacked |
+| A failing check, back to build | 3 attempts, each a different idea |
+| QA failures, back to build | 2 fix rounds |
+| Review, back to build | 2 rounds, the second on the changes since the first; a fix after that gets one review of its own |
+| No progress | 3 rounds in a row: change the approach once, then report |
+| A role's profile | Its time budget, then the chat does the step; a card not picked up in 10 minutes counts as failed |
+
+### Cost and caching
+
+- **Read once.** Explore reads the code once. The plan carries what the builder needs (paths, functions, the
+  exact change), so later steps do not re-read the repository.
+- **Load late.** Only the current step's instructions are loaded, not the whole flow.
+- **Narrow first.** While building only the narrow tests run; the full checks run once per round. The baseline
+  is taken once, so a check that was already red is not chased.
+- **Deltas.** The second review round and every follow-up see only the diff since the last one; a QA re-run
+  covers only the items that failed.
+- **Resumed sessions.** A fix round or delta review for a profile resumes that profile's session, so its brief
+  and what it already read are not sent again.
+- **Lean briefs.** A brief holds facts (goal, acceptance, diff, check states), not reasoning; evidence is the
+  command and its result.
+- **Lessons.** A miss is written down once per project and checked by every later run, so it is not paid for
+  twice.
 
 ## What it never does
 
