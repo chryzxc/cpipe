@@ -5,7 +5,10 @@ Steps 6 and 10 of `cpipe:run`. If the roles file names a `build` profile, hand b
 
 ## 6. Build
 
-Follow the playbook from the plan. In every playbook:
+Follow the plan's steps in order (`steps/plan.md`, Steps); the playbook says what proof the kind needs. A step
+that turns out wrong (the code is not where it says, its test cannot fail as written, a helper to reuse turns up)
+is never improvised silently: correct the step in the run log (what was wrong, what instead), then follow it. In
+every playbook:
 
 1. **Tests first.** Write only the tests the plan lists, and see each fail for the right reason (an assertion,
    not an import error) before writing the change. The playbook says what proof the kind needs.

@@ -48,7 +48,7 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 | File | Step |
 |---|---|
 | `SKILL.md` | The flow, the rules, the run log, playbooks per task kind |
-| `steps/plan.md` | Worktree and dependencies, a flow map of every entrance, exit, consumer and guard, a premortem of what could break, the checks and their baseline, open questions decided as assumptions, plan |
+| `steps/plan.md` | Worktree and dependencies, a flow map of every entrance, exit, consumer and guard, a premortem of what could break, the checks and their baseline, open questions decided as assumptions, a plan of numbered build steps that must pass the plan gate |
 | `steps/design.md` | States, flow, copy, accessibility and edge cases of anything user-facing |
 | `steps/build.md` | Tests first (only tests that fail when the code breaks), implement, cleanup pass |
 | `steps/verify.md` | Run the checks with honest states, work around checks that will not run, completion gate |
@@ -116,6 +116,14 @@ When review, QA or you catch something the plan should have seen, the run writes
 project at `<git-common-dir>/cpipe/lessons.md` (shared by all its worktrees, never committed). Every later run
 reads the lessons before planning and checks each one. A message after the report is a follow-up on the same
 worktree: it is fixed, verified and reviewed, then reported again.
+
+### Plans a builder can follow
+
+The plan ends in numbered steps, one behavior each: the file and function, exactly what changes, the test that
+fails first, the command that proves it, and which acceptance, must-not-change and risk items it covers. A plan
+gate checks every step before the build (paths and functions exist, no vague wording or open choices, every
+item covered, no file pushed past the size budget). The builder follows the steps in order; a step that proves
+wrong is corrected in the run log, never improvised silently.
 
 ### Small files
 

@@ -51,8 +51,8 @@ step and reports back.
    - **design:** the request, the explore map, and the steps of `steps/design.md`. Ask for the design note.
    - **plan:** the request, the explore map, the baseline and the design note. Ask for a plan in the format of
      `steps/plan.md` step 5.
-   - **build:** the plan, the playbook, the run log path. Ask it to follow `steps/build.md` and reply with
-     what changed and which tests it ran with their results.
+   - **build:** the plan, the playbook, the run log path. Ask it to follow `steps/build.md` and reply per
+     plan step: done or corrected (what and why), and the tests it ran with their results.
    - **qa:** the acceptance criteria, the design note, how to start the app. Ask it to follow `steps/qa.md`
      without editing code and reply with each item's result and evidence.
    - **review / security:** the reviewer brief from `steps/review.md`.

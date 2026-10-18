@@ -100,22 +100,48 @@ draft against the code and the baseline yourself. Write the plan in the chat and
 - **Goal:** one sentence, in the user's words.
 - **Kind** and playbook.
 - **Base** (branch and commit) and **worktree**.
-- **Scope:** the files or directories you expect to change. **Non-goals:** what you will not touch.
+- **Scope:** the exact files to change, new ones marked `(new)`. **Non-goals:** what you will not touch.
 - **Flow map:** the entrances, exits and guards from explore, in short.
-- **Acceptance:** observable criteria, each one checkable, including the design note's states.
-- **Must not change:** for each entrance, consumer and guard in the map, the behavior that has to stay, with the
-  check, test or QA step that proves it. An existing test or check that already covers it is named, not
-  duplicated.
-- **Risks:** the premortem, each with its check or the reason it cannot happen. A new test only where nothing
-  existing would catch the break.
+- **Acceptance:** observable criteria, numbered `A1`, `A2`…, each one checkable, including the design note's
+  states.
+- **Must not change:** numbered `M1`…; for each entrance, consumer and guard in the map, the behavior that has
+  to stay, with the check, test or QA step that proves it. An existing test or check that already covers it is
+  named, not duplicated.
+- **Risks:** numbered `R1`…; the premortem, each with its check or the reason it cannot happen. A new test only
+  where nothing existing would catch the break.
 - **Tests:** the new tests, each with the break it catches: the line or behavior that, when broken, makes it
   fail. Before adding one, look for an existing test that already fails on that break; then it covers the item
   and nothing is added. Extend an existing test before writing a new file. A test that fails on no realistic
   break of this change is not planned (rendering a constant, a getter, the framework, a mock returning what it
   was told). Fewer, sharper tests over many.
 - **Checks:** the exact commands, with the baseline result of each.
-- **Assumptions** and **risks.**
+- **Steps:** the build, in the playbook's order, one behavior per step, written so a builder who has not read
+  the code can follow it:
+  ```
+  S1  <path>  <function, class or line it changes>
+      Do: <add | change | remove | move | extract> <exactly what: names, values, conditions>
+      Test first: <test file> <test name>, fails now because <reason>; or covered by <existing test>
+      Verify: <narrow command from Checks> -> <expected result>
+      Covers: A1, M2
+  ```
+- **Assumptions:** each with its one-line reason from step 4.
 - **Deliverable:** a local commit on the delivery branch (default), or a draft pull request if asked.
+
+### Plan gate
+
+Before building, check the plan item by item and fix every no. It is your own check, never a stop:
+
+- Every step's path exists (`git ls-files <path>`) or is marked `(new)`, and every function or class it names is
+  found in that file (`grep -n`).
+- Every Do line says exactly what changes. None says "as needed", "if needed", "make sure", "improve", "clean
+  up", "etc.", "appropriately", "TBD", or leaves a choice open: decisions belong in step 4.
+- Every step has a Verify command from Checks with its expected result.
+- Every `A`, `M` and `R` is in some step's Covers, or names the existing test or check that covers it (a risk
+  may instead give the reason it cannot happen).
+- Every Scope file is in a step, and every step's file is in Scope.
+- No step leaves a file over 4,500 tokens (its size now, `wc -c` / 4, plus what the step adds) except by the
+  import and call into a new file: the new code goes in a new file the step names (`steps/verify.md`, File size).
+- Each step depends only on steps before it.
 
 Post the plan in one message together with your next tool call and start building; do not wait for approval.
 If the user steers mid-run, revise the plan in the run log and continue. If the user cancels, remove the
@@ -124,7 +150,7 @@ worktree and branch you created (nothing is committed on them).
 ## Rules
 
 - Nothing outside the worktree changes in these steps except the tidy-up; exploring is read-only.
-- The plan is a short record for the user's later review, not a specification.
+- The plan is the builder's instructions: exact enough to follow step by step without re-reading the code.
 - Every acceptance criterion must be checkable by a test, a command or a QA step.
 - Every new test must name the break it catches (Tests above); no test is added for coverage alone.
 - Never ask the user anything; every open question ends as a recorded assumption.
@@ -132,4 +158,4 @@ worktree and branch you created (nothing is committed on them).
 ## Done when
 
 The worktree exists with dependencies installed, the baseline, the flow map and the premortem are recorded, the plan
-with its must-not-change list, risks and assumptions is in the run log.
+with its must-not-change list, risks, assumptions and steps passes the plan gate and is in the run log.

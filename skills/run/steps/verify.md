@@ -47,6 +47,7 @@ Before QA and the review, and before the report, check the diff (`git diff <base
 - Tests you added actually assert something, and none are skipped, focused (`.only`) or marked to fail.
 - No `TODO`, `FIXME`, `NotImplemented`, placeholder values or debug output left in changed lines.
 - Every changed file is inside the plan's scope, or the reason is in the run log.
+- Every plan step is done, or its correction is in the run log.
 - No credentials, tokens, keys or private URLs in the diff.
 - The acceptance criteria each have proof: a test, a check, or a recorded manual verification.
 - Every file the change adds or grows is within the file size budget (below).
