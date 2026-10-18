@@ -49,8 +49,38 @@ Before QA and the review, and before the report, check the diff (`git diff <base
 - Every changed file is inside the plan's scope, or the reason is in the run log.
 - No credentials, tokens, keys or private URLs in the diff.
 - The acceptance criteria each have proof: a test, a check, or a recorded manual verification.
+- Every file the change adds or grows is within the file size budget (below).
 
 Fix what fails the gate, then verify again.
+
+### File size
+
+Large files cost every later reader: they are read in pieces and edited blind. The budget is 5,000 tokens per
+file (tokens = bytes / 4, about 500 lines), for source and test code. A file fails when it is new and over the
+budget, when the change takes it over, or when it was already over and grew by more than 100 tokens. If the
+project has its own size rule (a lint `max-lines` setting, its instructions), use that instead. From the worktree
+root, with the plan's base:
+
+```sh
+b=$(git merge-base <base> HEAD)
+{ git diff --name-only --diff-filter=AM "$b"; git ls-files --others --exclude-standard; } | sort -u |
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  new=$(( $(wc -c < "$f") / 4 )); old=$(( $(git cat-file -s "$b:$f" 2>/dev/null || echo 0) / 4 ))
+  [ "$new" -gt 5000 ] && { [ "$old" -le 5000 ] || [ $((new - old)) -gt 100 ]; } && echo "$f: $old -> $new tokens"
+done
+```
+
+No output passes. Skip listed files that are not written by hand: lockfiles, generated code (a "generated"
+header, `linguist-generated` in `.gitattributes`, codegen output), vendored or minified files, snapshots,
+fixtures and test data, migrations, and data files. Split every other listed file:
+
+- **By responsibility.** Move one cohesive piece (a class, a group of related functions, a sub-component) to a
+  new file beside it, named for what it does; never `part2` or `utils2`.
+- **Imports keep working.** The original file re-exports what moved, or every importer is updated in this diff.
+- **Tests move with their code.** Behavior does not change; run the narrow tests and the checks again.
+- **A file that was already over the budget:** do not split its old code (that is outside the scope). Move your
+  new code into a new file and call it from the old one, so the old file grows by the import and the call only.
 
 ## Rules
 

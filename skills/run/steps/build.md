@@ -13,7 +13,9 @@ Follow the playbook from the plan. In every playbook:
    instead: break the line it guards for a moment, see the test fail, and restore it. A test that still passes
    with its code broken catches nothing: fix it or delete it.
 2. **Climb the ladder** before writing code: does it need to exist, does the codebase already have it, does the
-   standard library or an installed dependency do it. Then write the minimum that works.
+   standard library or an installed dependency do it. Then write the minimum that works. Keep every file you
+   add or grow within the file size budget (`steps/verify.md`, File size): new logic for a large file goes in a
+   new file beside it.
 3. **One change at a time.** Make a change, run the narrow test, keep it if it moves toward the acceptance
    criteria, otherwise undo it and try a different idea. Never stack two unverified changes.
 4. **Narrow tests while working**, the plan's full checks at the end of each round (`steps/verify.md`).

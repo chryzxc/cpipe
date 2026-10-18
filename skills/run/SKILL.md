@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.14.0
+version: 3.15.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

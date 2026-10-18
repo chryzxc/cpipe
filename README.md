@@ -117,6 +117,13 @@ project at `<git-common-dir>/cpipe/lessons.md` (shared by all its worktrees, nev
 reads the lessons before planning and checks each one. A message after the report is a follow-up on the same
 worktree: it is fixed, verified and reviewed, then reported again.
 
+### Small files
+
+Every file the change adds or grows stays within 5,000 tokens (bytes / 4, about 500 lines), or the project's own
+size rule if it has one. The completion gate measures it; an oversized file is split by responsibility with its
+imports and tests intact. A file that was already over the limit is not split; new code goes in a new file beside
+it. Lockfiles, generated, vendored and data files are skipped.
+
 ### Honest states
 
 Every check in the report is one of **pass**, **fail**, **baseline** (already failing before the change) or
