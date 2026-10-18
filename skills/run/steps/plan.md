@@ -83,7 +83,7 @@ files it cites to confirm. Otherwise do it yourself:
    sorted, to `baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. A check
    already red is the baseline, not your job, unless the task is to fix it. If a check will not run, work
    through `steps/verify.md` now, so the plan names commands that work.
-7. **Kind.** bug, feature, refactor, chore, port or hotfix (`cpipe:run`). Load the playbook. If the branch type
+7. **Kind.** bug, feature, refactor, chore, port, hotfix or review (`cpipe:run`). Load the playbook. If the branch type
    from step 1 does not match the kind, rename the branch now.
 
 ## 4. Decide the open questions

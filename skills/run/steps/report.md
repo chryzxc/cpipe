@@ -51,7 +51,8 @@ deliveries, one status line per delivery first, then this report for each under 
 
 Short and complete: plain words, technical terms where they are precise; one line per table row, cells of a few
 words; no paragraph longer than three lines; omit a section with nothing in it, apart from Steps. Facts only,
-from the run log.
+from the run log. Tables name the step or role (Review, QA), never a profile; profiles, skills and tools are
+named only in Details. Any other internal name gets a plain description.
 
 ```
 <status line>
@@ -84,6 +85,7 @@ Branch · worktree · commit · pull request · files changed · roles · lesson
 - `✅ Done, test by hand: <goal>`: the same, plus the Test it items.
 - `⚠️ Done except <what>: <goal>`: rows that stay open (something only the user may do, an open security
   finding, a limit reached). Name each.
+- For a review: `✅ Approved: <change>` or `⚠️ Changes needed: <what>`.
 
 **Summary**, by kind. Three to six lines, file and function names where they help:
 - **bug:** **What happened**: the symptom and where the user saw it. **Cause**: the root cause, with the file and
@@ -91,6 +93,7 @@ Branch · worktree · commit · pull request · files changed · roles · lesson
   what changed and why it removes the cause, not only the symptom.
 - **feature:** **Added**: what the user or system can do now. **How**: the main pieces and where they live.
 - **refactor, chore, port or improvement:** **Before**, then **After**, then **Why**.
+- **review:** what the change does, **Before** and **After**, then the **Verdict** with its reason.
 
 **Steps**: all eleven steps of the flow, in order, one row each. Status is ✅ done and verified, ⚠️ done with a
 known limit (the Result says which), ⏳ waiting on something outside the run (CI still running after the wait),

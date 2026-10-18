@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-START = ("Load the skill cpipe:run with skill_view and follow it to deliver this task. Run it unattended to the "
-         "report: this is my last message, so never stop to ask or wait.\n\n")
+START = ("Load the skill cpipe:run with skill_view and follow it to deliver this task. First start its wake-up "
+         "(Turn limits). Run it unattended to the report: this is my last message, so never stop to ask or wait.\n\n")
 
 
 def register(ctx):

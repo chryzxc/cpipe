@@ -37,6 +37,7 @@ Never stop the run for this. Work down the list; the first thing that works wins
 | Command or module not found | Install the project's dependencies in the worktree (`steps/build.md`), use the project's own binary (`node_modules/.bin/…`, `.venv/bin/…`, `npx`, `uv run`), or the runner the CI workflow uses. |
 | Wrong runtime version | Use the version the project pins (`.nvmrc`, `.tool-versions`, `engines`, `requires-python`) through the version manager that is installed. |
 | The test framework itself crashes on the base too (a tooling mismatch, an old transpiler) | Baseline problem. Run the test another way: a single file, the project's other runner, or a small script that imports and calls the code. Typecheck and build count as partial proof. Record the original check as not run here. |
+| The project's own app, server or local service is not running, or stopped mid-run | Start it again the way the project does (its dev script, its local setup), wait until it answers, and continue. Only a service this machine cannot run is not run here. |
 | Needs a service (database, browser, device, network API) that is not available | Use the project's test doubles or in-memory setup if it has one. Otherwise verify the logic with unit tests and record the end-to-end part as not run here. |
 | Times out | Run a narrower subset (the changed files' tests), raise the timeout once, look for a hang you caused. |
 | Flaky | Run it again once. A different result twice means flaky: record both runs. |

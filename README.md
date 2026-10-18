@@ -91,6 +91,7 @@ failed role.
 | chore | Checks green, change read back |
 | port | Every hunk of the source change ported or marked not applicable with its reason, plus the proof of the change it carries |
 | hotfix | The failure reproduced and gone, narrow checks green, one review round; the root-cause work named as its own delivery |
+| review | An existing change verified on its head commit, QA and an independent review, and a verdict (`✅ Approved` or `⚠️ Changes needed`) |
 
 ### It runs to the end
 
@@ -109,7 +110,8 @@ run rather than getting a status reply.
 The run reports only once the work is finished: findings fixed, the last fix reviewed, CI waited for when a pull
 request was asked for. It is short, one line per row, and complete:
 
-- **Status line:** `✅ Done`, `✅ Done, test by hand` or `⚠️ Done except …`.
+- **Status line:** `✅ Done`, `✅ Done, test by hand` or `⚠️ Done except …`; for a review, `✅ Approved` or
+  `⚠️ Changes needed`.
 - **Summary:** for a bug, what happened, the cause and the fix; for a feature, what was added and how; otherwise
   before, after and why.
 - **Steps:** all eleven steps with ✅, ⚠️, ⏳, ❌ or — and the proof in a few words (tests RED → GREEN, each
@@ -121,6 +123,8 @@ request was asked for. It is short, one line per row, and complete:
 - **Test it:** the app left running from the worktree (its URL or command) when the change is something you can
   see or use, plus only what this machine could not verify, with steps and the expected result.
 - **Not in this change** and **Details** (branch, worktree, commit, pull request, files, roles, skills, lessons).
+
+Tables use plain words and role names (Review, QA); profile, skill and tool names appear only in Details.
 
 A shortened example:
 
@@ -252,7 +256,8 @@ Every loop has an exit, and reaching it records the open items and moves on; it 
 
 - **Read once.** Explore reads the code once. The plan carries what the builder needs (paths, functions, the
   exact change), so later steps do not re-read the repository.
-- **Load late.** Only the current step's instructions are loaded, not the whole flow.
+- **Load late.** Only the current step's instructions are loaded, not the whole flow, and loaded again each time
+  the run reaches the step, so a follow-up or a compacted context never works a step from memory.
 - **Narrow first.** While building only the narrow tests run; the full checks run once per round. The baseline
   is taken once, so a check that was already red is not chased.
 - **Deltas.** The second review round and every follow-up see only the diff since the last one; a QA re-run

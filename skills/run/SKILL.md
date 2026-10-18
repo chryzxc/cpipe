@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.17.0
+version: 3.17.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -69,9 +69,11 @@ or the user asked for a single pull request, and record why in Approach.
 
 ## Flow
 
-Track the steps with your todo tool if you have one, one step active at a time. Each step's instructions are a
-file in this skill: load it with `skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach the
-step, not before.
+Start the wake-up first (Turn limits), on every run, follow-up and continue. Track the steps with your todo tool
+if you have one, one step active at a time. Each step's instructions are a file in this skill: load it with
+`skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach the step, not before. Load it again
+each time you reach it, on a follow-up or after the context was compacted: never work a step from memory. Every
+report is written from `steps/report.md` loaded right before it.
 
 | Step | Do | File | Role |
 |---|---|---|---|
@@ -114,6 +116,7 @@ Pick the kind in step 2 and load its playbook with
 | Kind | When | Playbook |
 |---|---|---|
 | bug | Something that worked, or should work, is broken | `bug.md` |
+| review | Review an existing change or pull request, no new work asked | `review.md` |
 | feature | New or changed behavior | `feature.md` |
 | refactor | Structure changes, behavior must not | `refactor.md` |
 | chore | Docs, config, dependency bumps, renames | `chore.md` |
@@ -166,8 +169,9 @@ near-duplicate. Never put secrets or customer data in a lesson.
 
 A message after the report about the same work (a correction, a missed case, more context) is a follow-up, not a
 new task: reuse the worktree and the run log (or, if it was removed after its merge, a new worktree from the
-base), write a lesson if it reveals a miss, update the plan, then run
-build, verify, QA and a delta review on the follow-up only, and report again. A different task starts a new run.
+base), write a lesson if it reveals a miss, update the plan, then run build, verify, QA and a delta review on the
+follow-up only, and report again. Reproduce what the user describes before answering. If it can mean two things,
+check both and answer with what you found; do not ask which one they meant. A different task starts a new run.
 
 ## Continue
 

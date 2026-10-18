@@ -15,7 +15,7 @@ reach, and keep it small. Evidence is the command or action and what you saw; no
 tree.
 
 1. **Use it on the real surface.** Start the app, CLI or service from the worktree the way the project does (its
-   scripts, its dev-server setup) and use the change as a user would: the page in a browser if you have one, the
+   scripts, its dev-server setup), and start it again if it stops, and use the change as a user would: the page in a browser if you have one, the
    endpoint with a real request, the command with real arguments.
 2. **Walk the acceptance criteria** and the design note's states one by one. Record what you did and what you
    saw for each.
