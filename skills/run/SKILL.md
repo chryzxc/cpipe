@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a coding task unattended, from request to report."
-version: 3.16.1
+version: 3.17.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -42,8 +42,18 @@ steering, not a stop: answer it in one line and continue.
 
 **Do not end your turn before the report.** A reply without a tool call ends your turn and the run stops
 silently. Progress updates go in the same reply as your next tool call. When you wait for a background process
-or a profile, wait on it with your process tool; if your turn does end, the completion notification resumes the
-run at the first unfinished step.
+or a profile, wait on it with your process tool.
+
+**Turn limits.** A turn has a cap on tool calls, so a long run can end its turn mid-step. Keep one wake-up
+running from set up to the report: a background `sleep 600` with a completion notification. When its
+notification arrives, start the next one. If the turn ends early (the cap, an error), the notification starts a
+new turn within ten minutes. Stop the wake-up before you post the report; a late one after the report gets a
+one-line reply.
+
+**A notification resumes the run.** A completion notification (the wake-up, a check, a profile) or a message
+saying the iteration limit was reached is never a cue for a status reply. While the run log has unfinished
+steps, note it in one line and continue at the first unfinished step with a tool call in the same reply. When a
+notice says the iteration limit is near, write the next step in the run log first, so the next turn picks it up.
 
 The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run, debug or review
 anything, and never end with "fix the cause and say continue". If you can do it, do it.
@@ -55,7 +65,7 @@ several deliveries, never one. Each issue gets its own branch, worktree, run log
 request when pull requests are asked for, each branched from the base, not from another delivery. Run them one
 after another, each through the whole flow; each run log names the others (`Delivery 2 of 3; others: <branches>`).
 Deliver two issues together only when one cannot work without the other (the same root cause or the same lines)
-or the user asked for a single pull request, and record why in Decisions.
+or the user asked for a single pull request, and record why in Approach.
 
 ## Flow
 
@@ -89,7 +99,8 @@ the final word are never handed to anyone else.
 
 cpipe sets the order of the steps; the user's own skills say how a step is done. At the start of each step, check
 your skill list for a skill that covers that step's work (writing a pull request or commit message, code review,
-security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`. Where it
+security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`, once per
+run: note each loaded skill in the run log and reuse what it said instead of loading it again. Where it
 and a cpipe step differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
 still decides the flow and the guard rails: a user skill never authorizes a push, merge or message the task did
 not ask for. Take from a user skill how the work is done, not a different flow: skip its parts about task
@@ -106,8 +117,11 @@ Pick the kind in step 2 and load its playbook with
 | feature | New or changed behavior | `feature.md` |
 | refactor | Structure changes, behavior must not | `refactor.md` |
 | chore | Docs, config, dependency bumps, renames | `chore.md` |
+| port | Bring a change from another branch, commit or repository | `port.md` |
+| hotfix | The task says hotfix, urgent, or production is broken now | `hotfix.md` |
 
-A task that mixes kinds uses the stricter playbook (bug or feature over refactor or chore).
+A task that mixes kinds uses the stricter playbook (bug or feature over refactor or chore). A port or hotfix also
+loads the playbook of the change it carries, for its proof.
 
 ## Roles
 
@@ -130,17 +144,23 @@ it survives a restart. Append, never rewrite:
 - QA results, review findings and what you did with each;
 - the lessons written.
 
+Long command output goes to a file beside the run log (`logs/<step>-<check>.txt`); read the result lines or the
+tail, not the whole output. The run log names the file.
+
 ## Lessons
 
 Every miss teaches the next run. The project's lessons live at
-`$(git rev-parse --git-common-dir)/cpipe/lessons.md`, shared by all its worktrees and never committed. Explore
-reads them; the premortem turns each into a question for this change.
+`$(git rev-parse --git-common-dir)/cpipe/lessons.md`, shared by all its worktrees and never committed. The user's
+lessons live at `${HERMES_HOME:-~/.hermes}/cpipe/lessons.md` and hold how the user wants work done in any project
+(when to push, branch and pull-request format, naming). Explore reads both; the premortem turns each into a
+question for this change.
 
 Write a lesson whenever something was caught later than it should have been: a review or QA finding the plan did
 not foresee, a check that failed for a reason explore could have seen, or a correction from the user after the
 report. One line, as a rule about the project rather than the task: where to look, what to check, why
-(`Changes to <area> must also be checked in <other area>: <reason>.`). Merge it into a matching lesson instead of
-adding a near-duplicate. Never put secrets or customer data in a lesson.
+(`Changes to <area> must also be checked in <other area>: <reason>.`). A correction about how the user works
+rather than about this code goes in the user's lessons. Merge it into a matching lesson instead of adding a
+near-duplicate. Never put secrets or customer data in a lesson.
 
 ## After the report
 
@@ -151,8 +171,9 @@ build, verify, QA and a delta review on the follow-up only, and report again. A 
 
 ## Continue
 
-When the user says "continue", or the chat restarted mid-run: read the run log, check `git status` and the last
-check results in the worktree, and pick up at the first unfinished step. Do not redo finished steps. With
+When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read the run log,
+check `git status` and the last check results in the worktree, and pick up at the first unfinished step. Start
+the wake-up again if none is running. Do not redo finished steps. With
 several deliveries, finish the unfinished one first, then start the next one its run log names.
 
 ## Limits
@@ -170,8 +191,9 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 **Scope**
 - Work only in the delivery worktree. Never edit the user's own checkout, other branches or other worktrees; the
   one exception is removing cpipe's own merged worktrees in set up (`steps/plan.md`).
-- Change only what the plan's scope names. If the scope must grow, say so in one line and note it; ask only if
-  the growth is destructive or a product decision.
+- Change only what the plan's scope names. If the scope must grow, say so in one line and note it in the run log.
+- Format and lint-fix only the lines the change touches. Never reformat files or the repository, even when the
+  formatter's baseline is red, unless the task asks for it.
 
 **Safety**
 - Never merge, push, open a pull request, deploy or message anyone unless the user asked for it in this task.
@@ -189,3 +211,5 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 **Cost**
 - Read once, in explore; do not re-read the repository in later steps.
 - Narrow tests while building; the full checks once per round.
+- Long output to a file, the tail in the chat (Run log). Each user skill loaded once per run.
+- After the context is compacted, reload only this skill and the current step's file; the run log has the rest.

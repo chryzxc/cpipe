@@ -1,10 +1,10 @@
 name: cpipe
-version: 3.16.1
+version: 3.17.0
 manifest_version: 2
 api_version: 1
 provides_tools: []
 provides_hooks: []
-description: "Delivers a coding task to reviewed, verified code: clarify once, plan, tests first, build, verify, independent review, report. Skills only; the model runs every step."
+description: "Delivers a coding task to reviewed, verified code: decide open questions, plan, tests first, build, verify, QA and independent review, report. Skills only; the model runs every step."
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
 tags: [hermes-agent, development-workflow, testing, code-review, tdd, skills]

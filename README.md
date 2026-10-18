@@ -54,7 +54,7 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 | `steps/verify.md` | Run the checks with honest states, work around checks that will not run, completion gate |
 | `steps/qa.md` | Use the change on the real surface, walk the acceptance criteria, try to break it, broader suite |
 | `steps/review.md` | Independent review by a subagent that hunts regressions and risks the plan missed, findings sorted into act, consider, noted and dismissed |
-| `steps/report.md` | Commit, a draft pull request only when asked (then waits for CI), the report |
+| `steps/report.md` | Commit, a draft pull request only when asked (then waits for CI), the app left running for you, the report |
 
 ### Roles (optional)
 
@@ -89,33 +89,79 @@ failed role.
 | feature | New tests red then green, existing checks still green, behavior exercised on the real surface |
 | refactor | The same checks green before and after |
 | chore | Checks green, change read back |
+| port | Every hunk of the source change ported or marked not applicable with its reason, plus the proof of the change it carries |
+| hotfix | The failure reproduced and gone, narrow checks green, one review round; the root-cause work named as its own delivery |
 
 ### It runs to the end
 
 It does not stop: the task is the last message you send. Open questions are decided and listed with their reason
-in the report's Decisions table. Things only you may do (credentials, anything destructive or irreversible,
+in the report's Approach table. Things only you may do (credentials, anything destructive or irreversible,
 anything leaving your machine you did not ask for) are skipped and named in the report's status line, as is an
 open security finding it cannot fix inside the scope. It never asks you to fix or run anything.
+
+A chat turn has a cap on tool calls, so a long run can end its turn mid-step. The run keeps a ten-minute wake-up
+running in the background from set up to the report; when a turn ends early, the wake-up's notification starts a
+new turn and the run picks up at its first unfinished step. Any notification that arrives mid-run continues the
+run rather than getting a status reply.
 
 ### The report
 
 The run reports only once the work is finished: findings fixed, the last fix reviewed, CI waited for when a pull
-request was asked for. The report has a status line (`✅ Done`, `✅ Done, test by hand` or `⚠️ Done except …`),
-then:
+request was asked for. It is short, one line per row, and complete:
 
-- **Summary:** for a bug, what happened, the cause and the fix; for a feature, what was added and how; for an
-  improvement, before, after and why.
-- **Decisions:** each choice made, what it was chosen over, and why.
-- **Work:** every item from reproduction to CI with ✅, ⚠️, ⏳, ❌ or — and its proof.
-- **Manual testing:** only what this machine could not verify, with steps and the expected result.
-- **Not in this change** and **Details** (branch, commit, pull request, files, roles, lessons).
+- **Status line:** `✅ Done`, `✅ Done, test by hand` or `⚠️ Done except …`.
+- **Summary:** for a bug, what happened, the cause and the fix; for a feature, what was added and how; otherwise
+  before, after and why.
+- **Steps:** all eleven steps with ✅, ⚠️, ⏳, ❌ or — and the proof in a few words (tests RED → GREEN, each
+  check's state, review findings by outcome, the commit).
+- **Findings:** what the run found that the task did not say (review and QA findings, a deeper root cause, a
+  baseline failure) and what became of each.
+- **Approach:** each idea the change is built on and each assumption: why it was chosen, what was avoided and
+  the problem it would have caused, and the trade-off.
+- **Test it:** the app left running from the worktree (its URL or command) when the change is something you can
+  see or use, plus only what this machine could not verify, with steps and the expected result.
+- **Not in this change** and **Details** (branch, worktree, commit, pull request, files, roles, skills, lessons).
+
+A shortened example:
+
+```
+✅ Done, test by hand: invoices keep their discount after an edit
+
+## Summary
+What happened: editing an invoice dropped its discount. Cause: `updateInvoice()` rebuilt the line items
+without the discount field. Fix: the update merges into the stored invoice instead of replacing it.
+
+## Steps
+| # | Step    | Status | Result                                                  |
+| 2 | Explore | ✅     | 3 callers, 1 API consumer mapped; baseline 2 failing    |
+| 3 | Design  | —      | nothing user-facing changed                             |
+| 6 | Build   | ✅     | 2 new tests RED → GREEN                                 |
+| 7 | Verify  | ✅     | lint pass · typecheck pass · 412 tests pass, 2 baseline |
+| 9 | Review  | ✅     | 2 findings: 1 fixed, 1 noted                            |
+
+## Findings
+| Found by | Finding                                       | Outcome                        |
+| Review   | the bulk-edit endpoint had the same overwrite | fixed in the shared update     |
+| Explore  | 2 date tests fail on the base too             | baseline, same names after     |
+
+## Approach
+| Idea                      | Why                           | Avoided                                    | Trade-off               |
+| Fix in `updateInvoice()`  | every edit path calls it      | a fix per caller: bulk edit stays broken   | none                    |
+| Merge, not replace        | keeps fields the form omits   | a full replace: drops fields on old forms  | stale fields need a delete |
+
+## Test it
+App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
+| # | What to check     | How                                   | Expected          |
+| 1 | Discount survives | open an invoice with 10% off, edit, save | still shows 10% off |
+```
 
 ### It learns from misses
 
 When review, QA or you catch something the plan should have seen, the run writes a one-line lesson for the
-project at `<git-common-dir>/cpipe/lessons.md` (shared by all its worktrees, never committed). Every later run
-reads the lessons before planning and checks each one. A message after the report is a follow-up on the same
-worktree: it is fixed, verified and reviewed, then reported again.
+project at `<git-common-dir>/cpipe/lessons.md` (shared by all its worktrees, never committed). A correction about
+how you work in any project (when to push, branch and pull-request format, naming) goes in your own lessons at
+`~/.hermes/cpipe/lessons.md`. Every later run reads both before planning and checks each one. A message after the
+report is a follow-up on the same worktree: it is fixed, verified and reviewed, then reported again.
 
 ### Plans a builder can follow
 
@@ -135,13 +181,16 @@ it. Lockfiles, generated, vendored and data files are skipped.
 ### Honest states
 
 Every check in the report is one of **pass**, **fail**, **baseline** (already failing before the change) or
-**not run here** (with the reason and the other proof gathered). A subagent's "done" is a claim until the command
-is run and read.
+**not run here** (with the reason and the other proof gathered). The baseline saves the names of the failing tests
+and lint errors, and verify compares names, not counts: one new failing name is a fail even when the total went
+down. A red formatting or lint baseline is never cleared by reformatting code the change does not touch. A
+subagent's "done" is a claim until the command is run and read.
 
 ### Run log
 
 Each run keeps an append-only log at `<git-dir>/cpipe/run.md` in its worktree: the plan, one row per round,
-every workaround, the review findings and their dispositions. It is never committed, and it is how a run resumes.
+every workaround, the review findings and their dispositions. Long command output goes to files beside it, and the
+chat reads only the result lines. It is never committed, and it is how a run resumes.
 The log also marks the worktree as cpipe's: each new run removes cpipe worktrees whose pull request is merged and
 that hold no uncommitted or unpushed work, so finished worktrees do not fill the disk. Other worktrees are never
 touched.
@@ -181,7 +230,8 @@ set up → explore → design → decide → plan
   findings join into one fix round, then a delta review runs alongside a QA re-run of the items that failed.
 - **Pass-through.** A step that does not apply (design for an internal fix, QA for a docs change) is passed with
   its reason in the run log.
-- **Re-entry.** The run log is the graph's state. **continue** re-enters at the first unfinished step; a
+- **Re-entry.** The run log is the graph's state. **continue**, or the wake-up after a turn ends early,
+  re-enters at the first unfinished step; a
   message after the report re-enters at the plan for the follow-up only; a task with several issues runs one graph
   per delivery, one after another.
 
@@ -210,7 +260,10 @@ Every loop has an exit, and reaching it records the open items and moves on; it 
 - **Resumed sessions.** A fix round or delta review for a profile resumes that profile's session, so its brief
   and what it already read are not sent again.
 - **Lean briefs.** A brief holds facts (goal, acceptance, diff, check states), not reasoning; evidence is the
-  command and its result.
+  command and its result. A profile replies in at most 20 lines and puts the rest in a file.
+- **Small context.** Command output goes to a file and the chat reads the result lines or the tail. Each of
+  your skills is loaded once per run. After the context is compacted, only the run skill and the current step
+  are reloaded; the run log has the rest.
 - **Lessons.** A miss is written down once per project and checked by every later run, so it is not paid for
   twice.
 

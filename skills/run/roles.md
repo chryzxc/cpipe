@@ -40,6 +40,8 @@ step and reports back.
    Keep it lean: the project's own dev server, test runner and tools first; evidence is the command and its
    result; no hash manifests, integrity receipts or copies of the tree. At your time budget, stop and reply
    with what you have and what is left.
+   Reply in at most 20 lines: the result, the evidence, what is left. Put anything longer in
+   <run dir>/<role>-reply.md and give its path.
    ```
 
    A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`.

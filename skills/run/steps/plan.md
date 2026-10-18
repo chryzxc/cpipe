@@ -22,7 +22,8 @@ not repeat it.
    the project's virtual environment. Never install globally; do not change the lockfile unless the task is about
    dependencies. Copy local env files (`.env`) from the user's checkout only if the checks need them, and never
    print their contents.
-5. **Run log.** Start it (`cpipe:run`) with the task, the base, the worktree and the roles line.
+5. **Run log.** Start it (`cpipe:run`) with the task, the base, the worktree and the roles line. Start the
+   wake-up (`cpipe:run`, Turn limits).
 6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A worktree from
    `git worktree list` is cpipe's when its git dir holds a run log (`$(git -C <path> rev-parse --git-dir)/cpipe/run.md`);
    never touch any other worktree, the user's checkout or this run's worktree. Remove one only when all hold:
@@ -45,8 +46,8 @@ files it cites to confirm. Otherwise do it yourself:
 
 1. **Instructions.** Read the project's agent and contributor instructions (`AGENTS.md`, `CLAUDE.md`,
    `CONTRIBUTING.md`, the README's development section). They win over these skills where they conflict, except
-   for the guard rails in `cpipe:run`. Read the project's lessons too (`cpipe:run`, Lessons): each one is a
-   question this run must answer.
+   for the guard rails in `cpipe:run`. Read the project's and the user's lessons too (`cpipe:run`, Lessons):
+   each one is a question this run must answer.
 2. **Code.** If you have a code index or code-navigation tool, locate the code with it first. Read the code the
    task touches and the helpers you could reuse. Skip code that is not on a path below.
 3. **Flow map.** Trace every path through the code you will change, end to end, so nothing breaks out of sight:
@@ -78,10 +79,12 @@ files it cites to confirm. Otherwise do it yourself:
    workflow files (they show how CI installs and tests). Pick the narrowest command that covers the change, plus
    the build or typecheck if the project has one, plus the broader suite for QA.
 6. **Baseline.** Run those checks once in the worktree, before any change, and record each result: pass, fail
-   (which tests) or not run here (why). A check already red is the baseline, not your job, unless the task is to
-   fix it. If a check will not run, work through `steps/verify.md` now, so the plan names commands that work.
-7. **Kind.** bug, feature, refactor or chore (`cpipe:run`). Load the playbook. If the branch type from step 1
-   does not match the kind, rename the branch now.
+   (which tests) or not run here (why). Save the ids of the failing tests and lint errors, one per line and
+   sorted, to `baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. A check
+   already red is the baseline, not your job, unless the task is to fix it. If a check will not run, work
+   through `steps/verify.md` now, so the plan names commands that work.
+7. **Kind.** bug, feature, refactor, chore, port or hotfix (`cpipe:run`). Load the playbook. If the branch type
+   from step 1 does not match the kind, rename the branch now.
 
 ## 4. Decide the open questions
 
@@ -102,6 +105,8 @@ draft against the code and the baseline yourself. Write the plan in the chat and
 - **Base** (branch and commit) and **worktree**.
 - **Scope:** the exact files to change, new ones marked `(new)`. **Non-goals:** what you will not touch.
 - **Flow map:** the entrances, exits and guards from explore, in short.
+- **Approach:** each idea the change rests on, with why, the alternative avoided and the problem it would have
+  caused, and the trade-off. The report's Approach table is built from this and the assumptions.
 - **Acceptance:** observable criteria, numbered `A1`, `A2`…, each one checkable, including the design note's
   states.
 - **Must not change:** numbered `M1`…; for each entrance, consumer and guard in the map, the behavior that has

@@ -29,17 +29,29 @@ on the base branch is baseline. Checks still running after the wait are ⏳ in t
 ## Finish before reporting
 
 The report comes after the work is finished, not when the steps have run once. Before writing it, check that
-every row of the Work table below would be ✅ or —. For any other row, go back and finish it while the limits
+every row of the Steps table below would be ✅ or —. For any other row, go back and finish it while the limits
 in `cpipe:run` allow: fix in-scope findings and QA failures, review the last fix, retry a check another way,
 wait for CI. A row stays open only when the run truly cannot close it: something only the user may do, a check
-that needs what this machine does not have, or a limit reached. Manual testing is the last thing left for the
+that needs what this machine does not have, or a limit reached. Test it is the last thing left for the
 user, and only when needed.
+
+## Running app
+
+When the change has a page or an endpoint a person can use, leave it running for them: start the app from the
+worktree the way the project does (its dev script, the same setup QA used) in the background without a
+completion notification, wait until it answers, and put the URL in Test it. For a command, give it ready to run.
+One app per delivery: stop the one this run started before (an earlier report, a follow-up) first, and use
+another port if the default is taken. If it will not start, say so in Test it with the error; never ask the user
+to start it. A follow-up restarts it with the new code.
 
 ## Report
 
-One message in the chat, in this order; with several deliveries, one status line per delivery first, then this
-report for each under a heading naming its issue. Plain words, technical terms where they are precise; short sentences;
-no paragraph longer than three lines. Facts only, from the run log.
+Stop the wake-up (`cpipe:run`, Turn limits), then post one message in the chat, in this order. With several
+deliveries, one status line per delivery first, then this report for each under a heading naming its issue.
+
+Short and complete: plain words, technical terms where they are precise; one line per table row, cells of a few
+words; no paragraph longer than three lines; omit a section with nothing in it, apart from Steps. Facts only,
+from the run log.
 
 ```
 <status line>
@@ -47,25 +59,29 @@ no paragraph longer than three lines. Facts only, from the run log.
 ## Summary
 <the recap for the kind, below>
 
-## Decisions
-| Decision | Chosen | Instead of | Why |
+## Steps
+| # | Step | Status | Result |
 
-## Work
-| Item | Status | Proof |
+## Findings
+| Found by | Finding | Outcome |
 
-## Manual testing
+## Approach
+| Idea | Why | Avoided | Trade-off |
+
+## Test it
+App: <URL or command, worktree>
 | # | What to check | How | Expected |
 
 ## Not in this change
 - <one line each>
 
 ## Details
-Branch · commit · pull request · files changed · roles · lessons
+Branch · worktree · commit · pull request · files changed · roles · lessons
 ```
 
 **Status line**, one of:
-- `✅ Done: <goal>`: every Work row is ✅ or —, and no manual testing is needed.
-- `✅ Done, test by hand: <goal>`: the same, plus the Manual testing items.
+- `✅ Done: <goal>`: every Steps row is ✅ or —, and no manual testing is needed.
+- `✅ Done, test by hand: <goal>`: the same, plus the Test it items.
 - `⚠️ Done except <what>: <goal>`: rows that stay open (something only the user may do, an open security
   finding, a limit reached). Name each.
 
@@ -74,45 +90,52 @@ Branch · commit · pull request · files changed · roles · lessons
   the mechanism (for example, a stale closure, a race between two writes, a missing permission check). **Fix**:
   what changed and why it removes the cause, not only the symptom.
 - **feature:** **Added**: what the user or system can do now. **How**: the main pieces and where they live.
-- **refactor, chore or improvement:** **Before**, then **After**, then **Why**.
+- **refactor, chore, port or improvement:** **Before**, then **After**, then **Why**.
 
-**Decisions**: each choice a reviewer might question: the approach picked over another, a library or pattern,
-a trade-off, and every assumption made for an open question. One row each; the Why names the deciding fact. Omit
-the section when nothing was chosen.
+**Steps**: all eleven steps of the flow, in order, one row each. Status is ✅ done and verified, ⚠️ done with a
+known limit (the Result says which), ⏳ waiting on something outside the run (CI still running after the wait),
+❌ not done (why), or — not needed (why). Result is the proof in a few words, never "done":
 
-**Work**: one row per item, in flow order. Status is ✅ done and verified, ⚠️ done with a known limit (the Proof
-says which), ⏳ waiting on something outside the run (CI still running after the wait), ❌ not done (why), or —
-not needed (why). Proof is the evidence in a few words: test names, counts, the command.
-
-| Item | Covers |
+| Step | Result shows |
 |---|---|
-| Reproduced (bug) | the failing test or script before the fix |
-| Implementation | the change, matching the plan's scope |
-| New tests | how many, each failing before and passing after (RED → GREEN) |
-| Focused tests, lint, typecheck, build | each with its result |
-| Full suite | passed and failed counts; failures that are also on the base are marked baseline with their count |
-| Flow map and must-not-change | each entrance, consumer and guard still working |
-| Risks | the premortem risks covered |
-| Design | states and copy, or why it was not needed |
-| QA | scenarios run on the real surface and their result |
-| Review, security review | findings fixed, noted, dismissed; the last fix reviewed |
-| Cleanup | the cleanup pass and the checks after it |
-| Commit, pull request, CI | the SHA; the link and CI result if a pull request was asked for |
+| 1. Set up | the worktree, dependencies installed, worktrees tidied |
+| 2. Explore | entrances, consumers and guards mapped; risks found; the baseline (failing count, or green) |
+| 3. Design | the states and copy settled, or why there was nothing user-facing |
+| 4. Decide | how many assumptions (each in Approach) |
+| 5. Plan | how many build steps; the plan gate passed |
+| 6. Build | the bug reproduced; new tests RED → GREEN, how many |
+| 7. Verify | each check and its state: pass, fail, baseline (same failing names as before), not run here |
+| 8. QA | scenarios run on the real surface and how many passed; must-not-change items held |
+| 9. Review | findings by outcome (fixed, noted, dismissed); the last fix reviewed |
+| 10. Clean | what the cleanup removed; the checks after it |
+| 11. Commit | the SHA and subject; the pull request link and CI result if one was asked for |
 
-**Manual testing**: only what this machine could not verify (a signed-in session, a device, a live service,
-visual judgment), each with exact steps and the expected result, so the user can run it in a few minutes. Never a
-code review, a re-review, reading a diff, running a check or command, or confirming a result: the run does those. When
-nothing is left: `None needed: <why>`.
+**Findings**: what the run found that the task did not say, and what became of it: review and QA findings, a
+root cause deeper than the symptom, a risk from the premortem that proved real, a baseline failure, a missing
+test. Found by is the step or role. Outcome is fixed (how), noted, dismissed (why) or open. Omit when nothing
+was found.
 
-**Not in this change**: out-of-scope problems found, **consider** and **noted** findings, known limits. One
-line each, or omit the section.
+**Approach**: the ideas the change is built on and every assumption made for an open question, so a reviewer
+sees the reasoning without reading the diff. One row per idea: **Idea** is the approach, pattern or library
+chosen; **Why** the deciding fact (from the code, the request or a lesson); **Avoided** the alternative not taken
+and the problem it would have caused (a regression, a race, a breaking contract, a wider diff); **Trade-off**
+what this choice costs or leaves open, or `none`. Omit when the change had only one sensible way.
+
+**Test it**: the running app (Running app above) and only what this machine could not verify (a signed-in
+session, a device, a live service, visual judgment), each with exact steps and the expected result, so the user
+can run it in a few minutes. Never a code review, a re-review, reading a diff, running a check or command, or
+confirming a result: the run does those. When nothing is left: `None needed: <why>`, with the app line when one
+is running.
+
+**Not in this change**: out-of-scope problems, **consider** and **noted** findings not in Findings, known
+limits, a follow-up delivery (a hotfix's root cause). One line each, or omit the section.
 
 **Details**: the branch and worktree, the commit SHA and subject, the pull request link, `git diff --stat` in one
-line, who did each step (a profile or this chat) and any fallback, and the lessons written.
+line, who did each step (a profile or this chat) and any fallback, the user skills used, and the lessons written.
 
 The report never asks the user to fix, install, run, review or verify anything you could have done yourself, and
-has no "next steps" or "remaining" list for the user beyond Manual testing and what only the user may do. If you
-could do it, do it before reporting.
+has no "next steps" or "remaining" list for the user beyond Test it and what only the user may do. If you could
+do it, do it before reporting.
 
 ## Rules
 

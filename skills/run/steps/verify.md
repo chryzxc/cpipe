@@ -18,8 +18,14 @@ in the run log with one of four honest states:
 A result counts only for the tree it ran on. After any change, earlier results are stale: run them again. A
 worker's or subagent's "it passes" is a claim until you run the command and read the output yourself.
 
-Compare failures with the baseline: only new failures are yours to fix. Three fix attempts with different ideas
-per failure, then record it as open and move on (`cpipe:run`, limits).
+Compare failures with the baseline by name, never by count: save this run's failing ids the same way as
+`baseline-<check>.txt` (`steps/plan.md`, Baseline) and run `comm -13 baseline-<check>.txt now-<check>.txt`.
+Every id it prints is new and yours to fix, even when the total went down; no output means the check is
+**baseline**. Three fix attempts with different ideas per failure, then record it as open and move on
+(`cpipe:run`, limits).
+
+Formatters and linters fix only the lines the change touches. A red formatting or lint baseline stays the
+baseline: never reformat files or the repository to clear it unless the task asks.
 
 ## When a check will not run
 
@@ -46,11 +52,13 @@ Before QA and the review, and before the report, check the diff (`git diff <base
 
 - Tests you added actually assert something, and none are skipped, focused (`.only`) or marked to fail.
 - No `TODO`, `FIXME`, `NotImplemented`, placeholder values or debug output left in changed lines.
-- Every changed file is inside the plan's scope, or the reason is in the run log.
+- Every changed file is inside the plan's scope, or the reason is in the run log. No file changed only by
+  formatting.
 - Every plan step is done, or its correction is in the run log.
 - No credentials, tokens, keys or private URLs in the diff.
 - The acceptance criteria each have proof: a test, a check, or a recorded manual verification.
 - Every file the change adds or grows is within the file size budget (below).
+- For a port, every row of the inventory is ported or has its reason (`playbooks/port.md`).
 
 Fix what fails the gate, then verify again.
 

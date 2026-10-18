@@ -24,7 +24,8 @@ tree.
 4. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task
    named, and check each must-not-change item and each risk whose check is a QA step. Where behavior differs by role,
    tenant, locale or state, repeat it for each (a seeded or test user per role). Then run the broader test suite once. Compare its failures with the baseline: only new failures count.
-5. **Clean up** what you started: stop the servers, remove temporary data.
+5. **Clean up** what you started: remove temporary data, and stop the servers unless the report will hand the
+   running app to the user (`steps/report.md`, Running app).
 
 ## Results
 
@@ -36,7 +37,7 @@ output, the request and response, a screenshot path.
   alongside the delta review.
 - **not run here:** the surface needs something this machine does not have (a login, a device, a live
   service). Use the closest stand-in (a test double, a seeded user, a direct call), then list what is left in
-  the report's Manual testing table, with exact steps and the expected result. Never stop for it.
+  the report's Test it table, with exact steps and the expected result. Never stop for it.
 
 ## Rules
 
@@ -45,9 +46,9 @@ output, the request and response, a screenshot path.
   messages or payments. Use test data and the project's local or test setup.
 - Every result has evidence; "looks fine" is not a result.
 - A QA result from a profile or subagent is a claim: reproduce a failure yourself before acting on it.
-- Stop every server and process you started.
+- Stop every server and process you started, apart from the one app the report hands over.
 
 ## Done when
 
 Every acceptance criterion, design state, must-not-change item and QA risk has a QA result with evidence, the broader suite is compared with the
-baseline, and nothing started for QA is still running.
+baseline, and nothing started for QA is still running apart from that app.
