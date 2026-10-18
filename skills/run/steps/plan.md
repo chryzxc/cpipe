@@ -26,15 +26,14 @@ not repeat it.
 6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A worktree from
    `git worktree list` is cpipe's when its git dir holds a run log (`$(git -C <path> rev-parse --git-dir)/cpipe/run.md`);
    never touch any other worktree, the user's checkout or this run's worktree. Remove one only when all hold:
-   - its pull request is merged and its `HEAD` is the pull request's head commit
-     (`gh pr view <branch> --json state,headRefOid`), or, with no pull request, its branch is merged into the
-     fetched base (`git branch --merged`);
-   - `git status --porcelain` is empty, apart from tracked runtime output such as log files, which you restore
-     with `git restore` first;
+   - a merged pull request has its `HEAD` as the head commit
+     (`gh pr list --head <branch> --state merged --json number,headRefOid`); a branch with no merged pull
+     request stays, even when it looks merged, because a run that has not committed yet looks the same;
+   - `git status --porcelain` is empty, apart from tracked files that match the ignore rules
+     (`git ls-files -ci --exclude-standard`, such as runtime logs), which you restore with `git restore` first;
    - no process has its working directory inside it (`lsof -d cwd -Fn`).
 
-   Then `git worktree remove <path>` (never `--force`), `git branch -D <branch>` when the merged pull request's
-   head is the branch tip (squash merges) or `git branch -d` otherwise, and `git worktree prune`. Name what was
+   Then `git worktree remove <path>` (never `--force`) and `git worktree prune`; the branch stays. Name what was
    removed in the run log. Anything unclear stays; a failed removal is noted and never ends the run.
 
 If the install fails, try the next way from `steps/verify.md` and record it; a failed install never ends the run.
