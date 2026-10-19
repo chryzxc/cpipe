@@ -95,6 +95,9 @@ failed role.
 
 ### It runs to the end
 
+`/cpipe` answers with the task, the flow and who runs the steps, then the run posts one line as each step
+starts (`▶ 6/11 Build: tests first for the date filter (this chat)`) and one when it resumes.
+
 It does not stop: the task is the last message you send. Open questions are decided and listed with their reason
 in the report's Approach table. Things only you may do (credentials, anything destructive or irreversible,
 anything leaving your machine you did not ask for) are skipped and named in the report's status line, as is an

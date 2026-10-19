@@ -1,7 +1,7 @@
 ---
 name: run
-description: "Deliver a coding task unattended, from request to report."
-version: 3.17.1
+description: "Deliver a code task unattended: plan, test, build, review."
+version: 3.17.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -47,12 +47,13 @@ or a profile, wait on it with your process tool.
 **Turn limits.** A turn has a cap on tool calls, so a long run can end its turn mid-step. Keep one wake-up
 running from set up to the report: a background `sleep 600` with a completion notification. When its
 notification arrives, start the next one. If the turn ends early (the cap, an error), the notification starts a
-new turn within ten minutes. Stop the wake-up before you post the report; a late one after the report gets a
-one-line reply.
+new turn within ten minutes. Stop the wake-up before you post the report; a late one after the report gets one
+line: `cpipe: already reported (<status line>), nothing left to do.`
 
 **A notification resumes the run.** A completion notification (the wake-up, a check, a profile) or a message
 saying the iteration limit was reached is never a cue for a status reply. While the run log has unfinished
-steps, note it in one line and continue at the first unfinished step with a tool call in the same reply. When a
+steps, say `↻ Resuming at <n>/11 <step>: <what woke the run>` and continue there with a tool call in the same
+reply. When a
 notice says the iteration limit is near, write the next step in the run log first, so the next turn picks it up.
 
 The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run, debug or review
@@ -70,7 +71,9 @@ or the user asked for a single pull request, and record why in Approach.
 ## Flow
 
 Start the wake-up first (Turn limits), on every run, follow-up and continue. Track the steps with your todo tool
-if you have one, one step active at a time. Each step's instructions are a file in this skill: load it with
+if you have one, one step active at a time. When a step starts, post one line with your next tool call:
+`▶ <n>/11 <step>: <what it will do> (<who: this chat or the profile>)`; a step that does not apply gets
+`— <n>/11 <step>: skipped, <reason>`. Each step's instructions are a file in this skill: load it with
 `skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach the step, not before. Load it again
 each time you reach it, on a follow-up or after the context was compacted: never work a step from memory. Every
 report is written from `steps/report.md` loaded right before it.
