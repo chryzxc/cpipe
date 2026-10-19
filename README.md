@@ -106,7 +106,8 @@ open security finding it cannot fix inside the scope. It never asks you to fix o
 A chat turn has a cap on tool calls, so a long run can end its turn mid-step. The run keeps a ten-minute wake-up
 running in the background from set up to the report; when a turn ends early, the wake-up's notification starts a
 new turn and the run picks up at its first unfinished step. Any notification that arrives mid-run continues the
-run rather than getting a status reply.
+run rather than getting a status reply. A note about a kanban card the run did not create (an operator note, a
+board digest, another card's crash) gets one `ignored:` line and the run goes on; it is never taken as the task.
 
 ### The report
 
