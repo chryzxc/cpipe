@@ -222,17 +222,21 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Fast checks.** While building, only the narrow tests run. The full suite and the build run in the first
   verify and the last one, one after the other and never together, with the runner's own parallel workers; fix
   rounds in between run the tests related to the changed files. Serial or single-worker flags are used only when
-  the project's CI uses them.
-- **Same tree, same result.** Each check result carries a tree id (the commit, the diff and the untracked files);
-  a check is not run again while the id is unchanged, and QA reuses verify's result.
-- **Load is not a regression.** A full-suite timeout is rerun alone once; a test that passes alone is recorded as
-  load flakiness.
-- **Baseline once.** The checks run once on the base, in the background while exploring continues, so a check
-  that was already red is never chased.
+  the project's CI uses them. Long checks run in the background with a completion notification.
+- **Same tree, same result.** Each check result carries a tree id built from the content of the files, so a
+  commit does not change it; a check is not run again while the id is unchanged, and QA reuses verify's result.
+- **New failures, once each.** A failure not in the baseline is rerun alone once; a test that passes alone is
+  recorded as flaky. One with no baseline result is run once on the base in a temporary worktree, and that
+  decides it.
+- **Baseline once.** The full suite and the build run once on the base, in the background while exploring
+  continues, so a check that was already red is never chased.
 - **Proven cause.** A bug is reproduced with a failing test during explore, so the plan is built on the cause,
   not a guess.
 - **Roles where they pay.** A profile starts cold and reads the code again, so a step that does not apply gets
-  no profile, and a small change keeps explore and plan in the chat.
+  no profile, mechanical work (formatting, a commit, a pull request body) stays in the chat, and a small change
+  keeps explore and plan in the chat.
+- **Replies, not calls.** A turn has a cap on replies, so independent tool calls go out together in one reply,
+  and long work runs in the background so its notification resumes a turn the cap ended.
 - **Deltas and resumed sessions.** The second review round and every follow-up see only the diff since the last
   one, a QA re-run covers only the items that failed, and a follow-up to a profile resumes its session.
 

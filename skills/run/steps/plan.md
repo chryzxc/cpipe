@@ -78,8 +78,11 @@ lines around each place it cites to confirm. Otherwise do it yourself:
    workflow files (they show how CI installs and tests). Pick the narrowest command that covers the change, plus
    the build or typecheck if the project has one, plus the broader suite for QA.
 6. **Baseline.** Run those checks once in the worktree, before any change, the way `steps/verify.md` (Fast
-   checks) runs them: in the background, the full suite and the build one after the other, with no serial or
-   single-worker flags. Keep exploring and planning while they run; they must be back before verify. Record each
+   checks) runs them: in the background, the full suite (not only the narrow tests) and the build one after the
+   other, with no serial or single-worker flags. Keep exploring and planning while they run. Verify waits for a
+   baseline still running rather than starting the suite beside it; one with no new output for 10 minutes is
+   hung: stop it and record it as not finished, and verify checks only its own new failures on the base
+   (`steps/verify.md`, New failures). Record each
    result: pass, fail (which tests) or not run here (why). Save the ids of the failing tests and lint errors, one per line and
    sorted, to `baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. A check
    already red is the baseline, not your job, unless the task is to fix it. If a check will not run, work

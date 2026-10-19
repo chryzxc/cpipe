@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.18.1
+version: 3.18.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -52,16 +52,21 @@ task; nothing that arrives mid-run replaces it.
 silently. Progress updates go in the same reply as your next tool call. When you wait for a background process
 or a profile, wait on that one process by its id with your process tool; never list every process to find it.
 
-**Turn limits.** A turn has a cap on tool calls, so a long run can end its turn mid-step. Long work (installs,
-checks, profiles) runs in the background with a completion notification: when a turn ends early, the next
-notification starts a new turn and the run picks up there. Do not start a timer or look for a tool to make one.
+**Turn limits.** A turn has a cap on replies that call tools, so a long run can end its turn mid-step. Spend
+replies, not calls: put independent tool calls (reads, briefs, checks to start) together in one reply. Long work
+(installs, checks, profiles) runs in the background with a completion notification: when a turn ends early, the
+next notification starts a new turn and the run picks up there. A turn that ends with nothing running has no
+notification to resume it, so start the next long piece of work before a stretch of short steps. Do not start a
+timer or look for a tool to make one. When the cap ends the turn, the final reply is one line:
+`⏸ cpipe: turn limit at <n>/11 <step>; resumes when <what is running> finishes or on your next message.`
 A notification after the report gets one line: `cpipe: already reported (<status line>), nothing left to do.`
 
 **A notification resumes the run.** A completion notification (a check, a profile) or a message
 saying the iteration limit was reached is never a cue for a status reply. While the run log has unfinished
 steps, say `↻ Resuming at <n>/11 <step>: <what woke the run>` and continue there with a tool call in the same
 reply. When a
-notice says the iteration limit is near, write the next step in the run log first, so the next turn picks it up.
+notice says the iteration limit is near, write the next step in the run log first, so the next turn picks it up,
+and start that step's long work in the background if it has any.
 
 The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run, debug or review
 anything, and never end with "fix the cause and say continue". If you can do it, do it.
@@ -236,6 +241,7 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
   verify and the last one, after the cleanup; the verifies between them run the related tests
   (`steps/verify.md`, Fast checks).
 - A profile's result is its output or its reply file (`roles.md`); never search its session history for it.
-- A step that does not apply gets no profile; a profile starts cold and reads the code again (`roles.md`).
+- A step that does not apply, or mechanical work (format, commit, pull request body), gets no profile; a profile
+  starts cold and reads the code again (`roles.md`).
 - Long output to a file, the tail in the chat (Run log). Each user skill loaded once per run.
 - After the context is compacted, reload only this skill and the current step's file; the run log has the rest.

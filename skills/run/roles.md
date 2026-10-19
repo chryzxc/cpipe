@@ -34,7 +34,8 @@ pages to learn the command line.
 Hand a step over only when it applies and is worth a cold start: a profile starts with an empty context and reads
 the code again. No design role when the change has no user-facing surface. For a small change (one or two files,
 the cause already known), do explore and plan yourself in this chat and keep the roles for build, QA and review.
-Note each step you kept in the run log with its reason.
+Mechanical work is never handed over: formatting, a commit, a commit message or pull request body, a rerun of a
+check. It takes you a minute and a profile a cold start. Note each step you kept in the run log with its reason.
 
 1. **Brief.** Write it to a file next to the run log (`brief-<role>.md`). Start with:
 
@@ -54,7 +55,9 @@ Note each step you kept in the run log with its reason.
 
    A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`. What is
    already in a file (the plan, the explore map, the design note) is given by its path, not copied. Roles that
-   start together (QA, review, security) get their briefs written in one reply.
+   start together (QA, review, security) get their briefs written in one reply. Write it in plain sentences, with
+   everything the role needs now: a profile cannot receive anything later, so start it only once its inputs are
+   ready, and never tell it to wait for a result or that something will be provided.
 
    Then the role's part:
    - **explore:** the request and the worktree. Ask for a read-only map: the instructions that apply, the files
@@ -67,8 +70,8 @@ Note each step you kept in the run log with its reason.
      plan step: done or corrected (what and why), and the narrow tests it ran with their results. It does not
      run the full suite or the production build: verify does.
    - **qa:** the acceptance criteria, the design note, how to start the app, and verify's broader suite result
-     for this tree. Ask it to follow `steps/qa.md` without editing the repository and reply with each item's
-     result and evidence.
+     for this tree (start QA once verify has it). Ask it to follow `steps/qa.md` without editing the repository
+     and reply with each item's result and evidence.
    - **review / security:** the reviewer brief from `steps/review.md`.
 
    QA, review and security never edit the repository. Before starting them, save `git status --porcelain` and

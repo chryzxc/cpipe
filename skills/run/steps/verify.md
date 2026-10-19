@@ -46,12 +46,25 @@ The full suite and the production build take most of a run's time. Run each only
 - **One heavy job at a time.** The full suite and the build each use every core: run them one after the other,
   never together or beside another suite, or both slow down and tests time out. Lint, typecheck and format checks
   can run alongside.
-- **Same tree, same result.** Write the tree id beside each result:
-  `{ git rev-parse HEAD; git diff HEAD; git ls-files -z --others --exclude-standard | xargs -0 shasum; } | shasum`.
-  A check whose tree id has not changed since it ran is not run again.
-- **Timeouts under load.** When the full suite fails with timeouts, run only the failing files again, alone,
-  once. A test that passes alone is load flakiness: record both runs; it is not a regression. One that also fails
-  alone is a real failure.
+- **In the background.** The full suite and the build run in the background with their output in a file
+  (`logs/verify-<check>.txt`) and a completion notification. A foreground command is cut off after a few minutes
+  and its result is lost.
+- **Same tree, same result.** Write the tree id beside each result. It is the content of the files, so a commit
+  does not change it:
+  `t=$(mktemp); cp "$(git rev-parse --git-path index)" "$t"; GIT_INDEX_FILE=$t git add -A; GIT_INDEX_FILE=$t git write-tree; rm -f "$t"`.
+  A check whose tree id has not changed since it ran is not run again; committing a verified tree keeps its
+  results.
+- **New failures, once each.** A failure that is not in the baseline: run its file again, alone, once. A test
+  that passes alone is flaky or load-sensitive: record both runs; it is not a regression. One that also fails
+  alone is yours to fix, unless the baseline has no result for it (it did not run, did not finish, or left that
+  file out); then check it on the base once: add a temporary worktree of the plan's base commit
+  (`git worktree add --detach "$(mktemp -d)/base" <base commit>`),
+  link the delivery worktree's installed dependencies into it (or install them, when the change touched the
+  dependency files), run only those files there with the same command, then
+  `git worktree remove --force <path>`. Failing there too is **baseline**; passing there is yours to fix. One
+  round, then decide: no copies or archives of the tree, no further comparisons.
+- **Stop what is done.** A check this run started that hung or was replaced is stopped by its process id; none is
+  left running when the step ends.
 
 ## When a check will not run
 
@@ -65,8 +78,8 @@ Never stop the run for this. Work down the list; the first thing that works wins
 | The test framework itself crashes on the base too (a tooling mismatch, an old transpiler) | Baseline problem. Run the test another way: a single file, the project's other runner, or a small script that imports and calls the code. Typecheck and build count as partial proof. Record the original check as not run here. |
 | The project's own app, server or local service is not running, or stopped mid-run | Start it again the way the project does (its dev script, its local setup), wait until it answers, and continue. Only a service this machine cannot run is not run here. |
 | Needs a service (database, browser, device, network API) that is not available | Use the project's test doubles or in-memory setup if it has one. Otherwise verify the logic with unit tests and record the end-to-end part as not run here. |
-| Times out | Run the failing files alone (Fast checks), raise the timeout once, look for a hang you caused. |
-| Flaky | Run it again once. A different result twice means flaky: record both runs. |
+| Times out | Run the failing files alone (Fast checks, New failures), raise the timeout once, look for a hang you caused. |
+| Flaky | Run it again once, alone. A different result twice means flaky: record both runs. |
 | Expected report or output file is missing | Judge by the exit code and the printed summary. |
 | A tool or subagent errors or returns nothing | Read the error, retry once differently, or do the step yourself. |
 
