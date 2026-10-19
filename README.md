@@ -1,119 +1,428 @@
+<div align="center">
+
 # cpipe
 
-A [Hermes Agent](https://hermes-agent.nousresearch.com) plugin that delivers a coding task to reviewed, verified
-code. You hand over the task and wait; cpipe decides open questions itself, plans, writes the tests first, builds,
-verifies with the project's own checks, has the change reviewed in a fresh context, cleans up, commits and
-reports back.
+**Hand over a coding task. Get back reviewed, verified code and a report.**
 
-cpipe is a set of skills. The model in your chat runs every step with its normal tools, so it adapts to each
-repository: when a command is blocked, a test runner is broken or a dependency is missing, it works around it,
-records what it could not verify, and keeps going. It stops only for decisions that are yours.
+An autonomous delivery workflow for [Hermes Agent](https://hermes-agent.nousresearch.com), built entirely from
+skills.
 
-## Install
+[![Hermes Agent plugin](https://img.shields.io/badge/Hermes_Agent-plugin-6E56CF)](https://hermes-agent.nousresearch.com)
+[![Skills only](https://img.shields.io/badge/built_from-skills-2EA44F)](#how-it-is-built)
+[![Dependencies: none](https://img.shields.io/badge/dependencies-none-lightgrey)](#requirements)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+[Quick start](#quick-start) · [How it works](#how-it-works) · [Core concepts](#core-concepts) ·
+[Configuration](#configuration) · [The report](#the-report) · [FAQ](#faq)
+
+</div>
+
+---
+
+cpipe turns one chat message into a finished delivery. You send the task and wait. cpipe sets up an isolated
+worktree, maps the code the change touches, settles open questions itself, writes a plan a builder can follow,
+writes the tests first, builds one verified change at a time, runs the project's own checks, uses the change
+like a user would, has it reviewed in a fresh context, cleans up, commits, and reports back with the proof.
+
+It is a set of skills, not a program. The model in your chat runs every step with its normal tools, so it adapts
+to any repository, language and toolchain: when a command is blocked, a test runner is broken or a dependency is
+missing, it works around the obstacle, records what it could not verify, and keeps going.
+
+## Contents
+
+- [Highlights](#highlights)
+- [Quick start](#quick-start)
+- [What a run looks like](#what-a-run-looks-like)
+- [How it works](#how-it-works)
+- [Core concepts](#core-concepts)
+  - [Graph engineering](#graph-engineering) · [Loop engineering](#loop-engineering) ·
+    [Context engineering](#context-engineering) · [Cost engineering](#cost-engineering)
+  - [Evidence over claims](#evidence-over-claims) · [Proof by playbook](#proof-by-playbook) ·
+    [Blast-radius mapping](#blast-radius-mapping)
+  - [Decide, don't ask](#decide-dont-ask) · [Independent review](#independent-review) ·
+    [Durable state and recovery](#durable-state-and-recovery) · [Learning loop](#learning-loop)
+- [Steps](#steps) · [Playbooks](#playbooks)
+- [Configuration](#configuration)
+- [The report](#the-report)
+- [Files and state](#files-and-state)
+- [Guard rails](#guard-rails)
+- [How it is built](#how-it-is-built)
+- [FAQ](#faq)
+- [Contributing](#contributing)
+
+## Highlights
+
+- **Unattended, end to end.** The task is the last message you send. No plan approval, no clarifying questions:
+  open questions are decided and listed with their reasons in the report.
+- **Tests first, proof per kind.** A bug is reproduced with a failing test before the plan is written; a feature
+  shows new tests red then green; a refactor keeps the same checks green before and after.
+- **The project's own checks.** Lint, typecheck, tests and build run with the commands the project and its CI
+  use, inside the delivery worktree, with honest states: pass, fail, baseline or not run here.
+- **Independent review.** A reviewer that did not write the code reads the diff in a fresh context and hunts for
+  regressions the plan missed; a second reviewer joins for security-sensitive changes.
+- **QA on the real surface.** The change is used the way a user would use it: the page, the endpoint, the CLI.
+- **A graph, not a script.** Steps, gates, fork and join, bounded loops and re-entry, all written as skill text
+  and run by the model.
+- **Lean on tokens.** Instructions load only when a step starts, code is read once, checks are narrowed while
+  building, and results are reused while the tree is unchanged.
+- **Your setup comes first.** Your own skills for commits, pull requests, review or UI design override cpipe's
+  defaults; your Hermes profiles can take over any role.
+- **Safe by default.** One worktree per delivery, your checkout untouched, no push, pull request or message
+  unless the task asks for it.
+
+## Quick start
+
+### Requirements
+
+- [Hermes Agent](https://hermes-agent.nousresearch.com) with plugin support (developed against 0.22).
+- `git`. The [GitHub CLI](https://cli.github.com) (`gh`) for pull requests and for tidying up merged worktrees.
+- The project's own toolchain (its package manager, test runner and build), as its CI uses it.
+- Optional: Hermes profiles for the roles, and a running kanban dispatcher for `--kanban`.
+
+cpipe has no Python dependencies and needs no configuration.
+
+### Install
 
 ```sh
 git clone https://github.com/chryzxc/cpipe ~/.hermes/plugins/cpipe
 hermes plugins enable cpipe
 ```
 
-## Use
+Update with `git -C ~/.hermes/plugins/cpipe pull`. Check the manifest with
+`hermes plugins validate ~/.hermes/plugins/cpipe`.
+
+### Use
+
+In any Hermes chat, inside or near the repository:
 
 ```
-/cpipe <task>
+/cpipe fix the discount that disappears when an invoice is edited
 ```
 
-`/cpipe:run <task>` does the same. Start the task with `--kanban` to hand the role steps to your profiles as
-cards on your Hermes kanban board (see Roles). `/cpipe continue` (or **continue** in the chat) resumes a run
-that stopped, at its first unfinished step. `/cpipe` replies with the task, the roles from your roles file and
-what it will and will not do, then posts one `▶` line as each step starts.
+| Command | Does |
+|---|---|
+| `/cpipe <task>` | Delivers the task unattended and reports back in the same chat |
+| `/cpipe --kanban <task>` | The same, with the role steps handed to your profiles as cards on your kanban board |
+| `/cpipe continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
+| `/cpipe:run <task>` | The skill itself, for chats where the command is not available |
 
-## Flow
+Ask for anything that leaves your machine in the task itself: `… and open a draft pull request`.
+
+## What a run looks like
+
+`/cpipe` answers with the task, the flow and who runs each step. Then the run posts one line as each step
+starts, and a single report at the end:
 
 ```
-set up (worktree + dependencies) → explore → design → decide open questions → plan
-   → tests first (RED) → build (GREEN, one verified change at a time) → verify
-   → QA on the real surface + independent review, side by side (≤ 2 rounds) → clean up → verify → commit → report
+▶ cpipe: fix the discount that disappears when an invoice is edited
+Unattended from here to a report in this chat: plan → tests first → build → verify → QA + review → commit.
+Roles: every step runs in this chat (no roles set in cpipe.yaml).
+
+▶ 1/11 Set up: worktree fix/invoice-discount, dependencies with npm ci (this chat)
+▶ 2/11 Explore: callers of updateInvoice(), the invoice API and its consumers, baseline (this chat)
+— 3/11 Design: skipped, nothing user-facing changes
+▶ 4/11 Decide: 1 open question settled as an assumption (this chat)
+▶ 5/11 Plan: 4 build steps, plan gate passed (this chat)
+▶ 6/11 Build: tests first for the invoice update (this chat)
+▶ 7/11 Verify: lint, typecheck, full suite, build (this chat)
+▶ 8/11 QA: edit a discounted invoice on the running app (this chat)
+▶ 9/11 Review: independent review of the diff (subagent)
+▶ 10/11 Clean: one pass over the diff, then the full suite and build (this chat)
+▶ 11/11 Report: commit and report (this chat)
 ```
 
-A task with several issues becomes one delivery per issue: its own branch, worktree, commit and pull request,
-run one after another and reported together. Issues ship together only when one cannot work without the other.
+The report that follows is shown in [The report](#the-report).
 
-Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change)
-is skipped with its reason in the run log. The checks and the report are always done by the chat itself.
+## How it works
 
-Your own skills come first: cpipe sets the order of the steps, and at each step the chat loads any of your skills
-that covers that work (pull-request content, commit messages, review, UI design, testing) and follows it over
-cpipe's defaults. cpipe's guard rails still apply.
+```mermaid
+flowchart TD
+    T(["/cpipe task"]) --> S1["1 · Set up<br/>worktree, dependencies"]
+    S1 --> S2["2 · Explore<br/>flow map, premortem, baseline"]
+    S2 --> S3["3 · Design<br/>states, flow, copy"]
+    S3 --> S4["4 · Decide<br/>open questions become assumptions"]
+    S4 --> S5["5 · Plan<br/>numbered build steps"]
+    S5 -->|plan gate| S6["6 · Build<br/>tests first, one change at a time"]
+    S6 --> S7["7 · Verify<br/>the project's checks"]
+    S7 -->|a check fails| S6
+    S7 -->|completion gate| FORK{{"side by side"}}
+    FORK --> S8["8 · QA<br/>the real surface"]
+    FORK --> S9["9 · Review<br/>fresh context"]
+    S8 --> JOIN{{"findings join"}}
+    S9 --> JOIN
+    JOIN -->|"findings to act on (≤ 2 rounds)"| S6
+    JOIN -->|nothing left to act on, or a limit reached| S10["10 · Clean<br/>one pass, then verify"]
+    S10 --> S11["11 · Report<br/>commit, report"]
+```
+
+Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
+passed with its reason in the run log. Verify and the report are always done by the chat itself: the checks and
+the final word are never handed to anyone else.
+
+A task with several issues becomes one delivery per issue, each with its own branch, worktree, commit and pull
+request, run one after another and reported together. Issues ship together only when one cannot work without
+the other.
+
+## Core concepts
+
+### Graph engineering
+
+A run is an explicit graph. Each **node** is a step with its own instructions file, loaded only when the run
+reaches it. Each **edge** is a condition the chat checks on the current tree: a gate that passes, a check that
+fails, findings that come back. The graph is written in the skill, and nothing outside the model picks the next
+step.
+
+- **Gates** guard the two expensive edges. The **plan gate** checks the plan before any code is written: every
+  path and function exists, no step is vague or leaves a choice open, every acceptance, must-not-change and risk
+  item is covered, no file is pushed past its size budget. The **completion gate** checks the change before anyone
+  reviews it: real assertions, no skipped or focused tests, no placeholders or debug output, nothing outside the
+  scope, no secrets, proof for every acceptance criterion. A failed gate item is fixed on the spot, never a stop.
+- **Fork and join.** QA and review only read the same verified change, so they run at the same time. Their
+  findings join into one fix round, followed by a delta review alongside a QA re-run of the items that failed.
+- **Pass-through.** A node that does not apply is passed with a one-line reason, never silently.
+- **Re-entry.** The run log is the graph's state. **continue**, a completion notification or a restart re-enters
+  at the first unfinished step; a message after the report re-enters at the plan for the follow-up only.
+- **One graph per delivery.** Several issues run as several graphs, one after another, never two at once.
+
+### Loop engineering
+
+Every loop has a bound and an exit. Reaching a bound records the open items and moves to the next step; it never
+ends the run.
+
+| Loop | Bound |
+|---|---|
+| Build: change, narrow test, keep or undo | One change at a time; never two unverified changes stacked |
+| A failing check, back to build | 3 attempts, each a different idea |
+| QA failures, back to build | 2 fix rounds |
+| Review, back to build | 2 rounds, the second on the changes since the first; a fix after that gets one review of its own |
+| No progress | 3 rounds in a row: change the approach once, then report |
+| A role's profile | Its time budget, then the chat does the step; a card not picked up in 10 minutes counts as failed |
+
+### Context engineering
+
+The chat's context is the scarcest resource in a long run, so cpipe decides what enters it and when.
+
+- **Load late.** Only the current step's instructions are loaded, when the run reaches the step. A file is
+  loaded again only when its text has left the context (a follow-up or a compaction), so no step is worked from
+  memory and nothing is loaded twice.
+- **Read once.** Explore reads the code once and records a flow map with paths and line numbers. The plan
+  carries what the builder needs (files, functions, the exact change), so later steps do not re-read the
+  repository; the chat reads only the lines around what explore cites.
+- **Output to files.** Long command output goes to a file beside the run log; the chat reads the result lines
+  or the tail.
+- **Distilled skills.** Your skills are loaded once per run, only for work done in the chat, and the rules that
+  apply are written to the run log as one line each.
+- **Compaction-proof.** After the context is compacted, only the run skill and the current step are reloaded;
+  the run log holds everything else.
+- **Lean briefs.** A role's brief holds facts (goal, acceptance, diff, check states), not reasoning, and points
+  to the plan by its path instead of copying it. A profile replies in at most 20 lines and puts the rest in a file.
+
+### Cost engineering
+
+- **Fast checks.** While building, only the narrow tests run. The full suite and the build run in the first
+  verify and the last one, one after the other and never together, with the runner's own parallel workers; fix
+  rounds in between run the tests related to the changed files. Serial or single-worker flags are used only when
+  the project's CI uses them.
+- **Same tree, same result.** Each check result carries a tree id (the commit, the diff and the untracked files);
+  a check is not run again while the id is unchanged, and QA reuses verify's result.
+- **Load is not a regression.** A full-suite timeout is rerun alone once; a test that passes alone is recorded as
+  load flakiness.
+- **Baseline once.** The checks run once on the base, in the background while exploring continues, so a check
+  that was already red is never chased.
+- **Proven cause.** A bug is reproduced with a failing test during explore, so the plan is built on the cause,
+  not a guess.
+- **Roles where they pay.** A profile starts cold and reads the code again, so a step that does not apply gets
+  no profile, and a small change keeps explore and plan in the chat.
+- **Deltas and resumed sessions.** The second review round and every follow-up see only the diff since the last
+  one, a QA re-run covers only the items that failed, and a follow-up to a profile resumes its session.
+
+### Evidence over claims
+
+Nothing counts until a command has run on the current tree and its result has been read.
+
+- **Honest states.** Every check is **pass**, **fail**, **baseline** (already failing on the base) or **not run
+  here** (with the reason and the other proof gathered).
+- **Baseline by name.** The baseline saves the names of failing tests and lint errors, and verify compares names,
+  not counts: one new failing name is a fail even when the total went down.
+- **Claims are checked.** A profile's or subagent's "done" is a claim until the chat has run and read the check
+  itself. A QA failure is reproduced before it is acted on.
+- **Tests that catch something.** Each new test names the break it catches, the line or behavior that makes it
+  fail. Tests that catch no realistic break (a constant, a getter, the framework, a mock returning what it was
+  told) are not written.
+- **Small files.** Every file the change adds or grows stays within 5,000 tokens (bytes / 4, about 500 lines), or
+  the project's own size rule. New code for a file already over the limit goes in a new file beside it.
+- **No shortcuts.** A test is never skipped, weakened or deleted to make a check pass, and a red lint or format
+  baseline is never cleared by reformatting code the change does not touch.
+
+### Proof by playbook
+
+The kind of task decides what counts as proof. Explore picks the kind and loads its playbook; a task that mixes
+kinds uses the stricter one. See [Playbooks](#playbooks).
+
+### Blast-radius mapping
+
+Before planning, explore traces every path through the code that will change:
+
+- **Entrances:** routes, pages and UI actions, jobs, event and queue handlers, CLI commands, other modules.
+- **Exits:** responses, data written, events emitted, UI rendered, and the code on the other side that consumes
+  them.
+- **Guards:** authentication, permissions, tenancy, feature flags, validation, rate limits, on both sides.
+- **Behavior to keep:** what each entrance and consumer does today.
+
+A **premortem** then imagines the change shipped and broken, through contracts, data and state, roles and
+environments, failure paths, user-facing states and cost. Each risk gets a check or a reason it cannot happen.
+The plan turns the map into numbered **must-not-change** items, each with the test or QA step that proves it, and
+the reviewer searches the whole repository again for any usage the map missed.
+
+### Decide, don't ask
+
+A run never waits for you. Open questions (which base, which of two behaviors, a product detail) are settled from
+the request, the code, the project's history and the conversation: the most likely answer, and of two equally
+likely ones the more reversible. Each becomes an assumption in the report's Approach table.
+
+Obstacles are worked around, never reasons to stop: a blocked command runs another way, a missing tool is
+replaced by the project's own binary, a check that cannot run here is recorded as not run here with the other
+proof gathered. Things only you may do (credentials, anything destructive or irreversible, anything leaving your
+machine you did not ask for) are skipped and named in the report's status line.
+
+A message mid-run is steering, not a stop: it gets a one-line answer, and new work either joins the plan as
+numbered steps or waits for a follow-up after the report.
+
+### Independent review
+
+The builder never approves its own work. The reviewer reads only a short brief and the diff, in a context that
+did not write the code, and reviews for correctness, proof, regressions across the whole repository, risks the
+plan missed, security and simplicity. Changes to authentication, permissions, payments, data deletion or
+migrations get two reviewers in parallel.
+
+Every finding is read against the code and given a disposition, so nothing is filtered silently:
+
+| Disposition | Means | What happens |
+|---|---|---|
+| **act** | Real and inside the scope | Fixed in the next round, then reviewed again |
+| **consider** | Real, but a judgment call or outside the scope | Listed in the report |
+| **noted** | Minor or stylistic | Listed in the report |
+| **dismissed** | Wrong: the code already handles it | The evidence is written in the run log |
+
+A security finding is never dismissed without evidence, and an open one leads the report.
+
+### Durable state and recovery
+
+Each run keeps an append-only **run log** at `<git-dir>/cpipe/run.md` in its worktree: the plan, one row per
+round, every workaround, every finding and what became of it. It is never committed, and it is how a run resumes.
+
+- A chat turn has a cap on tool calls. Long work (installs, checks, profiles) runs in the background with a
+  completion notification, and the notification starts the next turn at the first unfinished step.
+- A restart of the Hermes backend ends the turn; **continue** picks the run up again. Profiles and checks it
+  started keep running, and continue uses their results instead of starting them again.
+- A notification that arrives after the report gets one line and nothing more. A note about a kanban card the
+  run did not create gets one `ignored:` line; it is never taken as the task.
+- The log also marks the worktree as cpipe's: each new run removes cpipe worktrees whose pull request is merged
+  and that hold no uncommitted work. Other worktrees are never touched.
+
+### Learning loop
+
+When review, QA or you catch something the plan should have seen, the run writes a one-line lesson as a rule
+about the project: where to look, what to check, why. Project lessons live at
+`<git-common-dir>/cpipe/lessons.md`, shared by all its worktrees and never committed; corrections about how you
+work in any project (when to push, branch and pull-request format, naming) go to `~/.hermes/cpipe/lessons.md`.
+Every later run reads both before planning, and the premortem turns each lesson into a question for the change.
+
+A message after the report is a follow-up on the same worktree: it is reproduced, fixed, verified and reviewed,
+then reported again.
+
+## Steps
 
 Only `cpipe:run` is registered; the steps are files inside it, so they never show up as separate commands.
 
-| File | Step |
-|---|---|
-| `SKILL.md` | The flow, the rules, the run log, playbooks per task kind |
-| `steps/plan.md` | Worktree and dependencies, a flow map of every entrance, exit, consumer and guard, a premortem of what could break, the checks and their baseline, open questions decided as assumptions, a plan of numbered build steps that must pass the plan gate |
-| `steps/design.md` | States, flow, copy, accessibility and edge cases of anything user-facing |
-| `steps/build.md` | Tests first (only tests that fail when the code breaks), implement, cleanup pass |
-| `steps/verify.md` | Run the checks with honest states, work around checks that will not run, completion gate |
-| `steps/qa.md` | Use the change on the real surface, walk the acceptance criteria, try to break it, check the broader suite |
-| `steps/review.md` | Independent review by a subagent that hunts regressions and risks the plan missed, findings sorted into act, consider, noted and dismissed |
-| `steps/report.md` | Commit, a draft pull request only when asked (then waits for CI), the app left running for you, the report |
+| # | Step | Does | File |
+|---|---|---|---|
+| 1 | Set up | Finds the repository and base, creates the worktree, installs dependencies, starts the run log, removes merged cpipe worktrees | `steps/plan.md` |
+| 2 | Explore | Reads the project's instructions and lessons, maps entrances, exits and guards, runs the premortem, finds the checks and runs the baseline, reproduces a bug | `steps/plan.md` |
+| 3 | Design | States, flow, copy, accessibility and edge cases of anything user-facing | `steps/design.md` |
+| 4 | Decide | Settles open questions as assumptions with a one-line reason each | `steps/plan.md` |
+| 5 | Plan | Goal, scope, acceptance, must-not-change, risks, tests, checks, and numbered build steps that pass the plan gate | `steps/plan.md` |
+| 6 | Build | Tests first, then the change, one verified step at a time | `steps/build.md` |
+| 7 | Verify | The plan's checks with honest states, workarounds for checks that will not run, the completion gate | `steps/verify.md` |
+| 8 | QA | Uses the change on the real surface, walks the acceptance criteria, tries to break it | `steps/qa.md` |
+| 9 | Review | Independent review in a fresh context, findings sorted into act, consider, noted and dismissed | `steps/review.md` |
+| 10 | Clean | One cleanup pass over the diff, then the last verify with the full suite and the build | `steps/build.md` |
+| 11 | Report | Commit, a draft pull request only when asked (then waits for CI), the app left running, the report | `steps/report.md` |
 
-### Roles (optional)
+Each plan step is written so a builder who has not read the code can follow it:
 
-By default the chat does every step itself, with a subagent as the reviewer. To hand steps to your own Hermes
-profiles, create `~/.hermes/cpipe.yaml`:
+```
+S1  src/invoices/update.ts  updateInvoice()
+    Do: change the line-item rebuild to merge into the stored invoice, keeping discount
+    Test first: update.test.ts "keeps the discount on edit", fails now because discount is dropped
+    Verify: npx vitest run src/invoices -> 1 new test passes
+    Covers: A1, M2
+```
+
+## Playbooks
+
+| Kind | When | Proof |
+|---|---|---|
+| bug | Something that worked, or should work, is broken | A test that fails before the fix and passes after it |
+| feature | New or changed behavior | New tests red then green, existing checks still green, behavior exercised on the real surface |
+| refactor | Structure changes, behavior must not | The same checks green before and after |
+| chore | Docs, config, dependency bumps, renames | Checks green, change read back |
+| port | A change brought from another branch, commit or repository | Every hunk ported or marked not applicable with its reason, plus the proof of the change it carries |
+| hotfix | The task says hotfix or urgent, or production is broken now | The failure reproduced and gone, narrow checks green, one review round; the root-cause work named as its own delivery |
+| review | An existing change or pull request to check, no new work | Verified on its head commit, QA and an independent review, and a verdict: `✅ Approved` or `⚠️ Changes needed` |
+
+## Configuration
+
+cpipe works with no configuration: the chat runs every step, with a subagent as the reviewer.
+
+### Roles
+
+To hand steps to your own Hermes profiles, create `~/.hermes/cpipe.yaml` (or `$HERMES_HOME/cpipe.yaml`):
 
 ```yaml
 roles:
   explore: <profile>    # maps the code before planning
   design: <profile>     # designs the user-facing side
   plan: <profile>       # drafts the plan
-  build: <profile>      # writes the tests and the code
+  build: <profile>      # writes the tests and the code, and the cleanup
   qa: <profile>         # uses the change like a user would
   review: <profile>     # reviews the change
   security: <profile>   # second reviewer for security-sensitive changes
 ```
 
-Every role is optional. The chat still runs the flow, runs the checks itself and treats each profile's answer as
-a claim to verify. At the start of each run it tells you who does each step; a role with no profile runs in the
-chat. If a profile fails, the chat retries once, tells you, and does the step itself; a profile that runs past its time
-budget is stopped and the chat does the step at once.
+Every role is optional; a role with no profile runs in the chat. The chat stays in charge: it runs the flow and
+the checks, writes each brief to a file, and treats each profile's answer as a claim to verify.
 
-With `--kanban`, each handed-over step is a card assigned to its profile, run by the board's dispatcher, so
-the work shows on the board. A card that is blocked, times out or is not picked up within 10 minutes counts as a
-failed role.
-
-### Playbooks
-
-| Kind | Proof |
+| Role | Time budget |
 |---|---|
-| bug | A test that fails before the fix and passes after it |
-| feature | New tests red then green, existing checks still green, behavior exercised on the real surface |
-| refactor | The same checks green before and after |
-| chore | Checks green, change read back |
-| port | Every hunk of the source change ported or marked not applicable with its reason, plus the proof of the change it carries |
-| hotfix | The failure reproduced and gone, narrow checks green, one review round; the root-cause work named as its own delivery |
-| review | An existing change verified on its head commit, QA and an independent review, and a verdict (`✅ Approved` or `⚠️ Changes needed`) |
+| explore, design, plan | 10 minutes |
+| qa, review, security | 15 minutes |
+| build | 40 minutes |
 
-### It runs to the end
+A profile that fails is retried once with a shorter brief, then the chat does the step itself; a profile that
+runs past its budget is stopped and the chat does the step at once. Either way you are told in one line.
 
-`/cpipe` answers with the task, the flow and who runs the steps, then the run posts one line as each step
-starts (`▶ 6/11 Build: tests first for the date filter (this chat)`) and one when it resumes.
+### On the kanban board
 
-It does not stop: the task is the last message you send. Open questions are decided and listed with their reason
-in the report's Approach table. Things only you may do (credentials, anything destructive or irreversible,
-anything leaving your machine you did not ask for) are skipped and named in the report's status line, as is an
-open security finding it cannot fix inside the scope. It never asks you to fix or run anything.
+With `/cpipe --kanban <task>`, each handed-over step becomes a card assigned to its profile and run by the board's
+dispatcher, so the work shows on the board. A card that ends blocked, times out, or is not picked up within 10
+minutes counts as a failed role. The run only ever touches cards it created.
 
-A chat turn has a cap on tool calls, so a long run can end its turn mid-step. Long work (installs, checks,
-profiles) runs in the background with a completion notification; when a turn ends early, the next notification
-starts a new turn and the run picks up at its first unfinished step. A restart of the Hermes backend ends the
-turn, so the run waits for **continue**; the profiles and checks it started keep running, and continue uses
-their results instead of starting them again. Any notification that arrives mid-run continues the
-run rather than getting a status reply. A note about a kanban card the run did not create (an operator note, a
-board digest, another card's crash) gets one `ignored:` line and the run goes on; it is never taken as the task.
+### Your own skills
 
-### The report
+cpipe sets the order of the steps; your skills say how a step is done. At each step the chat looks for one of your
+skills that covers that work (commit messages, pull-request content, code review, security review, UI design,
+testing a web app, a project's conventions) and follows it over cpipe's defaults, including its scripts and
+checks. cpipe's guard rails still apply: a skill never authorizes a push, merge or message the task did not ask
+for.
+
+### Project instructions
+
+The project's agent and contributor instructions (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, the README's
+development section) win over cpipe's steps where they conflict, apart from the guard rails. Branch names,
+worktree locations, commit conventions and check commands follow the project.
+
+## The report
 
 The run reports only once the work is finished: findings fixed, the last fix reviewed, CI waited for when a pull
 request was asked for. It is short, one line per row, and complete:
@@ -122,19 +431,18 @@ request was asked for. It is short, one line per row, and complete:
   `⚠️ Changes needed`.
 - **Summary:** for a bug, what happened, the cause and the fix; for a feature, what was added and how; otherwise
   before, after and why.
-- **Steps:** all eleven steps with ✅, ⚠️, ⏳, ❌ or — and the proof in a few words (tests RED → GREEN, each
-  check's state, review findings by outcome, the commit).
-- **Findings:** what the run found that the task did not say (review and QA findings, a deeper root cause, a
-  baseline failure) and what became of each.
-- **Approach:** each idea the change is built on and each assumption: why it was chosen, what was avoided and
-  the problem it would have caused, and the trade-off.
-- **Test it:** the app left running from the worktree (its URL or command) when the change is something you can
-  see or use, plus only what this machine could not verify, with steps and the expected result.
+- **Steps:** all eleven steps with ✅, ⚠️, ⏳, ❌ or — and the proof in a few words.
+- **Findings:** what the run found that the task did not say, and what became of each.
+- **Approach:** each idea the change is built on and each assumption: why, what was avoided and the problem it
+  would have caused, and the trade-off.
+- **Test it:** the app left running from the worktree when there is something to see or use, plus only what this
+  machine could not verify, with steps and the expected result.
 - **Not in this change** and **Details** (branch, worktree, commit, pull request, files, roles, skills, lessons).
 
-Tables use plain words and role names (Review, QA); profile, skill and tool names appear only in Details.
+The report never asks you to fix, install, run, review or verify anything the run could have done itself.
 
-A shortened example:
+<details>
+<summary>Example report</summary>
 
 ```
 ✅ Done, test by hand: invoices keep their discount after an edit
@@ -167,135 +475,131 @@ App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
 | 1 | Discount survives | open an invoice with 10% off, edit, save | still shows 10% off |
 ```
 
-### It learns from misses
+</details>
 
-When review, QA or you catch something the plan should have seen, the run writes a one-line lesson for the
-project at `<git-common-dir>/cpipe/lessons.md` (shared by all its worktrees, never committed). A correction about
-how you work in any project (when to push, branch and pull-request format, naming) goes in your own lessons at
-`~/.hermes/cpipe/lessons.md`. Every later run reads both before planning and checks each one. A message after the
-report is a follow-up on the same worktree: it is fixed, verified and reviewed, then reported again.
+## Files and state
 
-### Plans a builder can follow
+| Path | Holds | Committed |
+|---|---|---|
+| `~/.hermes/cpipe.yaml` | The roles, written by you | — |
+| `<repo>-worktrees/<branch>/` | The delivery worktree, beside the repository (or where the project's instructions say) | The delivery commit only |
+| `<git-dir>/cpipe/run.md` | The run log: plan, rounds, workarounds, findings | Never |
+| `<git-dir>/cpipe/baseline-<check>.txt` | Names of the tests and lint errors failing on the base | Never |
+| `<git-dir>/cpipe/logs/` | Long command output | Never |
+| `<git-dir>/cpipe/brief-<role>.md`, `<role>-reply.md` | Briefs to profiles and their long replies | Never |
+| `<git-common-dir>/cpipe/lessons.md` | The project's lessons, shared by all its worktrees | Never |
+| `~/.hermes/cpipe/lessons.md` | Your lessons, for every project | — |
 
-The plan ends in numbered steps, one behavior each: the file and function, exactly what changes, the test that
-fails first, the command that proves it, and which acceptance, must-not-change and risk items it covers. A plan
-gate checks every step before the build (paths and functions exist, no vague wording or open choices, every
-item covered, no file pushed past the size budget). The builder follows the steps in order; a step that proves
-wrong is corrected in the run log, never improvised silently.
+## Guard rails
 
-### Small files
+Only when the task asks for it:
 
-Every file the change adds or grows stays within 5,000 tokens (bytes / 4, about 500 lines), or the project's own
-size rule if it has one. The completion gate measures it; an oversized file is split by responsibility with its
-imports and tests intact. A file that was already over the limit is not split; new code goes in a new file beside
-it. Lockfiles, generated, vendored and data files are skipped.
+- merging, pushing, opening a pull request, deploying or messaging anyone;
+- reformatting files or the repository beyond the lines the change touches.
 
-### Honest states
+Never:
 
-Every check in the report is one of **pass**, **fail**, **baseline** (already failing before the change) or
-**not run here** (with the reason and the other proof gathered). The baseline saves the names of the failing tests
-and lint errors, and verify compares names, not counts: one new failing name is a fail even when the total went
-down. A red formatting or lint baseline is never cleared by reformatting code the change does not touch. A
-subagent's "done" is a claim until the command is run and read.
+- editing your own checkout, other branches or other worktrees; scope that has to grow is named in one line;
+- destructive commands outside the delivery worktree, apart from removing cpipe's own merged worktrees;
+- skipping, weakening, deleting or marking as expected-failure a test to make a check pass;
+- reporting a check as passed that was not run and read on the current tree;
+- credentials, tokens or secrets in code, commits, logs, briefs or the report, or `.env` contents in the chat;
+- AI attribution in commits or pull requests;
+- changes to your Hermes profiles, config, skills or plugins.
 
-### Run log
+## How it is built
 
-Each run keeps an append-only log at `<git-dir>/cpipe/run.md` in its worktree: the plan, one row per round,
-every workaround, the review findings and their dispositions. Long command output goes to files beside it, and the
-chat reads only the result lines. It is never committed, and it is how a run resumes.
-The log also marks the worktree as cpipe's: each new run removes cpipe worktrees whose pull request is merged and
-that hold no uncommitted or unpushed work, so finished worktrees do not fill the disk. Other worktrees are never
-touched.
-
-## How it works
-
-### A graph of steps
-
-A run is a graph. Each step is a node with its own instructions file, loaded only when the run reaches it. Each
-edge is a condition the chat checks on the current tree: a gate that passes, a check that fails, findings that
-come back. Nothing outside the model picks the next step; the graph is written in the skill, and the run log
-holds where the run is.
-
-```
-set up → explore → design → decide → plan
-                                       │ plan gate
-                                       ▼
-                    ┌─────────────►  build  ◄──────┐
-                    │                  ▼           │ a check fails
-                    │                verify ───────┘
-                    │                  │ completion gate
-                    │           ┌──────┴──────┐
-                    │           ▼             ▼
-                    │          QA          review          side by side
-                    │           └──────┬──────┘
-                    │ findings         │
-                    └── one fix round ◄┤
-                                       │ nothing left to act on, or a limit reached
-                                       ▼
-                         clean → verify → commit → report
+```mermaid
+flowchart LR
+    U["You"] -->|"/cpipe task"| P["__init__.py<br/>registers the skill and the command"]
+    P -->|injects the task| C["Chat model<br/>runs the flow"]
+    C -->|loads step by step| K["skills/run<br/>flow, steps, playbooks, roles"]
+    C <-->|appends, resumes| L[("Run log")]
+    C -->|commands| W["Delivery worktree<br/>the project's checks"]
+    C -->|briefs| R["Your profiles<br/>direct or kanban cards"]
+    C -->|diff only| V["Reviewer<br/>fresh context"]
+    C -->|report| U
 ```
 
-- **Gates** guard the two expensive edges. The plan gate checks the plan before any code is written; the
-  completion gate checks the change before anyone reviews it. A failed gate item is fixed on the spot, never a
-  stop.
-- **Fork and join.** QA and review only read the same verified change, so they run at the same time. Their
-  findings join into one fix round, then a delta review runs alongside a QA re-run of the items that failed.
-- **Pass-through.** A step that does not apply (design for an internal fix, QA for a docs change) is passed with
-  its reason in the run log.
-- **Re-entry.** The run log is the graph's state. **continue**, or a notification after a turn ends early,
-  re-enters at the first unfinished step; a
-  message after the report re-enters at the plan for the follow-up only; a task with several issues runs one graph
-  per delivery, one after another, never two at once. Work added mid-run joins the plan as numbered steps or
-  waits for a follow-up after the report.
+The plugin's code only registers one skill and the `/cpipe` command, which injects the task into the chat with
+the instruction to run the skill. Everything else (the flow, the decisions, the recovery) is skill text that the
+model follows with the tools it already has.
 
-### Bounded loops
+```
+cpipe/
+├── plugin.yaml           manifest
+├── __init__.py           registers cpipe:run and /cpipe
+├── AGENTS.md             rules for changing cpipe
+└── skills/run/
+    ├── SKILL.md          the flow, unattended rules, run log, lessons, limits, guard rails
+    ├── roles.md          handing steps to profiles, directly or as kanban cards
+    ├── steps/            one file per step, loaded when the run reaches it
+    │   ├── plan.md       set up, explore, decide, plan
+    │   ├── design.md     design
+    │   ├── build.md      build and clean
+    │   ├── verify.md     checks, workarounds, fast checks, completion gate
+    │   ├── qa.md         QA on the real surface
+    │   ├── review.md     independent review and dispositions
+    │   └── report.md     commit, pull request, report
+    └── playbooks/        proof per task kind
+        ├── bug.md        feature.md     refactor.md    chore.md
+        └── port.md       hotfix.md      review.md
+```
 
-Every loop has an exit, and reaching it records the open items and moves on; it never ends the run.
+## FAQ
 
-| Loop | Bound |
-|---|---|
-| Build: change, narrow test, keep or undo | One change at a time; never two unverified changes stacked |
-| A failing check, back to build | 3 attempts, each a different idea |
-| QA failures, back to build | 2 fix rounds |
-| Review, back to build | 2 rounds, the second on the changes since the first; a fix after that gets one review of its own |
-| No progress | 3 rounds in a row: change the approach once, then report |
-| A role's profile | Its time budget, then the chat does the step; a card not picked up in 10 minutes counts as failed |
+**Will it ask me anything?**
+No. Open questions become assumptions with a reason each, listed in the report's Approach table. If one is wrong,
+reply after the report; the follow-up reuses the same worktree.
 
-### Cost and caching
+**Will it push or open a pull request?**
+Only when the task says so. With a pull request it pushes the branch, opens a draft, and waits up to 30 minutes
+for CI, fixing failures the change caused.
 
-- **Read once.** Explore reads the code once. The plan carries what the builder needs (paths, functions, the
-  exact change), so later steps do not re-read the repository.
-- **Load late.** Only the current step's instructions are loaded, when the run reaches the step, and loaded
-  again only when they are gone from the context (a follow-up or a compaction), so no step is worked from memory
-  and nothing still in the context is loaded twice.
-- **Fast checks.** While building only the narrow tests run. The full suite and the build run in the first
-  verify and the last one, one after the other and never together, with the runner's own parallel workers; fix
-  rounds in between run the tests related to the changed files. A result is reused while the tree is unchanged,
-  and QA reuses verify's. A full-suite timeout is rerun alone once, so load is not mistaken for a regression. The
-  baseline is taken once, in the background, so a check that was already red is not chased.
-- **Proven cause.** A bug is reproduced with a failing test in explore, so the plan is built on the cause, not a
-  guess.
-- **Roles where they pay.** A profile starts cold and reads the code again, so a step that does not apply gets
-  no profile, and a small change keeps explore and plan in the chat. A profile's result is its output or its
-  reply file, never a search of its session history.
-- **Deltas.** The second review round and every follow-up see only the diff since the last one; a QA re-run
-  covers only the items that failed.
-- **Resumed sessions.** A fix round or delta review for a profile resumes that profile's session, so its brief
-  and what it already read are not sent again.
-- **Lean briefs.** A brief holds facts (goal, acceptance, diff, check states), not reasoning, and points to the
-  plan by its path; evidence is the command and its result. A profile replies in at most 20 lines and puts the rest in a file.
-- **Small context.** Command output goes to a file and the chat reads the result lines or the tail; the chat
-  reads only the lines around what explore cites. Your skills are loaded only for work done in the chat, once per
-  run, and the rules that apply are written to the run log, one line each. After
-  the context is compacted, only the run skill and the current step are reloaded; the run log has the rest.
-- **Lessons.** A miss is written down once per project and checked by every later run, so it is not paid for
-  twice.
+**Where does the work happen?**
+In a new worktree and branch beside your repository, created from the base. Your checkout is never edited.
+Merged cpipe worktrees are removed by later runs; the branches stay.
 
-## What it never does
+**The run went quiet. What now?**
+Send `/cpipe continue`. It reads the run log and picks up at the first unfinished step without redoing finished
+ones, using the results of profiles and checks that kept running in the meantime.
 
-Merge, push, open a pull request, deploy or message anyone without being asked; skip or weaken a test; edit your
-own checkout or files outside the plan's scope; put secrets in code, commits or reports; add AI attribution.
+**Can I steer it mid-run?**
+Yes. A message mid-run is steering: it gets a one-line answer, and extra work joins the plan or waits for a
+follow-up after the report.
+
+**Several issues in one task?**
+Each issue is its own delivery with its own branch, worktree and commit, run one after another and reported
+together.
+
+**Which languages and frameworks does it support?**
+Any. It uses the project's own install, test, lint, typecheck and build commands, found in its scripts,
+instructions and CI workflow.
+
+**Do I need profiles?**
+No. Without `cpipe.yaml` the chat runs every step and uses a subagent for the independent review. A profile lets
+a different model or setup take a role.
+
+**Can two runs share a machine?**
+Yes, in different chats. Each runs one heavy check at a time, but two runs at once still share the CPU and
+slow each other's full suites and builds.
+
+## Contributing
+
+cpipe is skill text first; [AGENTS.md](AGENTS.md) holds the rules for changing it:
+
+- **Skills drive the flow.** `__init__.py` only registers. No code decides the next step, calls a model or stops
+  a run; change the skill text instead.
+- **Keep going.** A change never adds a reason to stop or a message that asks the user to fix or run something.
+- **No tool lock-in.** Describe a capability ("a code index, if you have one"), never a specific tool, server,
+  skill or model.
+- **Repository-agnostic.** No repository-, client- or person-specific names, paths or rules.
+- **Skill format.** A description of at most 60 characters ending in a period; long material in a file beside
+  the skill, loaded with `skill_view`.
+
+Keep `version` in `plugin.yaml` and `skills/run/SKILL.md` in step, and run `hermes plugins validate .` before
+opening a pull request.
 
 ## License
 
-MIT
+[MIT](LICENSE)
