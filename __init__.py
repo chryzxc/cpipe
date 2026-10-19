@@ -1,5 +1,7 @@
 """cpipe: a Hermes plugin made of skills. The model runs the delivery; this file only registers the run skill and /cpipe."""
 
+import os
+import re
 from pathlib import Path
 
 START = ("Load the skill cpipe:run with skill_view and follow it to deliver this task. First start its wake-up "
@@ -8,15 +10,18 @@ START = ("Load the skill cpipe:run with skill_view and follow it to deliver this
 USAGE = """Usage: /cpipe [--kanban] <task>
 Delivers a coding task unattended in this chat and reports back here.
 Steps: plan, tests first, build, verify with the project's checks, QA and independent review, commit.
-  --kanban   hand the role steps to your profiles as cards on your Hermes kanban board
+  --kanban          hand the role steps to your profiles as cards on your Hermes kanban board
+  /cpipe continue   pick up a run that stopped, at its first unfinished step
 Example: /cpipe fix the date filter on the orders page and open a draft pull request"""
 
-STARTED = """cpipe started: {task}
-Flow: set up → explore → design → decide → plan → build (tests first) → verify → QA + review → clean → commit → report
-Roles: {roles}
-No questions: open choices are decided and listed in the report.
-Push or pull request: only if the task asks for one.
-It posts a line as each step starts. If a turn ends early it resumes itself; after a restart, say "continue"."""
+STARTED = """▶ cpipe: {task}
+Unattended from here to a report in this chat: plan → tests first → build → verify → QA + review → commit.
+{roles}
+Open questions are decided for you and listed in the report. No push or pull request unless you asked.
+One ▶ line per step. If it goes quiet, send /cpipe continue."""
+
+RESUMED = """↻ cpipe: continuing the run in progress
+It reads the run log and picks up at the first unfinished step; finished steps are not redone.{note}"""
 
 
 def register(ctx):
@@ -24,23 +29,40 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--kanban] <task>", argument_mode="text")
+                             args_hint="[--kanban] <task> | continue", argument_mode="text")
+
+
+def _roles(kanban):
+    path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "cpipe.yaml"
+    try:
+        found = re.findall(r"(?m)^[ \t]+(\w+):[ \t]*([\w.-]+)", path.read_text())
+    except OSError:
+        found = []
+    if not found:
+        return ("Roles: none set in cpipe.yaml, so nothing goes to the board; every step runs in this chat." if kanban
+                else "Roles: every step runs in this chat (no roles set in cpipe.yaml).")
+    return (("Roles, as cards on your kanban board: " if kanban else "Roles: ")
+            + " · ".join(f"{role} {profile}" for role, profile in found) + "; the rest in this chat.")
+
+
+def _short(text, n=100):
+    return text if len(text) <= n else text[:n - 1] + "…"
 
 
 def _start(ctx, raw):
     task = raw.strip()
     kanban = task.startswith("--kanban")
-    if not task.removeprefix("--kanban").strip():
+    brief = " ".join(task.removeprefix("--kanban").split())
+    if not brief:
         return USAGE
     from gateway.session_context import get_session_env
     key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
     try:
         if ctx.inject_message(START + task, role="user", session_key=key):
-            brief = " ".join(task.removeprefix("--kanban").split())
-            return STARTED.format(
-                task=brief if len(brief) <= 100 else brief[:99] + "…",
-                roles="cards on your kanban board for the profiles in cpipe.yaml" if kanban
-                else "your profiles from cpipe.yaml where set, this chat for the rest")
+            first, _, rest = brief.partition(" ")
+            if first.lower().rstrip(".!") in ("continue", "resume"):
+                return RESUMED.format(note=f'\nYour note goes with it: "{_short(rest)}"' if rest else "")
+            return STARTED.format(task=_short(brief), roles=_roles(kanban))
         reason = "the chat did not accept the message"
     except Exception as exc:
         reason = str(exc) or type(exc).__name__

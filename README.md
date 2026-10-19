@@ -23,7 +23,9 @@ hermes plugins enable cpipe
 ```
 
 `/cpipe:run <task>` does the same. Start the task with `--kanban` to hand the role steps to your profiles as
-cards on your Hermes kanban board (see Roles). Say **continue** in the chat to resume a run after a restart.
+cards on your Hermes kanban board (see Roles). `/cpipe continue` (or **continue** in the chat) resumes a run
+that stopped, at its first unfinished step. `/cpipe` replies with the task, the roles from your roles file and
+what it will and will not do, then posts one `▶` line as each step starts.
 
 ## Flow
 
