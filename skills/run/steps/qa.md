@@ -23,7 +23,9 @@ tree.
    a user without permission.
 4. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task
    named, and check each must-not-change item and each risk whose check is a QA step. Where behavior differs by role,
-   tenant, locale or state, repeat it for each (a seeded or test user per role). Then run the broader test suite once. Compare its failures with the baseline: only new failures count.
+   tenant, locale or state, repeat it for each (a seeded or test user per role). Then the broader test suite:
+   if verify already ran it on this same tree, use that result; otherwise run it once. Compare its failures with
+   the baseline: only new failures count.
 5. **Clean up** what you started: remove temporary data, and stop the servers unless the report will hand the
    running app to the user (`steps/report.md`, Running app).
 
@@ -41,7 +43,7 @@ output, the request and response, a screenshot path.
 
 ## Rules
 
-- QA does not edit code. A failure goes back to the build step.
+- QA does not edit the repository (code, tests or config). A failure goes back to the build step.
 - Local only: never use production systems, real customer data or real accounts, and never send real emails,
   messages or payments. Use test data and the project's local or test setup.
 - Every result has evidence; "looks fine" is not a result.

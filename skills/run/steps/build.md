@@ -21,7 +21,8 @@ every playbook:
    new file beside it.
 3. **One change at a time.** Make a change, run the narrow test, keep it if it moves toward the acceptance
    criteria, otherwise undo it and try a different idea. Never stack two unverified changes.
-4. **Narrow tests while working**, the plan's full checks at the end of each round (`steps/verify.md`).
+4. **Narrow tests only.** The plan's full checks and the production build run once per round, in
+   `steps/verify.md`, and only those results count; do not run them here as well.
 5. **A round** ends with a row in the run log: what changed, why, the check results.
 
 Side discoveries that block the acceptance (a broken helper, a wrong fixture): fix them inside the scope and note

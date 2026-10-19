@@ -32,8 +32,9 @@ Review against:
   catch no realistic break (duplicates, constants, getters, the framework, their own mocks, loose assertions) for
   removal, and real breaks no test catches.
 - Regressions: do not trust the flow map. Search the whole repository for every usage of what the diff changed
-  (functions, types, fields, routes, events, config) and list any entrance or consumer the map missed. For each
-  one, and for each must-not-change item, does it still behave the same? Follow changes across boundaries
+  (functions, types, fields, routes, events, config) and list any entrance or consumer the map missed; open only
+  the lines around each hit, not whole files. For each one, and for each must-not-change item, does it still
+  behave the same? Follow changes across boundaries
   (server and client, services, packages, stored data).
 - Missed risks: before reading the plan's risks, write your own premortem of how this diff could break in use
   (contracts, data and state, roles and environments, failure paths, user-facing states, cost, anything else).

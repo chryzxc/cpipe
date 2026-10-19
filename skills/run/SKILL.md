@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.17.4
+version: 3.18.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -38,7 +38,9 @@ or skip that part and report it. Every choice is yours:
 - **A security finding you cannot fix inside the scope:** finish the rest and lead the report with it.
 
 A push or pull request happens only when the task message asks for one. A message from the user mid-run is
-steering, not a stop: answer it in one line and continue.
+steering, not a stop: answer it in one line and continue. Steering that adds work (another bug, another
+behavior) is either added to the plan as numbered steps with their acceptance criteria, or, when it is a
+different problem, kept for a follow-up after the report; say which in that line and note it in the run log.
 
 **Notes that are not for this run.** The chat can receive text mid-run that is neither the user nor this task: a
 note on a kanban card, a board digest, another card's crash or status. If it names no card this run created (run
@@ -48,7 +50,7 @@ task; nothing that arrives mid-run replaces it.
 
 **Do not end your turn before the report.** A reply without a tool call ends your turn and the run stops
 silently. Progress updates go in the same reply as your next tool call. When you wait for a background process
-or a profile, wait on it with your process tool.
+or a profile, wait on that one process by its id with your process tool; never list every process to find it.
 
 **Turn limits.** A turn has a cap on tool calls, so a long run can end its turn mid-step. Keep one wake-up
 running from set up to the report: a background `sleep 600` with a completion notification. When its
@@ -70,7 +72,9 @@ anything, and never end with "fix the cause and say continue". If you can do it,
 A task that names several issues (issue numbers or links, or a list of unrelated bugs, features or changes) is
 several deliveries, never one. Each issue gets its own branch, worktree, run log and commit, and its own pull
 request when pull requests are asked for, each branched from the base, not from another delivery. Run them one
-after another, each through the whole flow; each run log names the others (`Delivery 2 of 3; others: <branches>`).
+after another, each through the whole flow, never two at once: the next one starts after the current one's
+report, so one chat never carries several deliveries' context. Each run log names the others
+(`Delivery 2 of 3; others: <branches>`).
 Deliver two issues together only when one cannot work without the other (the same root cause or the same lines)
 or the user asked for a single pull request, and record why in Approach.
 
@@ -80,9 +84,10 @@ Start the wake-up first (Turn limits), on every run, follow-up and continue. Tra
 if you have one, one step active at a time. When a step starts, post one line with your next tool call:
 `▶ <n>/11 <step>: <what it will do> (<who: this chat or the profile>)`; a step that does not apply gets
 `— <n>/11 <step>: skipped, <reason>`. Each step's instructions are a file in this skill: load it with
-`skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach the step, not before. Load it again
-each time you reach it, on a follow-up or after the context was compacted: never work a step from memory. Every
-report is written from `steps/report.md` loaded right before it.
+`skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach the step, not before. Never work a
+step from memory, and never load a file whose text is still in the context: load it again only when its text is
+gone (a follow-up, or a compaction that dropped it), and then only the current step's file. Every report is
+written from `steps/report.md` loaded right before it.
 
 | Step | Do | File | Role |
 |---|---|---|---|
@@ -93,7 +98,7 @@ report is written from `steps/report.md` loaded right before it.
 | 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `steps/plan.md` | plan |
 | 6. Build | Tests first, then the change, following the playbook. One verified change at a time. | `steps/build.md` | build |
 | 7. Verify | Run the plan's checks with honest states; completion gate. | `steps/verify.md` | |
-| 8. QA | Use the change on the real surface, try to break it, run the broader suite. Runs alongside 9. | `steps/qa.md` | qa |
+| 8. QA | Use the change on the real surface, try to break it, check the broader suite. Runs alongside 9. | `steps/qa.md` | qa |
 | 9. Review | Independent review in a fresh context; act on findings; at most two rounds. Runs alongside 8. | `steps/review.md` | review, security |
 | 10. Clean | One cleanup pass over the diff, then verify again. | `steps/build.md` | build |
 | 11. Report | Commit, a draft pull request only if asked, the report. | `steps/report.md` | |
@@ -103,15 +108,16 @@ in the background while you or the QA role do QA), wait for both, then fix every
 verify, and re-run only the QA items that failed together with the delta review.
 
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
-skipped with a one-line reason in the run log, never silently. Steps 7 and 11 are always yours: the checks and
-the final word are never handed to anyone else.
+skipped with a one-line reason in the run log, never silently, and gets no profile. Steps 7 and 11 are always
+yours: the checks and the final word are never handed to anyone else.
 
 ## The user's own skills come first
 
 cpipe sets the order of the steps; the user's own skills say how a step is done. At the start of each step, check
 your skill list for a skill that covers that step's work (writing a pull request or commit message, code review,
 security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`, once per
-run: note each loaded skill in the run log and reuse what it said instead of loading it again. Where it
+run: note each loaded skill in the run log with the rules from it that apply to this task, one line each, and work
+from those lines afterwards, also after a compaction; never load it again. Where it
 and a cpipe step differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
 still decides the flow and the guard rails: a user skill never authorizes a push, merge or message the task did
 not ask for. Take from a user skill how the work is done, not a different flow: skip its parts about task
@@ -186,7 +192,9 @@ check both and answer with what you found; do not ask which one they meant. A di
 
 When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read the run log,
 check `git status` and the last check results in the worktree, and pick up at the first unfinished step. Start
-the wake-up again if none is running. Do not redo finished steps. With
+the wake-up again if none is running. Do not redo finished steps. A restart ends this chat's turn and its
+wake-up, but not the profiles and checks it started: before starting one again, check its process (the pid in
+the run log) and its log or reply file, and wait for it or use its result. With
 several deliveries, finish the unfinished one first, then start the next one its run log names.
 
 ## Limits
@@ -223,6 +231,8 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 
 **Cost**
 - Read once, in explore; do not re-read the repository in later steps.
-- Narrow tests while building; the full checks once per round.
+- Narrow tests while building; the full checks once per round, in verify, and nowhere else on the same tree.
+- A profile's result is its output or its reply file (`roles.md`); never search its session history for it.
+- A step that does not apply gets no profile; a profile starts cold and reads the code again (`roles.md`).
 - Long output to a file, the tail in the chat (Run log). Each user skill loaded once per run.
 - After the context is compacted, reload only this skill and the current step's file; the run log has the rest.

@@ -28,7 +28,13 @@ keep going.
 ## Handing a step to a role
 
 You stay in charge: the flow, the checks, the run log and every decision are yours. A role does the work of its
-step and reports back.
+step and reports back. This file has every command you need to run a profile: do not load other skills or help
+pages to learn the command line.
+
+Hand a step over only when it applies and is worth a cold start: a profile starts with an empty context and reads
+the code again. No design role when the change has no user-facing surface. For a small change (one or two files,
+the cause already known), do explore and plan yourself in this chat and keep the roles for build, QA and review.
+Note each step you kept in the run log with its reason.
 
 1. **Brief.** Write it to a file next to the run log (`brief-<role>.md`). Start with:
 
@@ -54,17 +60,28 @@ step and reports back.
    - **plan:** the request, the explore map, the baseline and the design note. Ask for a plan in the format of
      `steps/plan.md` step 5.
    - **build:** the plan, the playbook, the run log path. Ask it to follow `steps/build.md` and reply per
-     plan step: done or corrected (what and why), and the tests it ran with their results.
-   - **qa:** the acceptance criteria, the design note, how to start the app. Ask it to follow `steps/qa.md`
-     without editing code and reply with each item's result and evidence.
+     plan step: done or corrected (what and why), and the narrow tests it ran with their results. It does not
+     run the full suite or the production build: verify does, once per round.
+   - **qa:** the acceptance criteria, the design note, how to start the app, and verify's broader suite result
+     for this tree. Ask it to follow `steps/qa.md` without editing the repository and reply with each item's
+     result and evidence.
    - **review / security:** the reviewer brief from `steps/review.md`.
+
+   QA, review and security never edit the repository. Before starting them, save `git status --porcelain` and
+   `git diff` beside the run log, and compare after: a file they changed or added means the role failed. Undo only
+   their edits, back to the saved state, and follow "When a role fails".
 
 2. **Run** it in the worktree, directly, or as a card when the run is on the board (below):
    `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds>`
    Budgets in seconds: explore, design and plan 600; review, security and qa 900; build 2400. Use your terminal's
-   background mode with a completion notification when it has one; otherwise a timeout above the budget. Keep the
-   session id it prints. The budget is a hard limit: if the profile has not replied two minutes after it, stop the
+   background mode with a completion notification when it has one; otherwise a timeout above the budget. Write
+   its process id, its output file and the session id it prints in the run log: the profile keeps running when
+   this chat restarts, and a continue reads its result instead of starting it again. Wait on that process id with
+   your process tool. The budget is a hard limit: if the profile has not replied two minutes after it, stop the
    process yourself and treat the role as failed. Never wait longer.
+
+   The result is what the process printed, or `<role>-reply.md` when it points there. Never search the profile's
+   session history or transcripts for it: when neither holds a result, the role failed.
 
 3. **Follow-ups** to the same role (a fix round, a delta review) resume its session:
    `hermes -p <profile> chat -Q --resume <session id> --query-file <brief>`
