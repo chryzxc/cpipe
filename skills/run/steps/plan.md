@@ -22,8 +22,7 @@ not repeat it.
    the project's virtual environment. Never install globally; do not change the lockfile unless the task is about
    dependencies. Copy local env files (`.env`) from the user's checkout only if the checks need them, and never
    print their contents.
-5. **Run log.** Start it (`cpipe:run`) with the task, the base, the worktree and the roles line. Start the
-   wake-up (`cpipe:run`, Turn limits).
+5. **Run log.** Start it (`cpipe:run`) with the task, the base, the worktree and the roles line.
 6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A worktree from
    `git worktree list` is cpipe's when its git dir holds a run log (`$(git -C <path> rev-parse --git-dir)/cpipe/run.md`);
    never touch any other worktree, the user's checkout or this run's worktree. Remove one only when all hold:
@@ -41,8 +40,8 @@ If the install fails, try the next way from `steps/verify.md` and record it; a f
 
 ## 2. Explore
 
-If the roles file names an `explore` profile, have it map the code (`roles.md` in `cpipe:run`) and open the
-files it cites to confirm. Otherwise do it yourself:
+If the roles file names an `explore` profile, have it map the code (`roles.md` in `cpipe:run`) and read the
+lines around each place it cites to confirm. Otherwise do it yourself:
 
 1. **Instructions.** Read the project's agent and contributor instructions (`AGENTS.md`, `CLAUDE.md`,
    `CONTRIBUTING.md`, the README's development section). They win over these skills where they conflict, except
@@ -78,13 +77,19 @@ files it cites to confirm. Otherwise do it yourself:
 5. **Checks.** Find the project's own commands: `package.json` scripts, `Makefile`, `pyproject.toml`, the CI
    workflow files (they show how CI installs and tests). Pick the narrowest command that covers the change, plus
    the build or typecheck if the project has one, plus the broader suite for QA.
-6. **Baseline.** Run those checks once in the worktree, before any change, and record each result: pass, fail
-   (which tests) or not run here (why). Save the ids of the failing tests and lint errors, one per line and
+6. **Baseline.** Run those checks once in the worktree, before any change, the way `steps/verify.md` (Fast
+   checks) runs them: in the background, the full suite and the build one after the other, with no serial or
+   single-worker flags. Keep exploring and planning while they run; they must be back before verify. Record each
+   result: pass, fail (which tests) or not run here (why). Save the ids of the failing tests and lint errors, one per line and
    sorted, to `baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. A check
    already red is the baseline, not your job, unless the task is to fix it. If a check will not run, work
    through `steps/verify.md` now, so the plan names commands that work.
 7. **Kind.** bug, feature, refactor, chore, port, hotfix or review (`cpipe:run`). Load the playbook. If the branch type
    from step 1 does not match the kind, rename the branch now.
+8. **Reproduce** (bug and hotfix). Before planning, prove the cause: write the failing test in the worktree (the
+   playbook's steps 1 to 3), run it, and record the RED output and the cause it proves in the run log. The plan
+   is built on that cause, not a guess; a cause you cannot prove yet is a risk in the plan with the check that
+   will prove it.
 
 ## 4. Decide the open questions
 
@@ -119,7 +124,7 @@ draft against the code and the baseline yourself. Write the plan in the chat and
   and nothing is added. Extend an existing test before writing a new file. A test that fails on no realistic
   break of this change is not planned (rendering a constant, a getter, the framework, a mock returning what it
   was told). Fewer, sharper tests over many.
-- **Checks:** the exact commands, with the baseline result of each.
+- **Checks:** the exact commands, with the baseline result of each (or `running` while it is not back).
 - **Steps:** the build, in the playbook's order, one behavior per step, written so a builder who has not read
   the code can follow it:
   ```

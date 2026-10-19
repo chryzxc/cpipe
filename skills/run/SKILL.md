@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.18.0
+version: 3.18.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -52,13 +52,12 @@ task; nothing that arrives mid-run replaces it.
 silently. Progress updates go in the same reply as your next tool call. When you wait for a background process
 or a profile, wait on that one process by its id with your process tool; never list every process to find it.
 
-**Turn limits.** A turn has a cap on tool calls, so a long run can end its turn mid-step. Keep one wake-up
-running from set up to the report: a background `sleep 600` with a completion notification. When its
-notification arrives, start the next one. If the turn ends early (the cap, an error), the notification starts a
-new turn within ten minutes. Stop the wake-up before you post the report; a late one after the report gets one
-line: `cpipe: already reported (<status line>), nothing left to do.`
+**Turn limits.** A turn has a cap on tool calls, so a long run can end its turn mid-step. Long work (installs,
+checks, profiles) runs in the background with a completion notification: when a turn ends early, the next
+notification starts a new turn and the run picks up there. Do not start a timer or look for a tool to make one.
+A notification after the report gets one line: `cpipe: already reported (<status line>), nothing left to do.`
 
-**A notification resumes the run.** A completion notification (the wake-up, a check, a profile) or a message
+**A notification resumes the run.** A completion notification (a check, a profile) or a message
 saying the iteration limit was reached is never a cue for a status reply. While the run log has unfinished
 steps, say `↻ Resuming at <n>/11 <step>: <what woke the run>` and continue there with a tool call in the same
 reply. When a
@@ -80,7 +79,7 @@ or the user asked for a single pull request, and record why in Approach.
 
 ## Flow
 
-Start the wake-up first (Turn limits), on every run, follow-up and continue. Track the steps with your todo tool
+Track the steps with your todo tool
 if you have one, one step active at a time. When a step starts, post one line with your next tool call:
 `▶ <n>/11 <step>: <what it will do> (<who: this chat or the profile>)`; a step that does not apply gets
 `— <n>/11 <step>: skipped, <reason>`. Each step's instructions are a file in this skill: load it with
@@ -117,7 +116,9 @@ cpipe sets the order of the steps; the user's own skills say how a step is done.
 your skill list for a skill that covers that step's work (writing a pull request or commit message, code review,
 security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`, once per
 run: note each loaded skill in the run log with the rules from it that apply to this task, one line each, and work
-from those lines afterwards, also after a compaction; never load it again. Where it
+from those lines afterwards, also after a compaction; never load it again. Load a skill only for work you do in
+this chat: a step handed to a profile uses that profile's own skills. Running profiles and processes needs no
+skill; `roles.md` has the commands. Where it
 and a cpipe step differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
 still decides the flow and the guard rails: a user skill never authorizes a push, merge or message the task did
 not ask for. Take from a user skill how the work is done, not a different flow: skip its parts about task
@@ -191,9 +192,9 @@ check both and answer with what you found; do not ask which one they meant. A di
 ## Continue
 
 When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read the run log,
-check `git status` and the last check results in the worktree, and pick up at the first unfinished step. Start
-the wake-up again if none is running. Do not redo finished steps. A restart ends this chat's turn and its
-wake-up, but not the profiles and checks it started: before starting one again, check its process (the pid in
+check `git status` and the last check results in the worktree, and pick up at the first unfinished step. Do not
+redo finished steps. A restart ends this chat's turn, but not the profiles and checks it started: before
+starting one again, check its process (the pid in
 the run log) and its log or reply file, and wait for it or use its result. With
 several deliveries, finish the unfinished one first, then start the next one its run log names.
 
@@ -231,7 +232,9 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 
 **Cost**
 - Read once, in explore; do not re-read the repository in later steps.
-- Narrow tests while building; the full checks once per round, in verify, and nowhere else on the same tree.
+- Narrow tests while building. The full suite and the build run only in verify, one at a time: in the first
+  verify and the last one, after the cleanup; the verifies between them run the related tests
+  (`steps/verify.md`, Fast checks).
 - A profile's result is its output or its reply file (`roles.md`); never search its session history for it.
 - A step that does not apply gets no profile; a profile starts cold and reads the code again (`roles.md`).
 - Long output to a file, the tail in the chat (Run log). Each user skill loaded once per run.

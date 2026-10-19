@@ -105,11 +105,11 @@ in the report's Approach table. Things only you may do (credentials, anything de
 anything leaving your machine you did not ask for) are skipped and named in the report's status line, as is an
 open security finding it cannot fix inside the scope. It never asks you to fix or run anything.
 
-A chat turn has a cap on tool calls, so a long run can end its turn mid-step. The run keeps a ten-minute wake-up
-running in the background from set up to the report; when a turn ends early, the wake-up's notification starts a
-new turn and the run picks up at its first unfinished step. A restart of the Hermes backend ends the turn and
-the wake-up together, so the run waits for **continue**; the profiles and checks it started keep running, and
-continue uses their results instead of starting them again. Any notification that arrives mid-run continues the
+A chat turn has a cap on tool calls, so a long run can end its turn mid-step. Long work (installs, checks,
+profiles) runs in the background with a completion notification; when a turn ends early, the next notification
+starts a new turn and the run picks up at its first unfinished step. A restart of the Hermes backend ends the
+turn, so the run waits for **continue**; the profiles and checks it started keep running, and continue uses
+their results instead of starting them again. Any notification that arrives mid-run continues the
 run rather than getting a status reply. A note about a kanban card the run did not create (an operator note, a
 board digest, another card's crash) gets one `ignored:` line and the run goes on; it is never taken as the task.
 
@@ -242,7 +242,7 @@ set up → explore → design → decide → plan
   findings join into one fix round, then a delta review runs alongside a QA re-run of the items that failed.
 - **Pass-through.** A step that does not apply (design for an internal fix, QA for a docs change) is passed with
   its reason in the run log.
-- **Re-entry.** The run log is the graph's state. **continue**, or the wake-up after a turn ends early,
+- **Re-entry.** The run log is the graph's state. **continue**, or a notification after a turn ends early,
   re-enters at the first unfinished step; a
   message after the report re-enters at the plan for the follow-up only; a task with several issues runs one graph
   per delivery, one after another, never two at once. Work added mid-run joins the plan as numbered steps or
@@ -268,9 +268,13 @@ Every loop has an exit, and reaching it records the open items and moves on; it 
 - **Load late.** Only the current step's instructions are loaded, when the run reaches the step, and loaded
   again only when they are gone from the context (a follow-up or a compaction), so no step is worked from memory
   and nothing still in the context is loaded twice.
-- **Checks once per round.** While building only the narrow tests run; the full checks and the build run once
-  per round, in verify, and QA reuses that result for the same tree. The baseline is taken once, so a check that
-  was already red is not chased.
+- **Fast checks.** While building only the narrow tests run. The full suite and the build run in the first
+  verify and the last one, one after the other and never together, with the runner's own parallel workers; fix
+  rounds in between run the tests related to the changed files. A result is reused while the tree is unchanged,
+  and QA reuses verify's. A full-suite timeout is rerun alone once, so load is not mistaken for a regression. The
+  baseline is taken once, in the background, so a check that was already red is not chased.
+- **Proven cause.** A bug is reproduced with a failing test in explore, so the plan is built on the cause, not a
+  guess.
 - **Roles where they pay.** A profile starts cold and reads the code again, so a step that does not apply gets
   no profile, and a small change keeps explore and plan in the chat. A profile's result is its output or its
   reply file, never a search of its session history.
@@ -278,10 +282,11 @@ Every loop has an exit, and reaching it records the open items and moves on; it 
   covers only the items that failed.
 - **Resumed sessions.** A fix round or delta review for a profile resumes that profile's session, so its brief
   and what it already read are not sent again.
-- **Lean briefs.** A brief holds facts (goal, acceptance, diff, check states), not reasoning; evidence is the
-  command and its result. A profile replies in at most 20 lines and puts the rest in a file.
-- **Small context.** Command output goes to a file and the chat reads the result lines or the tail. Each of
-  your skills is loaded once per run and the rules that apply are written to the run log, one line each. After
+- **Lean briefs.** A brief holds facts (goal, acceptance, diff, check states), not reasoning, and points to the
+  plan by its path; evidence is the command and its result. A profile replies in at most 20 lines and puts the rest in a file.
+- **Small context.** Command output goes to a file and the chat reads the result lines or the tail; the chat
+  reads only the lines around what explore cites. Your skills are loaded only for work done in the chat, once per
+  run, and the rules that apply are written to the run log, one line each. After
   the context is compacted, only the run skill and the current step are reloaded; the run log has the rest.
 - **Lessons.** A miss is written down once per project and checked by every later run, so it is not paid for
   twice.

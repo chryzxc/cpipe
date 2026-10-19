@@ -5,7 +5,7 @@ profile, because its states are what the report trusts.
 
 ## Run the checks
 
-Run every check from the plan on the current tree, in the worktree. Read the output yourself. Record each check
+Run the plan's checks on the current tree, in the worktree, as Fast checks below says. Read the output yourself. Record each check
 in the run log with one of four honest states:
 
 | State | Means |
@@ -27,6 +27,32 @@ Every id it prints is new and yours to fix, even when the total went down; no ou
 Formatters and linters fix only the lines the change touches. A red formatting or lint baseline stays the
 baseline: never reformat files or the repository to clear it unless the task asks.
 
+## Fast checks
+
+The full suite and the production build take most of a run's time. Run each only where it proves something:
+
+- **Narrow first.** The plan's narrow tests first; the full suite and the build only once they pass.
+- **When.** The full suite and the build run in the first verify and in the last one, after the cleanup
+  (`steps/build.md`, step 10), on the tree that gets committed. A verify between them (a fix round) runs the
+  narrow tests plus the tests related to the files changed since the last full run, through the runner's related
+  or changed mode (such as `vitest related <files>` or `jest --findRelatedTests <files>`); a runner without one
+  runs the test files beside the changed files.
+- **No duplicates.** A subset the full suite already runs (a regression script, a focused file) is not run beside
+  it.
+- **The runner's own parallelism.** Run the suite the way the project's CI does and let the runner pick its
+  workers. Never add serial or single-worker flags (`--runInBand`, a single thread or fork, `--workers=1`) unless
+  the project's CI uses them. A parallel option the project already has (such as `pytest -n auto` with
+  pytest-xdist installed) is used; one it does not have is never installed.
+- **One heavy job at a time.** The full suite and the build each use every core: run them one after the other,
+  never together or beside another suite, or both slow down and tests time out. Lint, typecheck and format checks
+  can run alongside.
+- **Same tree, same result.** Write the tree id beside each result:
+  `{ git rev-parse HEAD; git diff HEAD; git ls-files -z --others --exclude-standard | xargs -0 shasum; } | shasum`.
+  A check whose tree id has not changed since it ran is not run again.
+- **Timeouts under load.** When the full suite fails with timeouts, run only the failing files again, alone,
+  once. A test that passes alone is load flakiness: record both runs; it is not a regression. One that also fails
+  alone is a real failure.
+
 ## When a check will not run
 
 Never stop the run for this. Work down the list; the first thing that works wins. Record what you did.
@@ -39,7 +65,7 @@ Never stop the run for this. Work down the list; the first thing that works wins
 | The test framework itself crashes on the base too (a tooling mismatch, an old transpiler) | Baseline problem. Run the test another way: a single file, the project's other runner, or a small script that imports and calls the code. Typecheck and build count as partial proof. Record the original check as not run here. |
 | The project's own app, server or local service is not running, or stopped mid-run | Start it again the way the project does (its dev script, its local setup), wait until it answers, and continue. Only a service this machine cannot run is not run here. |
 | Needs a service (database, browser, device, network API) that is not available | Use the project's test doubles or in-memory setup if it has one. Otherwise verify the logic with unit tests and record the end-to-end part as not run here. |
-| Times out | Run a narrower subset (the changed files' tests), raise the timeout once, look for a hang you caused. |
+| Times out | Run the failing files alone (Fast checks), raise the timeout once, look for a hang you caused. |
 | Flaky | Run it again once. A different result twice means flaky: record both runs. |
 | Expected report or output file is missing | Judge by the exit code and the printed summary. |
 | A tool or subagent errors or returns nothing | Read the error, retry once differently, or do the step yourself. |
@@ -94,12 +120,14 @@ fixtures and test data, migrations, and data files. Split every other listed fil
 
 ## Rules
 
-- A state is only what you saw on this tree. No result is carried over from before a change.
+- A state is only what you saw on this tree. No result is carried over from before a change; a result on the
+  same tree id is reused (Fast checks).
 - Never fake a pass, never skip or delete a test, never edit a check's command or config to make it pass.
 - Never run checks against production systems or real customer data.
 - Workarounds are recorded, every one, with what they prove and what they do not.
 
 ## Done when
 
-Every check from the plan has a state on the current tree, every new failure is fixed or recorded as open after
-three attempts, and the completion gate passes.
+Every check this verify runs (Fast checks) has a state on the current tree; in the last verify, that is every
+check from the plan. Every new failure is fixed or recorded as open after three attempts, and the completion gate
+passes.

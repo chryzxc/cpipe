@@ -46,7 +46,7 @@ to start it. A follow-up restarts it with the new code.
 
 ## Report
 
-Stop the wake-up (`cpipe:run`, Turn limits), then post one message in the chat, in this order. With several
+Post one message in the chat, in this order. With several
 deliveries, one status line per delivery first, then this report for each under a heading naming its issue.
 
 Short and complete: plain words, technical terms where they are precise; one line per table row, cells of a few

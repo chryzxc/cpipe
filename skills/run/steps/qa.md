@@ -24,8 +24,9 @@ tree.
 4. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task
    named, and check each must-not-change item and each risk whose check is a QA step. Where behavior differs by role,
    tenant, locale or state, repeat it for each (a seeded or test user per role). Then the broader test suite:
-   if verify already ran it on this same tree, use that result; otherwise run it once. Compare its failures with
-   the baseline: only new failures count.
+   use verify's result for this tree (the full suite in the first round, the related tests in a re-run,
+   `steps/verify.md`, Fast checks); run it yourself only when verify has none. Compare its failures with the
+   baseline: only new failures count.
 5. **Clean up** what you started: remove temporary data, and stop the servers unless the report will hand the
    running app to the user (`steps/report.md`, Running app).
 

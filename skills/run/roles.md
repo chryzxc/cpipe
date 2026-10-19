@@ -42,6 +42,8 @@ Note each step you kept in the run log with its reason.
    Direct request from a delivery run. No task board, no cards: do this work and reply with the result.
    Work only in <worktree>. Do not commit, push, merge, open pull requests or message anyone.
    Do not skip or weaken tests. Never print secrets or .env contents.
+   A failure that also happens without this change is the baseline: note it and keep going. Never stop for a
+   decision: choose within the plan's scope and say what you chose.
    Use your own skills for this kind of work where you have them.
    Keep it lean: the project's own dev server, test runner and tools first; evidence is the command and its
    result; no hash manifests, integrity receipts or copies of the tree. At your time budget, stop and reply
@@ -50,7 +52,9 @@ Note each step you kept in the run log with its reason.
    <run dir>/<role>-reply.md and give its path.
    ```
 
-   A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`.
+   A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`. What is
+   already in a file (the plan, the explore map, the design note) is given by its path, not copied. Roles that
+   start together (QA, review, security) get their briefs written in one reply.
 
    Then the role's part:
    - **explore:** the request and the worktree. Ask for a read-only map: the instructions that apply, the files
@@ -61,7 +65,7 @@ Note each step you kept in the run log with its reason.
      `steps/plan.md` step 5.
    - **build:** the plan, the playbook, the run log path. Ask it to follow `steps/build.md` and reply per
      plan step: done or corrected (what and why), and the narrow tests it ran with their results. It does not
-     run the full suite or the production build: verify does, once per round.
+     run the full suite or the production build: verify does.
    - **qa:** the acceptance criteria, the design note, how to start the app, and verify's broader suite result
      for this tree. Ask it to follow `steps/qa.md` without editing the repository and reply with each item's
      result and evidence.
@@ -116,7 +120,7 @@ fails". Only ever touch cards this run created.
 
 ## What comes back is a claim
 
-- After explore: open the files it cites before you rely on them.
+- After explore: read only the lines around each place it cites before you rely on it, not whole files.
 - After design or plan: check the draft against the code and the baseline; you write the final version.
 - After build: `git status` and the diff in the worktree, then `steps/verify.md`. Its states are the truth, not the
   role's summary. Undo anything outside the plan's scope.

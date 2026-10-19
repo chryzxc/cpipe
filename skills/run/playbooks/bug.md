@@ -15,5 +15,8 @@
 6. **Commit order:** the failing test first, then the fix, when the project accepts several commits. Otherwise
    one commit.
 
+Steps 1 to 3 run in explore, before the plan (`steps/plan.md`, Reproduce), so the plan is built on the proven
+cause. The build starts at step 4 from that RED test.
+
 If the test cannot run here at all, see `steps/verify.md`: prove the fix another way (a script, the build, a
 narrower runner) and record that the test is unverified. Never stop for it.
