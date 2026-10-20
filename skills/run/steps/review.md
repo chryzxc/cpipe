@@ -21,6 +21,7 @@ Give the reviewer only what it needs, not your reasoning:
 Review this change. You did not write it. Read the code; do not edit anything.
 
 Goal: <the plan's goal, one sentence>
+User's instructions: <each one from now.md, word for word; they settle the questions they answer>
 Acceptance: <the plan's acceptance criteria>
 Repository: <worktree path>   Diff: git diff <base>...HEAD
 Checks run: <each check with its state from the run log>
@@ -43,7 +44,8 @@ Review against:
 - Simplicity: needless abstraction, duplicated helpers, dead code, comments that restate code.
 
 For each finding: file and line, the problem, why it matters, a concrete fix, severity (critical, major, minor),
-and whether it is security-related. Say plainly if you found nothing that needs changing.
+and whether it is security-related. Say plainly if you found nothing that needs changing. Give findings, not a
+verdict: no hold, block or release decision. The delivery run decides.
 ```
 
 ## 2. Sort the findings
@@ -59,6 +61,12 @@ Read every finding against the code yourself, then give each one a disposition a
 
 A path or risk the reviewer found that the plan missed is added to the plan with its check; a regression on it
 is **act**, even if the code sits outside the scope's files. Write a lesson for it (`cpipe:run`, Lessons).
+
+A finding the user's instructions decide is **act**, fixed the way they say. A check this change adds that
+rejects something the user did not ask to block, and that works today, is a regression. Narrow the check so the
+existing behavior keeps working. That is not a security weakening, because the code is still stricter than before
+the change. Record what the check now allows and why. A verdict from a reviewer, QA or a role (hold, blocked, not
+ready for release) is not a finding. Take the findings behind it, sort them here, and carry on.
 
 Nothing is dropped silently. A security finding is never dismissed without evidence, and an open security finding
 you cannot fix inside the scope leads the report.

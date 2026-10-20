@@ -54,6 +54,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
 
 - **Unattended, end to end.** The task is the last message you send. No plan approval, no clarifying questions:
   open questions are decided and listed with their reasons in the report.
+- **Your instructions are the contract.** Every instruction you give, in the task or later, is kept word for word
+  in the run's state, settles the questions it answers and wins over cpipe's defaults. The run is done when each
+  one is met (a merge when there are no regressions included), not when the steps have run once.
 - **Tests first, proof per kind.** A bug is reproduced with a failing test before the plan is written; a feature
   shows new tests red then green; a refactor keeps the same checks green before and after.
 - **The project's own checks.** Lint, typecheck, tests and build run with the commands the project and its CI
@@ -67,8 +70,8 @@ missing, it works around the obstacle, records what it could not verify, and kee
   building, and results are reused while the tree is unchanged.
 - **Your setup comes first.** Your own skills for commits, pull requests, review or UI design override cpipe's
   defaults; your Hermes profiles can take over any role.
-- **Safe by default.** One worktree per delivery, your checkout untouched, no push, pull request or message
-  unless the task asks for it.
+- **Safe by default.** One worktree per delivery, your checkout untouched, no push, pull request, merge or
+  message unless you ask for it.
 
 ## Quick start
 
@@ -106,7 +109,8 @@ In any Hermes chat, inside or near the repository:
 | `/cpipe continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
 | `/cpipe:run <task>` | The skill itself, for chats where the command is not available |
 
-Ask for anything that leaves your machine in the task itself: `… and open a draft pull request`.
+Ask for anything that leaves your machine in the task or a later message: `… and open a draft pull request`,
+`merge it if there are no regressions`.
 
 ## What a run looks like
 
@@ -160,8 +164,8 @@ passed with its reason in the run log. Verify and the report are always done by 
 the final word are never handed to anyone else.
 
 A task with several issues becomes one delivery per issue, each with its own branch, worktree, commit and pull
-request, run one after another and reported together. Issues ship together only when one cannot work without
-the other.
+request, run one after another (side by side when you ask for parallel) and reported together. Issues ship
+together only when one cannot work without the other.
 
 ## Core concepts
 
@@ -181,8 +185,10 @@ step.
   findings join into one fix round, followed by a delta review alongside a QA re-run of the items that failed.
 - **Pass-through.** A node that does not apply is passed with a one-line reason, never silently.
 - **Re-entry.** The run log is the graph's state. **continue**, a completion notification or a restart re-enters
-  at the first unfinished step; a message after the report re-enters at the plan for the follow-up only.
-- **One graph per delivery.** Several issues run as several graphs, one after another, never two at once.
+  at the first unfinished step or unmet instruction; a message after the report re-enters at the plan for the
+  follow-up only.
+- **One graph per delivery.** Several issues run as several graphs, one after another unless you ask for them
+  in parallel.
 
 ### Loop engineering
 
@@ -212,10 +218,10 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   or the tail.
 - **Distilled skills.** Your skills are loaded once per run, only for work done in the chat, and the rules that
   apply are written to `now.md` as one line each.
-- **Compaction-proof.** A short state file, `now.md`, holds the current step, the running processes, the roles
-  and the rules from your skills. After the context is compacted, the chat reads it and reloads only the run skill
-  and the current step, never every skill the chat loaded before, so one compaction does not cause the next. The
-  first item of the todo list, which survives a compaction word for word, says so.
+- **Compaction-proof.** A short state file, `now.md`, holds your instructions word for word, the current step, the
+  running processes, the roles and the rules from your skills. After the context is compacted, the chat reads it and
+  reloads only the run skill and the current step, never every skill the chat loaded before, so one compaction does
+  not cause the next. The first item of the todo list, which survives a compaction word for word, says so.
 - **Lean briefs.** A role's brief holds facts (goal, acceptance, diff, check states), not reasoning, and points
   to `plan.md` by its path instead of copying it or the run log. A fix round lists the findings themselves, not
   the reviewers' reports. A profile replies in at most 20 lines and puts the rest in a file.
@@ -358,7 +364,7 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 | 8 | QA | Uses the change on the real surface, walks the acceptance criteria, tries to break it | `steps/qa.md` |
 | 9 | Review | Independent review in a fresh context, findings sorted into act, consider, noted and dismissed | `steps/review.md` |
 | 10 | Clean | One cleanup pass over the diff, then the last verify with the full suite and the build | `steps/build.md` |
-| 11 | Report | Commit, a draft pull request only when asked (then waits for CI), the app left running, the report | `steps/report.md` |
+| 11 | Report | Commit, a draft pull request only when asked (then waits for CI), a merge only when asked and its conditions hold, the app left running, the report | `steps/report.md` |
 
 Each plan step is written so a builder who has not read the code can follow it:
 
@@ -496,7 +502,7 @@ App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
 | `<repo>-worktrees/<branch>/` | The delivery worktree, beside the repository (or where the project's instructions say) | The delivery commit only |
 | `<git-dir>/cpipe/run.md` | The run log: rounds, workarounds, findings | Never |
 | `<git-dir>/cpipe/plan.md` | The plan, the builder's instructions | Never |
-| `<git-dir>/cpipe/now.md` | The current step, running processes, roles and skill rules; read to resume | Never |
+| `<git-dir>/cpipe/now.md` | Your instructions, the current step, running processes, roles and skill rules; read to resume | Never |
 | `<git-dir>/cpipe/baseline-<check>.txt` | Names of the tests and lint errors failing on the base | Never |
 | `<git-dir>/cpipe/logs/` | Long command output | Never |
 | `<git-dir>/cpipe/brief-<role>.md`, `<role>-reply.md` | Briefs to profiles and their long replies | Never |
@@ -505,7 +511,7 @@ App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
 
 ## Guard rails
 
-Only when the task asks for it:
+Only when you ask for it, in the task or later:
 
 - merging, pushing, opening a pull request, deploying or messaging anyone;
 - reformatting files or the repository beyond the lines the change touches.
@@ -565,9 +571,11 @@ cpipe/
 No. Open questions become assumptions with a reason each, listed in the report's Approach table. If one is wrong,
 reply after the report; the follow-up reuses the same worktree.
 
-**Will it push or open a pull request?**
-Only when the task says so. With a pull request it pushes the branch, opens a draft, and waits up to 30 minutes
-for CI, fixing failures the change caused.
+**Will it push, open a pull request or merge?**
+Only when you ask, in the task or later. With a pull request it pushes the branch, opens a draft, and waits up to
+30 minutes for CI, fixing failures the change caused. With a merge ("merge it if there are no regressions") it
+merges once every check is pass or baseline, no new test fails, no review finding or QA item is open, CI passes
+and your conditions hold; a failed condition is fixed first, not handed back.
 
 **Where does the work happen?**
 In a new worktree and branch beside your repository, created from the base. Your checkout is never edited.
@@ -578,12 +586,12 @@ Send `/cpipe continue`. It reads `now.md` and the run log and picks up at the fi
 ones, using the results of profiles and checks that kept running in the meantime.
 
 **Can I steer it mid-run?**
-Yes. A message mid-run is steering: it gets a one-line answer, and extra work joins the plan or waits for a
-follow-up after the report.
+Yes. A message mid-run is steering: its instructions join the run's contract, it gets a one-line answer, and
+extra work joins the plan or waits for a follow-up after the report.
 
 **Several issues in one task?**
-Each issue is its own delivery with its own branch, worktree and commit, run one after another and reported
-together.
+Each issue is its own delivery with its own branch, worktree and commit, run one after another (or in parallel
+when you ask) and reported together.
 
 **Which languages and frameworks does it support?**
 Any. It uses the project's own install, test, lint, typecheck and build commands, found in its scripts,

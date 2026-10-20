@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.18.3
+version: 3.19.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -22,6 +22,22 @@ missing dependency, a flaky check, a tool error, a profile or subagent that retu
 for evidence this machine cannot produce: work around it (`steps/verify.md` has a table for the common ones), write
 what you could not verify in the run log, and continue with the next step.
 
+## The user's instructions are the contract
+
+Every instruction the user gives about this work, in the task or in any later message, holds until the user
+changes it. That covers how to work (in parallel, which base, draft pull requests), what the change must respect
+(keep the client's behavior, follow an existing rule) and how to finish (push, open a pull request, merge when a
+condition holds). Write each one word for word in the run log and under `Instructions:` in `now.md` the moment it
+arrives. Check every plan, decision, fix and report against them. Where an instruction differs from a default
+in these files, the instruction wins. Only the Safety guard rails still apply, and an instruction to push, open a
+pull request or merge gives the permission they ask for.
+
+An instruction that settles a question is its answer. When a finding is one an instruction decides, fix it the
+way the instruction says, for example a change that rejects what the user said must keep working. Never hold it
+for a decision, a policy or an approval the user already gave. The run is finished when every instruction is
+met. An instruction stays unmet only for a reason the report names: a limit reached after different fixes, or
+something this machine cannot do.
+
 ## Unattended: the task is the last message
 
 The user sends the task and waits for the report. Never ask a question and never wait for an answer: no plan
@@ -29,16 +45,20 @@ approval, no clarifying questions, no "should I". Never call a tool that waits f
 question tool, a command that needs the user's approval): it halts the run until they answer. Use another way,
 or skip that part and report it. Every choice is yours:
 
-- **Open questions** (which base, which of two behaviors, a product detail): decide from the request, the code,
-  the project's history and the conversation; pick the most likely and reversible answer, record it as an
-  assumption, and keep going.
-- **Things only the user may do** (credentials or secrets, anything destructive or irreversible, anything that
-  leaves this machine that the task did not ask for: push, pull request, deploy, messages): never do them. Skip
-  that part, finish everything else, and name it in the report's `⚠️ Done except` status line.
-- **A security finding you cannot fix inside the scope:** finish the rest and lead the report with it.
+- **Open questions** (which base, which of two behaviors, a product detail, how old data or another role should
+  be treated): decide from the user's instructions first, then the request, the code, the project's history and
+  the conversation. Pick the most likely and reversible answer, record it as an assumption, and keep going.
+- **Things only the user may do**, unless the user asked for them: credentials or secrets, anything destructive,
+  and anything that leaves this machine (push, pull request, merge, deploy, messages). Never do them. Skip that
+  part, finish everything else, and name it in the report's `⚠️ Done except` status line. How the code should
+  behave is never one of them: that is an open question.
+- **A security problem in code this change does not touch:** finish the rest and lead the report with it. A
+  problem this change causes is fixed in this change.
 
-A push or pull request happens only when the task message asks for one. A message from the user mid-run is
-steering, not a stop: answer it in one line and continue. Steering that adds work (another bug, another
+A push, pull request or merge happens only when the user asks for one. A message from the user mid-run is
+steering, not a stop: add its instructions to `now.md`, answer it in one line and continue. A question about the
+run ("is it done?") gets its one-line answer in the same reply as the next tool call while any instruction is
+unmet. Steering that adds work (another bug, another
 behavior) is either added to the plan as numbered steps with their acceptance criteria, or, when it is a
 different problem, kept for a follow-up after the report; say which in that line and note it in the run log.
 
@@ -59,14 +79,16 @@ next notification starts a new turn and the run picks up there. A turn that ends
 notification to resume it, so start the next long piece of work before a stretch of short steps. Do not start a
 timer or look for a tool to make one. When the cap ends the turn, the final reply is one line:
 `⏸ cpipe: turn limit at <n>/11 <step>; resumes when <what is running> finishes or on your next message.`
-A notification after the report gets one line: `cpipe: already reported (<status line>), nothing left to do.`
+That line, or any summary asked for at the limit, is not the report. A notification after the report gets one
+line: `cpipe: already reported (<status line>), nothing left to do.` The report is the message written from
+`steps/report.md` once every instruction is met or has its reason.
 
 **A notification resumes the run.** A completion notification (a check, a profile) or a message
 saying the iteration limit was reached is never a cue for a status reply. While the run log has unfinished
-steps, say `↻ Resuming at <n>/11 <step>: <what woke the run>` and continue there with a tool call in the same
-reply. When a
-notice says the iteration limit is near, write the next step in `now.md` first, so the next turn picks it up,
-and start that step's long work in the background if it has any.
+steps or `now.md` an unmet instruction, say `↻ Resuming at <n>/11 <step>: <what woke the run>` and continue
+there with a tool call in the same reply. When a notice says the iteration limit is near, write the next
+step in `now.md` first, so the next turn picks it up, and start that step's long work in the background if it
+has any.
 
 The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run, debug or review
 anything, and never end with "fix the cause and say continue". If you can do it, do it.
@@ -76,8 +98,9 @@ anything, and never end with "fix the cause and say continue". If you can do it,
 A task that names several issues (issue numbers or links, or a list of unrelated bugs, features or changes) is
 several deliveries, never one. Each issue gets its own branch, worktree, run log and commit, and its own pull
 request when pull requests are asked for, each branched from the base, not from another delivery. Run them one
-after another, each through the whole flow, never two at once: the next one starts after the current one's
-report, so one chat never carries several deliveries' context. Each run log names the others
+after another, each through the whole flow: the next one starts after the current one's report, so one chat never
+carries several deliveries' context. When the user asks for them in parallel, run them in parallel: start each
+delivery's long work (its profiles and checks) side by side. Each run log names the others
 (`Delivery 2 of 3; others: <branches>`).
 Deliver two issues together only when one cannot work without the other (the same root cause or the same lines)
 or the user asked for a single pull request, and record why in Approach.
@@ -107,7 +130,7 @@ written from `steps/report.md` loaded right before it.
 | 8. QA | Use the change on the real surface, try to break it, check the broader suite. Runs alongside 9. | `steps/qa.md` | qa |
 | 9. Review | Independent review in a fresh context; act on findings; at most two rounds. Runs alongside 8. | `steps/review.md` | review, security |
 | 10. Clean | One cleanup pass over the diff, then verify again. | `steps/build.md` | build |
-| 11. Report | Commit, a draft pull request only if asked, the report. | `steps/report.md` | |
+| 11. Report | Commit, a draft pull request and a merge only if asked, the report. | `steps/report.md` | |
 
 QA and review run at the same time: both only read the same verified change. Start them together (the review
 in the background while you or the QA role do QA), wait for both, then fix everything they found in one round,
@@ -163,7 +186,8 @@ so say that in the roles line and continue.
 One log per run at `$(git rev-parse --git-dir)/cpipe/run.md`, run inside the delivery worktree. Never committed;
 it survives a restart. Append, never rewrite:
 
-- the task, the roles, the base and the worktree, and every card id when on the board;
+- the task and every instruction from the user, word for word, the roles, the base and the worktree, and every
+  card id when on the board;
 - the flow map, the baseline, the design note and the path of the plan;
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
@@ -171,8 +195,9 @@ it survives a restart. Append, never rewrite:
 - the lessons written.
 
 The plan has its own file beside it, `plan.md`, so a builder reads the plan and not the whole log. Beside both is
-`now.md`, rewritten as the run moves: at most 25 lines with the current step and its next action, the processes
-running (process id, log or reply file), the roles line, the rules taken from user skills, and the open items.
+`now.md`, rewritten as the run moves: at most 25 lines, plus the instructions. It holds the user's
+instructions word for word, each marked met or not yet; the current step and its next action; the processes
+running (process id, log or reply file); the roles line; the rules taken from user skills; and the open items.
 Rewrite it in the same reply as each step's first tool call and whenever something starts or finishes in the
 background. It is what you read to resume, instead of the whole log.
 
@@ -183,9 +208,9 @@ tail, not the whole output. The run log names the file.
 
 When the chat is compacted, the step files and skills loaded so far are dropped, and the compaction notice may ask
 you to reload every skill this chat ever loaded. Do not: that refills the context and brings the next compaction
-within minutes. Read `now.md`, reload `cpipe:run` and the active step's file, and continue. The user skills' rules
-are in `now.md`; the roles, the plan's questions from the lessons and every file you read are in the run log or
-the plan. Read a file again only for the lines the next action needs.
+within minutes. Read `now.md`, reload `cpipe:run` and the active step's file, and continue. The user's
+instructions and the user skills' rules are in `now.md`; the roles, the plan's questions from the lessons and
+every file you read are in the run log or the plan. Read a file again only for the lines the next action needs.
 
 ## Lessons
 
@@ -214,7 +239,9 @@ check both and answer with what you found; do not ask which one they meant. A di
 
 When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read `now.md` (the
 run log only where it points), check `git status` and the last check results in the worktree, and pick up at the
-first unfinished step. Do not redo finished steps. A restart ends this chat's turn, but not the profiles and checks
+first unfinished step. Do not redo finished steps. Sometimes a report left an instruction unmet, and then the
+user says "continue" or repeats the instruction. That is the same task: do what is unmet, never only report again
+that it is not done. A restart ends this chat's turn, but not the profiles and checks
 it started: before starting one again, check its process (the pid in `now.md`) and its log or reply file, and wait
 for it or use its result. With
 several deliveries, finish the unfinished one first, then start the next one its run log names.
@@ -239,7 +266,8 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
   formatter's baseline is red, unless the task asks for it.
 
 **Safety**
-- Never merge, push, open a pull request, deploy or message anyone unless the user asked for it in this task.
+- Never merge, push, open a pull request, deploy or message anyone unless the user asked for it in this work.
+  When they did, do it once its condition holds (`steps/report.md`).
 - Never put credentials, tokens or secrets in code, commits, logs, briefs or the report. Never print `.env`
   contents.
 - Never run destructive commands outside the worktree (deleting data, resetting branches, dropping databases),

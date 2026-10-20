@@ -26,14 +26,32 @@ After the push, wait for the pull request's CI checks (`gh pr checks --watch`, o
 failure the change caused is fixed like any failing check: fix, verify, commit, push, wait again. A failure also
 on the base branch is baseline. Checks still running after the wait are ⏳ in the report.
 
+## Merge (only when asked)
+
+When the user asked for a merge, with or without a condition ("merge it if there are no regressions"), merge
+each delivery once these hold:
+- every check is pass or baseline on the committed tree;
+- no new failing test since the baseline, and every must-not-change item has its proof;
+- no open **act** finding and no failing QA item;
+- the pull request's CI is pass or baseline;
+- every condition the user named.
+
+Mark the draft ready (`gh pr ready`), merge with the method the repository's recent merges used
+(`gh pr merge --squash`, `--merge` or `--rebase`), then confirm on the remote that it is merged. A condition that
+fails is work, not a stop: fix it within the limits, then merge. Only a regression still open after the limits
+keeps a delivery unmerged, and the status line names it with what was tried.
+
 ## Finish before reporting
 
 The report comes after the work is finished, not when the steps have run once. Before writing it, check that
 every row of the Steps table below would be ✅ or —. For any other row, go back and finish it while the limits
 in `cpipe:run` allow: fix in-scope findings and QA failures, review the last fix, retry a check another way,
-wait for CI. A row stays open only when the run truly cannot close it: something only the user may do, a check
-that needs what this machine does not have, or a limit reached. Test it is the last thing left for the
-user, and only when needed.
+wait for CI, merge when asked. A row stays open only when the run truly cannot close it: something only the user
+may do, a check that needs what this machine does not have, or a limit reached. A question about how the code
+should behave, a needed policy, or a role's hold or blocked verdict never keeps a row open. Decide it from the
+user's instructions (`cpipe:run`, The user's instructions), fix and verify. Then check each instruction in
+`now.md`: every one is met, or has its reason from that list. Test it is the last thing left for the user, and
+only when needed.
 
 ## Running app
 
@@ -84,7 +102,7 @@ Branch · worktree · commit · pull request · files changed · roles · lesson
 - `✅ Done: <goal>`: every Steps row is ✅ or —, and no manual testing is needed.
 - `✅ Done, test by hand: <goal>`: the same, plus the Test it items.
 - `⚠️ Done except <what>: <goal>`: rows that stay open (something only the user may do, an open security
-  finding, a limit reached). Name each.
+  finding, a limit reached). Name each, and each unmet instruction with its reason.
 - For a review: `✅ Approved: <change>` or `⚠️ Changes needed: <what>`.
 
 **Summary**, by kind. Three to six lines, file and function names where they help:
@@ -144,7 +162,8 @@ do it, do it before reporting.
 
 - Commit only the plan's scope: check `git status` and the staged diff before committing; never `git add` files
   you did not mean to change.
-- Never push, open a pull request, merge or message anyone unless the user asked for it in this task.
+- Never push, open a pull request, merge or message anyone unless the user asked for it in this work; when they
+  did, do it (Merge).
 - Never claim a state the run log does not show.
 - Never write a pull request or commit message by hand when the user has a skill for it.
 - No secrets, local paths or chat details in the commit message or pull request.

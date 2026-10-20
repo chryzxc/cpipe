@@ -22,8 +22,8 @@ not repeat it.
    the project's virtual environment. Never install globally; do not change the lockfile unless the task is about
    dependencies. Copy local env files (`.env`) from the user's checkout only if the checks need them, and never
    print their contents.
-5. **Run log.** Start it and `now.md` (`cpipe:run`, Run log) with the task, the base, the worktree and the roles
-   line.
+5. **Run log.** Start it and `now.md` (`cpipe:run`, Run log) with the task, the user's instructions word for word
+   (from the task and from the conversation about this work), the base, the worktree and the roles line.
 6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A worktree from
    `git worktree list` is cpipe's when its git dir holds a run log (`$(git -C <path> rev-parse --git-dir)/cpipe/run.md`);
    never touch any other worktree, the user's checkout or this run's worktree. Remove one only when all hold:
@@ -98,7 +98,8 @@ lines around each place it cites to confirm. Otherwise do it yourself:
 ## 4. Decide the open questions
 
 Never ask the user (`cpipe:run`, Unattended). List what the request leaves open: a product decision, which of
-two behaviors is wanted, which base or tenant, an external system you have no access to. Settle each from the
+two behaviors is wanted, which base or tenant, an external system you have no access to. A question one of the
+user's instructions answers is not open: apply the instruction. Settle each of the others from the
 request, the code, the project's history and the conversation: pick the most likely answer, and of two equally
 likely ones the more reversible. Each becomes an assumption in the plan with a one-line reason. Something only
 the user may do (credentials, destructive actions, an unasked push) is left out of the scope and goes in the
@@ -119,9 +120,9 @@ draft against the code and the baseline yourself. Write the plan in the chat and
   caused, and the trade-off. The report's Approach table is built from this and the assumptions.
 - **Acceptance:** observable criteria, numbered `A1`, `A2`…, each one checkable, including the design note's
   states.
-- **Must not change:** numbered `M1`…; for each entrance, consumer and guard in the map, the behavior that has
-  to stay, with the check, test or QA step that proves it. An existing test or check that already covers it is
-  named, not duplicated.
+- **Must not change:** numbered `M1`…; for each entrance, consumer and guard in the map, and for each behavior the
+  user's instructions say to keep, the behavior that has to stay, with the check, test or QA step that proves it. An
+  existing test or check that already covers it is named, not duplicated.
 - **Risks:** numbered `R1`…; the premortem, each with its check or the reason it cannot happen. A new test only
   where nothing existing would catch the break.
 - **Tests:** the new tests, each with the break it catches: the line or behavior that, when broken, makes it

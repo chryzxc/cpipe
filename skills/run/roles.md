@@ -45,6 +45,10 @@ check. It takes you a minute and a profile a cold start. Note each step you kept
    Do not skip or weaken tests. Never print secrets or .env contents.
    A failure that also happens without this change is the baseline: note it and keep going. Never stop for a
    decision: choose within the plan's scope and say what you chose.
+   The user's instructions for this work, word for word; they settle the questions they answer:
+   <each instruction from now.md>
+   Report findings with their evidence and the fix you suggest, never a verdict such as hold, blocked or not
+   ready for release: the delivery run decides.
    Use your own skills for this kind of work where you have them.
    Keep it lean: the project's own dev server, test runner and tools first; evidence is the command and its
    result; no hash manifests, integrity receipts or copies of the tree. At your time budget, stop and reply
@@ -136,6 +140,8 @@ fails". Only ever touch cards this run created.
   role's summary. Undo anything outside the plan's scope.
 - After QA: reproduce a failure yourself before acting on it.
 - After review: sort the findings yourself as `steps/review.md` says.
+- A verdict (approved, blocked, hold, not ready for release) decides nothing. Take the findings behind it and
+  decide with the user's instructions.
 
 ## When a role fails
 
