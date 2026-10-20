@@ -211,11 +211,17 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Output to files.** Long command output goes to a file beside the run log; the chat reads the result lines
   or the tail.
 - **Distilled skills.** Your skills are loaded once per run, only for work done in the chat, and the rules that
-  apply are written to the run log as one line each.
-- **Compaction-proof.** After the context is compacted, only the run skill and the current step are reloaded;
-  the run log holds everything else.
+  apply are written to `now.md` as one line each.
+- **Compaction-proof.** A short state file, `now.md`, holds the current step, the running processes, the roles
+  and the rules from your skills. After the context is compacted, the chat reads it and reloads only the run skill
+  and the current step, never every skill the chat loaded before, so one compaction does not cause the next. The
+  first item of the todo list, which survives a compaction word for word, says so.
 - **Lean briefs.** A role's brief holds facts (goal, acceptance, diff, check states), not reasoning, and points
-  to the plan by its path instead of copying it. A profile replies in at most 20 lines and puts the rest in a file.
+  to `plan.md` by its path instead of copying it or the run log. A fix round lists the findings themselves, not
+  the reviewers' reports. A profile replies in at most 20 lines and puts the rest in a file.
+- **Lean reading.** Every reply resends all the context, so a profile reads the line ranges it needs, never a
+  file twice, batches independent reads in one reply, sends test output to a file and reads the summary, and
+  loads only the cpipe step files its brief names.
 
 ### Cost engineering
 
@@ -312,8 +318,9 @@ A security finding is never dismissed without evidence, and an open one leads th
 
 ### Durable state and recovery
 
-Each run keeps an append-only **run log** at `<git-dir>/cpipe/run.md` in its worktree: the plan, one row per
-round, every workaround, every finding and what became of it. It is never committed, and it is how a run resumes.
+Each run keeps an append-only **run log** at `<git-dir>/cpipe/run.md` in its worktree: one row per round, every
+workaround, every finding and what became of it. Beside it are the plan (`plan.md`) and a short state file
+(`now.md`) that is rewritten at each step. None of them is committed, and they are how a run resumes.
 
 - A chat turn has a cap on tool calls. Long work (installs, checks, profiles) runs in the background with a
   completion notification, and the notification starts the next turn at the first unfinished step.
@@ -487,7 +494,9 @@ App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
 |---|---|---|
 | `~/.hermes/cpipe.yaml` | The roles, written by you | — |
 | `<repo>-worktrees/<branch>/` | The delivery worktree, beside the repository (or where the project's instructions say) | The delivery commit only |
-| `<git-dir>/cpipe/run.md` | The run log: plan, rounds, workarounds, findings | Never |
+| `<git-dir>/cpipe/run.md` | The run log: rounds, workarounds, findings | Never |
+| `<git-dir>/cpipe/plan.md` | The plan, the builder's instructions | Never |
+| `<git-dir>/cpipe/now.md` | The current step, running processes, roles and skill rules; read to resume | Never |
 | `<git-dir>/cpipe/baseline-<check>.txt` | Names of the tests and lint errors failing on the base | Never |
 | `<git-dir>/cpipe/logs/` | Long command output | Never |
 | `<git-dir>/cpipe/brief-<role>.md`, `<role>-reply.md` | Briefs to profiles and their long replies | Never |
@@ -565,7 +574,7 @@ In a new worktree and branch beside your repository, created from the base. Your
 Merged cpipe worktrees are removed by later runs; the branches stay.
 
 **The run went quiet. What now?**
-Send `/cpipe continue`. It reads the run log and picks up at the first unfinished step without redoing finished
+Send `/cpipe continue`. It reads `now.md` and the run log and picks up at the first unfinished step without redoing finished
 ones, using the results of profiles and checks that kept running in the meantime.
 
 **Can I steer it mid-run?**

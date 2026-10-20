@@ -49,12 +49,17 @@ check. It takes you a minute and a profile a cold start. Note each step you kept
    Keep it lean: the project's own dev server, test runner and tools first; evidence is the command and its
    result; no hash manifests, integrity receipts or copies of the tree. At your time budget, stop and reply
    with what you have and what is left.
+   Every reply resends all you have read, so read little: the lines you need (search first, a whole file only
+   when you need all of it), never a file you already have, independent reads and searches together in one
+   reply. Test and build output goes to a file in <run dir>/logs/; read its summary and the failures.
+   Load only the cpipe files named below, each with its file_path, never the whole cpipe:run skill.
    Reply in at most 20 lines: the result, the evidence, what is left. Put anything longer in
    <run dir>/<role>-reply.md and give its path.
    ```
 
    A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`. What is
-   already in a file (the plan, the explore map, the design note) is given by its path, not copied. Roles that
+   already in a file (`plan.md`, the explore map, the design note) is given by its path, not copied; never the
+   whole run log. Roles that
    start together (QA, review, security) get their briefs written in one reply. Write it in plain sentences, with
    everything the role needs now: a profile cannot receive anything later, so start it only once its inputs are
    ready, and never tell it to wait for a result or that something will be provided.
@@ -66,9 +71,9 @@ check. It takes you a minute and a profile a cold start. Note each step you kept
    - **design:** the request, the explore map, and the steps of `steps/design.md`. Ask for the design note.
    - **plan:** the request, the explore map, the baseline and the design note. Ask for a plan in the format of
      `steps/plan.md` step 5.
-   - **build:** the plan, the playbook, the run log path. Ask it to follow `steps/build.md` and reply per
-     plan step: done or corrected (what and why), and the narrow tests it ran with their results. It does not
-     run the full suite or the production build: verify does.
+   - **build:** `plan.md`, the playbook and `steps/build.md`. Ask it to reply per plan step: done or corrected
+     (what and why), and the narrow tests it ran with their results; you write those rows in the run log. It
+     does not read or write the run log, and does not run the full suite or the production build: verify does.
    - **qa:** the acceptance criteria, the design note, how to start the app, and verify's broader suite result
      for this tree (start QA once verify has it). Ask it to follow `steps/qa.md` without editing the repository
      and reply with each item's result and evidence.
@@ -92,6 +97,8 @@ check. It takes you a minute and a profile a cold start. Note each step you kept
 
 3. **Follow-ups** to the same role (a fix round, a delta review) resume its session:
    `hermes -p <profile> chat -Q --resume <session id> --query-file <brief>`
+   A fix round's brief lists each finding itself: the file and line, what is wrong, the expected behavior and
+   the check that shows it. Never the paths of review, QA or probe files for the builder to read.
 
 ## On the board (`--kanban`)
 

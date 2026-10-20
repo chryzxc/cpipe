@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.18.2
+version: 3.18.3
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -65,7 +65,7 @@ A notification after the report gets one line: `cpipe: already reported (<status
 saying the iteration limit was reached is never a cue for a status reply. While the run log has unfinished
 steps, say `↻ Resuming at <n>/11 <step>: <what woke the run>` and continue there with a tool call in the same
 reply. When a
-notice says the iteration limit is near, write the next step in the run log first, so the next turn picks it up,
+notice says the iteration limit is near, write the next step in `now.md` first, so the next turn picks it up,
 and start that step's long work in the background if it has any.
 
 The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run, debug or review
@@ -84,8 +84,10 @@ or the user asked for a single pull request, and record why in Approach.
 
 ## Flow
 
-Track the steps with your todo tool
-if you have one, one step active at a time. When a step starts, post one line with your next tool call:
+Track the steps with your todo tool if you have one, one step active at a time. Its first item stays open until
+the report: `After a compaction: read now.md; reload only cpipe:run and the active step's file, no other skill`.
+The todo list survives a compaction word for word (After a compaction, below). When a step starts, post one line
+with your next tool call:
 `▶ <n>/11 <step>: <what it will do> (<who: this chat or the profile>)`; a step that does not apply gets
 `— <n>/11 <step>: skipped, <reason>`. Each step's instructions are a file in this skill: load it with
 `skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach the step, not before. Never work a
@@ -120,9 +122,9 @@ yours: the checks and the final word are never handed to anyone else.
 cpipe sets the order of the steps; the user's own skills say how a step is done. At the start of each step, check
 your skill list for a skill that covers that step's work (writing a pull request or commit message, code review,
 security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`, once per
-run: note each loaded skill in the run log with the rules from it that apply to this task, one line each, and work
-from those lines afterwards, also after a compaction; never load it again. Load a skill only for work you do in
-this chat: a step handed to a profile uses that profile's own skills. Running profiles and processes needs no
+run: note each loaded skill in `now.md` (Run log) with the rules from it that apply to this task, one line each,
+and work from those lines afterwards, also after a compaction; never load it again. Load a skill only for work you
+do in this chat: a step handed to a profile uses that profile's own skills. Running profiles and processes needs no
 skill; `roles.md` has the commands. Where it
 and a cpipe step differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
 still decides the flow and the guard rails: a user skill never authorizes a push, merge or message the task did
@@ -162,14 +164,28 @@ One log per run at `$(git rev-parse --git-dir)/cpipe/run.md`, run inside the del
 it survives a restart. Append, never rewrite:
 
 - the task, the roles, the base and the worktree, and every card id when on the board;
-- the flow map, the baseline, the design note, the plan and its assumptions;
+- the flow map, the baseline, the design note and the path of the plan;
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
 - QA results, review findings and what you did with each;
 - the lessons written.
 
+The plan has its own file beside it, `plan.md`, so a builder reads the plan and not the whole log. Beside both is
+`now.md`, rewritten as the run moves: at most 25 lines with the current step and its next action, the processes
+running (process id, log or reply file), the roles line, the rules taken from user skills, and the open items.
+Rewrite it in the same reply as each step's first tool call and whenever something starts or finishes in the
+background. It is what you read to resume, instead of the whole log.
+
 Long command output goes to a file beside the run log (`logs/<step>-<check>.txt`); read the result lines or the
 tail, not the whole output. The run log names the file.
+
+## After a compaction
+
+When the chat is compacted, the step files and skills loaded so far are dropped, and the compaction notice may ask
+you to reload every skill this chat ever loaded. Do not: that refills the context and brings the next compaction
+within minutes. Read `now.md`, reload `cpipe:run` and the active step's file, and continue. The user skills' rules
+are in `now.md`; the roles, the plan's questions from the lessons and every file you read are in the run log or
+the plan. Read a file again only for the lines the next action needs.
 
 ## Lessons
 
@@ -196,11 +212,11 @@ check both and answer with what you found; do not ask which one they meant. A di
 
 ## Continue
 
-When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read the run log,
-check `git status` and the last check results in the worktree, and pick up at the first unfinished step. Do not
-redo finished steps. A restart ends this chat's turn, but not the profiles and checks it started: before
-starting one again, check its process (the pid in
-the run log) and its log or reply file, and wait for it or use its result. With
+When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read `now.md` (the
+run log only where it points), check `git status` and the last check results in the worktree, and pick up at the
+first unfinished step. Do not redo finished steps. A restart ends this chat's turn, but not the profiles and checks
+it started: before starting one again, check its process (the pid in `now.md`) and its log or reply file, and wait
+for it or use its result. With
 several deliveries, finish the unfinished one first, then start the next one its run log names.
 
 ## Limits
@@ -244,4 +260,6 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 - A step that does not apply, or mechanical work (format, commit, pull request body), gets no profile; a profile
   starts cold and reads the code again (`roles.md`).
 - Long output to a file, the tail in the chat (Run log). Each user skill loaded once per run.
-- After the context is compacted, reload only this skill and the current step's file; the run log has the rest.
+- After the context is compacted, reload only this skill and the current step's file, never the list of skills the
+  compaction notice gives (After a compaction).
+- The roles file and the lessons are read once, in steps 1 and 2; their content is in the run log and the plan.

@@ -22,7 +22,8 @@ not repeat it.
    the project's virtual environment. Never install globally; do not change the lockfile unless the task is about
    dependencies. Copy local env files (`.env`) from the user's checkout only if the checks need them, and never
    print their contents.
-5. **Run log.** Start it (`cpipe:run`) with the task, the base, the worktree and the roles line.
+5. **Run log.** Start it and `now.md` (`cpipe:run`, Run log) with the task, the base, the worktree and the roles
+   line.
 6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A worktree from
    `git worktree list` is cpipe's when its git dir holds a run log (`$(git -C <path> rev-parse --git-dir)/cpipe/run.md`);
    never touch any other worktree, the user's checkout or this run's worktree. Remove one only when all hold:
@@ -45,8 +46,8 @@ lines around each place it cites to confirm. Otherwise do it yourself:
 
 1. **Instructions.** Read the project's agent and contributor instructions (`AGENTS.md`, `CLAUDE.md`,
    `CONTRIBUTING.md`, the README's development section). They win over these skills where they conflict, except
-   for the guard rails in `cpipe:run`. Read the project's and the user's lessons too (`cpipe:run`, Lessons):
-   each one is a question this run must answer.
+   for the guard rails in `cpipe:run`. Read the project's and the user's lessons too (`cpipe:run`, Lessons),
+   once: each one is a question this run must answer, and the premortem keeps the ones that apply.
 2. **Code.** If you have a code index or code-navigation tool, locate the code with it first. Read the code the
    task touches and the helpers you could reuse. Skip code that is not on a path below.
 3. **Flow map.** Trace every path through the code you will change, end to end, so nothing breaks out of sight:
@@ -106,7 +107,8 @@ report.
 ## 5. Plan
 
 If the roles file names a `plan` profile, have it draft the plan (`roles.md` in `cpipe:run`), then check the
-draft against the code and the baseline yourself. Write the plan in the chat and in the run log:
+draft against the code and the baseline yourself. Write the plan in the chat and to `plan.md` beside the run log
+(the run log names it):
 
 - **Goal:** one sentence, in the user's words.
 - **Kind** and playbook.
@@ -157,7 +159,7 @@ Before building, check the plan item by item and fix every no. It is your own ch
 - Each step depends only on steps before it.
 
 Post the plan in one message together with your next tool call and start building; do not wait for approval.
-If the user steers mid-run, revise the plan in the run log and continue. If the user cancels, remove the
+If the user steers mid-run, revise `plan.md`, note why in the run log and continue. If the user cancels, remove the
 worktree and branch you created (nothing is committed on them).
 
 ## Rules
@@ -171,4 +173,4 @@ worktree and branch you created (nothing is committed on them).
 ## Done when
 
 The worktree exists with dependencies installed, the baseline, the flow map and the premortem are recorded, the plan
-with its must-not-change list, risks, assumptions and steps passes the plan gate and is in the run log.
+with its must-not-change list, risks, assumptions and steps passes the plan gate and is in `plan.md`.

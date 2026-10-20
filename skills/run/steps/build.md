@@ -24,7 +24,11 @@ every playbook:
    criteria, otherwise undo it and try a different idea. Never stack two unverified changes.
 4. **Narrow tests only.** The full suite and the production build run in `steps/verify.md` (Fast checks), and
    only those results count; do not run them here as well.
-5. **A round** ends with a row in the run log: what changed, why, the check results.
+5. **A round** ends with a row in the run log: what changed, why, the check results (a build profile puts it in
+   its reply instead).
+6. **Read little.** The plan names the files and lines: read those ranges, search before opening a whole file,
+   and never read again a file whose text you already have. Test output goes to a file beside
+   the run log (`logs/build-<test>.txt`, never in the worktree); read its summary and the failures.
 
 Side discoveries that block the acceptance (a broken helper, a wrong fixture): fix them inside the scope and note
 them. Anything outside the scope goes in the report.
