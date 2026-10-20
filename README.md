@@ -330,6 +330,10 @@ workaround, every finding and what became of it. Beside it are the plan (`plan.m
 
 - A chat turn has a cap on tool calls. Long work (installs, checks, profiles) runs in the background with a
   completion notification, and the notification starts the next turn at the first unfinished step.
+- A turn the cap ends with nothing running posts a short pause message: where the run is, what it finished, the
+  exact next action, the decision on anything open, and that your next message resumes it. Hermes sets the cap
+  with `agent.max_turns`; `agent.budget_warning_ratio` (such as `0.8`) warns the run before it, so it saves its
+  place and starts the next long work first.
 - A restart of the Hermes backend ends the turn; **continue** picks the run up again. Profiles and checks it
   started keep running, and continue uses their results instead of starting them again.
 - A notification that arrives after the report gets one line and nothing more. A note about a kanban card the

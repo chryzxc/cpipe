@@ -55,7 +55,10 @@ The full suite and the production build take most of a run's time. Run each only
   A check whose tree id has not changed since it ran is not run again; committing a verified tree keeps its
   results.
 - **New failures, once each.** A failure that is not in the baseline: run its file again, alone, once. A test
-  that passes alone is flaky or load-sensitive: record both runs; it is not a regression. One that also fails
+  that passes alone is flaky or load-sensitive: record both runs; it is not a regression, whether or not its cause
+is known, so it never holds a commit, a pull request or a merge. Do not build tools to chase its cause. A failure
+seen while two suites or builds ran side by side in one worktree says nothing about the code: the run alone
+decides. One that also fails
   alone is yours to fix, unless the baseline has no result for it (it did not run, did not finish, or left that
   file out); then check it on the base once: add a temporary worktree of the plan's base commit
   (`git worktree add --detach "$(mktemp -d)/base" <base commit>`),

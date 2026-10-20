@@ -48,7 +48,8 @@ every row of the Steps table below would be ✅ or —. For any other row, go ba
 in `cpipe:run` allow: fix in-scope findings and QA failures, review the last fix, retry a check another way,
 wait for CI, merge when asked. A row stays open only when the run truly cannot close it: something only the user
 may do, a check that needs what this machine does not have, or a limit reached. A question about how the code
-should behave, a needed policy, or a role's hold or blocked verdict never keeps a row open. Decide it from the
+should behave, a needed policy, a role's hold or blocked verdict, or a flaky result whose cause is unknown
+(`steps/verify.md`, New failures) never keeps a row open. Decide it from the
 user's instructions (`cpipe:run`, The user's instructions), fix and verify. Then check each instruction in
 `now.md`: every one is met, or has its reason from that list. Test it is the last thing left for the user, and
 only when needed.
@@ -133,8 +134,8 @@ known limit (the Result says which), ⏳ waiting on something outside the run (C
 
 **Findings**: what the run found that the task did not say, and what became of it: review and QA findings, a
 root cause deeper than the symptom, a risk from the premortem that proved real, a baseline failure, a missing
-test. Found by is the step or role. Outcome is fixed (how), noted, dismissed (why) or open. Omit when nothing
-was found.
+test. Found by is the step or role. Outcome is fixed (how), noted, dismissed (why) or open with what you
+recommend and why; never only "unresolved". Omit when nothing was found.
 
 **Approach**: the ideas the change is built on and every assumption made for an open question, so a reviewer
 sees the reasoning without reading the diff. One row per idea: **Idea** is the approach, pattern or library

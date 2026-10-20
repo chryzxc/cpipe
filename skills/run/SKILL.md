@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.19.0
+version: 3.19.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -77,18 +77,28 @@ replies, not calls: put independent tool calls (reads, briefs, checks to start) 
 (installs, checks, profiles) runs in the background with a completion notification: when a turn ends early, the
 next notification starts a new turn and the run picks up there. A turn that ends with nothing running has no
 notification to resume it, so start the next long piece of work before a stretch of short steps. Do not start a
-timer or look for a tool to make one. When the cap ends the turn, the final reply is one line:
-`⏸ cpipe: turn limit at <n>/11 <step>; resumes when <what is running> finishes or on your next message.`
-That line, or any summary asked for at the limit, is not the report. A notification after the report gets one
-line: `cpipe: already reported (<status line>), nothing left to do.` The report is the message written from
-`steps/report.md` once every instruction is met or has its reason.
+timer or look for a tool to make one. When the cap ends the turn (a message asks for a final summary without
+tools), the final reply is this pause message and nothing else:
 
-**A notification resumes the run.** A completion notification (a check, a profile) or a message
-saying the iteration limit was reached is never a cue for a status reply. While the run log has unfinished
+```
+⏸ Paused by the turn limit at <n>/11 <step>, not finished: <goal>
+Done: <what this turn finished, in one line>
+Next: <the exact next action>, then <what is left until every instruction is met>
+Decided: <each open question or unexplained result: the decision the next turn acts on, and why>
+Resumes: when <what is running> finishes | on your next message (nothing is running)
+```
+
+Leave out `Decided` when nothing is open. An open item is never only "unresolved" or "cause unknown": it carries
+the decision, made the way `steps/report.md` (Finish before reporting) makes it. The pause message is not the
+report. A notification after the report gets one line: `cpipe: already reported (<status line>), nothing left to
+do.` The report is the message written from `steps/report.md` once every instruction is met or has its reason.
+
+**A notification resumes the run.** A completion notification (a check, a profile), or a new turn that starts
+with a note that the last one hit its limit, is never a cue for a status reply. While the run log has unfinished
 steps or `now.md` an unmet instruction, say `↻ Resuming at <n>/11 <step>: <what woke the run>` and continue
-there with a tool call in the same reply. When a notice says the iteration limit is near, write the next
-step in `now.md` first, so the next turn picks it up, and start that step's long work in the background if it
-has any.
+there with a tool call in the same reply. When a notice says how much of the turn's iteration budget is used,
+write the next step in `now.md` first, so the next turn picks it up, and start that step's long work in the
+background if it has any.
 
 The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run, debug or review
 anything, and never end with "fix the cause and say continue". If you can do it, do it.
