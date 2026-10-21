@@ -21,7 +21,8 @@ worker's or subagent's "it passes" is a claim until you run the command and read
 Compare failures with the baseline by name, never by count: save this run's failing ids the same way as
 `baseline-<check>.txt` (`steps/plan.md`, Baseline) and run `comm -13 baseline-<check>.txt now-<check>.txt`.
 Every id it prints is new and yours to fix, even when the total went down; no output means the check is
-**baseline**. Three fix attempts with different ideas per failure, then record it as open and move on
+**baseline**. Find each new failure's cause first, the way `playbooks/bug.md` step 2 does, then up to three fix
+attempts with different ideas per failure, then record it as open and move on
 (`cpipe:run`, limits).
 
 Formatters and linters fix only the lines the change touches. A red formatting or lint baseline stays the

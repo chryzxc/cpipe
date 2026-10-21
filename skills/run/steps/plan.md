@@ -67,15 +67,24 @@ lines around each place it cites to confirm. Otherwise do it yourself:
      with file and line. A rule that lives on one side only (a permission the client enforces by hiding an
      action, validation only in a form, a limit one job applies) is today's policy: record its exact
      conditions, special cases included, and make each caller that does not pass through that side a row too.
+   - **Why it is there:** for each check, condition or odd-looking line the change removes, tightens or moves,
+     the reason it exists (`git blame -L <lines> <file>`, then that commit's message and pull request), and who
+     relies on it. Recent fixes and reverts in these files (`git log --oneline -20 -- <files>`) are risks:
+     regressions return where a bug was fixed before.
    Record the map in the run log with paths and line numbers. A path you cannot trace is a risk in the plan.
 4. **Premortem.** Imagine the change shipped and something broke that the task never mentioned. List the most
    likely ways, looking through each lens that applies:
-   - **Contracts:** API, schema, types, config, file formats, URLs; old clients, old data and old config still
-     work.
-   - **Data and state:** existing records, migrations, caches, sessions, concurrent or repeated runs, partial
-     writes.
+   - **Contracts:** API, schema, types, config, file formats, URLs, and anything a caller can observe: status
+     codes, error text it matches, a field missing or null, order, defaults. Old clients, old data and old config
+     still work; during a rollout the old client meets the new server and the reverse; after a rollback the old
+     code still reads what the new code wrote. A contract changes by adding (the new beside the old, callers
+     moved, the old removed later) unless the request asks to break it.
+   - **Data and state:** existing records as stored, not as the types say (ids, dates and time zones, numbers,
+     nulls, older values and shapes), migrations, caches and sessions holding old results, concurrent or
+     repeated runs, partial writes.
    - **Who and where:** each role, tenant, locale, time zone, platform, device, feature-flag state, environment.
-   - **Failure paths:** errors, timeouts, retries, empty and huge input, a dependency down.
+   - **Failure paths:** errors, timeouts, retries, empty and huge input, a dependency down, and a new error a
+     caller handles wrongly (a denial that signs the user out, a retry that loops, a crash instead of a message).
    - **User-facing:** loading, empty and error states, navigation, accessibility, wording.
    - **Cost:** queries in loops, large inputs, work on every request or render.
    - **The project's lessons** and anything its instructions warn about.
@@ -141,7 +150,12 @@ draft against the code and the baseline yourself. Write the plan in the chat and
   fail. Before adding one, look for an existing test that already fails on that break; then it covers the item
   and nothing is added. Extend an existing test before writing a new file. A test that fails on no realistic
   break of this change is not planned (rendering a constant, a getter, the framework, a mock returning what it
-  was told). Fewer, sharper tests over many.
+  was told). Fewer, sharper tests over many. Cases come from the behavior table: one per class of input or actor
+  that gets a different result, plus the values at each boundary. A table with many rows (a permission matrix)
+  becomes one table-driven test written first with today's results, passing on the base; the build then edits
+  only the changed rows to their After results, so the test's diff is the behavior change. A test of code that
+  crosses a boundary (a database query, an HTTP call, auth middleware) goes through the real layer or the
+  project's in-memory version of it; a mock of the code under change proves nothing.
 - **Checks:** the exact commands, with the baseline result of each (or `running` while it is not back).
 - **Steps:** the build, in the playbook's order, one behavior per step, written so a builder who has not read
   the code can follow it:

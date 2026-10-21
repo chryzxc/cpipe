@@ -5,8 +5,13 @@
 1. **Reproduce first.** Hit the bug yourself: a test, a command, a small script that calls the code. A bug you
    cannot trigger is a bug you cannot prove you fixed. If it will not reproduce, write down what you tried, make
    the closest failing test you can, and say so in the report.
-2. **Find the root cause.** Form two or three hypotheses and eliminate them with evidence (logs, call sites, the
-   data). Before editing a function, search every caller: one guard in the shared path beats one per caller.
+2. **Find the root cause.** Look, do not guess: trace the real values along the flow (a log line, a debugger, a
+   small script) for a working case and the failing one; the first place they differ is where the cause is. If
+   it worked before, find the commit that broke it with `git bisect run <reproducing test>` between a known good
+   commit and the base. Form two or three hypotheses and eliminate them with evidence (logs, call sites, the
+   data); ask why until the answer is in the code, not the symptom. Before editing a function, search every
+   caller: one guard in the shared path beats one per caller. Search for the same mistake elsewhere (copied
+   code, the same pattern) and fix or list each one.
 3. **Write the failing test** that captures the bug, on the surface where it showed up. Run it and see it fail
    for the right reason (an assertion, not an import error). Record the RED output in the run log.
 4. **Fix it** with the smallest change the evidence justifies. Every line traces to the root cause; "might help"

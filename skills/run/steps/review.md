@@ -36,7 +36,8 @@ Review against:
   signed out, a job or another service, another client; new and older stored data), write what it gets before
   and after. Report each difference the goal and the user's instructions do not ask for. Report each rule the
   diff adds or moves whose conditions differ from the side that held it before: a role, an ownership case, a
-  state, a flag or a data shape that was allowed there and is not now.
+  state, a flag or a data shape that was allowed there and is not now. For each line the diff removes or
+  tightens, find why it was there (`git blame` on the base) and who relied on it.
 - Proof: does each new test fail when the code it covers breaks, and assert the real behavior? Flag tests that
   catch no realistic break (duplicates, constants, getters, the framework, their own mocks, loose assertions) for
   removal, and real breaks no test catches.
@@ -48,7 +49,8 @@ Review against:
 - Missed risks: before reading the plan's risks, write your own premortem of how this diff could break in use
   (contracts, data and state, roles and environments, failure paths, user-facing states, cost, anything else).
   Then report each risk the plan did not cover, or covered without a real check.
-- Security: injection, access control, secrets, unsafe input handling.
+- Security: access control for each role and for another user's records (forged ids, fields or query
+  parameters), injection, secrets, unsafe input handling.
 - Simplicity: needless abstraction, duplicated helpers, dead code, comments that restate code.
 
 For each finding: file and line, the problem, why it matters, a concrete fix, severity (critical, major, minor),

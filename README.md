@@ -290,11 +290,16 @@ Before planning, explore traces every path through the code that will change:
   out, jobs, other clients, new and older stored data), read from the code on both sides of each boundary. A rule
   that lives on one side only, such as a permission the client enforces by hiding an action, is today's policy:
   a check added elsewhere copies its exact conditions.
+- **Why it is there:** the history of each check or line the change removes or tightens, and the recent fixes
+  and reverts in the files it touches.
 
-A **premortem** then imagines the change shipped and broken, through contracts, data and state, roles and
-environments, failure paths, user-facing states and cost. Each risk gets a check or a reason it cannot happen.
+A **premortem** then imagines the change shipped and broken, through contracts (anything a caller can observe,
+old clients during a rollout, a rollback), data as stored, roles and environments, failure paths (a new error a
+caller handles wrongly), user-facing states and cost. Each risk gets a check or a reason it cannot happen.
 The plan gives the table an After column: a row changes only where the request asks for it, and every other row
-becomes a numbered **must-not-change** item, each with the test or QA step that proves it. The reviewer rebuilds
+becomes a numbered **must-not-change** item, each with the test or QA step that proves it. A large table, such as
+a permission matrix, becomes one table-driven test written first with today's results, so its diff is the
+behavior change. The reviewer rebuilds
 the before and after from the base on its own, and searches the whole repository again for any usage the map
 missed.
 
@@ -392,7 +397,7 @@ S1  src/invoices/update.ts  updateInvoice()
 
 | Kind | When | Proof |
 |---|---|---|
-| bug | Something that worked, or should work, is broken | A test that fails before the fix and passes after it |
+| bug | Something that worked, or should work, is broken | A test that fails before the fix and passes after it; the cause found by tracing a working and a failing case to where they differ, or by bisecting to the commit that broke it |
 | feature | New or changed behavior | New tests red then green, existing checks still green, behavior exercised on the real surface |
 | refactor | Structure changes, behavior must not | The same checks green before and after |
 | chore | Docs, config, dependency bumps, renames | Checks green, change read back |

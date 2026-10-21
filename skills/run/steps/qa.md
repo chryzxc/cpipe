@@ -16,7 +16,8 @@ tree.
 
 1. **Use it on the real surface.** Start the app, CLI or service from the worktree the way the project does (its
    scripts, its dev-server setup), and start it again if it stops, and use the change as a user would: the page in a browser if you have one, the
-   endpoint with a real request, the command with real arguments.
+   endpoint with a real request, the command with real arguments. First confirm it runs this tree's code: started
+   from this worktree after the last change, with no stale build, bundle or cache in the way.
 2. **Walk the acceptance criteria** and the design note's states one by one. Record what you did and what you
    saw for each.
 3. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,

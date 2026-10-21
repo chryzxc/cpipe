@@ -15,7 +15,9 @@ every playbook:
    in explore (`steps/plan.md`, Reproduce) is already one of them: run it once to see it is still RED.
    A test of behavior that already exists (pinning a must-not-change item) passes from the start, so prove it
    instead: break the line it guards for a moment, see the test fail, and restore it. A test that still passes
-   with its code broken catches nothing: fix it or delete it.
+   with its code broken catches nothing: fix it or delete it. A table-driven test of the behavior table takes two
+   moves: today's results first (it passes; prove it as above), then only the changed rows set to their After
+   results, which fail until the change is made.
 2. **Climb the ladder** before writing code: does it need to exist, does the codebase already have it, does the
    standard library or an installed dependency do it. Then write the minimum that works. Keep every file you
    add or grow within the file size budget (`steps/verify.md`, File size): new logic for a large file goes in a
