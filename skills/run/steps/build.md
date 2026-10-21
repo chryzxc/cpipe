@@ -23,8 +23,9 @@ every playbook:
    standard library or an installed dependency do it. Then write the minimum that works. Keep every file you
    add or grow within the file size budget (`steps/verify.md`, File size): new logic for a large file goes in a
    new file beside it.
-3. **One change at a time.** Make a change, run the narrow test, keep it if it moves toward the acceptance
-   criteria, otherwise undo it and try a different idea. Never stack two unverified changes.
+3. **One change at a time.** Make a change (all its edits together in one reply, in one file or several), run the
+   narrow test, keep it if it moves toward the acceptance criteria, otherwise undo it and try a different idea.
+   Never stack two unverified changes.
 4. **Narrow tests only.** The full suite and a slow production bundle run in `steps/verify.md` (Fast checks),
    and only those results count; do not run them here as well.
 5. **It builds before it leaves.** Before the round ends, run the fastest command that compiles the change: the
@@ -42,9 +43,10 @@ every playbook:
    Then the build and the narrow tests once more if anything changed.
 7. **A round** ends with a row in the run log: what changed, why, the check results (a build profile puts it in
    its reply instead).
-8. **Read little.** The plan names the files and lines: read those ranges, search before opening a whole file,
-   and never read again a file whose text you already have. Test output goes to a file beside
-   the run log (`logs/build-<test>.txt`, never in the worktree); read its summary and the failures.
+8. **Read little.** The plan names the files and lines: read those ranges, search before opening a whole file, and
+   never read again a file whose text you already have or that you just patched. Independent reads and searches go
+   together in one reply. Test output goes to a file beside the run log (`logs/build-<test>.txt`, never in the
+   worktree); read its summary and the failures.
 
 **A fix round** (a failing check, a review finding, a QA failure, a conflict) gets the same rules. Check each
 item against the code first. A real one is fixed, with a failing test first when it is about behavior: a QA

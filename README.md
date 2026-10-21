@@ -239,9 +239,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Lean briefs.** A role's brief holds facts (goal, acceptance, diff, check states), not reasoning, and points
   to `plan.md` by its path instead of copying it or the run log. A fix round lists the findings themselves, not
   the reviewers' reports. A profile replies in at most 20 lines and puts the rest in a file.
-- **Lean reading.** Every reply resends all the context, so a profile reads the line ranges it needs, never a
-  file twice, batches independent reads in one reply, sends test output to a file and reads the summary, and
-  loads only the cpipe step files its brief names.
+- **Lean reading.** Every reply resends all the context, so a profile reads the line ranges it needs, never a file
+  twice, batches independent reads, edits and commands in one reply (all of a change's edits at once), sends test
+  output to a file and reads the summary, and loads only the cpipe step files its brief names.
 
 ### Cost engineering
 
