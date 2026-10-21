@@ -24,7 +24,7 @@ Unattended from here to a report in this chat: plan → tests first → build �
 {roles}
 {budget}
 Open questions are decided for you and listed in the report. No push or pull request unless you asked.
-One ▶ line per step. If it goes quiet, send /cpipe continue."""
+One ▶ line per step. If it goes quiet or Hermes restarts, send /cpipe continue."""
 
 RESUMED = """↻ cpipe: continuing the run in progress
 It reads the run log and picks up at the first unfinished step; finished steps are not redone.{note}"""

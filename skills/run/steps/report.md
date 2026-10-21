@@ -35,6 +35,11 @@ body above, its verification marked in progress. Then QA and the review go on as
 new commit pushed to the same branch. Here, the last commit is pushed and the body updated to the final state. A
 push or draft that fails early is noted and tried again here; it never holds the flow.
 
+Asked later in the run, it opens at once when nothing runs in the worktree, otherwise as soon as what runs there
+ends (a build round once its verify passes), before the next thing starts. Never pause, stop or signal a running
+profile for it, and never park it on a command that was blocked: say when in the reply,
+`⏳ draft pull request after this round's verify, by <clock time> at the latest`, and open it then.
+
 ## Merge (only when asked)
 
 When the user asked for a merge, with or without a condition ("merge it if there are no regressions"), merge
@@ -53,10 +58,11 @@ with no review. Several deliveries merge one after another, each
 updated on what the previous merge left. That is the whole proof: no extra suites on other trees, harnesses or
 environment patches, and a failure that passes alone is flaky, never a regression (`steps/verify.md`).
 
-Mark the draft ready (`gh pr ready`), merge with the method the repository's recent merges used
-(`gh pr merge --squash`, `--merge` or `--rebase`), then confirm on the remote that it is merged. A condition that
-fails is work, not a stop: fix it within the limits, then merge. Only a regression still open after the limits
-keeps a delivery unmerged, and the status line names it with what was tried.
+Mark the draft ready (`gh pr ready`). That can start the CI checks again, so wait for them on the head commit as
+after a push (Pull request), and merge only when they pass or are baseline, with the method the repository's recent
+merges used (`gh pr merge --squash`, `--merge` or `--rebase`). Then confirm on the remote that it is merged. A
+condition that fails is work, not a stop: fix it within the limits, then merge. Only a regression still open after
+the limits keeps a delivery unmerged, and the status line names it with what was tried.
 
 ## Finish before reporting
 

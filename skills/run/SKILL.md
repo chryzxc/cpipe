@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.27.0
+version: 3.27.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -175,7 +175,8 @@ read it: wait for all of them, then fix everything in one round (new failures, f
 and re-run only the QA items that failed together with the delta review.
 
 When the user asks for a draft pull request on the first commit, early or first, it opens right after the first
-verify passes its gate, and later rounds push to it (`steps/report.md`, Early draft); step 11 finishes it.
+verify passes its gate, and later rounds push to it (`steps/report.md`, Early draft); step 11 finishes it. Asked
+later, it opens once nothing runs in the worktree, never by pausing a profile.
 
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
 skipped with a one-line reason in the run log, never silently, and gets no profile. Steps 7 and 11 are always
