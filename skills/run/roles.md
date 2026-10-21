@@ -9,7 +9,7 @@ Optional. Without a roles file, you run every step yourself in this chat.
 ```yaml
 budget: <tier>          # optional: unlimited, large, medium or small
 roles:
-  plan: <profile>       # explores, decides and plans, on its own model (steps 2, 4 and 5)
+  plan: <profile>       # explores, decides and plans on another model than build's (steps 2, 4 and 5)
   build: <profile>      # builds, fixes every finding, cleans (steps 6 and 10); plans too without a plan profile
   design: <profile>     # the design note for a new or changed screen (step 3)
   qa: <profile>         # uses the change like a user would, where it can (step 8)
@@ -22,6 +22,10 @@ Every key is optional; a role that is missing or empty is done by you in this ch
 write the roles in the run log, and tell the user in one line who does each step:
 
 `Roles: plan → <profile> (explores too), build → <profile>, design → this chat (no profile set), …`
+
+A plan profile on the build profile's model (`model` in each profile's `config.yaml`) counts as none: it would
+only add a second reader and a handover. The builder plans, and the roles line says
+`plan → <build profile> (same model as <plan profile>)`.
 
 Without a roles file: `Roles: no cpipe.yaml, every step runs in this chat`. This is a notice, not a question:
 keep going.
@@ -139,12 +143,13 @@ pages to learn the command line.
    `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds> [--reasoning <effort>]`
    `--reasoning` only when a budget is set (Budget, above), on every run and resume. Budgets in seconds: a
    delivery's first build brief 3600, a build follow-up 1500; plan 1800; design and explore 600; review, security
-   and qa 900. Use your terminal's background mode with a completion notification when it has one; otherwise a
-   timeout above the budget. Write its process id and output file in the run log and `now.md`, and once it ends,
-   the session id it prints last (`session_id: …`): the profile keeps running when this chat restarts, a continue
-   reads its result instead of starting it again, and every follow-up resumes that session. Then wait the way
-   `cpipe:run` says (Waiting ends the turn). The budget is a hard limit: run the profile under the time limit
-   (`steps/setup.md`, Time limit) at its budget plus 5 minutes,
+   and qa 900. These are fixed: never raise one for a slow suite or a large change; a profile at its budget
+   replies with what it finished. Use your terminal's background mode with a completion notification when it
+   has one; otherwise a timeout above the budget. Write its process id and output file in the run log and
+   `now.md`, and once it ends, the session id it prints last (`session_id: …`): the profile keeps running when
+   this chat restarts, a continue reads its result instead of starting it again, and every follow-up resumes that
+   session. Then wait the way `cpipe:run` says (Waiting ends the turn). The budget is a hard limit: run the
+   profile under the time limit (`steps/setup.md`, Time limit) at its budget plus 5 minutes,
    `perl <run dir>/limit.pl <seconds> hermes -p <profile> chat …`, so a profile that hangs still ends and its
    notification still comes. One the limit ended (`exit 124`) timed out: treat the role as failed.
 
