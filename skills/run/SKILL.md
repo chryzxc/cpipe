@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.29.0
+version: 3.30.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -343,9 +343,8 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
   errors, conflicts and the cleanup.
 - The project's own commands for checks: no scripts, harnesses, receipts or manifests of your own around them,
   and no extra full suites on other trees (`steps/verify.md`).
-- Narrow tests while building. The full suite and the build run only in verify, one at a time: in the first
-  verify and the last one, on the final tree; the verifies between them run the related tests
-  (`steps/verify.md`, Fast checks).
+- Narrow tests while building. The full suite and the build run once, one at a time, in the first verify; every
+  later verify, the last one too, runs the related tests (`steps/verify.md`, Fast checks).
 - A profile's result is its output or its reply file (`roles.md`); never search its session history for it.
 - A step that does not apply, or mechanical work (format, commit, pull request body, a rebase without
   conflicts), gets no profile (`roles.md`).

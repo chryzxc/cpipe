@@ -248,10 +248,10 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 
 ### Cost engineering
 
-- **Fast checks.** While building, only the narrow tests run. The full suite and the build run in the first
-  verify and the last one, one after the other and never together, with the runner's own parallel workers; fix
-  rounds in between run the tests related to the changed files. Serial or single-worker flags are used only when
-  the project's CI uses them. Long checks run in the background with a completion notification.
+- **Fast checks.** While building, only the narrow tests run. The full suite and the build run once, in the
+  first verify, one after the other and never together, with the runner's own parallel workers; every later
+  verify, the last one too, runs the tests related to the changed files. Serial or single-worker flags are used
+  only when the project's CI uses them. Long checks run in the background with a completion notification.
 - **Same tree, same result.** Each check result carries a tree id built from the content of the files, so a
   commit does not change it; a check is not run again while the id is unchanged, and QA reuses verify's result.
 - **New failures, once each.** A failure not in the baseline is rerun alone once; a test that passes alone is

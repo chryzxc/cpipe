@@ -63,8 +63,9 @@ the script to a file and run the file, or call the program directly with its arg
 ## 10. Clean
 
 The cleanup is part of every round (step 6, Clean before it leaves), done while the code is still in context,
-so it costs no extra round. Step 10 is the last verify (`steps/verify.md`) on the final tree, with the full suite
-and the build; when the tree id is the one the first verify passed on, its results stand and nothing runs again.
+so it costs no extra round. Step 10 is the last verify (`steps/verify.md`) on the final tree: the related tests and
+the light checks (When); when the tree id is the one the first verify passed on, its results stand and nothing
+runs again.
 If it turns red, the builder fixes or undoes the cause (a follow-up), and the last verify runs again. That verify
 is the proof: no review or QA round follows it.
 

@@ -35,18 +35,17 @@ The full suite and the production build take most of a run's time. Run each only
 
 - **Narrow first.** The plan's narrow tests first; the full suite and the build only once they pass. In the first
   verify, start the review then too, before them (`cpipe:run`, Flow): it only reads the code.
-- **When.** The full suite and the build run in the first verify and in the last one, on the final tree that
-  gets committed (`steps/build.md`, step 10); with no fix round between them, the first verify's results stand
-  for the last one (Same tree, same result). A verify between them (a fix round) runs the narrow tests plus the
-  tests related to the files changed since the last full run, through the runner's related or changed mode (such
-  as `vitest related <files>` or `jest --findRelatedTests <files>`); a runner without one runs the test files
-  beside the changed files.
+- **When.** The full suite and the build run once, in the first verify. Every later verify (a fix round, and
+  the last one on the final tree that gets committed, `steps/build.md` step 10) runs the narrow tests, the light
+  checks and the tests related to the files changed since the full run, through the runner's related or changed
+  mode (such as `vitest related <files>` or `jest --findRelatedTests <files>`); a runner without one runs the
+  test files beside the changed files. With no fix round, the first verify's results stand for the last one.
 - **After the baseline.** The baseline runs in its own worktree (`steps/setup.md`, step 8). The first verify's
   full suite and build start only once `logs/baseline.done` exists, so two heavy jobs never run together; until
   then run the narrow tests and the light checks, then end the turn on the baseline's notification. A full suite
   the baseline did not finish (`exit 124`, or its log stops before the runner's summary) hangs or outruns its
   limit there and would here too: no verify runs it whole. Each one runs the narrow tests and the tests related
-  to every file the change touches (as between full runs, below), and the report lists the full suite as not
+  to every file the change touches (as in later verifies, above), and the report lists the full suite as not
   finished on the base.
 - **No duplicates.** A subset the full suite already runs (a regression script, a focused file) is not run beside
   it.
@@ -171,5 +170,5 @@ fixtures and test data, migrations, and data files. Split every other listed fil
 ## Done when
 
 Every check this verify runs (Fast checks) has a state on the current tree; in the last verify, that is every
-check from the plan. Every new failure is fixed or recorded as open after three attempts, and the completion gate
-passes.
+check from the plan, with the full suite and the build from the first verify. Every new failure is fixed or
+recorded as open after three attempts, and the completion gate passes.
