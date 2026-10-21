@@ -1,8 +1,8 @@
 # cpipe: the build step
 
-Steps 6 and 10 of `cpipe:run`. With a build profile, the builder does step 6 in its first brief right after the
-plan, and every fix after it as a follow-up of the same session (`roles.md` in `cpipe:run`); you verify what it
-reports with `steps/verify.md`. Otherwise do them yourself.
+Steps 6 and 10 of `cpipe:run`. With a build profile, the builder does step 6 in its first brief, from its own plan
+or a plan profile's `plan.md`, and every fix after it as a follow-up of the same session (`roles.md` in
+`cpipe:run`); you verify what it reports with `steps/verify.md`. Otherwise do them yourself.
 
 ## 6. Build
 

@@ -9,19 +9,19 @@ Optional. Without a roles file, you run every step yourself in this chat.
 ```yaml
 budget: <tier>          # optional: unlimited, large, medium or small
 roles:
-  build: <profile>      # explores, plans, builds, fixes every finding, cleans (steps 2, 4, 5, 6 and 10)
+  plan: <profile>       # explores, decides and plans, on its own model (steps 2, 4 and 5)
+  build: <profile>      # builds, fixes every finding, cleans (steps 6 and 10); plans too without a plan profile
   design: <profile>     # the design note for a new or changed screen (step 3)
   qa: <profile>         # uses the change like a user would, where it can (step 8)
   review: <profile>     # the reviewer (step 9)
   security: <profile>   # second reviewer when the change touches security-sensitive code (step 9)
-  explore: <profile>    # maps the code (step 2), only when no build profile is set
-  plan: <profile>       # drafts the plan (step 5), only when no build profile is set
+  explore: <profile>    # maps the code (step 2), only when no plan or build profile is set
 ```
 
 Every key is optional; a role that is missing or empty is done by you in this chat. Read the file once in step 1,
 write the roles in the run log, and tell the user in one line who does each step:
 
-`Roles: build → <profile> (explores and plans too), design → this chat (no profile set), review → <profile>, …`
+`Roles: plan → <profile> (explores too), build → <profile>, design → this chat (no profile set), …`
 
 Without a roles file: `Roles: no cpipe.yaml, every step runs in this chat`. This is a notice, not a question:
 keep going.
@@ -35,13 +35,15 @@ pass no effort: each profile reasons at its own setting. On the board, cards tak
 ## How the work is split
 
 A run costs its replies times the context each one resends. This chat resends its whole history with every reply;
-a new profile session starts empty and reads the code again. So the code is read once, by one builder, and this
-chat stays small:
+a resumed profile session resends a history the provider has mostly cached, while a new one starts empty and
+reads the code again. So the code is explored once, each role keeps one session, and this chat stays small:
 
-- **One warm builder.** With a build profile, one session explores, decides, plans and builds (steps 2, 4, 5
-  and 6), cleans its own diff, and makes every fix verify, QA and review ask for. An explore or plan profile is
-  not used then: a second reader repeats the reading. Steps 2, 4 and 5 are then the builder's, apart from set
-  up's checks and baseline (`steps/plan.md`).
+- **One reader, one builder.** One session explores, decides and plans (steps 2, 4 and 5): a plan profile, in
+  its own session and on its own model, or without one the builder, in the session it builds in. After a plan
+  profile, the builder builds from `plan.md` (step 6) and reads only the files and lines it names. Either way
+  the builder cleans its own diff and makes every fix verify, QA and review ask for. An explore profile is used
+  only when neither is set: a second reader repeats the reading. Steps 2, 4 and 5 are the planner's or the
+  builder's, apart from set up's checks and baseline (`steps/plan.md`).
 - **A thin chat.** With a build profile, you run the flow and never read the project's code: no source or test
   files, no searches in them, no reproducing a failure, no checking a finding against the code, no scripts of
   your own. You read the replies, `git status --short`, `git diff --stat` and `--name-only`, the output of the
@@ -96,25 +98,31 @@ pages to learn the command line.
    are ready, and never tell it to wait for a result or that something will be provided.
 
    Then the role's part:
+   - **plan:** the request, the worktree, the base commit, the check commands from set up, the path
+     `<run dir>/plan.md` to write the plan to, and the design note's path when there is one. Ask it to follow
+     `steps/plan.md` steps 2, 4 and 5 (explore, decide, plan; set up's checks and baseline are given, so it skips
+     them), the plan gate included. It changes no project code: the only file it writes in the worktree is a
+     bug's reproducing test. Ask for this reply: the kind; the plan's step count and its assumptions; the RED
+     output when it reproduced a bug; anything left.
    - **build**, a delivery's first brief: the request, the worktree, the base commit, the check commands from set
-     up, the path `<run dir>/plan.md` to write the plan to, and the design note's path when there is one. Ask it
-     to follow `steps/plan.md` steps 2, 4 and 5 (explore, decide, plan; set up's checks and baseline are given,
-     so it skips them), then `steps/build.md` step 6, which ends with the build or typecheck, the narrow tests
-     and the cleanup of its own diff. Ask for this reply: the kind; the plan's step count and its assumptions;
-     each plan step done or corrected (what and why); the build or typecheck and the narrow tests it ran, with
-     their results; anything left. You write those rows in the run log. It does not read or write the run log,
-     and does not run the full suite or the production build: verify does.
+     up, the path `<run dir>/plan.md`, and the design note's path when there is one. After a plan profile, ask it
+     to read the plan and the playbook it names (`playbooks/<kind>.md`), then follow `steps/build.md` step 6,
+     reading only the files and lines the plan names. Without one, ask it to follow `steps/plan.md` steps 2, 4
+     and 5 first (explore, decide, plan; set up's checks and baseline are given, so it skips them) and write the
+     plan to that path. Step 6 ends with the build or typecheck, the narrow tests and the cleanup of its own
+     diff. Ask for this reply: the kind and the plan's step count and assumptions, when it planned; each plan
+     step done or corrected (what and why); the build or typecheck and the narrow tests it ran, with their
+     results; anything left. You write those rows in the run log. It does not read or write the run log, and
+     does not run the full suite or the production build: verify does.
    - **design:** the request, the worktree and the steps of `steps/design.md`. Ask for the design note in
      `<run dir>/design.md`.
    - **qa:** the acceptance criteria (`plan.md`), the design note, how to start the app, and verify's broader
      suite result for this tree (start QA once verify has it). Ask it to follow `steps/qa.md` without editing the
      repository and reply with each item's result and evidence.
    - **review / security:** the reviewer brief from `steps/review.md`.
-   - **explore** (no build profile): the request and the worktree. Ask for a read-only map: the instructions that
-     apply, the files to change, the flow map as `steps/plan.md` step 2 describes, helpers to reuse. Paths and
-     line numbers, no edits.
-   - **plan** (no build profile): the request, the explore map, the baseline and the design note. Ask for a plan
-     in the format of `steps/plan.md` step 5.
+   - **explore** (no plan or build profile): the request and the worktree. Ask for a read-only map: the
+     instructions that apply, the files to change, the flow map as `steps/plan.md` step 2 describes, helpers to
+     reuse. Paths and line numbers, no edits.
 
    QA, review and security never edit the repository. Before starting them, save `git status --porcelain` and
    `git diff` beside the run log, and compare after: a file they changed or added means the role failed. Undo only
@@ -123,13 +131,13 @@ pages to learn the command line.
 2. **Run** it in the worktree, directly, or as a card when the run is on the board (below):
    `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds> [--reasoning <effort>]`
    `--reasoning` only when a budget is set (Budget, above), on every run and resume. Budgets in seconds: a
-   delivery's first build brief 3600, a build follow-up 1500; design, explore and plan 600; review, security
+   delivery's first build brief 3600, a build follow-up 1500; plan 1800; design and explore 600; review, security
    and qa 900. Use your terminal's background mode with a completion notification when it has one; otherwise a
    timeout above the budget. Write its process id and output file in the run log and `now.md`, and once it ends,
    the session id it prints last (`session_id: …`): the profile keeps running when this chat restarts, a continue
    reads its result instead of starting it again, and every follow-up resumes that session. Then wait the way
-   `cpipe:run` says (Waiting ends the turn). The budget is a hard limit: if the profile has not replied two
-   minutes after it, stop the process yourself and treat the role as failed. Never wait longer.
+   `cpipe:run` says (Waiting ends the turn). The budget is a hard limit: if the profile has not replied two minutes
+   after it, stop the process yourself and treat the role as failed. Never wait longer.
 
    The result is what the process printed, or `<role>-reply.md` when it points there. Never search the profile's
    session history or transcripts for it: when neither holds a result, the role failed.
@@ -195,5 +203,6 @@ The checks decide, not a reply, and with a build profile you check without readi
 The profile does not exist, the command errors, it returns nothing usable, or it broke a rule in the brief: try
 once more with a shorter brief, then do the step yourself in this chat. If it timed out, do not retry: do the step
 yourself right away. Tell the user in one line
-(`build: <profile> failed (<reason>), running it in this chat`) and note it in the run log and the report. A role
-failing is never a reason to stop the run.
+(`build: <profile> failed (<reason>), running it in this chat`) and note it in the run log and the report. A failed
+plan profile's steps go to the build profile when there is one: its first brief explores and plans as it does
+without a plan profile, and this chat still never reads the code. A role failing is never a reason to stop the run.

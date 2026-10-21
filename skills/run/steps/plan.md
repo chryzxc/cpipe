@@ -1,9 +1,10 @@
 # cpipe: the plan step
 
 Steps 1, 2, 4 and 5 of `cpipe:run` (step 3 is `steps/design.md`). Spend the reading here, once, so the build does
-not repeat it. Set up is always the delivery run's own. With a build profile, the builder does steps 2, 4 and 5
-in its first brief and builds right after (`roles.md` in `cpipe:run`); what they say to record in the run log,
-it writes in `plan.md`.
+not repeat it. Set up is always the delivery run's own. A plan profile does steps 2, 4 and 5 in its brief and the
+builder builds from its plan; with a build profile and no plan profile, the builder does them in its first brief
+and builds right after (`roles.md` in `cpipe:run`). What they say to record in the run log, the profile writes in
+`plan.md`.
 
 ## 1. Set up
 
@@ -45,7 +46,7 @@ it writes in `plan.md`.
 8. **Baseline.** Run those checks once in the worktree, before any change, the way `steps/verify.md` (Fast
    checks) runs them: one background command with a completion notification that runs the full suite (not only
    the narrow tests) and the build one after the other, with no serial or single-worker flags, output to
-   `logs/baseline-<check>.txt`, and that writes `logs/baseline.done` last. Explore (or the builder) starts at
+   `logs/baseline-<check>.txt`, and that writes `logs/baseline.done` last. Whoever explores starts at
    once and reads while it runs; nothing in the worktree changes until it is done (step 2, Wait). Verify waits for
    a baseline still running rather than starting the suite beside it; one with no new output for 10 minutes is
    hung: stop it, write `logs/baseline.done`, record it as not finished, and verify checks only its own new
@@ -61,7 +62,7 @@ If the install fails, try the next way from `steps/verify.md` and record it; a f
 
 ## 2. Explore
 
-With a build profile, the builder does this step. With an `explore` profile and no build profile, have it map
+A plan profile does this step, or without one the builder. With an `explore` profile and neither, have it map
 the code (`roles.md` in `cpipe:run`) and read the lines around each place it cites to confirm. Otherwise do it
 yourself:
 
@@ -116,7 +117,7 @@ yourself:
 6. **Wait for the baseline** before the first write to the worktree (a reproducing test, the plan's first step):
    set up runs it in this worktree, and a file changed under it spoils it. Until then only read. When it is not
    done yet, wait once: `for i in $(seq 80); do [ -f <run dir>/logs/baseline.done ] && break; sleep 15; done`
-   (run it again if your terminal cuts it off; after 20 minutes, note it and go on). Without a build profile,
+   (run it again if your terminal cuts it off; after 20 minutes, note it and go on). When you explore yourself,
    you started it, so wait on its process instead.
 7. **Kind.** bug, feature, refactor, chore, port, hotfix or review (`cpipe:run`). Load the playbook. If the branch type
    from step 1 does not match the kind, rename the branch now.
@@ -137,9 +138,9 @@ report.
 
 ## 5. Plan
 
-With a build profile, the builder writes the plan and builds from it in the same brief. With a `plan` profile
-and no build profile, have it draft the plan (`roles.md` in `cpipe:run`), then check the draft against the code
-and the baseline yourself. Write the plan to `plan.md` beside the run log (the run log names it):
+A plan profile writes the plan, and the builder (or you, without a build profile) builds from it, correcting what
+the code contradicts. With a build profile and no plan profile, the builder writes the plan and builds from it in
+the same brief. Write the plan to `plan.md` beside the run log (the run log names it):
 
 - **Goal:** one sentence, in the user's words.
 - **Kind** and playbook.

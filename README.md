@@ -70,9 +70,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
 - **QA on the real surface.** The change is used the way a user would use it: the page, the endpoint, the CLI.
 - **A graph, not a script.** Steps, gates, fork and join, bounded loops and re-entry, all written as skill text
   and run by the model.
-- **Lean on tokens.** One builder reads the code once per run while the chat stays thin, review and QA rounds
-  are capped, instructions load only when a step starts, checks are narrowed while building, and results are
-  reused while the tree is unchanged.
+- **Lean on tokens.** The code is explored once per run, each role resumes one session so its history stays
+  cached, the chat stays thin, review and QA rounds are capped, instructions load only when a step starts, checks
+  are narrowed while building, and results are reused while the tree is unchanged.
 - **Your setup comes first.** Your own skills for commits, pull requests, review or UI design override cpipe's
   defaults; your Hermes profiles can take over any role.
 - **Safe by default.** One worktree per delivery, your checkout untouched, no push, pull request, merge or
@@ -173,7 +173,7 @@ the final word are never handed to anyone else.
 
 A task with several issues becomes one delivery per issue, each with its own branch, worktree, commit and pull
 request, run one after another and reported together. The role sessions carry over from one delivery to the
-next, so the builder reads the codebase once per run. When you ask for parallel, at most two run side by side,
+next, so the codebase is explored once per run. When you ask for parallel, at most two run side by side,
 each with its own sessions, and only issues in different areas of the code. Issues ship together only when one
 cannot work without the other.
 
@@ -223,8 +223,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Load late.** Only the current step's instructions are loaded, when the run reaches the step. A file is
   loaded again only when its text has left the context (a follow-up or a compaction), so no step is worked from
   memory and nothing is loaded twice.
-- **Read once.** One builder explores, plans and builds in one session, so the code is read once per run. The
-  flow map and the plan go to `plan.md` with paths and line numbers. With a build profile the chat never reads
+- **Read once.** One session explores and plans, so the code is read once per run: a plan profile on its own model,
+  or the builder in the session it builds in. The flow map and the plan go to `plan.md` with paths and line
+  numbers, and a builder working from a planner's plan reads only those. With a build profile the chat never reads
   the project's code: it works from the replies, `git status`, the diff stats, the completion gate's searches and
   the result lines of the checks.
 - **Output to files.** Long command output goes to a file beside the run log; the chat reads the result lines
@@ -260,10 +261,11 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   not a guess.
 - **A thin chat.** The chat resends its whole history with every reply, so with a build profile it never reads
   the project's code; anything that needs the code is a follow-up for the builder.
-- **Roles where they pay.** A profile starts cold and reads the code again, so with a build profile there is no
-  separate explore or plan profile, design gets a profile only for a new or changed screen, QA only where its
-  profile can use the change, a second reviewer only for security-sensitive areas, and mechanical work
-  (formatting, a commit, a pull request body, a rebase without conflicts) stays in the chat.
+- **Roles where they pay.** A profile starts cold and reads the code again, so one profile explores (a plan
+  profile, else the builder, and an explore profile only without either), design gets a profile only for a new or
+  changed screen, QA only where its profile can use the change, a second reviewer only for security-sensitive
+  areas, and mechanical work (formatting, a commit, a pull request body, a rebase without conflicts) stays in the
+  chat.
 - **Code that builds.** The builder runs the build or typecheck, the narrow tests and its own cleanup before it
   hands a round back, so a compile error never costs a round.
 - **Replies, not calls.** Every reply resends the whole chat, so independent tool calls go out together in one
@@ -272,8 +274,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   line and the completion notification starts the next one; it never polls, sleeps or lists processes.
 - **Deltas and resumed sessions.** The delta review and every follow-up see only the diff since the last one, and a
   QA re-run covers only the items that failed. Each role has one session per run: fix rounds, corrections,
-  conflicts, the delta review and the next delivery resume it instead of starting cold. Profile briefs load only
-  their step's file and skip the project's general guides.
+  conflicts, the delta review and the next delivery resume it instead of starting cold, so most of what it resends
+  is a prefix the provider has cached. Profile briefs load only their step's file and skip the project's general
+  guides.
 - **The project's commands only.** Checks run with the project's own commands, with no wrapper scripts,
   harnesses or receipts around them. Fixes for checks or compile errors, conflicts, the cleanup and an update
   onto a moved base are proven by their tests and the last verify, not by another review round.
@@ -441,28 +444,31 @@ To hand steps to your own Hermes profiles, create `~/.hermes/cpipe.yaml` (or `$H
 
 ```yaml
 roles:
-  build: <profile>      # explores, plans, builds, makes every fix and cleans its own diff
+  plan: <profile>       # explores, decides and plans, on its own model
+  build: <profile>      # builds, makes every fix and cleans its own diff; plans too without a plan profile
   design: <profile>     # designs a new or changed screen
   qa: <profile>         # uses the change like a user would, where it can
   review: <profile>     # reviews the change
   security: <profile>   # second reviewer for security-sensitive changes
-  explore: <profile>    # maps the code, only when no build profile is set
-  plan: <profile>       # drafts the plan, only when no build profile is set
+  explore: <profile>    # maps the code, only when no plan or build profile is set
 ```
 
 Every role is optional; a role with no profile runs in the chat. The chat stays in charge: it runs the flow and
 the checks, writes each brief to a file, and treats each profile's answer as a claim to verify. With a build
-profile, one builder session explores, plans, builds and makes every fix for the whole run, and the chat never
-reads the project's code. Each role keeps one session per run.
+profile, one builder session builds and makes every fix for the whole run, and the chat never reads the
+project's code. The builder explores and plans too, unless a plan profile does: then planning runs on the plan
+profile's model, in its own session, and the builder works from its plan. Each role keeps one session per run.
 
 | Role | Time budget |
 |---|---|
-| design, explore, plan | 10 minutes |
+| plan | 30 minutes |
+| design, explore | 10 minutes |
 | qa, review, security | 15 minutes |
 | build | 60 minutes for a delivery's first brief, 25 for a follow-up |
 
 A profile that fails is retried once with a shorter brief, then the chat does the step itself; a profile that
-runs past its budget is stopped and the chat does the step at once. Either way you are told in one line.
+runs past its budget is stopped and the chat does the step at once. A failed plan profile's steps go to the build
+profile instead, when one is set. Either way you are told in one line.
 
 ### Budget
 
@@ -663,7 +669,8 @@ instructions and CI workflow.
 
 **Do I need profiles?**
 No. Without `cpipe.yaml` the chat runs every step and uses a subagent for the independent review. A profile lets
-a different model or setup take a role. A build profile saves the most: it keeps the code out of the chat.
+a different model or setup take a role. A build profile saves the most: it keeps the code out of the chat. A
+plan profile lets planning run on a different model from building.
 
 **Can two runs share a machine?**
 Yes, in different chats. Each runs one heavy check at a time, but two runs at once still share the CPU and

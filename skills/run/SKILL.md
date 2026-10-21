@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.24.0
+version: 3.25.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -139,10 +139,10 @@ written from `steps/report.md` loaded right before it.
 | Step | Do | File | Role |
 |---|---|---|---|
 | 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log, remove merged worktrees, find the checks, start the baseline. | `steps/plan.md` | |
-| 2. Explore | Read the instructions, map every entrance, exit and guard of the code, reproduce a bug. | `steps/plan.md` | build, else explore |
-| 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `steps/design.md` | design (a new or changed screen), else build |
-| 4. Decide | Settle open questions and record them as assumptions. Never ask. | `steps/plan.md` | build |
-| 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `steps/plan.md` | build, else plan |
+| 2. Explore | Read the instructions, map every entrance, exit and guard of the code, reproduce a bug. | `steps/plan.md` | plan, else build, else explore |
+| 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `steps/design.md` | design (a new or changed screen), else whoever plans |
+| 4. Decide | Settle open questions and record them as assumptions. Never ask. | `steps/plan.md` | plan, else build |
+| 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `steps/plan.md` | plan, else build |
 | 6. Build | Tests first, then the change, following the playbook; it builds before it is handed back. | `steps/build.md` | build |
 | 7. Verify | Run the plan's checks with honest states; completion gate. | `steps/verify.md` | |
 | 8. QA | Use the change on the real surface, try to break it, check the broader suite. Runs alongside 9. | `steps/qa.md` | qa |
@@ -160,7 +160,7 @@ verify passes its gate, and later rounds push to it (`steps/report.md`, Early dr
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
 skipped with a one-line reason in the run log, never silently, and gets no profile. Steps 7 and 11 are always
 yours: the checks and the final word are never handed to anyone else. Steps one session does in one brief (a
-builder's explore to build) share one ▶ line.
+planner's explore to plan, a builder's explore to build) share one ▶ line.
 
 ## The user's own skills come first
 
@@ -202,9 +202,9 @@ Without the file, or for a role it does not name, do the step yourself. Either w
 start who does each step. When the task message starts with `--kanban`, the named profiles get their steps as
 cards on the user's kanban board (`roles.md`, On the board); without a roles file there is nothing to hand over,
 so say that in the roles line and continue. A `--budget <tier>` at the start of the task, or `budget:` in the
-file, sets how hard the profiles reason (`roles.md`, Budget). With a build profile, one warm builder session does
-the reading, planning, building and fixing, and this chat never reads the project's code (`roles.md`, How the
-work is split).
+file, sets how hard the profiles reason (`roles.md`, Budget). A plan profile explores and plans on its own model
+and the builder builds from its plan; without one, the builder does the reading and planning too. With a build
+profile this chat never reads the project's code (`roles.md`, How the work is split).
 
 ## Run log
 
@@ -309,9 +309,9 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 **Cost**
 - Every reply resends the chat: fewer replies and a smaller chat are the saving. Wait by ending the turn, never
   by polling (Waiting ends the turn).
-- With a build profile, this chat never reads the project's code: the builder reads it once per run (`roles.md`,
-  How the work is split). Without one, read once, in explore; after it, read code only as the diff and the lines
-  a finding or a failure names.
+- With a build profile, this chat never reads the project's code: the planner or the builder explores it once per
+  run (`roles.md`, How the work is split). Without one, read once, in explore; after it, read code only as the diff
+  and the lines a finding or a failure names.
 - One session per role per run: every follow-up and the next delivery resume it (`roles.md`, Follow-ups).
 - Code is handed back only when it builds: the builder runs the build or typecheck and the narrow tests before
   it replies (`steps/build.md`).

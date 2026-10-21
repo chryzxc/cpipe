@@ -2,10 +2,10 @@
 
 Step 3 of `cpipe:run`. Decides what the user will see or call before anything is built, so the plan has concrete
 acceptance criteria and QA has something to check. A `design` profile in the roles file is used only for a new or
-changed screen (a page, a view, a component, a form), before the builder starts (`roles.md` in `cpipe:run`): it
-finds the screens itself, and the builder corrects what the code contradicts. Every other shape (a message, an
-email, a CLI's output or flags, an API's request or response) is designed by whoever plans: the builder with a
-build profile, otherwise you.
+changed screen (a page, a view, a component, a form), before the planner or builder starts (`roles.md` in
+`cpipe:run`): it finds the screens itself, and whoever plans corrects what the code contradicts. Every other shape
+(a message, an email, a CLI's output or flags, an API's request or response) is designed by whoever plans: the
+planner, else the builder, otherwise you.
 
 ## When it applies
 
