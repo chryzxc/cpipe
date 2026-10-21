@@ -109,6 +109,8 @@ In any Hermes chat, inside or near the repository:
 |---|---|
 | `/cpipe <task>` | Delivers the task unattended and reports back in the same chat |
 | `/cpipe --kanban <task>` | The same, with the role steps handed to your profiles as cards on your kanban board |
+| `/cpipe --budget <tier> <task>` | The same, with your profiles reasoning at that budget for this run (Budget, below) |
+| `/cpipe budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
 | `/cpipe continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
 | `/cpipe:run <task>` | The skill itself, for chats where the command is not available |
 
@@ -124,6 +126,7 @@ starts, and a single report at the end:
 ▶ cpipe: fix the discount that disappears when an invoice is edited
 Unattended from here to a report in this chat: plan → tests first → build → verify → QA + review → commit.
 Roles: every step runs in this chat (no roles set in cpipe.yaml).
+Budget: not set, each profile reasons at its own setting (/cpipe budget <tier> saves one).
 
 ▶ 1/11 Set up: worktree fix/invoice-discount, dependencies with npm ci (this chat)
 ▶ 2/11 Explore: callers of updateInvoice(), the invoice API and its consumers, baseline (this chat)
@@ -443,6 +446,22 @@ the checks, writes each brief to a file, and treats each profile's answer as a c
 A profile that fails is retried once with a shorter brief, then the chat does the step itself; a profile that
 runs past its budget is stopped and the chat does the step at once. Either way you are told in one line.
 
+### Budget
+
+The budget sets how hard your profiles reason, as the reasoning effort of every profile run cpipe starts:
+
+| Budget | Reasoning effort |
+|---|---|
+| `unlimited` | max |
+| `large` | xhigh |
+| `medium` | high |
+| `small` | medium |
+
+Save a default with `/cpipe budget <tier>` (it writes `budget: <tier>` in `cpipe.yaml`), clear it with
+`/cpipe budget off`, or set it for one run with `/cpipe --budget <tier> <task>`. Without a budget, each profile
+reasons at its own setting. The budget only applies to the profile runs cpipe starts: your chat keeps its own
+reasoning setting, no Hermes setting changes, and kanban cards take no reasoning setting.
+
 ### On the kanban board
 
 With `/cpipe --kanban <task>`, each handed-over step becomes a card assigned to its profile and run by the board's
@@ -522,7 +541,7 @@ App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
 
 | Path | Holds | Committed |
 |---|---|---|
-| `~/.hermes/cpipe.yaml` | The roles, written by you | — |
+| `~/.hermes/cpipe.yaml` | The roles and the default budget, written by you or `/cpipe budget` | — |
 | `<repo>-worktrees/<branch>/` | The delivery worktree, beside the repository (or where the project's instructions say) | The delivery commit only |
 | `<git-dir>/cpipe/run.md` | The run log: rounds, workarounds, findings | Never |
 | `<git-dir>/cpipe/plan.md` | The plan, the builder's instructions | Never |

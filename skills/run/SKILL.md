@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.22.0
+version: 3.23.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -197,7 +197,8 @@ table. Hand those steps to the named profiles as `skill_view(name='cpipe:run', f
 Without the file, or for a role it does not name, do the step yourself. Either way, tell the user once at the
 start who does each step. When the task message starts with `--kanban`, the named profiles get their steps as
 cards on the user's kanban board (`roles.md`, On the board); without a roles file there is nothing to hand over,
-so say that in the roles line and continue.
+so say that in the roles line and continue. A `--budget <tier>` at the start of the task, or `budget:` in the
+file, sets how hard the profiles reason (`roles.md`, Budget).
 
 ## Run log
 

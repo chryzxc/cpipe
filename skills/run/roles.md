@@ -7,6 +7,7 @@ Optional. Without a roles file, you run every step yourself in this chat.
 `${HERMES_HOME:-~/.hermes}/cpipe.yaml`, written by the user:
 
 ```yaml
+budget: <tier>          # optional: unlimited, large, medium or small
 roles:
   explore: <profile>    # maps the code (step 2)
   design: <profile>     # the user-facing design note (step 3)
@@ -24,6 +25,12 @@ write the roles in the run log, and tell the user in one line who does each step
 
 Without a roles file: `Roles: no cpipe.yaml, every step runs in this chat`. This is a notice, not a question:
 keep going.
+
+**Budget.** How hard the profiles reason, as the reasoning effort of every profile run: `unlimited` is `max`,
+`large` is `xhigh`, `medium` is `high`, `small` is `medium`. A `--budget <tier>` at the start of the task wins
+over `budget:` in the file. Write it in the run log and end the roles line with `· budget <tier>`. With neither,
+pass no effort: each profile reasons at its own setting. On the board, cards take no reasoning setting: say
+`budget not applied on the board`. The budget never changes this chat's own reasoning or any Hermes setting.
 
 ## Handing a step to a role
 
@@ -93,8 +100,8 @@ check. It takes you a minute and a profile a cold start. Note each step you kept
    their edits, back to the saved state, and follow "When a role fails".
 
 2. **Run** it in the worktree, directly, or as a card when the run is on the board (below):
-   `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds>`
-   Budgets in seconds: explore, design and plan 600; review, security and qa 900; build 2400. Use your terminal's
+   `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds> [--reasoning <effort>]`
+   `--reasoning` only when a budget is set (Budget, above), on every run and resume. Budgets in seconds: explore, design and plan 600; review, security and qa 900; build 2400. Use your terminal's
    background mode with a completion notification when it has one; otherwise a timeout above the budget. Write
    its process id and output file in the run log and `now.md`, and once it ends, the session id it prints last
    (`session_id: …`): the profile keeps running when this chat restarts, a continue reads its result instead of
@@ -107,7 +114,7 @@ check. It takes you a minute and a profile a cold start. Note each step you kept
 
 3. **Follow-ups.** Each role has one session per delivery. Every later piece of work for that role (a fix
    round, a correction, the cleanup, a QA re-run, a delta review, a fix review) resumes it:
-   `hermes -p <profile> chat -Q --resume <session id> --query-file <brief> --in <worktree> --run-budget <seconds>`
+   `hermes -p <profile> chat -Q --resume <session id> --query-file <brief> --in <worktree> --run-budget <seconds> [--reasoning <effort>]`
    A new session reads the plan and the code again from nothing, tens of replies; start one only when the resume
    fails, and note why in the run log. The follow-up brief holds only what is new; the session already has the
    header and the plan. A fix round's brief lists each finding itself: the file and line, what is wrong, the
