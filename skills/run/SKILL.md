@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.23.0
+version: 3.24.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -112,11 +112,14 @@ anything, and never end with "fix the cause and say continue". If you can do it,
 A task that names several issues (issue numbers or links, or a list of unrelated bugs, features or changes) is
 several deliveries, never one. Each issue gets its own branch, worktree, run log and commit, and its own pull
 request when pull requests are asked for, each branched from the base, not from another delivery. Run them one
-after another, each through the whole flow: the next one starts after the current one's report, so one chat never
-carries several deliveries' context. When the user asks for them in parallel, run them in parallel: start each
-delivery's long work (its profiles and checks) side by side, at most three deliveries at a time; the next starts
-when one reports. A notification moves only the delivery it names: read that delivery's `now.md`, not the
-others'. Each run log names the others (`Delivery 2 of 3; others: <branches>`).
+after another, each through the whole flow to its report before the next starts. The roles' sessions carry over
+from one delivery to the next (`roles.md`, Follow-ups), so a builder reads the codebase once per run, not once
+per issue. When the user asks for them in parallel, run at most two side by side, each lane with its own
+sessions, and only issues in different areas of the code: one that turns out to change the same files as a
+running one waits for it. A notification moves only the delivery it names: read that delivery's `now.md`, not
+the others'. Each run log names the others (`Delivery 2 of 3; others: <branches>`). No combined or integration
+branch unless the user asks for one: each delivery is verified, reviewed and merged on its own, and one whose
+base moved is updated onto it (`steps/report.md`, Merge).
 Deliver two issues together only when one cannot work without the other (the same root cause or the same lines)
 or the user asked for a single pull request, and record why in Approach.
 
@@ -135,16 +138,16 @@ written from `steps/report.md` loaded right before it.
 
 | Step | Do | File | Role |
 |---|---|---|---|
-| 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log, remove merged worktrees. | `steps/plan.md` | |
-| 2. Explore | Read the instructions, map every entrance, exit and guard of the code, find the checks, run a baseline. | `steps/plan.md` | explore |
-| 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `steps/design.md` | design |
-| 4. Decide | Settle open questions yourself and record them as assumptions. Never ask. | `steps/plan.md` | |
-| 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `steps/plan.md` | plan |
-| 6. Build | Tests first, then the change, following the playbook. One verified change at a time. | `steps/build.md` | build |
+| 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log, remove merged worktrees, find the checks, start the baseline. | `steps/plan.md` | |
+| 2. Explore | Read the instructions, map every entrance, exit and guard of the code, reproduce a bug. | `steps/plan.md` | build, else explore |
+| 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `steps/design.md` | design (a new or changed screen), else build |
+| 4. Decide | Settle open questions and record them as assumptions. Never ask. | `steps/plan.md` | build |
+| 5. Plan | Goal, kind, scope, acceptance, checks with baseline, assumptions. No approval wait. | `steps/plan.md` | build, else plan |
+| 6. Build | Tests first, then the change, following the playbook; it builds before it is handed back. | `steps/build.md` | build |
 | 7. Verify | Run the plan's checks with honest states; completion gate. | `steps/verify.md` | |
 | 8. QA | Use the change on the real surface, try to break it, check the broader suite. Runs alongside 9. | `steps/qa.md` | qa |
 | 9. Review | Independent review in a fresh context; act on findings; at most two rounds. Runs alongside 8. | `steps/review.md` | review, security |
-| 10. Clean | One cleanup pass over the diff, then verify again. | `steps/build.md` | build |
+| 10. Clean | The builder's cleanup of its own diff, then the last verify on the final tree. | `steps/build.md` | build |
 | 11. Report | Commit, a draft pull request and a merge only if asked, the report. | `steps/report.md` | |
 
 QA and review run at the same time: both only read the same verified change. Start them together (the review
@@ -156,7 +159,8 @@ verify passes its gate, and later rounds push to it (`steps/report.md`, Early dr
 
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
 skipped with a one-line reason in the run log, never silently, and gets no profile. Steps 7 and 11 are always
-yours: the checks and the final word are never handed to anyone else.
+yours: the checks and the final word are never handed to anyone else. Steps one session does in one brief (a
+builder's explore to build) share one ▶ line.
 
 ## The user's own skills come first
 
@@ -198,7 +202,9 @@ Without the file, or for a role it does not name, do the step yourself. Either w
 start who does each step. When the task message starts with `--kanban`, the named profiles get their steps as
 cards on the user's kanban board (`roles.md`, On the board); without a roles file there is nothing to hand over,
 so say that in the roles line and continue. A `--budget <tier>` at the start of the task, or `budget:` in the
-file, sets how hard the profiles reason (`roles.md`, Budget).
+file, sets how hard the profiles reason (`roles.md`, Budget). With a build profile, one warm builder session does
+the reading, planning, building and fixing, and this chat never reads the project's code (`roles.md`, How the
+work is split).
 
 ## Run log
 
@@ -207,7 +213,7 @@ it survives a restart. Append, never rewrite:
 
 - the task and every instruction from the user, word for word, the roles, the base and the worktree, and every
   card id when on the board;
-- the flow map, the baseline, the design note and the path of the plan;
+- the baseline, and the paths of the plan (it holds the flow map) and the design note;
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
 - QA results, review findings and what you did with each;
@@ -270,10 +276,11 @@ several deliveries, finish the unfinished one first, then start the next one its
 These keep a run from grinding. Reaching one is not a stop: record the open items and move to the next step.
 
 - A failing check: three fix attempts, each with a different idea, then record it as open.
-- QA failures: two fix rounds, then record what is still failing.
-- Review: two rounds. The second checks only the changes since the first. A fix made after the last round still
-  gets a short review of that fix alone; no change reaches the report unreviewed. The cleanup and an update onto
-  a moved base get no review or QA round: the last verify is their proof (`steps/review.md`).
+- QA: one fix round for its failures and one re-run of the items that failed, then record what still fails.
+- Review: one full review, then one delta review of the fixes it and QA led to; no third round. A fix after the
+  delta review is proven by its test and the checks, and the report lists it as fixed after the last review.
+  Fixes for a failing check or a compile error, a resolved conflict, the cleanup and an update onto a moved base
+  start no review or QA round: the last verify is their proof (`steps/review.md`).
 - No progress for three rounds in a row: step back, change the approach once, then go to the report.
 
 ## Guard rails
@@ -300,18 +307,24 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 - A profile's or subagent's "done" is a claim until you have checked it yourself.
 
 **Cost**
-- Every reply resends the chat: fewer replies is the saving. Wait by ending the turn, never by polling (Waiting
-  ends the turn).
-- Read once, in explore. After it, read code only as the diff and the lines a finding or a failure names.
-- One session per role per delivery: every follow-up resumes it (`roles.md`, Follow-ups).
+- Every reply resends the chat: fewer replies and a smaller chat are the saving. Wait by ending the turn, never
+  by polling (Waiting ends the turn).
+- With a build profile, this chat never reads the project's code: the builder reads it once per run (`roles.md`,
+  How the work is split). Without one, read once, in explore; after it, read code only as the diff and the lines
+  a finding or a failure names.
+- One session per role per run: every follow-up and the next delivery resume it (`roles.md`, Follow-ups).
+- Code is handed back only when it builds: the builder runs the build or typecheck and the narrow tests before
+  it replies (`steps/build.md`).
+- Review and QA rounds are capped (Limits); the checks, not another round, prove fixes for checks, compile
+  errors, conflicts and the cleanup.
 - The project's own commands for checks: no scripts, harnesses, receipts or manifests of your own around them,
   and no extra full suites on other trees (`steps/verify.md`).
 - Narrow tests while building. The full suite and the build run only in verify, one at a time: in the first
-  verify and the last one, after the cleanup; the verifies between them run the related tests
+  verify and the last one, on the final tree; the verifies between them run the related tests
   (`steps/verify.md`, Fast checks).
 - A profile's result is its output or its reply file (`roles.md`); never search its session history for it.
-- A step that does not apply, or mechanical work (format, commit, pull request body), gets no profile; a profile
-  starts cold and reads the code again (`roles.md`).
+- A step that does not apply, or mechanical work (format, commit, pull request body, a rebase without
+  conflicts), gets no profile (`roles.md`).
 - Long output to a file, the tail in the chat (Run log). Each user skill loaded once per run.
 - After the context is compacted, reload only this skill and the current step's file, never the list of skills the
   compaction notice gives (After a compaction).

@@ -1,7 +1,9 @@
 # cpipe: the plan step
 
 Steps 1, 2, 4 and 5 of `cpipe:run` (step 3 is `steps/design.md`). Spend the reading here, once, so the build does
-not repeat it.
+not repeat it. Set up is always the delivery run's own. With a build profile, the builder does steps 2, 4 and 5
+in its first brief and builds right after (`roles.md` in `cpipe:run`); what they say to record in the run log,
+it writes in `plan.md`.
 
 ## 1. Set up
 
@@ -36,13 +38,32 @@ not repeat it.
 
    Then `git worktree remove <path>` (never `--force`) and `git worktree prune`; the branch stays. Name what was
    removed in the run log. Anything unclear stays; a failed removal is noted and never ends the run.
+7. **Checks.** Find the project's own commands in its files, not its code: `package.json` scripts, `Makefile`,
+   `pyproject.toml`, the CI workflow files (they show how CI installs and tests), the development section of its
+   instructions. Note the build or typecheck, the lint, the full suite, and how the test runner takes one file or
+   a filter. Read only those files.
+8. **Baseline.** Run those checks once in the worktree, before any change, the way `steps/verify.md` (Fast
+   checks) runs them: one background command with a completion notification that runs the full suite (not only
+   the narrow tests) and the build one after the other, with no serial or single-worker flags, output to
+   `logs/baseline-<check>.txt`, and that writes `logs/baseline.done` last. Explore (or the builder) starts at
+   once and reads while it runs; nothing in the worktree changes until it is done (step 2, Wait). Verify waits for
+   a baseline still running rather than starting the suite beside it; one with no new output for 10 minutes is
+   hung: stop it, write `logs/baseline.done`, record it as not finished, and verify checks only its own new
+   failures on the base (`steps/verify.md`, New failures). Record each result: pass, fail (which tests) or not
+   run here (why). Save the ids of the failing tests and lint errors, one per line and sorted, to
+   `baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. A check already red is
+   the baseline, not your job, unless the task is to fix it. If a check will not run, work through
+   `steps/verify.md` now, so the plan names commands that work. Deliveries of one run from the same base commit
+   share one baseline: copy the first one's `baseline-<check>.txt` files and `logs/baseline.done` instead of
+   running it again.
 
 If the install fails, try the next way from `steps/verify.md` and record it; a failed install never ends the run.
 
 ## 2. Explore
 
-If the roles file names an `explore` profile, have it map the code (`roles.md` in `cpipe:run`) and read the
-lines around each place it cites to confirm. Otherwise do it yourself:
+With a build profile, the builder does this step. With an `explore` profile and no build profile, have it map
+the code (`roles.md` in `cpipe:run`) and read the lines around each place it cites to confirm. Otherwise do it
+yourself:
 
 1. **Instructions.** Read the project's agent and contributor instructions (`AGENTS.md`, `CLAUDE.md`,
    `CONTRIBUTING.md`, the README's development section). They win over these skills where they conflict, except
@@ -71,7 +92,7 @@ lines around each place it cites to confirm. Otherwise do it yourself:
      the reason it exists (`git blame -L <lines> <file>`, then that commit's message and pull request), and who
      relies on it. Recent fixes and reverts in these files (`git log --oneline -20 -- <files>`) are risks:
      regressions return where a bug was fixed before.
-   Record the map in the run log with paths and line numbers. A path you cannot trace is a risk in the plan.
+   Record the map with paths and line numbers. A path you cannot trace is a risk in the plan.
 4. **Premortem.** Imagine the change shipped and something broke that the task never mentioned. List the most
    likely ways, looking through each lens that applies:
    - **Contracts:** API, schema, types, config, file formats, URLs, and anything a caller can observe: status
@@ -90,23 +111,17 @@ lines around each place it cites to confirm. Otherwise do it yourself:
    - **The project's lessons** and anything its instructions warn about.
    Each risk gets a check (a test, a command or a QA step), or a one-line reason it cannot happen here, citing
    the code. These are prompts, not a form: find the risks this change has, including ones no lens names.
-5. **Checks.** Find the project's own commands: `package.json` scripts, `Makefile`, `pyproject.toml`, the CI
-   workflow files (they show how CI installs and tests). Pick the narrowest command that covers the change, plus
-   the build or typecheck if the project has one, plus the broader suite for QA.
-6. **Baseline.** Run those checks once in the worktree, before any change, the way `steps/verify.md` (Fast
-   checks) runs them: in the background, the full suite (not only the narrow tests) and the build one after the
-   other, with no serial or single-worker flags. Keep exploring and planning while they run. Verify waits for a
-   baseline still running rather than starting the suite beside it; one with no new output for 10 minutes is
-   hung: stop it and record it as not finished, and verify checks only its own new failures on the base
-   (`steps/verify.md`, New failures). Record each
-   result: pass, fail (which tests) or not run here (why). Save the ids of the failing tests and lint errors, one per line and
-   sorted, to `baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. A check
-   already red is the baseline, not your job, unless the task is to fix it. If a check will not run, work
-   through `steps/verify.md` now, so the plan names commands that work.
+5. **Checks.** From set up's commands, pick the narrowest one that covers the change (one file, a filter), plus
+   the build or typecheck, plus the broader suite for QA.
+6. **Wait for the baseline** before the first write to the worktree (a reproducing test, the plan's first step):
+   set up runs it in this worktree, and a file changed under it spoils it. Until then only read. When it is not
+   done yet, wait once: `for i in $(seq 80); do [ -f <run dir>/logs/baseline.done ] && break; sleep 15; done`
+   (run it again if your terminal cuts it off; after 20 minutes, note it and go on). Without a build profile,
+   you started it, so wait on its process instead.
 7. **Kind.** bug, feature, refactor, chore, port, hotfix or review (`cpipe:run`). Load the playbook. If the branch type
    from step 1 does not match the kind, rename the branch now.
 8. **Reproduce** (bug and hotfix). Before planning, prove the cause: write the failing test in the worktree (the
-   playbook's steps 1 to 3), run it, and record the RED output and the cause it proves in the run log. The plan
+   playbook's steps 1 to 3), run it, and record the RED output and the cause it proves. The plan
    is built on that cause, not a guess; a cause you cannot prove yet is a risk in the plan with the check that
    will prove it.
 
@@ -122,15 +137,15 @@ report.
 
 ## 5. Plan
 
-If the roles file names a `plan` profile, have it draft the plan (`roles.md` in `cpipe:run`), then check the
-draft against the code and the baseline yourself. Write the plan in the chat and to `plan.md` beside the run log
-(the run log names it):
+With a build profile, the builder writes the plan and builds from it in the same brief. With a `plan` profile
+and no build profile, have it draft the plan (`roles.md` in `cpipe:run`), then check the draft against the code
+and the baseline yourself. Write the plan to `plan.md` beside the run log (the run log names it):
 
 - **Goal:** one sentence, in the user's words.
 - **Kind** and playbook.
 - **Base** (branch and commit) and **worktree**.
 - **Scope:** the exact files to change, new ones marked `(new)`. **Non-goals:** what you will not touch.
-- **Flow map:** the entrances, exits and guards from explore, in short.
+- **Flow map:** the entrances, exits and guards from explore, with paths and line numbers.
 - **Behavior change:** the behavior-today table with an After column. A row changes only when the goal or one of
   the user's instructions asks for it; name which. Every other row keeps today's result. A rule the change puts
   where it did not live before (a server check for what only the client enforced) copies today's conditions from
@@ -187,7 +202,8 @@ Before building, check the plan item by item and fix every no. It is your own ch
   import and call into a new file: the new code goes in a new file the step names (`steps/verify.md`, File size).
 - Each step depends only on steps before it.
 
-Post the plan in one message together with your next tool call and start building; do not wait for approval.
+Post the plan's goal and step count in one line together with your next tool call and start building; do not
+wait for approval.
 If the user steers mid-run, revise `plan.md`, note why in the run log and continue. If the user cancels, remove the
 worktree and branch you created (nothing is committed on them).
 

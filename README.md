@@ -22,7 +22,8 @@ skills.
 cpipe turns one chat message into a finished delivery. You send the task and wait. cpipe sets up an isolated
 worktree, maps the code the change touches, settles open questions itself, writes a plan a builder can follow,
 writes the tests first, builds one verified change at a time, runs the project's own checks, uses the change
-like a user would, has it reviewed in a fresh context, cleans up, commits, and reports back with the proof.
+like a user would, has it reviewed by a context that did not write it, cleans up, commits, and reports back
+with the proof.
 
 It is a set of skills, not a program. The model in your chat runs every step with its normal tools, so it adapts
 to any repository, language and toolchain: when a command is blocked, a test runner is broken or a dependency is
@@ -64,13 +65,14 @@ missing, it works around the obstacle, records what it could not verify, and kee
 - **Today's behavior is the spec.** Before planning, the run records what each role, caller and kind of stored
   data gets today, on both sides of each boundary. Only what you asked for may change; everything else must
   keep working.
-- **Independent review.** A reviewer that did not write the code reads the diff in a fresh context and hunts for
-  regressions the plan missed; a second reviewer joins for security-sensitive changes.
+- **Independent review.** A reviewer that did not write the code reads the diff and hunts for regressions the
+  plan missed; a second reviewer joins for security-sensitive changes.
 - **QA on the real surface.** The change is used the way a user would use it: the page, the endpoint, the CLI.
 - **A graph, not a script.** Steps, gates, fork and join, bounded loops and re-entry, all written as skill text
   and run by the model.
-- **Lean on tokens.** Instructions load only when a step starts, code is read once, checks are narrowed while
-  building, and results are reused while the tree is unchanged.
+- **Lean on tokens.** One builder reads the code once per run while the chat stays thin, review and QA rounds
+  are capped, instructions load only when a step starts, checks are narrowed while building, and results are
+  reused while the tree is unchanged.
 - **Your setup comes first.** Your own skills for commits, pull requests, review or UI design override cpipe's
   defaults; your Hermes profiles can take over any role.
 - **Safe by default.** One worktree per delivery, your checkout untouched, no push, pull request, merge or
@@ -128,8 +130,8 @@ Unattended from here to a report in this chat: plan → tests first → build �
 Roles: every step runs in this chat (no roles set in cpipe.yaml).
 Budget: not set, each profile reasons at its own setting (/cpipe budget <tier> saves one).
 
-▶ 1/11 Set up: worktree fix/invoice-discount, dependencies with npm ci (this chat)
-▶ 2/11 Explore: callers of updateInvoice(), the invoice API and its consumers, baseline (this chat)
+▶ 1/11 Set up: worktree fix/invoice-discount, dependencies with npm ci, baseline started (this chat)
+▶ 2/11 Explore: callers of updateInvoice(), the invoice API and its consumers (this chat)
 — 3/11 Design: skipped, nothing user-facing changes
 ▶ 4/11 Decide: 1 open question settled as an assumption (this chat)
 ▶ 5/11 Plan: 4 build steps, plan gate passed (this chat)
@@ -137,7 +139,7 @@ Budget: not set, each profile reasons at its own setting (/cpipe budget <tier> s
 ▶ 7/11 Verify: lint, typecheck, full suite, build (this chat)
 ▶ 8/11 QA: edit a discounted invoice on the running app (this chat)
 ▶ 9/11 Review: independent review of the diff (subagent)
-▶ 10/11 Clean: one pass over the diff, then the full suite and build (this chat)
+▶ 10/11 Clean: last verify on the final tree (this chat)
 ▶ 11/11 Report: commit and report (this chat)
 ```
 
@@ -147,8 +149,8 @@ The report that follows is shown in [The report](#the-report).
 
 ```mermaid
 flowchart TD
-    T(["/cpipe task"]) --> S1["1 · Set up<br/>worktree, dependencies"]
-    S1 --> S2["2 · Explore<br/>flow map, premortem, baseline"]
+    T(["/cpipe task"]) --> S1["1 · Set up<br/>worktree, dependencies, baseline"]
+    S1 --> S2["2 · Explore<br/>flow map, premortem"]
     S2 --> S3["3 · Design<br/>states, flow, copy"]
     S3 --> S4["4 · Decide<br/>open questions become assumptions"]
     S4 --> S5["5 · Plan<br/>numbered build steps"]
@@ -157,11 +159,11 @@ flowchart TD
     S7 -->|a check fails| S6
     S7 -->|completion gate| FORK{{"side by side"}}
     FORK --> S8["8 · QA<br/>the real surface"]
-    FORK --> S9["9 · Review<br/>fresh context"]
+    FORK --> S9["9 · Review<br/>independent reviewer"]
     S8 --> JOIN{{"findings join"}}
     S9 --> JOIN
-    JOIN -->|"findings to act on (≤ 2 rounds)"| S6
-    JOIN -->|nothing left to act on, or a limit reached| S10["10 · Clean<br/>one pass, then verify"]
+    JOIN -->|"findings to act on (one fix round, one delta review)"| S6
+    JOIN -->|nothing left to act on, or a limit reached| S10["10 · Clean<br/>last verify on the final tree"]
     S10 --> S11["11 · Report<br/>commit, report"]
 ```
 
@@ -170,8 +172,10 @@ passed with its reason in the run log. Verify and the report are always done by 
 the final word are never handed to anyone else.
 
 A task with several issues becomes one delivery per issue, each with its own branch, worktree, commit and pull
-request, run one after another (side by side when you ask for parallel, at most three at a time) and reported
-together. Issues ship together only when one cannot work without the other.
+request, run one after another and reported together. The role sessions carry over from one delivery to the
+next, so the builder reads the codebase once per run. When you ask for parallel, at most two run side by side,
+each with its own sessions, and only issues in different areas of the code. Issues ship together only when one
+cannot work without the other.
 
 ## Core concepts
 
@@ -182,19 +186,20 @@ reaches it. Each **edge** is a condition the chat checks on the current tree: a 
 fails, findings that come back. The graph is written in the skill, and nothing outside the model picks the next
 step.
 
-- **Gates** guard the two expensive edges. The **plan gate** checks the plan before any code is written: every
-  path and function exists, no step is vague or leaves a choice open, every acceptance, must-not-change and risk
-  item is covered, no file is pushed past its size budget. The **completion gate** checks the change before anyone
-  reviews it: real assertions, no skipped or focused tests, no placeholders or debug output, nothing outside the
-  scope, no secrets, proof for every acceptance criterion. A failed gate item is fixed on the spot, never a stop.
+- **Gates** guard the two expensive edges. The **plan gate** checks the plan before any code is written: every path
+  and function exists, no step is vague or leaves a choice open, every acceptance, must-not-change and risk item is
+  covered, no file is pushed past its size budget. The **completion gate** searches the change before anyone
+  reviews it: no skipped or focused tests, no placeholders, nothing outside the scope, no secrets, proof for every
+  acceptance criterion. A failed gate item is fixed on the spot, never a stop.
 - **Fork and join.** QA and review only read the same verified change, so they run at the same time. Their
-  findings join into one fix round, followed by a delta review alongside a QA re-run of the items that failed.
+  findings join into one fix round, followed by one delta review alongside a QA re-run of the items that failed;
+  that is the last round.
 - **Pass-through.** A node that does not apply is passed with a one-line reason, never silently.
 - **Re-entry.** The run log is the graph's state. **continue**, a completion notification or a restart re-enters
   at the first unfinished step or unmet instruction; a message after the report re-enters at the plan for the
   follow-up only.
-- **One graph per delivery.** Several issues run as several graphs, one after another unless you ask for them
-  in parallel.
+- **One graph per delivery.** Several issues run as several graphs, one after another (at most two in parallel
+  when you ask), sharing the role sessions.
 
 ### Loop engineering
 
@@ -205,8 +210,9 @@ ends the run.
 |---|---|
 | Build: change, narrow test, keep or undo | One change at a time; never two unverified changes stacked |
 | A failing check, back to build | 3 attempts, each a different idea |
-| QA failures, back to build | 2 fix rounds |
-| Review, back to build | 2 rounds, the second on the changes since the first; a fix after that gets one review of its own |
+| QA failures, back to build | 1 fix round, then one re-run of the items that failed |
+| Review, back to build | 2 rounds: one full review, one delta review of the fixes; a fix after that is proven by its test and the checks |
+| Fixes for checks, conflicts, the cleanup | No review or QA round; the last verify is their proof |
 | No progress | 3 rounds in a row: change the approach once, then report |
 | A role's profile | Its time budget, then the chat does the step; a card not picked up in 10 minutes counts as failed |
 
@@ -217,9 +223,10 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Load late.** Only the current step's instructions are loaded, when the run reaches the step. A file is
   loaded again only when its text has left the context (a follow-up or a compaction), so no step is worked from
   memory and nothing is loaded twice.
-- **Read once.** Explore reads the code once and records a flow map with paths and line numbers. The plan
-  carries what the builder needs (files, functions, the exact change), so later steps do not re-read the
-  repository; the chat reads only the lines around what explore cites.
+- **Read once.** One builder explores, plans and builds in one session, so the code is read once per run. The
+  flow map and the plan go to `plan.md` with paths and line numbers. With a build profile the chat never reads
+  the project's code: it works from the replies, `git status`, the diff stats, the completion gate's searches and
+  the result lines of the checks.
 - **Output to files.** Long command output goes to a file beside the run log; the chat reads the result lines
   or the tail.
 - **Distilled skills.** Your skills are loaded once per run, only for work done in the chat, and the rules that
@@ -246,24 +253,30 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **New failures, once each.** A failure not in the baseline is rerun alone once; a test that passes alone is
   recorded as flaky. One with no baseline result is run once on the base in a temporary worktree, and that
   decides it.
-- **Baseline once.** The full suite and the build run once on the base, in the background while exploring
-  continues, so a check that was already red is never chased.
+- **Baseline once.** The full suite and the build run once on the base, started in set up and running in the
+  background while the code is explored; the first edit waits for them. Deliveries from the same base commit
+  share one baseline, and a check that was already red is never chased.
 - **Proven cause.** A bug is reproduced with a failing test during explore, so the plan is built on the cause,
   not a guess.
-- **Roles where they pay.** A profile starts cold and reads the code again, so a step that does not apply gets
-  no profile, mechanical work (formatting, a commit, a pull request body) stays in the chat, and a small change
-  keeps explore and plan in the chat.
+- **A thin chat.** The chat resends its whole history with every reply, so with a build profile it never reads
+  the project's code; anything that needs the code is a follow-up for the builder.
+- **Roles where they pay.** A profile starts cold and reads the code again, so with a build profile there is no
+  separate explore or plan profile, design gets a profile only for a new or changed screen, QA only where its
+  profile can use the change, a second reviewer only for security-sensitive areas, and mechanical work
+  (formatting, a commit, a pull request body, a rebase without conflicts) stays in the chat.
+- **Code that builds.** The builder runs the build or typecheck, the narrow tests and its own cleanup before it
+  hands a round back, so a compile error never costs a round.
 - **Replies, not calls.** Every reply resends the whole chat, so independent tool calls go out together in one
   reply, and long work runs in the background so its notification resumes a turn the cap ended.
 - **Waiting ends the turn.** While only a profile or a check is running, the chat ends its turn with one status
   line and the completion notification starts the next one; it never polls, sleeps or lists processes.
-- **Deltas and resumed sessions.** The second review round and every follow-up see only the diff since the last
-  one, and a QA re-run covers only the items that failed. Each role has one session per delivery: fix rounds,
-  the cleanup and delta reviews resume it instead of starting cold. Profile briefs load only their step's file
-  and skip the project's general guides.
+- **Deltas and resumed sessions.** The delta review and every follow-up see only the diff since the last one, and a
+  QA re-run covers only the items that failed. Each role has one session per run: fix rounds, corrections,
+  conflicts, the delta review and the next delivery resume it instead of starting cold. Profile briefs load only
+  their step's file and skip the project's general guides.
 - **The project's commands only.** Checks run with the project's own commands, with no wrapper scripts,
-  harnesses or receipts around them. The cleanup and an update onto a moved base are proven by the last verify,
-  not by another review round.
+  harnesses or receipts around them. Fixes for checks or compile errors, conflicts, the cleanup and an update
+  onto a moved base are proven by their tests and the last verify, not by another review round.
 
 ### Evidence over claims
 
@@ -274,7 +287,7 @@ Nothing counts until a command has run on the current tree and its result has be
 - **Baseline by name.** The baseline saves the names of failing tests and lint errors, and verify compares names,
   not counts: one new failing name is a fail even when the total went down.
 - **Claims are checked.** A profile's or subagent's "done" is a claim until the chat has run and read the check
-  itself. A QA failure is reproduced before it is acted on.
+  itself. A QA failure is reproduced by a failing test before it is fixed.
 - **Tests that catch something.** Each new test names the break it catches, the line or behavior that makes it
   fail. Tests that catch no realistic break (a constant, a getter, the framework, a mock returning what it was
   told) are not written.
@@ -331,14 +344,17 @@ numbered steps or waits for a follow-up after the report.
 
 The builder never approves its own work. The reviewer reads only a short brief and the diff, in a context that
 did not write the code, and reviews for correctness, behavior before and after for each actor, proof,
-regressions across the whole repository, risks the plan missed, security and simplicity. Changes to authentication, permissions, payments, data deletion or
-migrations get two reviewers in parallel.
+regressions across the whole repository, risks the plan missed, security and simplicity. Changes to
+authentication, permissions, payments, data deletion or migrations get two reviewers in parallel. A run has one
+full review and at most one delta review; a fix after the delta review is proven by its test and the checks and
+listed as fixed after the last review.
 
-Every finding is read against the code and given a disposition, so nothing is filtered silently:
+Every finding is given a disposition and checked against the code (by the builder, when there is one), so
+nothing is filtered silently:
 
 | Disposition | Means | What happens |
 |---|---|---|
-| **act** | Real and inside the scope | Fixed in the next round, then reviewed again |
+| **act** | Real and inside the scope | Fixed in the fix round, then checked by the delta review |
 | **consider** | Real, but a judgment call or outside the scope | Listed in the report |
 | **noted** | Minor or stylistic | Listed in the report |
 | **dismissed** | Wrong: the code already handles it | The evidence is written in the run log |
@@ -381,16 +397,16 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 
 | # | Step | Does | File |
 |---|---|---|---|
-| 1 | Set up | Finds the repository and base, creates the worktree, installs dependencies, starts the run log, removes merged cpipe worktrees | `steps/plan.md` |
-| 2 | Explore | Reads the project's instructions and lessons, maps entrances, exits, guards and today's behavior, runs the premortem, finds the checks and runs the baseline, reproduces a bug | `steps/plan.md` |
+| 1 | Set up | Finds the repository and base, creates the worktree, installs dependencies, starts the run log, removes merged cpipe worktrees, finds the checks and starts the baseline | `steps/plan.md` |
+| 2 | Explore | Reads the project's instructions and lessons, maps entrances, exits, guards and today's behavior, runs the premortem, reproduces a bug | `steps/plan.md` |
 | 3 | Design | States, flow, copy, accessibility and edge cases of anything user-facing | `steps/design.md` |
 | 4 | Decide | Settles open questions as assumptions with a one-line reason each | `steps/plan.md` |
 | 5 | Plan | Goal, scope, behavior change, acceptance, must-not-change, risks, tests, checks, and numbered build steps that pass the plan gate | `steps/plan.md` |
-| 6 | Build | Tests first, then the change, one verified step at a time | `steps/build.md` |
+| 6 | Build | Tests first, then the change, one verified step at a time; it builds and is cleaned before it is handed back | `steps/build.md` |
 | 7 | Verify | The plan's checks with honest states, workarounds for checks that will not run, the completion gate | `steps/verify.md` |
 | 8 | QA | Uses the change on the real surface, walks the acceptance criteria, tries to break it | `steps/qa.md` |
-| 9 | Review | Independent review in a fresh context, findings sorted into act, consider, noted and dismissed | `steps/review.md` |
-| 10 | Clean | One cleanup pass over the diff, then the last verify with the full suite and the build | `steps/build.md` |
+| 9 | Review | Independent review by a context that did not write the code, findings sorted into act, consider, noted and dismissed | `steps/review.md` |
+| 10 | Clean | The cleanup is part of every build round; this is the last verify on the final tree | `steps/build.md` |
 | 11 | Report | Commit, a draft pull request only when asked (then waits for CI), a merge only when asked and its conditions hold, the app left running, the report | `steps/report.md` |
 
 Each plan step is written so a builder who has not read the code can follow it:
@@ -425,23 +441,25 @@ To hand steps to your own Hermes profiles, create `~/.hermes/cpipe.yaml` (or `$H
 
 ```yaml
 roles:
-  explore: <profile>    # maps the code before planning
-  design: <profile>     # designs the user-facing side
-  plan: <profile>       # drafts the plan
-  build: <profile>      # writes the tests and the code, and the cleanup
-  qa: <profile>         # uses the change like a user would
+  build: <profile>      # explores, plans, builds, makes every fix and cleans its own diff
+  design: <profile>     # designs a new or changed screen
+  qa: <profile>         # uses the change like a user would, where it can
   review: <profile>     # reviews the change
   security: <profile>   # second reviewer for security-sensitive changes
+  explore: <profile>    # maps the code, only when no build profile is set
+  plan: <profile>       # drafts the plan, only when no build profile is set
 ```
 
 Every role is optional; a role with no profile runs in the chat. The chat stays in charge: it runs the flow and
-the checks, writes each brief to a file, and treats each profile's answer as a claim to verify.
+the checks, writes each brief to a file, and treats each profile's answer as a claim to verify. With a build
+profile, one builder session explores, plans, builds and makes every fix for the whole run, and the chat never
+reads the project's code. Each role keeps one session per run.
 
 | Role | Time budget |
 |---|---|
-| explore, design, plan | 10 minutes |
+| design, explore, plan | 10 minutes |
 | qa, review, security | 15 minutes |
-| build | 40 minutes |
+| build | 60 minutes for a delivery's first brief, 25 for a follow-up |
 
 A profile that fails is retried once with a shorter brief, then the chat does the step itself; a profile that
 runs past its budget is stopped and the chat does the step at once. Either way you are told in one line.
@@ -484,7 +502,7 @@ worktree locations, commit conventions and check commands follow the project.
 
 ## The report
 
-The run reports only once the work is finished: findings fixed, the last fix reviewed, CI waited for when a pull
+The run reports only once the work is finished: findings fixed and proven, CI waited for when a pull
 request was asked for. It is short, one line per row, and complete:
 
 - **Status line:** `✅ Done`, `✅ Done, test by hand` or `⚠️ Done except …`; for a review, `✅ Approved` or
@@ -579,7 +597,7 @@ flowchart LR
     C <-->|appends, resumes| L[("Run log")]
     C -->|commands| W["Delivery worktree<br/>the project's checks"]
     C -->|briefs| R["Your profiles<br/>direct or kanban cards"]
-    C -->|diff only| V["Reviewer<br/>fresh context"]
+    C -->|diff only| V["Reviewer<br/>did not write the code"]
     C -->|report| U
 ```
 
@@ -635,8 +653,9 @@ Yes. A message mid-run is steering: its instructions join the run's contract, it
 extra work joins the plan or waits for a follow-up after the report.
 
 **Several issues in one task?**
-Each issue is its own delivery with its own branch, worktree and commit, run one after another (or in parallel
-when you ask, at most three at a time) and reported together.
+Each issue is its own delivery with its own branch, worktree and commit, run one after another (or at most two
+in parallel when you ask, for issues in different areas) and reported together. The role sessions carry over
+between deliveries, so the code is read once per run.
 
 **Which languages and frameworks does it support?**
 Any. It uses the project's own install, test, lint, typecheck and build commands, found in its scripts,
@@ -644,7 +663,7 @@ instructions and CI workflow.
 
 **Do I need profiles?**
 No. Without `cpipe.yaml` the chat runs every step and uses a subagent for the independent review. A profile lets
-a different model or setup take a role.
+a different model or setup take a role. A build profile saves the most: it keeps the code out of the chat.
 
 **Can two runs share a machine?**
 Yes, in different chats. Each runs one heavy check at a time, but two runs at once still share the CPU and

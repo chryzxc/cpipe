@@ -44,14 +44,17 @@ def _config():
 
 def _roles(kanban):
     try:
-        found = re.findall(r"(?m)^[ \t]+(\w+):[ \t]*([\w.-]+)", _config().read_text())
+        roles = dict(re.findall(r"(?m)^[ \t]+(\w+):[ \t]*([\w.-]+)", _config().read_text()))
     except OSError:
-        found = []
-    if not found:
+        roles = {}
+    if not roles:
         return ("Roles: none set in cpipe.yaml, so nothing goes to the board; every step runs in this chat." if kanban
                 else "Roles: every step runs in this chat (no roles set in cpipe.yaml).")
+    if "build" in roles:  # the builder explores and plans itself (skills/run/roles.md)
+        roles = {role: profile for role, profile in roles.items() if role not in ("explore", "plan")}
+        roles["build"] += " (explores and plans too)"
     return (("Roles, as cards on your kanban board: " if kanban else "Roles: ")
-            + " · ".join(f"{role} {profile}" for role, profile in found) + "; the rest in this chat.")
+            + " · ".join(f"{role} {profile}" for role, profile in roles.items()) + "; the rest in this chat.")
 
 
 def _saved_budget():

@@ -1,8 +1,11 @@
 # cpipe: the design step
 
 Step 3 of `cpipe:run`. Decides what the user will see or call before anything is built, so the plan has concrete
-acceptance criteria and QA has something to check. If the roles file names a `design` profile, hand this step to
-it (`roles.md` in `cpipe:run`) and check its note against the code. Otherwise do it yourself.
+acceptance criteria and QA has something to check. A `design` profile in the roles file is used only for a new or
+changed screen (a page, a view, a component, a form), before the builder starts (`roles.md` in `cpipe:run`): it
+finds the screens itself, and the builder corrects what the code contradicts. Every other shape (a message, an
+email, a CLI's output or flags, an API's request or response) is designed by whoever plans: the builder with a
+build profile, otherwise you.
 
 ## When it applies
 
@@ -26,9 +29,9 @@ chore), write `Design: not needed (<reason>)` in the run log and go to step 4.
 
 ## Output
 
-A design note in the run log: the surfaces, each state, the copy, the edge cases. Each item becomes an
-acceptance criterion in the plan. Product questions the code does not settle are decided in step 4 and recorded
-as assumptions.
+A design note: the surfaces, each state, the copy, the edge cases. A design profile writes it to
+`<run dir>/design.md`; otherwise it goes into the plan. Each item becomes an acceptance criterion in the plan.
+Product questions the code does not settle are decided in step 4 and recorded as assumptions.
 
 ## Rules
 
@@ -39,5 +42,5 @@ as assumptions.
 
 ## Done when
 
-The design note is in the run log with every state of every touched surface, or the step is marked not needed
-with its reason.
+The design note covers every state of every touched surface, or the step is marked not needed with its reason
+in the run log.

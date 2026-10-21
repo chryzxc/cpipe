@@ -12,5 +12,6 @@ and a verdict backed by them.
 3. **Verify, QA and review** the change as it is. Design, decide and plan cover only what the review needs.
 4. **Build only on findings.** With no **act** findings, build and clean are — (`nothing to fix`). With some, fix
    them when the task asks for fixes or the change came from an earlier delivery of this run's worktree (its run
-   log is there), then verify and review the fix; otherwise the verdict is changes needed, with each finding.
+   log is there), then verify and the delta review (`steps/review.md`, section 3); otherwise the verdict is
+   changes needed, with each finding.
 5. **Never** approve on the hosting service, merge, mark ready or change the pull request unless the task asks.

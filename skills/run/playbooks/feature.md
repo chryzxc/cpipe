@@ -14,5 +14,6 @@ and the behavior exercised on the real surface where it is reachable.
 5. **Verify** with `steps/verify.md`, then exercise the feature where a user meets it with `steps/qa.md`. Tests alone
    do not prove a feature.
 
-Large features: split into units that never touch the same file. Do them in order yourself, or hand independent
-units to subagents in parallel with exact file lists, and review every diff they return yourself.
+Large features: split into units that never touch the same file and build them in order, with a build profile
+in the builder's one session. Without one, independent units can go to subagents in parallel with exact file
+lists; read every diff they return.

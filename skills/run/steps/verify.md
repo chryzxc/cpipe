@@ -23,7 +23,8 @@ Compare failures with the baseline by name, never by count: save this run's fail
 Every id it prints is new and yours to fix, even when the total went down; no output means the check is
 **baseline**. Find each new failure's cause first, the way `playbooks/bug.md` step 2 does, then up to three fix
 attempts with different ideas per failure, then record it as open and move on
-(`cpipe:run`, limits).
+(`cpipe:run`, limits). With a build profile, the builder does that in a follow-up: give it each new failure's
+name and its failure lines from the log, never the log to read.
 
 Formatters and linters fix only the lines the change touches. A red formatting or lint baseline stays the
 baseline: never reformat files or the repository to clear it unless the task asks.
@@ -33,11 +34,12 @@ baseline: never reformat files or the repository to clear it unless the task ask
 The full suite and the production build take most of a run's time. Run each only where it proves something:
 
 - **Narrow first.** The plan's narrow tests first; the full suite and the build only once they pass.
-- **When.** The full suite and the build run in the first verify and in the last one, after the cleanup
-  (`steps/build.md`, step 10), on the tree that gets committed. A verify between them (a fix round) runs the
-  narrow tests plus the tests related to the files changed since the last full run, through the runner's related
-  or changed mode (such as `vitest related <files>` or `jest --findRelatedTests <files>`); a runner without one
-  runs the test files beside the changed files.
+- **When.** The full suite and the build run in the first verify and in the last one, on the final tree that
+  gets committed (`steps/build.md`, step 10); with no fix round between them, the first verify's results stand
+  for the last one (Same tree, same result). A verify between them (a fix round) runs the narrow tests plus the
+  tests related to the files changed since the last full run, through the runner's related or changed mode (such
+  as `vitest related <files>` or `jest --findRelatedTests <files>`); a runner without one runs the test files
+  beside the changed files.
 - **No duplicates.** A subset the full suite already runs (a regression script, a focused file) is not run beside
   it.
 - **The project's commands only.** Run each check with the project's own command. No wrapper scripts, gates,
@@ -96,19 +98,29 @@ The report shows it plainly; that is enough. Never fake a pass, never skip or de
 
 ## Completion gate
 
-Before QA and the review, and before the report, check the diff (`git diff <base>...HEAD`):
+Before QA and the review, and before the report. It is searches over the change, not a reading of it, so it
+needs no code in the chat. From the worktree root, with the plan's base:
 
-- Tests you added actually assert something, and none are skipped, focused (`.only`) or marked to fail.
-- No `TODO`, `FIXME`, `NotImplemented`, placeholder values or debug output left in changed lines.
-- Every changed file is inside the plan's scope, or the reason is in the run log. No file changed only by
-  formatting.
-- Every plan step is done, or its correction is in the run log.
-- No credentials, tokens, keys or private URLs in the diff.
-- The acceptance criteria each have proof: a test, a check, or a recorded manual verification.
-- Every file the change adds or grows is within the file size budget (below).
-- For a port, every row of the inventory is ported or has its reason (`playbooks/port.md`).
+```sh
+b=$(git merge-base <base> HEAD)
+d() { git diff -U0 "$b"; git ls-files -z --others --exclude-standard | xargs -0 -I{} git diff -U0 --no-index /dev/null {}; }
+d | grep -E '^\+\+\+ |^\+.*(TODO|FIXME|XXX|NotImplemented|\.only\(|[.@]skip\b|xfail|XCTSkip|@Disabled|t\.Skip\(|debugger)'
+d | grep -iE '^\+[^+].*(BEGIN [A-Z ]*PRIVATE KEY|(api[_-]?key|secret|token|passw(or)?d)[^=:]{0,20}[:=])'
+```
 
-Fix what fails the gate, then verify again.
+The first search lists every changed or new file (`+++ b/<path>`) with its hits beneath it; the second lists
+added lines that look like a credential.
+
+- **Scope:** every listed file is in the plan's Scope, or the builder's reply or the run log gives the reason.
+- **Markers:** each hit is judged from its line alone: a skipped, focused or expected-to-fail test, a `TODO` or
+  placeholder, or a literal credential fails the gate; a variable named `token` does not.
+- **Plan done:** every plan step is done, or its correction is in the reply or the run log.
+- **Proof:** each acceptance criterion has a test, a check or a recorded manual verification in the reply or the
+  run log. Whether the tests assert something real is the review's to judge (`steps/review.md`, Proof).
+- **File size:** every file the change adds or grows is within the budget (below).
+- **Port:** every row of the inventory is ported or has its reason (`playbooks/port.md`).
+
+Fix what fails the gate (with a build profile, as one follow-up), then verify again.
 
 ### File size
 

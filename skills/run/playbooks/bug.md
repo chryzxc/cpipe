@@ -13,7 +13,7 @@
    caller: one guard in the shared path beats one per caller. Search for the same mistake elsewhere (copied
    code, the same pattern) and fix or list each one.
 3. **Write the failing test** that captures the bug, on the surface where it showed up. Run it and see it fail
-   for the right reason (an assertion, not an import error). Record the RED output in the run log.
+   for the right reason (an assertion, not an import error). Record the RED output.
 4. **Fix it** with the smallest change the evidence justifies. Every line traces to the root cause; "might help"
    is a second bug.
 5. **Run the test again** (GREEN), then the plan's checks via `steps/verify.md`.

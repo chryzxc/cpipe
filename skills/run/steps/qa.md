@@ -1,12 +1,19 @@
 # cpipe: the qa step
 
-Step 8 of `cpipe:run`, after the checks pass, at the same time as the review (`steps/review.md`). Checks prove the code; QA proves the behavior. If the roles file
-names a `qa` profile, hand this step to it (`roles.md` in `cpipe:run`). Otherwise do it yourself.
+Step 8 of `cpipe:run`, after the checks pass, at the same time as the review (`steps/review.md`). Checks prove
+the code; QA proves the behavior. If the roles file names a `qa` profile, hand this step to it (`roles.md` in
+`cpipe:run`). Otherwise do it yourself.
 
 ## When it applies
 
-Every change with behavior a user or another system can reach. A change with none (docs, comments, a rename the
-checks cover) gets `QA: not needed (<reason>)` in the run log.
+A change with behavior a user or another system can reach, on a surface QA can drive on this machine: a web page
+with a browser tool, an HTTP endpoint, a CLI, a library call by script. It is skipped, with
+`QA: not needed (<reason>)` in the run log, when:
+
+- the change has no such behavior (docs, comments, a rename the checks cover);
+- the checks already exercise it end to end, the way a user would reach it;
+- the surface cannot be driven here: a desktop or mobile app, a device, a signed-in external service. The tests
+  are the proof, and the report's Test it table lists the manual checks with exact steps and expected results.
 
 ## Steps
 
@@ -15,21 +22,20 @@ reach, and keep it small. Evidence is the command or action and what you saw; no
 tree.
 
 1. **Use it on the real surface.** Start the app, CLI or service from the worktree the way the project does (its
-   scripts, its dev-server setup), and start it again if it stops, and use the change as a user would: the page in a browser if you have one, the
-   endpoint with a real request, the command with real arguments. First confirm it runs this tree's code: started
-   from this worktree after the last change, with no stale build, bundle or cache in the way.
+   scripts, its dev-server setup), and start it again if it stops, and use the change as a user would: the page in
+   a browser, the endpoint with a real request, the command with real arguments. First confirm it runs this tree's
+   code: started from this worktree after the last change, with no stale build, bundle or cache in the way.
 2. **Walk the acceptance criteria** and the design note's states one by one. Record what you did and what you
    saw for each.
 3. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,
    a user without permission.
-4. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task
-   named, and each row of the behavior table you can reach, as that actor and with that data: a changed row
-   gives its After result, every other row today's result. Check each must-not-change item and each risk whose
-   check is a QA step. Where behavior differs by role,
-   tenant, locale or state, repeat it for each (a seeded or test user per role). Then the broader test suite:
-   use verify's result for this tree (the full suite in the first round, the related tests in a re-run,
-   `steps/verify.md`, Fast checks); run it yourself only when verify has none. Compare its failures with the
-   baseline: only new failures count.
+4. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task named,
+   and each row of the behavior table you can reach, as that actor and with that data: a changed row gives its
+   After result, every other row today's result. Check each must-not-change item and each risk whose check is a QA
+   step. Where behavior differs by role, tenant, locale or state, repeat it for each (a seeded or test user per
+   role). Then the broader test suite: use verify's result for this tree (the full suite in the first round, the
+   related tests in a re-run, `steps/verify.md`, Fast checks); run it yourself only when verify has none. Compare
+   its failures with the baseline: only new failures count.
 5. **Clean up** what you started: remove temporary data, and stop the servers unless the report will hand the
    running app to the user (`steps/report.md`, Running app).
 
@@ -38,23 +44,25 @@ tree.
 Record each item in the run log as **pass**, **fail** or **not run here**, with the evidence: the command and its
 output, the request and response, a screenshot path.
 
-- **fail:** reproduce it, then fix it in step 6 together with the review's **act** findings, in one round. If the
-  plan did not foresee it, write a lesson (`cpipe:run`, Lessons). Verify, then QA the failed items again
-  alongside the delta review.
+- **fail:** it goes to the fix round with the review's **act** findings (`steps/review.md`, section 3): the
+  builder reproduces it with a failing test, then fixes it. If the plan did not foresee it, write a lesson
+  (`cpipe:run`, Lessons). Verify, then QA the failed items again alongside the delta review; that re-run is the
+  last QA round, and a failure in it is fixed and proven by its test the same way, without another re-run.
 - **not run here:** the surface needs something this machine does not have (a login, a device, a live
   service). Use the closest stand-in (a test double, a seeded user, a direct call), then list what is left in
   the report's Test it table, with exact steps and the expected result. Never stop for it.
 
 ## Rules
 
-- QA does not edit the repository (code, tests or config). A failure goes back to the build step.
+- QA does not edit the repository (code, tests or config). A failure goes back to the builder.
 - Local only: never use production systems, real customer data or real accounts, and never send real emails,
   messages or payments. Use test data and the project's local or test setup.
 - Every result has evidence; "looks fine" is not a result.
-- A QA result from a profile or subagent is a claim: reproduce a failure yourself before acting on it.
+- A QA result from a profile or subagent is a claim: a failure is reproduced by a failing test before it is
+  fixed (by the builder, or by you without a build profile).
 - Stop every server and process you started, apart from the one app the report hands over.
 
 ## Done when
 
-Every acceptance criterion, design state, must-not-change item and QA risk has a QA result with evidence, the broader suite is compared with the
-baseline, and nothing started for QA is still running apart from that app.
+Every acceptance criterion, design state, must-not-change item and QA risk has a QA result with evidence, the
+broader suite is compared with the baseline, and nothing started for QA is still running apart from that app.

@@ -1,8 +1,8 @@
 # cpipe: the review step
 
 Step 9 of `cpipe:run`, at the same time as QA (`steps/qa.md`): start the reviewers in the background, then do
-or hand over QA while they work. The builder never approves its own work: the review runs in a fresh context that did not
-write the code.
+or hand over QA while they work. The builder never approves its own work: the review runs in a context that did
+not write the code. A run has one full review and at most one delta review (section 3).
 
 ## 1. Brief the reviewer
 
@@ -25,8 +25,8 @@ User's instructions: <each one from now.md, word for word; they settle the quest
 Acceptance: <the plan's acceptance criteria>
 Repository: <worktree path>   Diff: git diff <base>...HEAD
 Checks run: <each check with its state from the run log>
-Flow map and risks: <entrances, exits, guards, behavior table with its After column, must-not-change list and
-premortem from the plan>
+Plan: <run dir>/plan.md (its flow map, behavior table with the After column, must-not-change list and
+premortem; read them after your own table and premortem below)
 
 Review against:
 - Correctness: does it meet each acceptance criterion? Logic errors, edge cases, error paths.
@@ -60,7 +60,10 @@ verdict: no hold, block or release decision. The delivery run decides.
 
 ## 2. Sort the findings
 
-Read every finding against the code yourself, then give each one a disposition and record it in the run log:
+Give each finding a disposition from its text and record it in the run log. With a build profile you do not
+read the code for this: every **act** finding goes to the builder, which checks it against the code before
+fixing it; one it shows is not real (file and line, a test or a command's output) becomes **dismissed** with that
+evidence. Without a build profile, read each finding against the code yourself.
 
 | Disposition | Means | Then |
 |---|---|---|
@@ -86,30 +89,29 @@ you cannot fix inside the scope leads the report.
 A finding that asks for evidence this machine cannot produce (a browser run, a device, a live service): do what
 you can locally, then list it as **consider** with what is left for the user to check. Do not stop for it.
 
-## 3. Fix and re-review
+## 3. Fix and the delta review
 
-When both the review and QA are back, fix the **act** findings and the QA failures in one round, run
-`steps/verify.md`, then one more review round alongside a QA re-run of the failed items. Round two is delta-only: give the
-reviewer the diff since the first review and the list of earlier findings to confirm as resolved.
+When both the review and QA are back, the **act** findings and the QA failures are fixed in one round (with a
+build profile, one builder follow-up), then `steps/verify.md`, then the delta review alongside a QA re-run of the
+failed items. The delta review resumes the first reviewer's session (`roles.md`, Follow-ups) with the diff since
+the first review and the earlier findings to confirm as resolved. Nothing to act on means no delta review.
 
-After two rounds, stop reviewing. Anything still open goes into the report with its disposition. If the second
-round led to another fix, have that fix alone reviewed once more (the diff of the fix, the finding it answers), so
-no change reaches the report unreviewed. Then go to the
-cleanup step (`steps/build.md`, step 10).
+The delta review is the last review round. Its **act** findings are fixed the same way and proven by their tests
+and the checks, with no further review; the report lists them as fixed after the last review. Anything else still
+open goes into the report with its disposition. Then go to the last verify (`steps/build.md`, step 10).
 
-Round two and the fix review resume the round-one reviewer's session (`roles.md`, Follow-ups). The cleanup and an
-update onto a moved base get no review: the last verify is their proof. Only a conflict you resolved by changing
-code is reviewed, as one fix review of that resolution.
+Fixes for a failing check or a compile error, a conflict, the cleanup and an update onto a moved base get no
+review: their tests and the checks are their proof.
 
 ## Rules
 
-- The reviewer reads; it never edits the code. You make every fix.
+- The reviewer reads; it never edits the code. The builder (or you, without a build profile) makes every fix.
 - Brief the reviewer with facts (goal, acceptance, diff, check states), not your reasoning or your verdict.
 - Never dismiss a finding without evidence in the run log, and never dismiss a security finding by judgment
   alone.
 - Never widen the scope to satisfy a reviewer: an out-of-scope finding is **consider**. A regression the change
   caused is never out of scope.
-- Two rounds at most, plus a review of a fix made after the last round.
+- Two rounds at most: one full review and one delta review.
 - Every review gap is closed by the run, never handed to the user.
 
 ## Done when

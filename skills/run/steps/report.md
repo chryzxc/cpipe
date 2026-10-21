@@ -47,7 +47,9 @@ each delivery once these hold:
 
 "No new failing test" is the last verify's by-name comparison with the baseline on the committed tree. When the
 base branch moved since, update the delivery branch on it the project's way (merge or rebase), run the last
-verify once more on that tree, and compare by name again. Several deliveries merge one after another, each
+verify once more on that tree, and compare by name again. A conflict goes to that delivery's builder as a
+follow-up (without a build profile, you resolve it), keeping what both sides meant; that verify is its proof,
+with no review. Several deliveries merge one after another, each
 updated on what the previous merge left. That is the whole proof: no extra suites on other trees, harnesses or
 environment patches, and a failure that passes alone is flaky, never a regression (`steps/verify.md`).
 
@@ -60,7 +62,7 @@ keeps a delivery unmerged, and the status line names it with what was tried.
 
 The report comes after the work is finished, not when the steps have run once. Before writing it, check that
 every row of the Steps table below would be ✅ or —. For any other row, go back and finish it while the limits
-in `cpipe:run` allow: fix in-scope findings and QA failures, review the last fix, retry a check another way,
+in `cpipe:run` allow: fix in-scope findings and QA failures, retry a check another way,
 wait for CI, merge when asked. A row stays open only when the run truly cannot close it: something only the user
 may do, a check that needs what this machine does not have, or a limit reached. A question about how the code
 should behave, a needed policy, a role's hold or blocked verdict, or a flaky result whose cause is unknown
@@ -143,8 +145,8 @@ known limit (the Result says which), ⏳ waiting on something outside the run (C
 | 6. Build | the bug reproduced; new tests RED → GREEN, how many |
 | 7. Verify | each check and its state: pass, fail, baseline (same failing names as before), not run here |
 | 8. QA | scenarios run on the real surface and how many passed; must-not-change items held |
-| 9. Review | findings by outcome (fixed, noted, dismissed); the last fix reviewed |
-| 10. Clean | what the cleanup removed; the checks after it |
+| 9. Review | findings by outcome (fixed, noted, dismissed); the rounds run; fixes after the last review |
+| 10. Clean | what the cleanup removed; the last verify on the final tree |
 | 11. Commit | the SHA and subject; the pull request link and CI result if one was asked for |
 
 **Findings**: what the run found that the task did not say, and what became of it: review and QA findings, a
