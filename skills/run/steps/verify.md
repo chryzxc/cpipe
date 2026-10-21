@@ -19,7 +19,7 @@ A result counts only for the tree it ran on. After any change, earlier results a
 worker's or subagent's "it passes" is a claim until you run the command and read the output yourself.
 
 Compare failures with the baseline by name, never by count: save this run's failing ids the same way as
-`baseline-<check>.txt` (`steps/plan.md`, Baseline) and run `comm -13 baseline-<check>.txt now-<check>.txt`.
+`baseline-<check>.txt` (`steps/setup.md`, step 8) and run `comm -13 baseline-<check>.txt now-<check>.txt`.
 Every id it prints is new and yours to fix, even when the total went down; no output means the check is
 **baseline**. Find each new failure's cause first, the way `playbooks/bug.md` step 2 does, then up to three fix
 attempts with different ideas per failure, then record it as open and move on
@@ -40,6 +40,13 @@ The full suite and the production build take most of a run's time. Run each only
   tests related to the files changed since the last full run, through the runner's related or changed mode (such
   as `vitest related <files>` or `jest --findRelatedTests <files>`); a runner without one runs the test files
   beside the changed files.
+- **After the baseline.** The baseline runs in its own worktree (`steps/setup.md`, step 8). The first verify's
+  full suite and build start only once `logs/baseline.done` exists, so two heavy jobs never run together; until
+  then run the narrow tests and the light checks, then end the turn on the baseline's notification. A full suite
+  the baseline did not finish (`exit 124`, or its log stops before the runner's summary) hangs or outruns its
+  limit there and would here too: no verify runs it whole. Each one runs the narrow tests and the tests related
+  to every file the change touches (as between full runs, below), and the report lists the full suite as not
+  finished on the base.
 - **No duplicates.** A subset the full suite already runs (a regression script, a focused file) is not run beside
   it.
 - **The project's commands only.** Run each check with the project's own command. No wrapper scripts, gates,
@@ -54,8 +61,10 @@ The full suite and the production build take most of a run's time. Run each only
   never together or beside another suite, or both slow down and tests time out. Lint, typecheck and format checks
   can run alongside.
 - **In the background.** The full suite and the build run in the background with their output in a file
-  (`logs/verify-<check>.txt`) and a completion notification. A foreground command is cut off after a few minutes
-  and its result is lost.
+  (`logs/verify-<check>.txt`) and a completion notification, under the time limit (`steps/setup.md`, Time
+  limit): `perl <run dir>/limit.pl <seconds> <command>`, twice the check's time on the base and at least 5
+  minutes. A foreground command is cut off after a few minutes and its result is lost; one without a limit can
+  hang the run.
 - **Same tree, same result.** Write the tree id beside each result. It is the content of the files, so a commit
   does not change it:
   `t=$(mktemp); cp "$(git rev-parse --git-path index)" "$t"; GIT_INDEX_FILE=$t git add -A; GIT_INDEX_FILE=$t git write-tree; rm -f "$t"`.
@@ -67,12 +76,10 @@ is known, so it never holds a commit, a pull request or a merge. Do not build to
 seen while two suites or builds ran side by side in one worktree says nothing about the code: the run alone
 decides. One that also fails
   alone is yours to fix, unless the baseline has no result for it (it did not run, did not finish, or left that
-  file out); then check it on the base once: add a temporary worktree of the plan's base commit
-  (`git worktree add --detach "$(mktemp -d)/base" <base commit>`),
-  link the delivery worktree's installed dependencies into it (or install them, when the change touched the
-  dependency files), run only those files there with the same command, then
-  `git worktree remove --force <path>`. Failing there too is **baseline**; passing there is yours to fix. One
-  round, then decide: no copies or archives of the tree, no further comparisons.
+  file out); then check it on the base once: run only those files, with the same command and its time limit, in
+  the base worktree set up added (`now.md`). When it is gone, add it again the way `steps/setup.md` step 8
+  does. Failing there too is **baseline**; passing there is yours to fix. One round, then decide: no copies or
+  archives of the tree, no further comparisons.
 - **Stop what is done.** A check this run started that hung or was replaced is stopped by its process id; none is
   left running when the step ends.
 
@@ -88,7 +95,7 @@ Never stop the run for this. Work down the list; the first thing that works wins
 | The test framework itself crashes on the base too (a tooling mismatch, an old transpiler) | Baseline problem. Run the test another way: a single file, the project's other runner, or a small script that imports and calls the code. Typecheck and build count as partial proof. Record the original check as not run here. |
 | The project's own app, server or local service is not running, or stopped mid-run | Start it again the way the project does (its dev script, its local setup), wait until it answers, and continue. Only a service this machine cannot run is not run here. |
 | Needs a service (database, browser, device, network API) that is not available | Use the project's test doubles or in-memory setup if it has one. Otherwise verify the logic with unit tests and record the end-to-end part as not run here. |
-| Times out | Run the failing files alone (Fast checks, New failures), raise the timeout once, look for a hang you caused. |
+| Times out | Run the failing files alone (Fast checks, New failures), raise the timeout once, look for a hang you caused. A suite that also hit its limit on the base is not finished there (Fast checks, After the baseline). |
 | Flaky | Run it again once, alone. A different result twice means flaky: record both runs. |
 | Expected report or output file is missing | Judge by the exit code and the printed summary. |
 | A tool or subagent errors or returns nothing | Read the error, retry once differently, or do the step yourself. |

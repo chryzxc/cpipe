@@ -220,18 +220,20 @@ ends the run.
 
 The chat's context is the scarcest resource in a long run, so cpipe decides what enters it and when.
 
-- **Load late.** Only the current step's instructions are loaded, when the run reaches the step. A file is
-  loaded again only when its text has left the context (a follow-up or a compaction), so no step is worked from
-  memory and nothing is loaded twice.
+- **Load late.** Only the current step's instructions are loaded, when the run reaches the step, and only for a
+  step the chat does itself: a profile loads its own. A file is loaded again only when its text has left the
+  context (a follow-up or a compaction), so no step is worked from memory and nothing is loaded twice.
 - **Read once.** One session explores and plans, so the code is read once per run: a plan profile on its own model,
   or the builder in the session it builds in. The flow map and the plan go to `plan.md` with paths and line
   numbers, and a builder working from a planner's plan reads only those. With a build profile the chat never reads
-  the project's code: it works from the replies, `git status`, the diff stats, the completion gate's searches and
-  the result lines of the checks.
+  the project's code: it works from the replies, `git status`, the diff stats, the completion gate's searches,
+  the result lines of the checks and the sections of the plan it needs, found by heading.
+- **A short plan.** The plan is facts in a fixed format, at most 12,000 characters, with code cited by path and
+  line rather than quoted, because the builder resends it with every reply.
 - **Output to files.** Long command output goes to a file beside the run log; the chat reads the result lines
   or the tail.
-- **Distilled skills.** Your skills are loaded once per run, only for work done in the chat, and the rules that
-  apply are written to `now.md` as one line each.
+- **Distilled skills.** Your skills are loaded once per run, only for work done in the chat and only when the
+  step that uses them starts, and the rules that apply are written to `now.md` as one line each.
 - **Compaction-proof.** A short state file, `now.md`, holds your instructions word for word, the current step, the
   running processes, the roles and the rules from your skills. After the context is compacted, the chat reads it and
   reloads only the run skill and the current step, never every skill the chat loaded before, so one compaction does
@@ -252,11 +254,14 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Same tree, same result.** Each check result carries a tree id built from the content of the files, so a
   commit does not change it; a check is not run again while the id is unchanged, and QA reuses verify's result.
 - **New failures, once each.** A failure not in the baseline is rerun alone once; a test that passes alone is
-  recorded as flaky. One with no baseline result is run once on the base in a temporary worktree, and that
-  decides it.
-- **Baseline once.** The full suite and the build run once on the base, started in set up and running in the
-  background while the code is explored; the first edit waits for them. Deliveries from the same base commit
-  share one baseline, and a check that was already red is never chased.
+  recorded as flaky. One with no baseline result is run once in the base worktree, and that decides it.
+- **Baseline once, never in the way.** The full suite and the build run once on the base, in a worktree of the
+  base commit with its own install, started in set up and running in the background while the code is explored
+  and built. Only verify waits for them. Deliveries from the same base commit share one baseline, and a check that
+  was already red is never chased.
+- **Nothing hangs the run.** Every background job (installs, checks, profiles) runs under a time limit that also
+  stops everything it started, so a hung test still ends and its notification still wakes the run. A suite that
+  did not finish on the base is not run whole again: verify runs the tests related to the change instead.
 - **Proven cause.** A bug is reproduced with a failing test during explore, so the plan is built on the cause,
   not a guess.
 - **A thin chat.** The chat resends its whole history with every reply, so with a build profile it never reads
@@ -400,7 +405,7 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 
 | # | Step | Does | File |
 |---|---|---|---|
-| 1 | Set up | Finds the repository and base, creates the worktree, installs dependencies, starts the run log, removes merged cpipe worktrees, finds the checks and starts the baseline | `steps/plan.md` |
+| 1 | Set up | Finds the repository and base, creates the worktree, starts the run log, removes merged cpipe worktrees, finds the checks, and starts the installs and the baseline in a base worktree in the background | `steps/setup.md` |
 | 2 | Explore | Reads the project's instructions and lessons, maps entrances, exits, guards and today's behavior, runs the premortem, reproduces a bug | `steps/plan.md` |
 | 3 | Design | States, flow, copy, accessibility and edge cases of anything user-facing | `steps/design.md` |
 | 4 | Decide | Settles open questions as assumptions with a one-line reason each | `steps/plan.md` |
@@ -494,10 +499,10 @@ minutes counts as a failed role. The run only ever touches cards it created.
 
 ### Your own skills
 
-cpipe sets the order of the steps; your skills say how a step is done. At each step the chat looks for one of your
-skills that covers that work (commit messages, pull-request content, code review, security review, UI design,
-testing a web app, a project's conventions) and follows it over cpipe's defaults, including its scripts and
-checks. cpipe's guard rails still apply: a skill never authorizes a push, merge or message the task did not ask
+cpipe sets the order of the steps; your skills say how a step is done. At each step it does itself, the chat looks
+for one of your skills that covers that work (commit messages, pull-request content, code review, security review,
+UI design, testing a web app, a project's conventions) and follows it over cpipe's defaults, including its scripts
+and checks. cpipe's guard rails still apply: a skill never authorizes a push, merge or message the task did not ask
 for.
 
 ### Project instructions
@@ -567,11 +572,13 @@ App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
 |---|---|---|
 | `~/.hermes/cpipe.yaml` | The roles and the default budget, written by you or `/cpipe budget` | — |
 | `<repo>-worktrees/<branch>/` | The delivery worktree, beside the repository (or where the project's instructions say) | The delivery commit only |
+| `$TMPDIR/…/base/` | A worktree of the base commit for the baseline, removed at the report | — |
 | `<git-dir>/cpipe/run.md` | The run log: rounds, workarounds, findings | Never |
 | `<git-dir>/cpipe/plan.md` | The plan, the builder's instructions | Never |
 | `<git-dir>/cpipe/now.md` | Your instructions, the current step, running processes, roles and skill rules; read to resume | Never |
 | `<git-dir>/cpipe/baseline-<check>.txt` | Names of the tests and lint errors failing on the base | Never |
 | `<git-dir>/cpipe/logs/` | Long command output | Never |
+| `<git-dir>/cpipe/limit.pl` | The time limit every background job runs under | Never |
 | `<git-dir>/cpipe/brief-<role>.md`, `<role>-reply.md` | Briefs to profiles and their long replies | Never |
 | `<git-common-dir>/cpipe/lessons.md` | The project's lessons, shared by all its worktrees | Never |
 | `~/.hermes/cpipe/lessons.md` | Your lessons, for every project | — |
@@ -620,7 +627,8 @@ cpipe/
     ├── SKILL.md          the flow, unattended rules, run log, lessons, limits, guard rails
     ├── roles.md          handing steps to profiles, directly or as kanban cards
     ├── steps/            one file per step, loaded when the run reaches it
-    │   ├── plan.md       set up, explore, decide, plan
+    │   ├── setup.md      worktree, installs, baseline in a base worktree, time limit, tidy-up
+    │   ├── plan.md       explore, decide, plan
     │   ├── design.md     design
     │   ├── build.md      build and clean
     │   ├── verify.md     checks, workarounds, fast checks, completion gate

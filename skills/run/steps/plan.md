@@ -1,64 +1,9 @@
 # cpipe: the plan step
 
-Steps 1, 2, 4 and 5 of `cpipe:run` (step 3 is `steps/design.md`). Spend the reading here, once, so the build does
-not repeat it. Set up is always the delivery run's own. A plan profile does steps 2, 4 and 5 in its brief and the
-builder builds from its plan; with a build profile and no plan profile, the builder does them in its first brief
-and builds right after (`roles.md` in `cpipe:run`). What they say to record in the run log, the profile writes in
-`plan.md`.
-
-## 1. Set up
-
-1. **Repository and base.** `git rev-parse --show-toplevel`, `git remote -v`, `git status --short --branch`, the
-   default branch. If the task names a repository, path or base branch, use it; if several repositories match,
-   pick the one the conversation used. Fetch the base so it is current.
-2. **Branch name.** Name the branch the way the project does: its instructions, your skills, or the pattern of
-   its recent branches (`git branch -r --sort=-committerdate | head -20`), such as `<area>/fix/<slug>`. With no
-   pattern, use `<type>/<short-slug>` with the type of the change (`fix`, `feat`, `refactor`, `chore`). Pull
-   request tooling often reads the type from the branch name, so it must match the change: if step 2 finds a
-   different kind, rename the branch with `git branch -m` before anything is pushed.
-3. **Worktree.** A new branch and worktree from the base, beside the repository:
-   `git worktree add -b <branch> <repo>-worktrees/<branch with / replaced by -> <base>`. Follow the project's own
-   worktree convention instead if its instructions name one. If the name exists, add a suffix; never reuse or
-   reset someone else's branch.
-4. **Dependencies.** Install them inside the worktree the way the project does (its lockfile and CI show how):
-   `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable`, `uv sync`, `pip install -e .` into
-   the project's virtual environment. Never install globally; do not change the lockfile unless the task is about
-   dependencies. Copy local env files (`.env`) from the user's checkout only if the checks need them, and never
-   print their contents.
-5. **Run log.** Start it and `now.md` (`cpipe:run`, Run log) with the task, the user's instructions word for word
-   (from the task and from the conversation about this work), the base, the worktree and the roles line.
-6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A worktree from
-   `git worktree list` is cpipe's when its git dir holds a run log (`$(git -C <path> rev-parse --git-dir)/cpipe/run.md`);
-   never touch any other worktree, the user's checkout or this run's worktree. Remove one only when all hold:
-   - a merged pull request has its `HEAD` as the head commit
-     (`gh pr list --head <branch> --state merged --json number,headRefOid`); a branch with no merged pull
-     request stays, even when it looks merged, because a run that has not committed yet looks the same;
-   - `git status --porcelain` is empty, apart from tracked files that match the ignore rules
-     (`git ls-files -ci --exclude-standard`, such as runtime logs), which you restore with `git restore` first;
-   - no process has its working directory inside it (`lsof -d cwd -Fn`).
-
-   Then `git worktree remove <path>` (never `--force`) and `git worktree prune`; the branch stays. Name what was
-   removed in the run log. Anything unclear stays; a failed removal is noted and never ends the run.
-7. **Checks.** Find the project's own commands in its files, not its code: `package.json` scripts, `Makefile`,
-   `pyproject.toml`, the CI workflow files (they show how CI installs and tests), the development section of its
-   instructions. Note the build or typecheck, the lint, the full suite, and how the test runner takes one file or
-   a filter. Read only those files.
-8. **Baseline.** Run those checks once in the worktree, before any change, the way `steps/verify.md` (Fast
-   checks) runs them: one background command with a completion notification that runs the full suite (not only
-   the narrow tests) and the build one after the other, with no serial or single-worker flags, output to
-   `logs/baseline-<check>.txt`, and that writes `logs/baseline.done` last. Whoever explores starts at
-   once and reads while it runs; nothing in the worktree changes until it is done (step 2, Wait). Verify waits for
-   a baseline still running rather than starting the suite beside it; one with no new output for 10 minutes is
-   hung: stop it, write `logs/baseline.done`, record it as not finished, and verify checks only its own new
-   failures on the base (`steps/verify.md`, New failures). Record each result: pass, fail (which tests) or not
-   run here (why). Save the ids of the failing tests and lint errors, one per line and sorted, to
-   `baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. A check already red is
-   the baseline, not your job, unless the task is to fix it. If a check will not run, work through
-   `steps/verify.md` now, so the plan names commands that work. Deliveries of one run from the same base commit
-   share one baseline: copy the first one's `baseline-<check>.txt` files and `logs/baseline.done` instead of
-   running it again.
-
-If the install fails, try the next way from `steps/verify.md` and record it; a failed install never ends the run.
+Steps 2, 4 and 5 of `cpipe:run` (set up is `steps/setup.md`, design `steps/design.md`). Spend the reading here,
+once, so the build does not repeat it. A plan profile does these steps in its brief and the builder builds from
+its plan; with a build profile and no plan profile, the builder does them in its first brief and builds right
+after (`roles.md` in `cpipe:run`). What they say to record in the run log, the profile writes in `plan.md`.
 
 ## 2. Explore
 
@@ -114,13 +59,13 @@ yourself:
    the code. These are prompts, not a form: find the risks this change has, including ones no lens names.
 5. **Checks.** From set up's commands, pick the narrowest one that covers the change (one file, a filter), plus
    the build or typecheck, plus the broader suite for QA.
-6. **Wait for the baseline** before the first write to the worktree (a reproducing test, the plan's first step):
-   set up runs it in this worktree, and a file changed under it spoils it. Until then only read. When it is not
-   done yet, wait once: `for i in $(seq 80); do [ -f <run dir>/logs/baseline.done ] && break; sleep 15; done`
-   (run it again if your terminal cuts it off; after 20 minutes, note it and go on). When you explore yourself,
-   you started it, so wait on its process instead.
-7. **Kind.** bug, feature, refactor, chore, port, hotfix or review (`cpipe:run`). Load the playbook. If the branch type
-   from step 1 does not match the kind, rename the branch now.
+6. **Wait for the dependencies** before the first command that runs code in the worktree (a reproducing test):
+   set up installs them in the background and writes `<run dir>/logs/install.done` when they are in. When it is
+   not there yet, wait once: `for i in $(seq 60); do [ -f <run dir>/logs/install.done ] && break; sleep 15; done`
+   (run it again if your terminal cuts it off; after 15 minutes, note it and go on). Never wait for the
+   baseline: it runs in its own worktree of the base, so writing in this one does not touch it.
+7. **Kind.** bug, feature, refactor, chore, port, hotfix or review (`cpipe:run`). Load the playbook. If the branch
+   type from set up does not match the kind, rename the branch now.
 8. **Reproduce** (bug and hotfix). Before planning, prove the cause: write the failing test in the worktree (the
    playbook's steps 1 to 3), run it, and record the RED output and the cause it proves. The plan
    is built on that cause, not a guess; a cause you cannot prove yet is a risk in the plan with the check that
@@ -140,7 +85,9 @@ report.
 
 A plan profile writes the plan, and the builder (or you, without a build profile) builds from it, correcting what
 the code contradicts. With a build profile and no plan profile, the builder writes the plan and builds from it in
-the same brief. Write the plan to `plan.md` beside the run log (the run log names it):
+the same brief. Write the plan to `plan.md` beside the run log (the run log names it). It is the builder's
+instructions and is resent with every build reply, so it holds facts in this format and nothing else: at most
+12,000 characters (`wc -c`), code cited by path and line and never quoted, no sections the format does not list.
 
 - **Goal:** one sentence, in the user's words.
 - **Kind** and playbook.
@@ -202,15 +149,17 @@ Before building, check the plan item by item and fix every no. It is your own ch
 - No step leaves a file over 4,500 tokens (its size now, `wc -c` / 4, plus what the step adds) except by the
   import and call into a new file: the new code goes in a new file the step names (`steps/verify.md`, File size).
 - Each step depends only on steps before it.
+- The plan is at most 12,000 characters and has only the sections above. Over it, cut prose, quoted code and
+  repeats, and merge steps that change one function, until it fits.
 
 Post the plan's goal and step count in one line together with your next tool call and start building; do not
 wait for approval.
 If the user steers mid-run, revise `plan.md`, note why in the run log and continue. If the user cancels, remove the
-worktree and branch you created (nothing is committed on them).
+worktree and branch you created (nothing is committed on them) and the base worktree.
 
 ## Rules
 
-- Nothing outside the worktree changes in these steps except the tidy-up; exploring is read-only.
+- Nothing outside the worktree changes in these steps; exploring is read-only.
 - The plan is the builder's instructions: exact enough to follow step by step without re-reading the code.
 - Every acceptance criterion must be checkable by a test, a command or a QA step.
 - Every new test must name the break it catches (Tests above); no test is added for coverage alone.
@@ -218,5 +167,5 @@ worktree and branch you created (nothing is committed on them).
 
 ## Done when
 
-The worktree exists with dependencies installed, the baseline, the flow map and the premortem are recorded, the plan
-with its must-not-change list, risks, assumptions and steps passes the plan gate and is in `plan.md`.
+The flow map and the premortem are recorded, and the plan with its must-not-change list, risks, assumptions and
+steps passes the plan gate and is in `plan.md`.

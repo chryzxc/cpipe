@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.25.1
+version: 3.26.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -74,7 +74,9 @@ in a loop. When a profile or check this run started is running with a completion
 run can move until it finishes, end the turn with one line, `⏳ <n>/11 <step>: waiting on <what>`; its
 notification starts the next turn. With nothing running, a reply without a tool call stops the run silently, so
 end a turn only on such a wait, the pause message or the report. Progress updates go in the same reply as your
-next tool call. Without completion notifications, wait on that one process id with your process tool.
+next tool call. Without completion notifications, wait on that one process id with your process tool. Whatever
+you wait on ends on its own: every install, check and profile runs under a time limit (`steps/setup.md`, Time
+limit), so a hang still ends it and its notification still comes.
 
 **Turn limits.** A turn has a cap on replies that call tools, so a long run can end its turn mid-step. Spend
 replies, not calls: put independent tool calls (reads, briefs, checks to start) together in one reply. Long work
@@ -131,14 +133,16 @@ The todo list survives a compaction word for word (After a compaction, below). W
 with your next tool call:
 `▶ <n>/11 <step>: <what it will do> (<who: this chat or the profile>)`; a step that does not apply gets
 `— <n>/11 <step>: skipped, <reason>`. Each step's instructions are a file in this skill: load it with
-`skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach the step, not before. Never work a
-step from memory, and never load a file whose text is still in the context: load it again only when its text is
-gone (a follow-up, or a compaction that dropped it), and then only the current step's file. Every report is
-written from `steps/report.md` loaded right before it.
+`skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach a step you do in this chat, not
+before; a step a profile does needs only `roles.md` here, and the profile loads its own file. Never work a step
+from memory, and never load a file whose text is still in the context: load it again only when its text is gone
+(a follow-up, or a compaction that dropped it), and then only the current step's file. When `skill_view` answers
+that the content is unchanged without returning it, read the file itself with your file tool from the plugin's
+`skills/run/` directory. Every report is written from `steps/report.md` loaded right before it.
 
 | Step | Do | File | Role |
 |---|---|---|---|
-| 1. Set up | Find the repo and base, create the worktree, install dependencies, start the run log, remove merged worktrees, find the checks, start the baseline. | `steps/plan.md` | |
+| 1. Set up | Find the repo and base, create the worktree, start the run log, remove merged worktrees, find the checks, start the installs and the baseline in its own worktree. | `steps/setup.md` | |
 | 2. Explore | Read the instructions, map every entrance, exit and guard of the code, reproduce a bug. | `steps/plan.md` | plan, else build, else explore |
 | 3. Design | The user-facing side: states, flow, copy, accessibility, edge cases. | `steps/design.md` | design (a new or changed screen), else whoever plans |
 | 4. Decide | Settle open questions and record them as assumptions. Never ask. | `steps/plan.md` | plan, else build |
@@ -164,13 +168,14 @@ planner's explore to plan, a builder's explore to build) share one ▶ line.
 
 ## The user's own skills come first
 
-cpipe sets the order of the steps; the user's own skills say how a step is done. At the start of each step, check
-your skill list for a skill that covers that step's work (writing a pull request or commit message, code review,
-security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`, once per
-run: note each loaded skill in `now.md` (Run log) with the rules from it that apply to this task, one line each,
-and work from those lines afterwards, also after a compaction; never load it again. Load a skill only for work you
-do in this chat: a step handed to a profile uses that profile's own skills. Running profiles and processes needs no
-skill; `roles.md` has the commands. Where it
+cpipe sets the order of the steps; the user's own skills say how a step is done. At the start of each step you do
+in this chat, check your skill list for a skill that covers that step's work (writing a pull request or commit
+message, code review, security review, UI design, testing a web app, a project's conventions) and load it with
+`skill_view`, once per run: note each loaded skill in `now.md` (Run log) with the rules from it that apply to this
+task, one line each, and work from those lines afterwards, also after a compaction; never load it again. Never
+load one before the step that uses it or for a step a profile does: that profile uses its own skills, and a
+skill loaded early is resent with every reply until the report. Running profiles and processes needs no skill;
+`roles.md` has the commands. Where it
 and a cpipe step differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
 still decides the flow and the guard rails: a user skill never authorizes a push, merge or message the task did
 not ask for. Take from a user skill how the work is done, not a different flow: skip its parts about task
@@ -213,7 +218,7 @@ it survives a restart. Append, never rewrite:
 
 - the task and every instruction from the user, word for word, the roles, the base and the worktree, and every
   card id when on the board;
-- the baseline, and the paths of the plan (it holds the flow map) and the design note;
+- the baseline and the base worktree's path, and the paths of the plan (it holds the flow map) and the design note;
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
 - QA results, review findings and what you did with each;
@@ -233,7 +238,8 @@ tail, not the whole output. The run log names the file.
 
 When the chat is compacted, the step files and skills loaded so far are dropped, and the compaction notice may ask
 you to reload every skill this chat ever loaded. Do not: that refills the context and brings the next compaction
-within minutes. Read `now.md`, reload `cpipe:run` and the active step's file, and continue. The user's
+within minutes. Read `now.md`, reload `cpipe:run` and the active step's file (from the plugin's directory when
+`skill_view` returns no text, Flow), and continue. The user's
 instructions and the user skills' rules are in `now.md`; the roles, the plan's questions from the lessons and
 every file you read are in the run log or the plan. Read a file again only for the lines the next action needs.
 
@@ -287,7 +293,8 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 
 **Scope**
 - Work only in the delivery worktree. Never edit the user's own checkout, other branches or other worktrees; the
-  one exception is removing cpipe's own merged worktrees in set up (`steps/plan.md`).
+  exceptions are the base worktree set up adds for the baseline and removing cpipe's own merged worktrees there
+  (`steps/setup.md`).
 - Change only what the plan's scope names. If the scope must grow, say so in one line and note it in the run log.
 - Format and lint-fix only the lines the change touches. Never reformat files or the repository, even when the
   formatter's baseline is red, unless the task asks for it.
@@ -298,7 +305,7 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 - Never put credentials, tokens or secrets in code, commits, logs, briefs or the report. Never print `.env`
   contents.
 - Never run destructive commands outside the worktree (deleting data, resetting branches, dropping databases),
-  apart from the set-up tidy-up.
+  apart from the set-up tidy-up and removing the base worktree.
 - Never add AI attribution to commits or pull requests.
 
 **Honesty**
@@ -309,9 +316,9 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 **Cost**
 - Every reply resends the chat: fewer replies and a smaller chat are the saving. Wait by ending the turn, never
   by polling (Waiting ends the turn).
-- With a build profile, this chat never reads the project's code: the planner or the builder explores it once per
-  run (`roles.md`, How the work is split). Without one, read once, in explore; after it, read code only as the diff
-  and the lines a finding or a failure names.
+- With a build profile, this chat never reads the project's code, and reads `plan.md` only by the sections it
+  needs: the planner or the builder explores it once per run (`roles.md`, How the work is split). Without one,
+  read once, in explore; after it, read code only as the diff and the lines a finding or a failure names.
 - One session per role per run: every follow-up and the next delivery resume it (`roles.md`, Follow-ups).
 - Code is handed back only when it builds: the builder runs the build or typecheck and the narrow tests before
   it replies (`steps/build.md`).
@@ -325,7 +332,10 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 - A profile's result is its output or its reply file (`roles.md`); never search its session history for it.
 - A step that does not apply, or mechanical work (format, commit, pull request body, a rebase without
   conflicts), gets no profile (`roles.md`).
-- Long output to a file, the tail in the chat (Run log). Each user skill loaded once per run.
+- Long output to a file, the tail in the chat (Run log). Each user skill loaded once per run, at the step that
+  uses it. Git output that grows with the repository (worktrees, branches) is filtered before it reaches the chat.
+- The baseline runs in its own worktree, so the build never waits for it; every background job has a time limit
+  (`steps/setup.md`).
 - After the context is compacted, reload only this skill and the current step's file, never the list of skills the
   compaction notice gives (After a compaction).
 - The roles file and the lessons are read once, in steps 1 and 2; their content is in the run log and the plan.

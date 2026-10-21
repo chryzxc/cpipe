@@ -43,12 +43,14 @@ reads the code again. So the code is explored once, each role keeps one session,
   profile, the builder builds from `plan.md` (step 6) and reads only the files and lines it names. Either way
   the builder cleans its own diff and makes every fix verify, QA and review ask for. An explore profile is used
   only when neither is set: a second reader repeats the reading. Steps 2, 4 and 5 are the planner's or the
-  builder's, apart from set up's checks and baseline (`steps/plan.md`).
+  builder's, apart from set up's checks and baseline (`steps/setup.md`).
 - **A thin chat.** With a build profile, you run the flow and never read the project's code: no source or test
   files, no searches in them, no reproducing a failure, no checking a finding against the code, no scripts of
   your own. You read the replies, `git status --short`, `git diff --stat` and `--name-only`, the output of the
-  completion gate's searches, the result lines of the checks, and the sections of `plan.md` a brief or the report
-  needs. Anything that needs the code is a follow-up for the builder.
+  completion gate's searches, the result lines of the checks, and the sections of `plan.md` a check, a brief or
+  the report needs: find them by heading (`grep -n '^\(#\|- \*\*\)' plan.md`) and read those line ranges, never
+  the whole plan. A step a profile does needs no step file and none of your skills in this chat: the profile
+  loads its own. Anything that needs the code is a follow-up for the builder.
 - **One session per role per run.** Every later piece of work for a role resumes its session, the next
   delivery's included (Follow-ups).
 - **Only where it pays.** Design only for a new or changed screen (`steps/design.md`), QA only where its profile
@@ -103,9 +105,9 @@ pages to learn the command line.
    - **plan:** the request, the worktree, the base commit, the check commands from set up, the path
      `<run dir>/plan.md` to write the plan to, and the design note's path when there is one. Ask it to follow
      `steps/plan.md` steps 2, 4 and 5 (explore, decide, plan; set up's checks and baseline are given, so it skips
-     them), the plan gate included. It changes no project code: the only file it writes in the worktree is a
-     bug's reproducing test. Ask for this reply: the kind; the plan's step count and its assumptions; the RED
-     output when it reproduced a bug; anything left.
+     them), the plan gate included, with the plan at most 12,000 characters. It changes no project code: the only
+     file it writes in the worktree is a bug's reproducing test. Ask for this reply: the kind; the plan's step
+     count and its assumptions; the RED output when it reproduced a bug; anything left.
    - **build**, a delivery's first brief: the request, the worktree, the base commit, the check commands from set
      up, the path `<run dir>/plan.md`, and the design note's path when there is one. After a plan profile, ask it
      to read the plan and the playbook it names (`playbooks/<kind>.md`), then follow `steps/build.md` step 6,
@@ -115,7 +117,10 @@ pages to learn the command line.
      diff. Ask for this reply: the kind and the plan's step count and assumptions, when it planned; each plan
      step done or corrected (what and why); the build or typecheck and the narrow tests it ran, with their
      results; anything left. You write those rows in the run log. It does not read or write the run log, and
-     does not run the full suite or the production build: verify does.
+     does not run the full suite or the production build: verify does. Start it as soon as the plan is in: the
+     baseline runs in its own worktree, so the build never waits for it.
+   - **plan** and **build** both: dependencies install in the background, so tell it to run nothing in the
+     worktree before `<run dir>/logs/install.done` exists (`steps/plan.md` step 2, Wait for the dependencies).
    - **design:** the request, the worktree and the steps of `steps/design.md`. Ask for the design note in
      `<run dir>/design.md`.
    - **qa:** the acceptance criteria (`plan.md`), the design note, how to start the app, and verify's broader
@@ -138,8 +143,10 @@ pages to learn the command line.
    timeout above the budget. Write its process id and output file in the run log and `now.md`, and once it ends,
    the session id it prints last (`session_id: …`): the profile keeps running when this chat restarts, a continue
    reads its result instead of starting it again, and every follow-up resumes that session. Then wait the way
-   `cpipe:run` says (Waiting ends the turn). The budget is a hard limit: if the profile has not replied two minutes
-   after it, stop the process yourself and treat the role as failed. Never wait longer.
+   `cpipe:run` says (Waiting ends the turn). The budget is a hard limit: run the profile under the time limit
+   (`steps/setup.md`, Time limit) at its budget plus 5 minutes,
+   `perl <run dir>/limit.pl <seconds> hermes -p <profile> chat …`, so a profile that hangs still ends and its
+   notification still comes. One the limit ended (`exit 124`) timed out: treat the role as failed.
 
    The result is what the process printed, or `<role>-reply.md` when it points there. Never search the profile's
    session history or transcripts for it: when neither holds a result, the role failed.
@@ -175,8 +182,9 @@ the brief, the budgets, the checks you run yourself and the fallback.
    Write the card id in the run log. A follow-up to the same role is a new card with `--parent <previous card id>`.
 3. **Wait** with one background command and a completion notification: it checks
    `hermes kanban show <card id> --json` every 30 seconds and exits when the status is `done`, `blocked`, `review`
-   or `archived` (a script file if the approval policy blocks the loop). Keep working on anything that does not
-   depend on it, then end the turn (`cpipe:run`, Waiting ends the turn).
+   or `archived`, when it is still not claimed after 10 minutes, or 10 minutes past the card's budget whatever its
+   status, so the wait always ends (a script file if the approval policy blocks the loop). Keep working on
+   anything that does not depend on it, then end the turn (`cpipe:run`, Waiting ends the turn).
 4. **Read** the result from `latest_summary` and the comments. It is a claim, as below.
 
 The card failed if it ends blocked or with no usable result, is still running two minutes past its budget, or is

@@ -80,6 +80,12 @@ One app per delivery: stop the one this run started before (an earlier report, a
 another port if the default is taken. If it will not start, say so in Test it with the error; never ask the user
 to start it. A follow-up restarts it with the new code.
 
+## Base worktree
+
+Once no later delivery of this run uses it, remove the base worktree set up added (`now.md`): stop what still
+runs inside it (`lsof -d cwd -Fn`), then `git worktree remove --force <path>` and `git worktree prune`. A failed
+removal is noted in the run log and never holds the report.
+
 ## Report
 
 Post one message in the chat, in this order. With several
