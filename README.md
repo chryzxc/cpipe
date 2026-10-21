@@ -263,6 +263,8 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Nothing hangs the run.** Every background job (installs, checks, profiles) runs under a time limit that also
   stops everything it started, so a hung test still ends and its notification still wakes the run. A suite that
   did not finish on the base is not run whole again: verify runs the tests related to the change instead.
+- **The machine stays usable.** Background jobs run at low priority, and installs, full suites and builds take
+  turns across every run on the machine, so two lanes never load every core at once.
 - **Proven cause.** A bug is reproduced with a failing test during explore, so the plan is built on the cause,
   not a guess.
 - **A thin chat.** The chat resends its whole history with every reply, so with a build profile it never reads
@@ -582,7 +584,7 @@ App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
 | `<git-dir>/cpipe/now.md` | Your instructions, the current step, running processes, roles and skill rules; read to resume | Never |
 | `<git-dir>/cpipe/baseline-<check>.txt` | Names of the tests and lint errors failing on the base | Never |
 | `<git-dir>/cpipe/logs/` | Long command output | Never |
-| `<git-dir>/cpipe/limit.pl` | The time limit every background job runs under | Never |
+| `<git-dir>/cpipe/limit.pl` | The time limit and low priority every background job runs under; heavy jobs take turns | Never |
 | `<git-dir>/cpipe/tick.sh` | The progress tick of a long wait | Never |
 | `<git-dir>/cpipe/brief-<role>.md`, `<role>-reply.md` | Briefs to profiles and their long replies | Never |
 | `<git-common-dir>/cpipe/lessons.md` | The project's lessons, shared by all its worktrees | Never |
@@ -686,8 +688,8 @@ a different model or setup take a role. A build profile saves the most: it keeps
 plan profile lets planning run on a different model from building.
 
 **Can two runs share a machine?**
-Yes, in different chats. Each runs one heavy check at a time, but two runs at once still share the CPU and
-slow each other's full suites and builds.
+Yes, in different chats. Installs, full suites and builds from every run on the machine take turns, one at a
+time, and every background job runs at low priority, so your own work stays responsive.
 
 ## Contributing
 

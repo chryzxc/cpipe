@@ -59,11 +59,12 @@ The full suite and the production build take most of a run's time. Run each only
   the project's CI uses them. A parallel option the project already has (such as `pytest -n auto` with
   pytest-xdist installed) is used; one it does not have is never installed.
 - **One heavy job at a time.** The full suite and the build each use every core: run them one after the other,
-  never together or beside another suite, or both slow down and tests time out. Lint, typecheck and format checks
-  can run alongside.
+  never together or beside another suite, or both slow down and tests time out. Each takes its turn with `-h`
+  (`steps/setup.md`, Time limit), which also holds it while another run's heavy job runs. Lint, typecheck and
+  format checks can run alongside.
 - **In the background.** The full suite and the build run in the background with their output in a file
   (`logs/verify-<check>.txt`) and a completion notification, under the time limit (`steps/setup.md`, Time
-  limit): `perl <run dir>/limit.pl <seconds> <command>`, twice the check's time on the base and at least 5
+  limit): `perl <run dir>/limit.pl -h <seconds> <command>`, twice the check's time on the base and at least 5
   minutes. A foreground command is cut off after a few minutes and its result is lost; one without a limit can
   hang the run.
 - **Same tree, same result.** Write the tree id beside each result. It is the content of the files, so a commit

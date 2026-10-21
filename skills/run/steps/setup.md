@@ -51,8 +51,8 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
 8. **Background work.** Write the time limit and the progress tick (below) to `<run dir>/limit.pl` and
    `<run dir>/tick.sh`, then start one background command
    with a completion notification that does the rest, one command after the other, each under the time limit
-   with its output and exit code in its own file
-   (`perl <run dir>/limit.pl <seconds> <command> > logs/<name>.txt 2>&1; echo "exit $?" >> logs/<name>.txt`):
+   with its output and exit code in its own file, each one heavy
+   (`perl <run dir>/limit.pl -h <seconds> <command> > logs/<name>.txt 2>&1; echo "exit $?" >> logs/<name>.txt`):
    1. the install in the worktree (step 4), then `touch logs/install.done`;
    2. the **base worktree**: `git worktree add --detach "$(mktemp -d)/base" <base commit>`, the env files step 4
       copied, and the same install there; its own install, since dependencies linked from the delivery worktree
@@ -83,11 +83,16 @@ copy the first one's `baseline-<check>.txt` files and `logs/baseline.done` inste
 A hung test (an open handle, a server that never closes) never ends its command, so its completion notification
 never comes, and nothing else may wake the run. Every background command the run starts (an install, a check, a
 profile) runs under this limit: at the limit it stops the command and everything it started, and exits 124.
+It also runs it at low priority, so the user's own work on the machine stays responsive. A heavy job (an install,
+a full suite, a build) passes `-h`: it first waits its turn, so heavy jobs from every run and lane on the machine
+go one at a time, and its time limit starts once its turn comes.
 
 ```perl
-# perl limit.pl <seconds> <command> [<arguments>]
+# perl limit.pl [-h] <seconds> <command> [<arguments>]
+use Fcntl ':flock'; my $l;
+if ($ARGV[0] eq '-h') { shift; open $l, '>>', '/tmp/cpipe-heavy.lock' or die "lock: $!"; flock $l, LOCK_EX }
 my $t = shift; my $p = fork // die "fork: $!";
-if (!$p) { setpgrp; exec @ARGV or exit 127 }
+if (!$p) { setpgrp; setpriority 0, 0, 10; exec @ARGV or exit 127 }
 $SIG{ALRM} = $SIG{TERM} = $SIG{INT} = sub { kill 'TERM', -$p; sleep 5; kill 'KILL', -$p; exit 124 };
 alarm $t; waitpid $p, 0; exit($? >> 8 or $? & 127);
 ```
