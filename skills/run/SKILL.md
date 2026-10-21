@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.28.0
+version: 3.28.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -224,9 +224,9 @@ Without the file, or for a role it does not name, do the step yourself. Either w
 start who does each step. When the task message starts with `--kanban`, the named profiles get their steps as
 cards on the user's kanban board (`roles.md`, On the board); without a roles file there is nothing to hand over,
 so say that in the roles line and continue. A `--budget <tier>` at the start of the task, or `budget:` in the
-file, sets how hard the profiles reason (`roles.md`, Budget). A plan profile on another model than the
-builder's explores and plans, and the builder builds from its plan; otherwise the builder reads and plans too.
-With a build profile this chat never reads the project's code (`roles.md`, How the work is split).
+file, sets how hard the profiles reason (`roles.md`, Budget). A plan profile explores and plans on its own model
+and the builder builds from its plan; without one, the builder does the reading and planning too. With a build
+profile this chat never reads the project's code (`roles.md`, How the work is split).
 
 ## Run log
 

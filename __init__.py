@@ -53,7 +53,7 @@ def _roles(kanban):
     if "plan" in roles or "build" in roles:  # one reader explores (skills/run/roles.md)
         roles.pop("explore", None)
         if "plan" in roles:
-            roles["plan"] += " (explores too, unless on build's model)" if "build" in roles else " (explores too)"
+            roles["plan"] += " (explores too)"
         else:
             roles["build"] += " (explores and plans too)"
     return (("Roles, as cards on your kanban board: " if kanban else "Roles: ")

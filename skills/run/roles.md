@@ -9,7 +9,7 @@ Optional. Without a roles file, you run every step yourself in this chat.
 ```yaml
 budget: <tier>          # optional: unlimited, large, medium or small
 roles:
-  plan: <profile>       # explores, decides and plans on another model than build's (steps 2, 4 and 5)
+  plan: <profile>       # explores, decides and plans, on its own model (steps 2, 4 and 5)
   build: <profile>      # builds, fixes every finding, cleans (steps 6 and 10); plans too without a plan profile
   design: <profile>     # the design note for a new or changed screen (step 3)
   qa: <profile>         # uses the change like a user would, where it can (step 8)
@@ -22,10 +22,6 @@ Every key is optional; a role that is missing or empty is done by you in this ch
 write the roles in the run log, and tell the user in one line who does each step:
 
 `Roles: plan → <profile> (explores too), build → <profile>, design → this chat (no profile set), …`
-
-A plan profile on the build profile's model (`model` in each profile's `config.yaml`) counts as none: it would
-only add a second reader and a handover. The builder plans, and the roles line says
-`plan → <build profile> (same model as <plan profile>)`.
 
 Without a roles file: `Roles: no cpipe.yaml, every step runs in this chat`. This is a notice, not a question:
 keep going.

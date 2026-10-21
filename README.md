@@ -452,7 +452,7 @@ To hand steps to your own Hermes profiles, create `~/.hermes/cpipe.yaml` (or `$H
 
 ```yaml
 roles:
-  plan: <profile>       # explores, decides and plans, on another model than build's
+  plan: <profile>       # explores, decides and plans, on its own model
   build: <profile>      # builds, makes every fix and cleans its own diff; plans too without a plan profile
   design: <profile>     # designs a new or changed screen
   qa: <profile>         # uses the change like a user would, where it can
@@ -464,9 +464,8 @@ roles:
 Every role is optional; a role with no profile runs in the chat. The chat stays in charge: it runs the flow and
 the checks, writes each brief to a file, and treats each profile's answer as a claim to verify. With a build
 profile, one builder session builds and makes every fix for the whole run, and the chat never reads the
-project's code. The builder explores and plans too, unless a plan profile on another model does: then planning
-runs on the plan profile's model, in its own session, and the builder works from its plan. Each role keeps one
-session per run.
+project's code. The builder explores and plans too, unless a plan profile does: then planning runs on the plan
+profile's model, in its own session, and the builder works from its plan. Each role keeps one session per run.
 
 | Role | Time budget |
 |---|---|
@@ -684,7 +683,7 @@ instructions and CI workflow.
 **Do I need profiles?**
 No. Without `cpipe.yaml` the chat runs every step and uses a subagent for the independent review. A profile lets
 a different model or setup take a role. A build profile saves the most: it keeps the code out of the chat. A
-plan profile lets planning run on a different model from building; on the builder's model it is skipped.
+plan profile lets planning run on a different model from building.
 
 **Can two runs share a machine?**
 Yes, in different chats. Each runs one heavy check at a time, but two runs at once still share the CPU and
