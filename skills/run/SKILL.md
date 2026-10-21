@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.26.1
+version: 3.27.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -79,13 +79,23 @@ notifications, wait on that one process id with your process tool. Whatever you 
 install, check and profile runs under a time limit (`steps/setup.md`, Time limit), so a hang still ends it and its
 notification still comes.
 
+**Progress while waiting.** A wait that can last past 10 minutes (a profile, the full suite) gets a tick beside it:
+`sh <run dir>/tick.sh <worktree>` in the background with a completion notification (`steps/setup.md`, Progress
+tick). It sleeps 10 minutes, then prints what changed: the diff's size and the newest logs with their last line.
+When it wakes the run and the work still runs, post one line from its output alone, read nothing else, and start
+the next tick in the same reply:
+`⏳ <n>/11 <step>, <m> min in: <what changed>; done by <clock time> at the latest`, such as
+`4 files changed (+180 −12), last ran build-green: 71 passed` or `the suite's log silent for 9 min`. One tick runs
+at a time, whatever it watches. Once nothing long runs, stop it with your process tool in the same reply as your
+next tool call; a tick that arrives with nothing running gets no line and no next tick.
+
 **Turn limits.** A turn has a cap on replies that call tools, so a long run can end its turn mid-step. Spend
 replies, not calls: put independent tool calls (reads, briefs, checks to start) together in one reply. Long work
 (installs, checks, profiles) runs in the background with a completion notification: when a turn ends early, the
 next notification starts a new turn and the run picks up there. A turn that ends with nothing running has no
 notification to resume it, so start the next long piece of work before a stretch of short steps. Do not start a
-timer or look for a tool to make one. When the cap ends the turn (a message asks for a final summary without
-tools), the final reply is this pause message and nothing else:
+timer or look for a tool to make one; the progress tick is the only one. When the cap ends the turn (a message
+asks for a final summary without tools), the final reply is this pause message and nothing else:
 
 ```
 ⏸ Paused by the turn limit at <n>/11 <step>, not finished: <goal>
@@ -133,7 +143,10 @@ the report: `After a compaction: read now.md; reload only cpipe:run and the acti
 The todo list survives a compaction word for word (After a compaction, below). When a step starts, post one line
 with your next tool call:
 `▶ <n>/11 <step>: <what it will do> (<who: this chat or the profile>)`; a step that does not apply gets
-`— <n>/11 <step>: skipped, <reason>`. Each step's instructions are a file in this skill: load it with
+`— <n>/11 <step>: skipped, <reason>`. When it ends, post its result the same way:
+`✓ <n>/11 <step>: <the result in a few words>, <minutes it took>`, such as
+`✓ 6/11 Build: 4 files, 3 new tests RED → GREEN, 29 min` or `✓ 9/11 Review: 2 findings to fix`. Each step's
+instructions are a file in this skill: load it with
 `skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach a step you do in this chat, not
 before; a step a profile does needs only `roles.md` here, and the profile loads its own file. Never work a step
 from memory, and never load a file whose text is still in the context: load it again only when its text is gone

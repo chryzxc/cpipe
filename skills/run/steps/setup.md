@@ -48,7 +48,8 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    `pyproject.toml`, the CI workflow files (they show how CI installs and tests, and how long it gives each job:
    `timeout-minutes`), the development section of its instructions. Note the build or typecheck, the lint, the
    full suite, and how the test runner takes one file or a filter. Read only those files.
-8. **Background work.** Write the time limit (below) to `<run dir>/limit.pl`, then start one background command
+8. **Background work.** Write the time limit and the progress tick (below) to `<run dir>/limit.pl` and
+   `<run dir>/tick.sh`, then start one background command
    with a completion notification that does the rest, one command after the other, each under the time limit
    with its output and exit code in its own file
    (`perl <run dir>/limit.pl <seconds> <command> > logs/<name>.txt 2>&1; echo "exit $?" >> logs/<name>.txt`):
@@ -95,6 +96,21 @@ A command with shell syntax of its own goes in as `sh -c '<command>'`. Limits: a
 check its CI time limit, else 20 minutes; a check in verify twice its time on the base, at least 5 minutes; a
 profile its run budget plus 5 minutes. Without perl, a script file that does the same. The limit is the one thing
 allowed around a project's command (`steps/verify.md`, The project's commands only).
+
+## Progress tick
+
+A long wait shows what is going on every 10 minutes (`cpipe:run`, Progress while waiting), from the run's own
+files only:
+
+```sh
+# sh tick.sh <worktree>: wait 10 minutes, then print what changed
+sleep 600; r=$(dirname "$0"); cd "$1" || exit 0
+date +%H:%M; git diff --shortstat
+echo "$(git ls-files --others --exclude-standard | wc -l | tr -d ' ') new files"
+ls -t "$r/logs" | head -3 | while read -r f; do
+  echo "$f $(date -r "$r/logs/$f" +%H:%M): $(grep -v '^[[:space:]]*$' "$r/logs/$f" | tail -1 | cut -c1-120)"
+done
+```
 
 ## Rules
 

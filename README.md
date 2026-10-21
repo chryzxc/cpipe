@@ -122,7 +122,7 @@ Ask for anything that leaves your machine in the task or a later message: `… a
 ## What a run looks like
 
 `/cpipe` answers with the task, the flow and who runs each step. Then the run posts one line as each step
-starts, and a single report at the end:
+starts and ends, a progress line every 10 minutes of a long wait, and a single report at the end:
 
 ```
 ▶ cpipe: fix the discount that disappears when an invoice is edited
@@ -136,6 +136,7 @@ Budget: not set, each profile reasons at its own setting (/cpipe budget <tier> s
 ▶ 4/11 Decide: 1 open question settled as an assumption (this chat)
 ▶ 5/11 Plan: 4 build steps, plan gate passed (this chat)
 ▶ 6/11 Build: tests first for the invoice update (this chat)
+✓ 6/11 Build: 2 files, 3 new tests RED → GREEN, 14 min
 ▶ 7/11 Verify: lint, typecheck, full suite, build (this chat)
 ▶ 8/11 QA: edit a discounted invoice on the running app (this chat)
 ▶ 9/11 Review: independent review of the diff (subagent)
@@ -276,7 +277,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Replies, not calls.** Every reply resends the whole chat, so independent tool calls go out together in one
   reply, and long work runs in the background so its notification resumes a turn the cap ended.
 - **Waiting ends the turn.** While only a profile or a check is running, the chat ends its turn with one status
-  line and the completion notification starts the next one; it never polls, sleeps or lists processes.
+  line naming the latest time it ends, and the completion notification starts the next one; it never polls,
+  sleeps or lists processes. A wait past 10 minutes gets a progress tick: every 10 minutes one line on what
+  changed (the diff's size, the last test run), read from the run's own files.
 - **Deltas and resumed sessions.** The delta review and every follow-up see only the diff since the last one, and a
   QA re-run covers only the items that failed. Each role has one session per run: fix rounds, corrections,
   conflicts, the delta review and the next delivery resume it instead of starting cold, so most of what it resends
@@ -579,6 +582,7 @@ App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
 | `<git-dir>/cpipe/baseline-<check>.txt` | Names of the tests and lint errors failing on the base | Never |
 | `<git-dir>/cpipe/logs/` | Long command output | Never |
 | `<git-dir>/cpipe/limit.pl` | The time limit every background job runs under | Never |
+| `<git-dir>/cpipe/tick.sh` | The progress tick of a long wait | Never |
 | `<git-dir>/cpipe/brief-<role>.md`, `<role>-reply.md` | Briefs to profiles and their long replies | Never |
 | `<git-common-dir>/cpipe/lessons.md` | The project's lessons, shared by all its worktrees | Never |
 | `~/.hermes/cpipe/lessons.md` | Your lessons, for every project | — |
