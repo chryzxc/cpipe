@@ -25,10 +25,18 @@ User's instructions: <each one from now.md, word for word; they settle the quest
 Acceptance: <the plan's acceptance criteria>
 Repository: <worktree path>   Diff: git diff <base>...HEAD
 Checks run: <each check with its state from the run log>
-Flow map and risks: <entrances, exits, guards, must-not-change list and premortem from the plan>
+Flow map and risks: <entrances, exits, guards, behavior table with its After column, must-not-change list and
+premortem from the plan>
 
 Review against:
 - Correctness: does it meet each acceptance criterion? Logic errors, edge cases, error paths.
+- Behavior: before reading the plan's table, build your own from the base. Read the base version of each changed
+  file (`git show <base>:<path>`) and the code on the other side of each boundary it crosses (the client of a
+  server change, the server of a client change). For each actor and case (each role, the owner and a stranger,
+  signed out, a job or another service, another client; new and older stored data), write what it gets before
+  and after. Report each difference the goal and the user's instructions do not ask for. Report each rule the
+  diff adds or moves whose conditions differ from the side that held it before: a role, an ownership case, a
+  state, a flag or a data shape that was allowed there and is not now.
 - Proof: does each new test fail when the code it covers breaks, and assert the real behavior? Flag tests that
   catch no realistic break (duplicates, constants, getters, the framework, their own mocks, loose assertions) for
   removal, and real breaks no test catches.
@@ -59,11 +67,13 @@ Read every finding against the code yourself, then give each one a disposition a
 | **noted** | Minor or stylistic | List it in the report. |
 | **dismissed** | Wrong: the code already handles it | Write the evidence (file, line, test) in the run log. |
 
-A path or risk the reviewer found that the plan missed is added to the plan with its check; a regression on it
-is **act**, even if the code sits outside the scope's files. Write a lesson for it (`cpipe:run`, Lessons).
+A path, behavior row or risk the reviewer found that the plan missed is added to the plan with its check; a
+regression on it is **act**, even if the code sits outside the scope's files. Write a lesson for it (`cpipe:run`,
+Lessons).
 
-A finding the user's instructions decide is **act**, fixed the way they say. A check this change adds that
-rejects something the user did not ask to block, and that works today, is a regression. Narrow the check so the
+A finding the user's instructions decide is **act**, fixed the way they say. Any difference from today's behavior
+that the goal and the user's instructions do not ask for is a regression and **act**. A check this change adds
+that rejects something the user did not ask to block, and that works today, is one: narrow the check so the
 existing behavior keeps working. That is not a security weakening, because the code is still stricter than before
 the change. Record what the check now allows and why. A verdict from a reviewer, QA or a role (hold, blocked, not
 ready for release) is not a finding. Take the findings behind it, sort them here, and carry on.

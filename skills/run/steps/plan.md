@@ -60,7 +60,13 @@ lines around each place it cites to confirm. Otherwise do it yourself:
    - **Guards on the way:** authentication, permissions and roles, tenancy, feature flags, validation, rate
      limits. Note which role or state may do what, on both sides (the server's check and what the client shows
      or hides).
-   - **Behavior to keep:** what each entrance and consumer does today that must still work after the change.
+   - **Behavior today:** a table of what happens now, read from the code on both sides of each boundary, not
+     from the request. One row per actor and case: each role, the owner and a stranger, signed out, a job or
+     another service, another client or page; new data and the older shapes still stored. Each row has the path
+     and today's result (allowed or rejected, shown or hidden, the response and what the caller does with it),
+     with file and line. A rule that lives on one side only (a permission the client enforces by hiding an
+     action, validation only in a form, a limit one job applies) is today's policy: record its exact
+     conditions, special cases included, and make each caller that does not pass through that side a row too.
    Record the map in the run log with paths and line numbers. A path you cannot trace is a risk in the plan.
 4. **Premortem.** Imagine the change shipped and something broke that the task never mentioned. List the most
    likely ways, looking through each lens that applies:
@@ -116,12 +122,18 @@ draft against the code and the baseline yourself. Write the plan in the chat and
 - **Base** (branch and commit) and **worktree**.
 - **Scope:** the exact files to change, new ones marked `(new)`. **Non-goals:** what you will not touch.
 - **Flow map:** the entrances, exits and guards from explore, in short.
+- **Behavior change:** the behavior-today table with an After column. A row changes only when the goal or one of
+  the user's instructions asks for it; name which. Every other row keeps today's result. A rule the change puts
+  where it did not live before (a server check for what only the client enforced) copies today's conditions from
+  the side that held it, so only the rows the request names change. Where the request's picture of today
+  differs from the code, the code wins and the difference is an assumption.
 - **Approach:** each idea the change rests on, with why, the alternative avoided and the problem it would have
   caused, and the trade-off. The report's Approach table is built from this and the assumptions.
 - **Acceptance:** observable criteria, numbered `A1`, `A2`…, each one checkable, including the design note's
   states.
-- **Must not change:** numbered `M1`…; for each entrance, consumer and guard in the map, and for each behavior the
-  user's instructions say to keep, the behavior that has to stay, with the check, test or QA step that proves it. An
+- **Must not change:** numbered `M1`…; for each row of the behavior table that keeps today's result, each
+  entrance, consumer and guard in the map, and each behavior the user's instructions say to keep, the behavior
+  that has to stay, with the check, test or QA step that proves it. An
   existing test or check that already covers it is named, not duplicated.
 - **Risks:** numbered `R1`…; the premortem, each with its check or the reason it cannot happen. A new test only
   where nothing existing would catch the break.
@@ -155,6 +167,8 @@ Before building, check the plan item by item and fix every no. It is your own ch
 - Every `A`, `M` and `R` is in some step's Covers, or names the existing test or check that covers it (a risk
   may instead give the reason it cannot happen).
 - Every Scope file is in a step, and every step's file is in Scope.
+- Every row of the behavior table either changes with the request's words that ask for it, or is held by an
+  `M`. Every actor and caller that reaches a changed path has a row, not only the one the task named.
 - No step leaves a file over 4,500 tokens (its size now, `wc -c` / 4, plus what the step adds) except by the
   import and call into a new file: the new code goes in a new file the step names (`steps/verify.md`, File size).
 - Each step depends only on steps before it.

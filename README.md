@@ -61,6 +61,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
   shows new tests red then green; a refactor keeps the same checks green before and after.
 - **The project's own checks.** Lint, typecheck, tests and build run with the commands the project and its CI
   use, inside the delivery worktree, with honest states: pass, fail, baseline or not run here.
+- **Today's behavior is the spec.** Before planning, the run records what each role, caller and kind of stored
+  data gets today, on both sides of each boundary. Only what you asked for may change; everything else must
+  keep working.
 - **Independent review.** A reviewer that did not write the code reads the diff in a fresh context and hunts for
   regressions the plan missed; a second reviewer joins for security-sensitive changes.
 - **QA on the real surface.** The change is used the way a user would use it: the page, the endpoint, the CLI.
@@ -283,12 +286,17 @@ Before planning, explore traces every path through the code that will change:
 - **Exits:** responses, data written, events emitted, UI rendered, and the code on the other side that consumes
   them.
 - **Guards:** authentication, permissions, tenancy, feature flags, validation, rate limits, on both sides.
-- **Behavior to keep:** what each entrance and consumer does today.
+- **Behavior today:** a table of what each actor and case gets now (each role, the owner and a stranger, signed
+  out, jobs, other clients, new and older stored data), read from the code on both sides of each boundary. A rule
+  that lives on one side only, such as a permission the client enforces by hiding an action, is today's policy:
+  a check added elsewhere copies its exact conditions.
 
 A **premortem** then imagines the change shipped and broken, through contracts, data and state, roles and
 environments, failure paths, user-facing states and cost. Each risk gets a check or a reason it cannot happen.
-The plan turns the map into numbered **must-not-change** items, each with the test or QA step that proves it, and
-the reviewer searches the whole repository again for any usage the map missed.
+The plan gives the table an After column: a row changes only where the request asks for it, and every other row
+becomes a numbered **must-not-change** item, each with the test or QA step that proves it. The reviewer rebuilds
+the before and after from the base on its own, and searches the whole repository again for any usage the map
+missed.
 
 ### Decide, don't ask
 
@@ -307,8 +315,8 @@ numbered steps or waits for a follow-up after the report.
 ### Independent review
 
 The builder never approves its own work. The reviewer reads only a short brief and the diff, in a context that
-did not write the code, and reviews for correctness, proof, regressions across the whole repository, risks the
-plan missed, security and simplicity. Changes to authentication, permissions, payments, data deletion or
+did not write the code, and reviews for correctness, behavior before and after for each actor, proof,
+regressions across the whole repository, risks the plan missed, security and simplicity. Changes to authentication, permissions, payments, data deletion or
 migrations get two reviewers in parallel.
 
 Every finding is read against the code and given a disposition, so nothing is filtered silently:
@@ -359,10 +367,10 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 | # | Step | Does | File |
 |---|---|---|---|
 | 1 | Set up | Finds the repository and base, creates the worktree, installs dependencies, starts the run log, removes merged cpipe worktrees | `steps/plan.md` |
-| 2 | Explore | Reads the project's instructions and lessons, maps entrances, exits and guards, runs the premortem, finds the checks and runs the baseline, reproduces a bug | `steps/plan.md` |
+| 2 | Explore | Reads the project's instructions and lessons, maps entrances, exits, guards and today's behavior, runs the premortem, finds the checks and runs the baseline, reproduces a bug | `steps/plan.md` |
 | 3 | Design | States, flow, copy, accessibility and edge cases of anything user-facing | `steps/design.md` |
 | 4 | Decide | Settles open questions as assumptions with a one-line reason each | `steps/plan.md` |
-| 5 | Plan | Goal, scope, acceptance, must-not-change, risks, tests, checks, and numbered build steps that pass the plan gate | `steps/plan.md` |
+| 5 | Plan | Goal, scope, behavior change, acceptance, must-not-change, risks, tests, checks, and numbered build steps that pass the plan gate | `steps/plan.md` |
 | 6 | Build | Tests first, then the change, one verified step at a time | `steps/build.md` |
 | 7 | Verify | The plan's checks with honest states, workarounds for checks that will not run, the completion gate | `steps/verify.md` |
 | 8 | QA | Uses the change on the real surface, walks the acceptance criteria, tries to break it | `steps/qa.md` |

@@ -22,7 +22,9 @@ tree.
 3. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,
    a user without permission.
 4. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task
-   named, and check each must-not-change item and each risk whose check is a QA step. Where behavior differs by role,
+   named, and each row of the behavior table you can reach, as that actor and with that data: a changed row
+   gives its After result, every other row today's result. Check each must-not-change item and each risk whose
+   check is a QA step. Where behavior differs by role,
    tenant, locale or state, repeat it for each (a seeded or test user per role). Then the broader test suite:
    use verify's result for this tree (the full suite in the first round, the related tests in a re-run,
    `steps/verify.md`, Fast checks); run it yourself only when verify has none. Compare its failures with the
