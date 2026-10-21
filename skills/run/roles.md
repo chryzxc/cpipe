@@ -56,7 +56,11 @@ check. It takes you a minute and a profile a cold start. Note each step you kept
    Every reply resends all you have read, so read little: the lines you need (search first, a whole file only
    when you need all of it), never a file you already have, independent reads and searches together in one
    reply. Test and build output goes to a file in <run dir>/logs/; read its summary and the failures.
-   Load only the cpipe files named below, each with its file_path, never the whole cpipe:run skill.
+   Load only the cpipe files named below, each as skill_view(name='cpipe:run', file_path='<file>'); never
+   skill_view cpipe:run without a file_path: that is the delivery run's own procedure, not yours. Skip the
+   project's general guides (architecture, standards, contributing): the plan names the rules that apply.
+   Never list or poll processes. Write only the files your work needs and your reply file, never the run log,
+   now.md, receipts or helper scripts around the project's own commands.
    Reply in at most 20 lines: the result, the evidence, what is left. Put anything longer in
    <run dir>/<role>-reply.md and give its path.
    ```
@@ -78,6 +82,7 @@ check. It takes you a minute and a profile a cold start. Note each step you kept
    - **build:** `plan.md`, the playbook and `steps/build.md`. Ask it to reply per plan step: done or corrected
      (what and why), and the narrow tests it ran with their results; you write those rows in the run log. It
      does not read or write the run log, and does not run the full suite or the production build: verify does.
+     Every file it adds or grows stays within the file size budget in this round, not in a later cleanup.
    - **qa:** the acceptance criteria, the design note, how to start the app, and verify's broader suite result
      for this tree (start QA once verify has it). Ask it to follow `steps/qa.md` without editing the repository
      and reply with each item's result and evidence.
@@ -91,18 +96,23 @@ check. It takes you a minute and a profile a cold start. Note each step you kept
    `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds>`
    Budgets in seconds: explore, design and plan 600; review, security and qa 900; build 2400. Use your terminal's
    background mode with a completion notification when it has one; otherwise a timeout above the budget. Write
-   its process id, its output file and the session id it prints in the run log: the profile keeps running when
-   this chat restarts, and a continue reads its result instead of starting it again. Wait on that process id with
-   your process tool. The budget is a hard limit: if the profile has not replied two minutes after it, stop the
-   process yourself and treat the role as failed. Never wait longer.
+   its process id and output file in the run log and `now.md`, and once it ends, the session id it prints last
+   (`session_id: …`): the profile keeps running when this chat restarts, a continue reads its result instead of
+   starting it again, and every follow-up resumes that session. Then wait the way `cpipe:run` says (Waiting ends
+   the turn). The budget is a hard limit: if the profile has not replied two minutes after it, stop the process
+   yourself and treat the role as failed. Never wait longer.
 
    The result is what the process printed, or `<role>-reply.md` when it points there. Never search the profile's
    session history or transcripts for it: when neither holds a result, the role failed.
 
-3. **Follow-ups** to the same role (a fix round, a delta review) resume its session:
-   `hermes -p <profile> chat -Q --resume <session id> --query-file <brief>`
-   A fix round's brief lists each finding itself: the file and line, what is wrong, the expected behavior and
-   the check that shows it. Never the paths of review, QA or probe files for the builder to read.
+3. **Follow-ups.** Each role has one session per delivery. Every later piece of work for that role (a fix
+   round, a correction, the cleanup, a QA re-run, a delta review, a fix review) resumes it:
+   `hermes -p <profile> chat -Q --resume <session id> --query-file <brief> --in <worktree> --run-budget <seconds>`
+   A new session reads the plan and the code again from nothing, tens of replies; start one only when the resume
+   fails, and note why in the run log. The follow-up brief holds only what is new; the session already has the
+   header and the plan. A fix round's brief lists each finding itself: the file and line, what is wrong, the
+   expected behavior and the check that shows it. Never the paths of review, QA or probe files for the builder to
+   read.
 
 ## On the board (`--kanban`)
 
@@ -122,9 +132,10 @@ the brief, the budgets, the checks you run yourself and the fallback.
 2. **Create the card:**
    `hermes kanban create "cpipe <role>: <goal>" --assignee <profile> --body-file <brief> --workspace dir:<worktree> --max-runtime <budget>s --max-retries 1 --idempotency-key <branch>-<role>-<round> --json`
    Write the card id in the run log. A follow-up to the same role is a new card with `--parent <previous card id>`.
-3. **Wait** in the background with your process tool: poll `hermes kanban show <card id> --json` every 30 seconds
-   until the status is `done`, `blocked`, `review` or `archived`. Keep working on anything that does not depend
-   on it.
+3. **Wait** with one background command and a completion notification: it checks
+   `hermes kanban show <card id> --json` every 30 seconds and exits when the status is `done`, `blocked`, `review`
+   or `archived` (a script file if the approval policy blocks the loop). Keep working on anything that does not
+   depend on it, then end the turn (`cpipe:run`, Waiting ends the turn).
 4. **Read** the result from `latest_summary` and the comments. It is a claim, as below.
 
 The card failed if it ends blocked or with no usable result, is still running two minutes past its budget, or is

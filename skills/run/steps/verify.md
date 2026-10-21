@@ -40,6 +40,10 @@ The full suite and the production build take most of a run's time. Run each only
   runs the test files beside the changed files.
 - **No duplicates.** A subset the full suite already runs (a regression script, a focused file) is not run beside
   it.
+- **The project's commands only.** Run each check with the project's own command. No wrapper scripts, gates,
+  harnesses, preloads, environment patches, manifests or receipts around it, and no full suites on other trees
+  (another base, both heads, a combined branch) to prove parity: the by-name comparison with the baseline, plus
+  the one base check under New failures, is the proof.
 - **The runner's own parallelism.** Run the suite the way the project's CI does and let the runner pick its
   workers. Never add serial or single-worker flags (`--runInBand`, a single thread or fork, `--workers=1`) unless
   the project's CI uses them. A parallel option the project already has (such as `pytest -n auto` with

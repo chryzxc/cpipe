@@ -22,9 +22,18 @@ anything not run here and how to check it, open findings. No local paths, intern
 Never merge, mark ready or request reviewers unless asked. If the push or the pull request fails, report the
 error and the exact command to retry; the work stays committed locally.
 
-After the push, wait for the pull request's CI checks (`gh pr checks --watch`, or poll), up to 30 minutes. A
-failure the change caused is fixed like any failing check: fix, verify, commit, push, wait again. A failure also
-on the base branch is baseline. Checks still running after the wait are ⏳ in the report.
+After the push, wait for the pull request's CI checks: `gh pr checks --watch` in the background with a completion
+notification, up to 30 minutes, and end the turn while it runs. A failure the change caused is fixed like any
+failing check: fix, verify, commit, push, wait again. A failure also on the base branch is baseline. Checks still
+running after the wait are ⏳ in the report.
+
+## Early draft (when asked)
+
+When the user asks for a draft pull request on the first commit, early or first, do not wait for this step. As
+soon as the first verify passes its completion gate (step 7), commit as above, push, and open the draft with the
+body above, its verification marked in progress. Then QA and the review go on as usual; each later round is a
+new commit pushed to the same branch. Here, the last commit is pushed and the body updated to the final state. A
+push or draft that fails early is noted and tried again here; it never holds the flow.
 
 ## Merge (only when asked)
 
@@ -35,6 +44,12 @@ each delivery once these hold:
 - no open **act** finding and no failing QA item;
 - the pull request's CI is pass or baseline;
 - every condition the user named.
+
+"No new failing test" is the last verify's by-name comparison with the baseline on the committed tree. When the
+base branch moved since, update the delivery branch on it the project's way (merge or rebase), run the last
+verify once more on that tree, and compare by name again. Several deliveries merge one after another, each
+updated on what the previous merge left. That is the whole proof: no extra suites on other trees, harnesses or
+environment patches, and a failure that passes alone is flaky, never a regression (`steps/verify.md`).
 
 Mark the draft ready (`gh pr ready`), merge with the method the repository's recent merges used
 (`gh pr merge --squash`, `--merge` or `--rebase`), then confirm on the remote that it is merged. A condition that

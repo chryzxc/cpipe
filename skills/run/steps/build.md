@@ -51,7 +51,8 @@ would and remove:
   their own mocks, assertions so loose any output passes. Merge near-duplicates into one table-driven test.
 
 Then verify (`steps/verify.md`): this is the last verify, with the full suite and the build. If anything turns
-red, undo the cleanup change that caused it.
+red, undo the cleanup change that caused it. That verify is the cleanup's proof: no review or QA round follows
+it. With a build profile, the cleanup is a follow-up in its build session (`roles.md`, Follow-ups).
 
 ## Rules
 
@@ -60,7 +61,7 @@ red, undo the cleanup change that caused it.
 - Never skip, weaken or delete a test, and never add `.only`, `skip` or expected-failure markers.
 - Never hard-code secrets, test credentials or environment-specific paths.
 - No new dependency unless the plan names it.
-- Do not commit in this step; the report step commits.
+- Do not commit in this step; the report step commits (or the early draft, `steps/report.md`).
 
 ## Done when
 

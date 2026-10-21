@@ -97,6 +97,10 @@ round led to another fix, have that fix alone reviewed once more (the diff of th
 no change reaches the report unreviewed. Then go to the
 cleanup step (`steps/build.md`, step 10).
 
+Round two and the fix review resume the round-one reviewer's session (`roles.md`, Follow-ups). The cleanup and an
+update onto a moved base get no review: the last verify is their proof. Only a conflict you resolved by changing
+code is reviewed, as one fix review of that resolution.
+
 ## Rules
 
 - The reviewer reads; it never edits the code. You make every fix.

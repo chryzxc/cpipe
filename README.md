@@ -167,8 +167,8 @@ passed with its reason in the run log. Verify and the report are always done by 
 the final word are never handed to anyone else.
 
 A task with several issues becomes one delivery per issue, each with its own branch, worktree, commit and pull
-request, run one after another (side by side when you ask for parallel) and reported together. Issues ship
-together only when one cannot work without the other.
+request, run one after another (side by side when you ask for parallel, at most three at a time) and reported
+together. Issues ship together only when one cannot work without the other.
 
 ## Core concepts
 
@@ -250,10 +250,17 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Roles where they pay.** A profile starts cold and reads the code again, so a step that does not apply gets
   no profile, mechanical work (formatting, a commit, a pull request body) stays in the chat, and a small change
   keeps explore and plan in the chat.
-- **Replies, not calls.** A turn has a cap on replies, so independent tool calls go out together in one reply,
-  and long work runs in the background so its notification resumes a turn the cap ended.
+- **Replies, not calls.** Every reply resends the whole chat, so independent tool calls go out together in one
+  reply, and long work runs in the background so its notification resumes a turn the cap ended.
+- **Waiting ends the turn.** While only a profile or a check is running, the chat ends its turn with one status
+  line and the completion notification starts the next one; it never polls, sleeps or lists processes.
 - **Deltas and resumed sessions.** The second review round and every follow-up see only the diff since the last
-  one, a QA re-run covers only the items that failed, and a follow-up to a profile resumes its session.
+  one, and a QA re-run covers only the items that failed. Each role has one session per delivery: fix rounds,
+  the cleanup and delta reviews resume it instead of starting cold. Profile briefs load only their step's file
+  and skip the project's general guides.
+- **The project's commands only.** Checks run with the project's own commands, with no wrapper scripts,
+  harnesses or receipts around them. The cleanup and an update onto a moved base are proven by the last verify,
+  not by another review round.
 
 ### Evidence over claims
 
@@ -590,9 +597,11 @@ reply after the report; the follow-up reuses the same worktree.
 
 **Will it push, open a pull request or merge?**
 Only when you ask, in the task or later. With a pull request it pushes the branch, opens a draft, and waits up to
-30 minutes for CI, fixing failures the change caused. With a merge ("merge it if there are no regressions") it
-merges once every check is pass or baseline, no new test fails, no review finding or QA item is open, CI passes
-and your conditions hold; a failed condition is fixed first, not handed back.
+30 minutes for CI, fixing failures the change caused. Asked for a draft on the first commit, it opens the draft
+right after the first verify and pushes each later round to it. With a merge ("merge it if there are no
+regressions") it merges once every check is pass or baseline, no new test fails by name against the baseline
+(checked again after updating onto a moved base), no review finding or QA item is open, CI passes and your
+conditions hold; a failed condition is fixed first, not handed back.
 
 **Where does the work happen?**
 In a new worktree and branch beside your repository, created from the base. Your checkout is never edited.
@@ -608,7 +617,7 @@ extra work joins the plan or waits for a follow-up after the report.
 
 **Several issues in one task?**
 Each issue is its own delivery with its own branch, worktree and commit, run one after another (or in parallel
-when you ask) and reported together.
+when you ask, at most three at a time) and reported together.
 
 **Which languages and frameworks does it support?**
 Any. It uses the project's own install, test, lint, typecheck and build commands, found in its scripts,
