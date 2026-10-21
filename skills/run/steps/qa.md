@@ -1,7 +1,7 @@
 # cpipe: the qa step
 
-Step 8 of `cpipe:run`, after the checks pass, at the same time as the review (`steps/review.md`). Checks prove
-the code; QA proves the behavior. If the roles file names a `qa` profile, hand this step to it (`roles.md` in
+Step 8 of `cpipe:run`, once the full suite and the build finish, while the review (`steps/review.md`) runs. Checks
+prove the code; QA proves the behavior. If the roles file names a `qa` profile, hand this step to it (`roles.md` in
 `cpipe:run`). Otherwise do it yourself.
 
 ## When it applies

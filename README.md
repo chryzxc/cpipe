@@ -191,9 +191,9 @@ step.
   covered, no file is pushed past its size budget. The **completion gate** searches the change before anyone
   reviews it: no skipped or focused tests, no placeholders, nothing outside the scope, no secrets, proof for every
   acceptance criterion. A failed gate item is fixed on the spot, never a stop.
-- **Fork and join.** QA and review only read the same verified change, so they run at the same time. Their
-  findings join into one fix round, followed by one delta review alongside a QA re-run of the items that failed;
-  that is the last round.
+- **Fork and join.** The review only reads the code, so it starts once the narrow tests pass, beside the full
+  suite and the build; QA joins when they finish. Their findings join into one fix round, followed by one delta
+  review alongside a QA re-run of the items that failed; that is the last round.
 - **Pass-through.** A node that does not apply is passed with a one-line reason, never silently.
 - **Re-entry.** The run log is the graph's state. **continue**, a completion notification or a restart re-enters
   at the first unfinished step or unmet instruction; a message after the report re-enters at the plan for the

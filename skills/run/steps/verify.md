@@ -33,7 +33,8 @@ baseline: never reformat files or the repository to clear it unless the task ask
 
 The full suite and the production build take most of a run's time. Run each only where it proves something:
 
-- **Narrow first.** The plan's narrow tests first; the full suite and the build only once they pass.
+- **Narrow first.** The plan's narrow tests first; the full suite and the build only once they pass. In the first
+  verify, start the review then too, before them (`cpipe:run`, Flow): it only reads the code.
 - **When.** The full suite and the build run in the first verify and in the last one, on the final tree that
   gets committed (`steps/build.md`, step 10); with no fix round between them, the first verify's results stand
   for the last one (Same tree, same result). A verify between them (a fix round) runs the narrow tests plus the
