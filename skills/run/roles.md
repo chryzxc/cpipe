@@ -64,7 +64,9 @@ You stay in charge: the flow, the checks, the run log and every decision are you
 step and reports back. This file has every command you need to run a profile: do not load other skills or help
 pages to learn the command line.
 
-1. **Brief.** Write it to a file next to the run log (`brief-<role>.md`). Start with:
+1. **Brief.** Write it to a file next to the run log (`brief-<role>.md`). Start with this header, word for word:
+   fill in the `<…>` parts and never shorten, reword or drop a line. Its rules keep the role from reading the code
+   again and again, and a role cannot ask for them later.
 
    ```
    Direct request from a delivery run. No task board, no cards: do this work and reply with the result.
@@ -212,8 +214,8 @@ The checks decide, not a reply, and with a build profile you check without readi
 ## When a role fails
 
 The profile does not exist, the command errors, it returns nothing usable, or it broke a rule in the brief: try
-once more with a shorter brief, then do the step yourself in this chat. If it timed out, do not retry: do the step
-yourself right away. Tell the user in one line
+once more with a shorter role part (the header stays whole), then do the step yourself in this chat. If it timed
+out, do not retry: do the step yourself right away. Tell the user in one line
 (`build: <profile> failed (<reason>), running it in this chat`) and note it in the run log and the report. A failed
 plan profile's steps go to the build profile when there is one: its first brief explores and plans as it does
 without a plan profile, and this chat still never reads the code. A role failing is never a reason to stop the run.
