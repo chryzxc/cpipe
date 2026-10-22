@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.31.1
+version: 3.32.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -90,7 +90,9 @@ at a time, whatever it watches. Once nothing long runs, stop it with your proces
 next tool call; a tick that arrives with nothing running gets no line and no next tick.
 
 **Turn limits.** A turn has a cap on replies that call tools, so a long run can end its turn mid-step. Spend
-replies, not calls: put independent tool calls (reads, briefs, checks to start) together in one reply. Long work
+replies, not calls: put independent tool calls (reads, briefs, checks to start) together in one reply. Calls in one
+reply run in the order given, so each sees what the ones before it wrote: a brief and the command that starts its
+profile go out in one reply, never the start after the brief's result. Long work
 (installs, checks, profiles) runs in the background with a completion notification: when a turn ends early, the
 next notification starts a new turn and the run picks up there. A turn that ends with nothing running has no
 notification to resume it, so start the next long piece of work before a stretch of short steps. Do not start a

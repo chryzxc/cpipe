@@ -54,9 +54,9 @@ Review against:
   parameters), injection, secrets, unsafe input handling.
 - Simplicity: needless abstraction, duplicated helpers, dead code, comments that restate code.
 
-For each finding: file and line, the problem, why it matters, a concrete fix, severity (critical, major, minor),
-and whether it is security-related. Say plainly if you found nothing that needs changing. Give findings, not a
-verdict: no hold, block or release decision. The delivery run decides.
+For each finding, in at most 5 lines: file and line, the problem, why it matters, a concrete fix, severity
+(critical, major, minor), and whether it is security-related. Say plainly if you found nothing that needs
+changing. Give findings, not a verdict: no hold, block or release decision. The delivery run decides.
 ```
 
 ## 2. Sort the findings

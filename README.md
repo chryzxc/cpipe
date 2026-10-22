@@ -241,7 +241,8 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   not cause the next. The first item of the todo list, which survives a compaction word for word, says so.
 - **Lean briefs.** A role's brief holds facts (goal, acceptance, diff, check states), not reasoning, and points
   to `plan.md` by its path instead of copying it or the run log. A fix round lists the findings themselves, not
-  the reviewers' reports. A profile replies in at most 20 lines and puts the rest in a file.
+  the reviewers' reports. A profile replies in at most 20 lines; findings, failures and corrections that do not
+  fit go in a file, each in at most 5 lines, without what passed or what it did not do.
 - **Lean reading.** Every reply resends all the context, so a profile reads the line ranges it needs, never a file
   twice, batches independent reads, edits and commands in one reply (a change's edits and the command that checks
   it go out together, without waiting for the edits' results), sends test output to a file with the same command
@@ -278,7 +279,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Code that builds.** The builder runs the build or typecheck, the narrow tests and its own cleanup before it
   hands a round back, so a compile error never costs a round.
 - **Replies, not calls.** Every reply resends the whole chat, so independent tool calls go out together in one
-  reply, and long work runs in the background so its notification resumes a turn the cap ended.
+  reply (calls run in order, so a brief and the command that starts its profile go out together), and long work
+  runs in the background so its notification resumes a turn the cap ended. A profile's command prints the end of
+  its log when it ends, so the notification carries the reply and no reply goes to reading it.
 - **Waiting ends the turn.** While only a profile or a check is running, the chat ends its turn with one status
   line naming the latest time it ends, and the completion notification starts the next one; it never polls,
   sleeps or lists processes. A wait past 10 minutes gets a progress tick: every 10 minutes one line on what

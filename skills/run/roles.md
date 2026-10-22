@@ -95,8 +95,10 @@ pages to learn the command line.
    standards, contributing) unless your step says to read them.
    Never list or poll processes. Write only the files your work needs and your reply file, never the run log,
    now.md, receipts or helper scripts around the project's own commands.
-   Reply in at most 20 lines: the result, the evidence, what is left. Put anything longer in
-   <run dir>/<role>-reply.md and give its path.
+   Reply in at most 20 lines: the result, the evidence, what is left. Only what does not fit goes in
+   <run dir>/<role>-reply.md, and you give its path: findings, failures and corrections, each in at most 5 lines
+   (a finding: file and line, what is wrong, why it matters, the fix, the check that shows it). Never what passed,
+   what you did not do or the brief restated.
    ```
 
    A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`. What is
@@ -129,7 +131,7 @@ pages to learn the command line.
      `<run dir>/design.md`.
    - **qa:** the acceptance criteria (`plan.md`), the design note, how to start the app, and verify's broader
      suite result for this tree (start QA once verify has it). Ask it to follow `steps/qa.md` without editing the
-     repository and reply with each item's result and evidence.
+     repository and reply with each item's result and evidence, a passed item in one line.
    - **review / security:** the reviewer brief from `steps/review.md`.
    - **explore** (no plan or build profile): the request and the worktree. Ask for a read-only map: the
      instructions that apply, the files to change, the flow map as `steps/plan.md` step 2 describes, helpers to
@@ -151,10 +153,14 @@ pages to learn the command line.
    session. Then wait the way `cpipe:run` says (Waiting ends the turn). The budget is a hard limit: run the
    profile under the time limit (`steps/setup.md`, Time limit) at its budget plus 5 minutes,
    `perl <run dir>/limit.pl <seconds> hermes -p <profile> chat …`, so a profile that hangs still ends and its
-   notification still comes. One the limit ended (`exit 124`) timed out: treat the role as failed.
+   notification still comes. Its output goes to its own log, `<run dir>/logs/<role>-<round>.txt`, and the same
+   command then prints the log's end, so the notification carries the reply and the session id and no reply goes
+   to reading them: `perl … > <log> 2>&1; echo "exit $?" >> <log>; tail -n 30 <log>`.
+   One the limit ended (`exit 124`) timed out: treat the role as failed.
 
-   The result is what the process printed, or `<role>-reply.md` when it points there. Never search the profile's
-   session history or transcripts for it: when neither holds a result, the role failed.
+   The result is what the notification carried (after a restart, the end of the log), or `<role>-reply.md` when it
+   points there. Never search the profile's session history or transcripts for it: when neither holds a result,
+   the role failed.
 
 3. **Follow-ups.** Each role has one session per run. Every later piece of work for that role resumes it: a fix
    round, a correction, a conflict, a QA re-run, the delta review, and the next delivery of the run. With
