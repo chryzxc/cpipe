@@ -23,9 +23,9 @@ every playbook:
    standard library or an installed dependency do it. Then write the minimum that works. Keep every file you
    add or grow within the file size budget (`steps/verify.md`, File size): new logic for a large file goes in a
    new file beside it.
-3. **One change at a time.** Make a change (all its edits together in one reply, in one file or several), run the
-   narrow test, keep it if it moves toward the acceptance criteria, otherwise undo it and try a different idea.
-   Never stack two unverified changes.
+3. **One change at a time.** Make a change and test it in one reply: all its edits (in one file or several), then
+   the narrow test command, which runs after them. Keep the change if it moves toward the acceptance criteria,
+   otherwise undo it and try a different idea. Never stack two unverified changes.
 4. **Narrow tests only.** The full suite and a slow production bundle run in `steps/verify.md` (Fast checks),
    and only those results count; do not run them here as well.
 5. **It builds before it leaves.** Before the round ends, run the fastest command that compiles the change: the
@@ -46,7 +46,8 @@ every playbook:
 8. **Read little.** The plan names the files and lines: read those ranges, search before opening a whole file, and
    never read again a file whose text you already have or that you just patched. Independent reads and searches go
    together in one reply. Test output goes to a file beside the run log (`logs/build-<test>.txt`, never in the
-   worktree); read its summary and the failures.
+   worktree), and the same command prints only what you need from it, so no reply goes to reading the file:
+   `<test> > <log> 2>&1; echo "exit $?"; grep -E '<the runner's summary and failure lines>' <log> | tail -40`.
 
 **A fix round** (a failing check, a review finding, a QA failure, a conflict) gets the same rules. Check each
 item against the code first. A real one is fixed, with a failing test first when it is about behavior: a QA

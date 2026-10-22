@@ -85,8 +85,9 @@ pages to learn the command line.
    Every reply resends all you have read, so read little: the lines you need (search first, a whole file only
    when you need all of it), never a file you already have, never a file again to check an edit the tool
    reported applied. Work in few replies: independent reads, searches, edits and commands go together in one
-   reply, and all the edits a change needs go out at once (several patches, or one patch over several files).
-   Test and build output goes to a file in <run dir>/logs/; read its summary and the failures.
+   reply, and a change goes out in one reply: all its edits, then the command that checks it (edits and commands
+   in one reply run in the order given). Test and build output goes to a file in <run dir>/logs/, and the same
+   command prints the exit code and only the summary and failure lines, so no reply goes to reading the file.
    Load only the cpipe files named below, each as skill_view(name='cpipe:run', file_path='<file>'), once per
    session (again only when its text has left your context); never skill_view cpipe:run without a file_path:
    that is the delivery run's own procedure, not yours. Skip the project's general guides (architecture,

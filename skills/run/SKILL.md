@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.30.1
+version: 3.31.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -249,7 +249,8 @@ Rewrite it in the same reply as each step's first tool call and whenever somethi
 background. It is what you read to resume, instead of the whole log.
 
 Long command output goes to a file beside the run log (`logs/<step>-<check>.txt`); read the result lines or the
-tail, not the whole output. The run log names the file.
+tail, not the whole output. A command you wait for prints them itself (`grep` the summary and failures, `tail`),
+so no reply goes to reading the file. The run log names the file.
 
 ## After a compaction
 
