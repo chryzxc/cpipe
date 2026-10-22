@@ -244,8 +244,8 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   the reviewers' reports. A profile replies in at most 20 lines and puts the rest in a file.
 - **Lean reading.** Every reply resends all the context, so a profile reads the line ranges it needs, never a file
   twice, batches independent reads, edits and commands in one reply (a change's edits and the command that checks
-  it go out together), sends test output to a file with the same command printing only the summary and failures,
-  and loads only the cpipe step files its brief names.
+  it go out together, without waiting for the edits' results), sends test output to a file with the same command
+  printing only the summary and failures, and loads only the cpipe step files its brief names.
 
 ### Cost engineering
 
@@ -286,8 +286,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Deltas and resumed sessions.** The delta review and every follow-up see only the diff since the last one, and a
   QA re-run covers only the items that failed. Each role has one session per run: fix rounds, corrections,
   conflicts, the delta review and the next delivery resume it instead of starting cold, so most of what it resends
-  is a prefix the provider has cached. Profile briefs load only their step's file and skip the project's general
-  guides.
+  is a prefix the provider has cached. Every follow-up repeats the header's working rules, so a session resumed
+  after an update or a compaction works by the current ones. Profile briefs load only their step's file and skip
+  the project's general guides.
 - **The project's commands only.** Checks run with the project's own commands, with no wrapper scripts,
   harnesses or receipts around them. Fixes for checks or compile errors, conflicts, the cleanup and an update
   onto a moved base are proven by their tests and the last verify, not by another review round.

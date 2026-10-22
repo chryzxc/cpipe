@@ -24,8 +24,9 @@ every playbook:
    add or grow within the file size budget (`steps/verify.md`, File size): new logic for a large file goes in a
    new file beside it.
 3. **One change at a time.** Make a change and test it in one reply: all its edits (in one file or several), then
-   the narrow test command, which runs after them. Keep the change if it moves toward the acceptance criteria,
-   otherwise undo it and try a different idea. Never stack two unverified changes.
+   the narrow test command, which runs after them and sees them. Never wait for an edit's result before sending
+   its test: a failed edit shows in the same reply's results. Keep the change if it moves toward the acceptance
+   criteria, otherwise undo it and try a different idea. Never stack two unverified changes.
 4. **Narrow tests only.** The full suite and a slow production bundle run in `steps/verify.md` (Fast checks),
    and only those results count; do not run them here as well.
 5. **It builds before it leaves.** Before the round ends, run the fastest command that compiles the change: the

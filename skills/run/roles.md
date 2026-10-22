@@ -85,9 +85,10 @@ pages to learn the command line.
    Every reply resends all you have read, so read little: the lines you need (search first, a whole file only
    when you need all of it), never a file you already have, never a file again to check an edit the tool
    reported applied. Work in few replies: independent reads, searches, edits and commands go together in one
-   reply, and a change goes out in one reply: all its edits, then the command that checks it (edits and commands
-   in one reply run in the order given). Test and build output goes to a file in <run dir>/logs/, and the same
-   command prints the exit code and only the summary and failure lines, so no reply goes to reading the file.
+   reply. A change and its check are one reply, not two: all its edits, then the command that checks it. Calls
+   in one reply run in the order given, so the check sees the edits: never wait for an edit's result before
+   sending its check. Test and build output goes to a file in <run dir>/logs/, and the same command prints the
+   exit code and only the summary and failure lines, so no reply goes to reading the file.
    Load only the cpipe files named below, each as skill_view(name='cpipe:run', file_path='<file>'), once per
    session (again only when its text has left your context); never skill_view cpipe:run without a file_path:
    that is the delivery run's own procedure, not yours. Skip the project's general guides (architecture,
@@ -160,11 +161,13 @@ pages to learn the command line.
    deliveries in parallel, each lane has its own sessions.
    `hermes -p <profile> chat -Q --resume <session id> --query-file <brief> --in <worktree> --run-budget <seconds> [--reasoning <effort>]`
    A new session reads the code again from nothing, tens of replies; start one only when the resume fails or the
-   next delivery is in another repository, and note why in the run log. The follow-up brief holds only what is
-   new; the session already has the header and the step files. The next delivery's brief is that delivery's role
-   part with its own worktree, base commit and run dir. A fix round's brief lists each item itself: the file and
-   line, what is wrong, the expected behavior and the check that shows it, as the finding or the failing check
-   gave them. Never the paths of review, QA or probe files for the builder to read.
+   next delivery is in another repository, and note why in the run log. The follow-up brief starts with the
+   header's lines from `Every reply resends` to `reading the file.`, word for word: the session's copy of them can
+   be older than this file or lost to a compaction. Then only what is new: the session already has the rest of
+   the header and the step files. The next delivery's brief is that delivery's role part with its own worktree,
+   base commit and run dir. A fix round's brief lists each item itself: the file and line, what is wrong, the
+   expected behavior and the check that shows it, as the finding or the failing check gave them. Never the paths
+   of review, QA or probe files for the builder to read.
 
 ## On the board (`--kanban`)
 
