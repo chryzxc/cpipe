@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.33.0
+version: 3.34.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -17,7 +17,7 @@ handed to the user's own profiles (see Roles), but you stay in charge of the run
 
 This chat can be any of the user's profiles, each with its own persona, standing rules, skills and tools. For a
 run they set only your tone: the steps, the roles, the checks and the bar for done come from cpipe's files and
-cpipe's home (Roles), the same whichever chat runs it. Where this chat's own rules would ask first, hand the work
+the Hermes root (Roles), the same whichever chat runs it. Where this chat's own rules would ask first, hand the work
 elsewhere or drop a step, cpipe's files win; a rule that forbids something (a push, a destructive command, a
 secret) still holds.
 
@@ -194,20 +194,28 @@ planner's explore to plan, a builder's explore to build) share one ▶ line.
 
 ## The user's own skills come first
 
-cpipe sets the order of the steps; the user's own skills say how a step is done. At the start of each step you do in
-this chat, check your skill list for a skill that covers that step's work (writing a pull request or commit message,
-code review, security review, UI design, testing a web app, a project's conventions) and load it with `skill_view`,
-once per run. A chat on another profile can lack skills the user keeps in cpipe's home (Roles): when your list has
-none for the step, look once per run at the names under `<cpipe home>/skills/` (`ls` it and its folders) and read
-the one that fits with your file tool, from its `SKILL.md`. Note each loaded skill in `now.md` (Run log) with the
-rules from it that apply to this task, one line each, and work from those lines afterwards, also after a compaction;
-never load it again. Never load one before the step that uses it or for a step a profile does: that profile uses its
-own skills, and a skill loaded early is resent with every reply until the report. Running profiles and processes
-needs no skill; `roles.md` has the commands. Where it and a cpipe step differ on how to do the work, follow the
-user's skill, including its scripts and checks. cpipe still decides the flow and the guard rails: a user skill never
-authorizes a push, merge or message the task did not ask for. Take from a user skill how the work is done, not a
-different flow: skip its parts about task boards, cards or handing work to other agents. Note in the run log which
-user skills you used.
+cpipe sets the order of the steps; the user's own skills say how a step is done, whichever profile this chat is. At
+the start of each step you do in this chat, find the skill that covers that step's work (writing a pull request or
+commit message, code review, security review, UI design, testing a web app, a project's conventions) among all the
+skills in this Hermes install, not only your own list: the user's skill for it can live in another profile. One
+command lists them by description, each skill once (here with the words for a pull request):
+
+```sh
+find <Hermes root>/skills <Hermes root>/profiles -maxdepth 5 -path '*/skills/*' -not -path '*/skills/.*' \
+  -name SKILL.md -exec grep -E -m1 -H '^description:.*([Pp]ull[- ]?[Rr]equest|\bPRs?\b)' {} + 2>/dev/null \
+  | sort -t: -k2 -u
+```
+
+Take the one about that work itself (a skill for pull-request content over one that runs a whole workflow or drives
+a tool) and load it with `skill_view` when it is in your list, otherwise read its `SKILL.md` with your file tool.
+Once per run: note each loaded skill in `now.md` (Run log) with the rules from it that apply to this task, one line
+each, and work from those lines afterwards, also after a compaction; never load it again. Never load one before the
+step that uses it or for a step a profile does: that profile uses its own skills, and a skill loaded early is resent
+with every reply until the report. Running profiles and processes needs no skill; `roles.md` has the commands. Where
+it and a cpipe step differ on how to do the work, follow the user's skill, including its scripts and checks. cpipe
+still decides the flow and the guard rails: a user skill never authorizes a push, merge or message the task did not
+ask for. Take from a user skill how the work is done, not a different flow: skip its parts about task boards, cards
+or handing work to other agents. Note in the run log which user skills you used.
 
 ## Playbooks
 
@@ -229,12 +237,12 @@ loads the playbook of the change it carries, for its proof.
 
 ## Roles
 
-**cpipe's home** is the folder all the user's profiles share, so every chat runs with the same roles, budget,
-lessons and skills: the Hermes root (two levels above `$HERMES_HOME` when that is a profile's folder
-`…/profiles/<name>`, else `$HERMES_HOME`, else `~/.hermes`), unless `$HERMES_HOME` has a `cpipe.yaml` of its own.
-The start message names it.
+**The Hermes root** is the folder all the user's profiles share, so every chat runs with the same roles, budget,
+lessons and skills: two levels above `$HERMES_HOME` when that is a profile's folder (`…/profiles/<name>`), else
+`$HERMES_HOME`, else `~/.hermes`. The start message names it. The roles file is `<Hermes root>/cpipe.yaml`, or
+`$HERMES_HOME/cpipe.yaml` when this profile has one of its own.
 
-If `<cpipe home>/cpipe.yaml` exists, it names a Hermes profile for some of the roles in the flow table. Hand those
+If the roles file exists, it names a Hermes profile for some of the roles in the flow table. Hand those
 steps to the named profiles as `skill_view(name='cpipe:run', file_path='roles.md')` describes. Without the file, or
 for a role it does not name, do the step yourself. Either way, tell the user once at the start who does each step.
 When the task message starts with `--kanban`, the named profiles get their steps as cards on the user's kanban board
@@ -281,7 +289,7 @@ every file you read are in the run log or the plan. Read a file again only for t
 
 Every miss teaches the next run. The project's lessons live at
 `$(git rev-parse --git-common-dir)/cpipe/lessons.md`, shared by all its worktrees and never committed. The user's
-lessons live at `<cpipe home>/cpipe/lessons.md` and hold how the user wants work done in any project
+lessons live at `<Hermes root>/cpipe/lessons.md` and hold how the user wants work done in any project
 (when to push, branch and pull-request format, naming). Explore reads both; the premortem turns each into a
 question for this change.
 

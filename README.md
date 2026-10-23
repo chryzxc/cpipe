@@ -478,7 +478,8 @@ profile's model, in its own session, and the builder works from its plan. Each r
 
 Whichever profile's chat runs `/cpipe`, the flow is cpipe's: that chat's persona and standing rules set its tone,
 not the steps, the roles or the bar for done. A chat without a skill tool reads cpipe's files from the plugin's
-folder, and a user skill it lacks is read from the Hermes root's `skills/` folder.
+folder. For each step it does, the chat looks for your skill across every profile's skills, not only its own, so a
+skill kept in another profile (one for pull-request content, say) still shapes the run.
 
 | Role | Time budget |
 |---|---|

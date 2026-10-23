@@ -4,7 +4,7 @@ Optional. Without a roles file, you run every step yourself in this chat.
 
 ## The roles file
 
-`<cpipe home>/cpipe.yaml` (`SKILL.md`, Roles), written by the user:
+`<Hermes root>/cpipe.yaml`, or the profile's own (`SKILL.md`, Roles), written by the user:
 
 ```yaml
 budget: <tier>          # optional: unlimited, large, medium or small

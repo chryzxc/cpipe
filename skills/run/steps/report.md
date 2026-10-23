@@ -2,8 +2,9 @@
 
 Step 11 of `cpipe:run`.
 
-Before writing the commit or the pull request, check your skill list for the user's own skill for commit
-messages or pull-request content and load it. If one exists, it decides the title, body, template and any lint
+Before writing the commit or the pull request, find the user's own skill for commit messages or pull-request
+content among all the skills in this Hermes install, whichever profile this chat is (`cpipe:run`, The user's own
+skills come first, has the command), and load it. If one exists, it decides the title, body, template and any lint
 script to run before `gh pr create` or `gh pr edit`; the sections below are the fallback.
 
 ## Commit
