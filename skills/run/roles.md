@@ -4,7 +4,7 @@ Optional. Without a roles file, you run every step yourself in this chat.
 
 ## The roles file
 
-`${HERMES_HOME:-~/.hermes}/cpipe.yaml`, written by the user:
+`<cpipe home>/cpipe.yaml` (`SKILL.md`, Roles), written by the user:
 
 ```yaml
 budget: <tier>          # optional: unlimited, large, medium or small
@@ -89,10 +89,10 @@ pages to learn the command line.
    in one reply run in the order given, so the check sees the edits: never wait for an edit's result before
    sending its check. Test and build output goes to a file in <run dir>/logs/, and the same command prints the
    exit code and only the summary and failure lines, so no reply goes to reading the file.
-   Load only the cpipe files named below, each as skill_view(name='cpipe:run', file_path='<file>'), once per
-   session (again only when its text has left your context); never skill_view cpipe:run without a file_path:
-   that is the delivery run's own procedure, not yours. Skip the project's general guides (architecture,
-   standards, contributing) unless your step says to read them.
+   Load only the cpipe files named below, each as skill_view(name='cpipe:run', file_path='<file>') (without
+   skill_view, read <skill dir>/<file> with your file tool), once per session (again only when its text has left
+   your context); never load cpipe:run's SKILL.md itself: that is the delivery run's own procedure, not yours.
+   Skip the project's general guides (architecture, standards, contributing) unless your step says to read them.
    Never list or poll processes. Write only the files your work needs and your reply file, never the run log,
    now.md, receipts or helper scripts around the project's own commands.
    Reply in at most 20 lines: the result, the evidence, what is left. Only what does not fit goes in
@@ -101,11 +101,12 @@ pages to learn the command line.
    what you did not do or the brief restated.
    ```
 
-   A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`. What is
-   already in a file (`plan.md`, the design note) is given by its path, not copied; never the whole run log. Roles
-   that start together (QA, review, security) get their briefs written in one reply. Write it in plain sentences,
-   with everything the role needs now: a profile cannot receive anything later, so start it only once its inputs
-   are ready, and never tell it to wait for a result or that something will be provided.
+   A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`; `<skill dir>`
+   is the directory of this skill's `SKILL.md`, so a profile without `skill_view` finds it too. What is already in a
+   file (`plan.md`, the design note) is given by its path, not copied; never the whole run log. Roles that start
+   together (QA, review, security) get their briefs written in one reply. Write it in plain sentences, with
+   everything the role needs now: a profile cannot receive anything later, so start it only once its inputs are
+   ready, and never tell it to wait for a result or that something will be provided.
 
    Then the role's part:
    - **plan:** the request, the worktree, the base commit, the check commands from set up, the path

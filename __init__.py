@@ -4,8 +4,11 @@ import os
 import re
 from pathlib import Path
 
-START = ("Load the skill cpipe:run with skill_view and follow it to deliver this task. Run it unattended to the "
-         "report: this is my last message, so never stop to ask or wait.\n\n")
+SKILL = Path(__file__).parent / "skills" / "run" / "SKILL.md"
+
+START = ("Load the skill cpipe:run with skill_view (without skill_view, read {skill} with your file tool) and follow "
+         "it to deliver this task: its files decide how the work is done, whichever profile this chat is. cpipe's "
+         "home: {home}. Run it unattended to the report: this is my last message, so never stop to ask or wait.\n\n")
 
 # Budget tier -> reasoning effort of every profile run (passed as `hermes chat --reasoning`).
 BUDGETS = {"unlimited": "max", "large": "xhigh", "medium": "high", "small": "medium"}
@@ -31,15 +34,23 @@ It reads the run log and picks up at the first unfinished step; finished steps a
 
 
 def register(ctx):
-    ctx.register_skill("run", Path(__file__).parent / "skills" / "run" / "SKILL.md")
+    ctx.register_skill("run", SKILL)
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
                              args_hint="[--kanban] [--budget <tier>] <task> | budget [<tier>] | continue", argument_mode="text")
 
 
+def _home():
+    """This profile's folder when it has its own cpipe.yaml, else the Hermes root every profile shares."""
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    if (home / "cpipe.yaml").exists() or home.parent.name != "profiles":
+        return home
+    return home.parent.parent
+
+
 def _config():
-    return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "cpipe.yaml"
+    return _home() / "cpipe.yaml"
 
 
 def _roles(kanban):
@@ -127,7 +138,8 @@ def _start(ctx, raw):
     from gateway.session_context import get_session_env
     key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
     try:
-        if ctx.inject_message(START + task, role="user", session_key=key):
+        if ctx.inject_message(START.format(skill=SKILL, home=_home()) + task, role="user",
+                              session_key=key):
             first, _, rest = brief.partition(" ")
             if first.lower().rstrip(".!") in ("continue", "resume"):
                 return RESUMED.format(note=f'\nYour note goes with it: "{_short(rest)}"' if rest else "")

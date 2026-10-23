@@ -33,3 +33,13 @@ def test_one_profile_explores(tmp_path, monkeypatch):
     assert cpipe._roles(False) == "Roles: build c (explores and plans too) · review d; the rest in this chat."
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  review: d\n")
     assert cpipe._roles(False) == "Roles: explore a · review d; the rest in this chat."
+
+
+def test_every_profile_shares_the_roots_file(tmp_path, monkeypatch):
+    profile = tmp_path / "profiles" / "any"
+    profile.mkdir(parents=True)
+    monkeypatch.setenv("HERMES_HOME", str(profile))
+    (tmp_path / "cpipe.yaml").write_text("roles:\n  build: c\n")
+    assert cpipe._config() == tmp_path / "cpipe.yaml" and "build c" in cpipe._roles(False)
+    (profile / "cpipe.yaml").write_text("roles:\n  review: d\n")
+    assert cpipe._config() == profile / "cpipe.yaml"

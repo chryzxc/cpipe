@@ -455,7 +455,9 @@ cpipe works with no configuration: the chat runs every step, with a subagent as 
 
 ### Roles
 
-To hand steps to your own Hermes profiles, create `~/.hermes/cpipe.yaml` (or `$HERMES_HOME/cpipe.yaml`):
+To hand steps to your own Hermes profiles, create `~/.hermes/cpipe.yaml` (the Hermes root, or `$HERMES_HOME`
+outside profile mode). Every profile's chat reads that one file, so a run started from any chat hands the same
+steps to the same profiles; a profile with a `cpipe.yaml` of its own uses that one instead:
 
 ```yaml
 roles:
@@ -473,6 +475,10 @@ the checks, writes each brief to a file, and treats each profile's answer as a c
 profile, one builder session builds and makes every fix for the whole run, and the chat never reads the
 project's code. The builder explores and plans too, unless a plan profile does: then planning runs on the plan
 profile's model, in its own session, and the builder works from its plan. Each role keeps one session per run.
+
+Whichever profile's chat runs `/cpipe`, the flow is cpipe's: that chat's persona and standing rules set its tone,
+not the steps, the roles or the bar for done. A chat without a skill tool reads cpipe's files from the plugin's
+folder, and a user skill it lacks is read from the Hermes root's `skills/` folder.
 
 | Role | Time budget |
 |---|---|
