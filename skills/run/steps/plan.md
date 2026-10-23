@@ -53,7 +53,15 @@ yourself:
    - **Failure paths:** errors, timeouts, retries, empty and huge input, a dependency down, and a new error a
      caller handles wrongly (a denial that signs the user out, a retry that loops, a crash instead of a message).
    - **User-facing:** loading, empty and error states, navigation, accessibility, wording.
-   - **Cost:** queries in loops, large inputs, work on every request or render.
+   - **Concurrency:** two requests, jobs, workers or tabs at once: check-then-write, read-modify-write, double
+     submit, a retry that repeats a side effect, ordering between async steps, a missing lock, transaction,
+     unique constraint or idempotency key, shared mutable state across requests.
+   - **Resources:** each connection, pool client, transaction, file, stream, listener, timer, subscription or
+     child process the change opens is closed on every path, errors included; pool size and timeouts under load;
+     caches, maps, queues and retries have a bound; nothing grows per request or per render without a limit.
+   - **Performance:** queries in loops (N+1), a new query without the index it needs, unbounded results without
+     pagination or a limit, blocking or synchronous work on a hot path, work repeated on every request or render
+     that could run once, payload size, the cost as the input or the data grows.
    - **The project's lessons** and anything its instructions warn about.
    Each risk gets a check (a test, a command or a QA step), or a one-line reason it cannot happen here, citing
    the code. These are prompts, not a form: find the risks this change has, including ones no lens names.

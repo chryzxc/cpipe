@@ -336,7 +336,9 @@ Before planning, explore traces every path through the code that will change:
 
 A **premortem** then imagines the change shipped and broken, through contracts (anything a caller can observe,
 old clients during a rollout, a rollback), data as stored, roles and environments, failure paths (a new error a
-caller handles wrongly), user-facing states and cost. Each risk gets a check or a reason it cannot happen.
+caller handles wrongly), concurrency (two writes at once, retries), resources (connections, handles and
+listeners closed on every path, nothing unbounded), performance (queries in loops, missing indexes, unbounded
+results, hot-path work) and user-facing states. Each risk gets a check or a reason it cannot happen.
 The plan gives the table an After column: a row changes only where the request asks for it, and every other row
 becomes a numbered **must-not-change** item, each with the test or QA step that proves it. A large table, such as
 a permission matrix, becomes one table-driven test written first with today's results, so its diff is the
@@ -362,7 +364,9 @@ numbered steps or waits for a follow-up after the report.
 
 The builder never approves its own work. The reviewer reads only a short brief and the diff, in a context that
 did not write the code, and reviews for correctness, behavior before and after for each actor, proof,
-regressions across the whole repository, risks the plan missed, security and simplicity. Changes to
+regressions across the whole repository, risks the plan missed, security, concurrency and resources,
+performance, and simplicity. Before a round leaves, the builder checks the same: resources closed, shared writes
+safe, bounds in place, no queries in loops. Changes to
 authentication, permissions, payments, data deletion or migrations get two reviewers in parallel. A run has one
 full review and at most one delta review; a fix after the delta review is proven by its test and the checks and
 listed as fixed after the last review.

@@ -41,6 +41,10 @@ every playbook:
    - comments that restate the code; keep the ones that explain why;
    - tests that catch no break: duplicates of an existing test, tests of constants, getters, the framework or
      their own mocks, assertions so loose any output passes. Merge near-duplicates into one table-driven test.
+   Then check it is sound, and fix what is not: every resource it opens is closed on every path, errors
+   included; every shared write is safe with two at once (a transaction, a lock, an atomic update or a
+   constraint); every cache, queue or retry has a bound; no query or remote call runs in a loop that one
+   batched call could replace; no blocking work sits on a hot path. Prefer the project's own pattern for each.
    Then the build and the narrow tests once more if anything changed.
 7. **A round** ends with a row in the run log: what changed, why, the check results (a build profile puts it in
    its reply instead).

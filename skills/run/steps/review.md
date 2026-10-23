@@ -48,10 +48,17 @@ Review against:
   behave the same? Follow changes across boundaries
   (server and client, services, packages, stored data).
 - Missed risks: before reading the plan's risks, write your own premortem of how this diff could break in use
-  (contracts, data and state, roles and environments, failure paths, user-facing states, cost, anything else).
+  (contracts, data and state, roles and environments, failure paths, concurrency, resources, performance,
+  user-facing states, anything else).
   Then report each risk the plan did not cover, or covered without a real check.
 - Security: access control for each role and for another user's records (forged ids, fields or query
   parameters), injection, secrets, unsafe input handling.
+- Concurrency and resources: for each shared write, what two at once do (lost updates, duplicates, a
+  check-then-write gap); for each connection, transaction, file, listener, timer or subscription the diff opens,
+  where it closes on success and on error; anything that grows without a bound (caches, maps, queues, retries).
+- Performance: queries or remote calls in loops, a new query without its index, unbounded results, blocking work
+  on a hot path, repeated work that could run once, and how the cost grows with the data. Name the input size
+  where it hurts; never flag a micro-optimization the data size does not justify.
 - Simplicity: needless abstraction, duplicated helpers, dead code, comments that restate code.
 
 For each finding, in at most 5 lines: file and line, the problem, why it matters, a concrete fix, severity
