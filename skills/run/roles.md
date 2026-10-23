@@ -227,6 +227,8 @@ The checks decide, not a reply, and with a build profile you check without readi
 The profile does not exist, the command errors, it returns nothing usable, or it broke a rule in the brief: try
 once more with a shorter role part (the header stays whole), then do the step yourself in this chat. If it timed
 out, do not retry: do the step yourself right away. Tell the user in one line
-(`build: <profile> failed (<reason>), running it in this chat`) and note it in the run log and the report. A failed
+(`build: <profile> failed (<reason>), running it in this chat`). In the run log, write the role, the profile, each
+attempt's exact error (its first error line and exit code), and who did the step instead; the report's Run
+problems section is built from it. A failed
 plan profile's steps go to the build profile when there is one: its first brief explores and plans as it does
 without a plan profile, and this chat still never reads the code. A role failing is never a reason to stop the run.

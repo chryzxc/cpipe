@@ -101,7 +101,7 @@ deliveries, one status line per delivery first, then this report for each under 
 Short and complete: plain words, technical terms where they are precise; one line per table row, cells of a few
 words; no paragraph longer than three lines; omit a section with nothing in it, apart from Steps. Facts only,
 from the run log. Tables name the step or role (Review, QA), never a profile; profiles, skills and tools are
-named only in Details. Any other internal name gets a plain description.
+named only in Run problems and Details. Any other internal name gets a plain description.
 
 ```
 <status line>
@@ -111,6 +111,9 @@ named only in Details. Any other internal name gets a plain description.
 
 ## Steps
 | # | Step | Status | Result |
+
+## Run problems
+| What failed | Error | Tried | Instead | Effect |
 
 ## Findings
 | Found by | Finding | Outcome |
@@ -161,6 +164,13 @@ known limit (the Result says which), ⏳ waiting on something outside the run (C
 | 9. Review | findings by outcome (fixed, noted, dismissed); the rounds run; fixes after the last review |
 | 10. Clean | what the cleanup removed; the last verify on the final tree |
 | 11. Commit | the SHA and subject; the pull request link and CI result if one was asked for |
+
+**Run problems**: each role whose profile failed and each tool or service that blocked a step, from the run log,
+so the user knows who did not do their part and why. **What failed** names the role and its profile (`Review:
+sentry`); **Error** is the exact error in a few words (`provider startup failed`); **Tried** the attempts
+(`2 runs`); **Instead** who did the step (`this chat, fresh pass`); **Effect** what it costs the result (`review
+not independent`) and what clears it next time (the provider, the profile's config). A Steps row whose step ran
+this way is ⚠️ and points here. Omit only when nothing failed.
 
 **Findings**: what the run found that the task did not say, and what became of it: review and QA findings, a
 root cause deeper than the symptom, a risk from the premortem that proved real, a baseline failure, a missing

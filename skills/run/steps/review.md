@@ -13,7 +13,8 @@ parallel; findings both report are high confidence. Never hand a review to a sub
 
 A review always happens. If a profile fails or runs out of time, run it once more. If it fails again, or no
 profile is set for the role, start a fresh review yourself: read only the brief below and the diff, not your
-earlier reasoning, and note in the run log that the review was not independent. Never leave a review for the user.
+earlier reasoning, and note in the run log that the review was not independent, with each attempt's error
+(`roles.md`, When a role fails). Never leave a review for the user.
 
 Give the reviewer only what it needs, not your reasoning:
 
