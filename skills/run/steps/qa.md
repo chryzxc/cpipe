@@ -58,7 +58,7 @@ output, the request and response, a screenshot path.
 - Local only: never use production systems, real customer data or real accounts, and never send real emails,
   messages or payments. Use test data and the project's local or test setup.
 - Every result has evidence; "looks fine" is not a result.
-- A QA result from a profile or subagent is a claim: a failure is reproduced by a failing test before it is
+- A QA result from a profile is a claim: a failure is reproduced by a failing test before it is
   fixed (by the builder, or by you without a build profile).
 - Stop every server and process you started, apart from the one app the report hands over.
 

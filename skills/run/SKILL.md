@@ -24,7 +24,7 @@ secret) still holds.
 ## The one rule: keep going
 
 An obstacle is something to work around, never a reason to stop. A blocked command, a broken test runner, a
-missing dependency, a flaky check, a tool error, a profile or subagent that returns nothing, a reviewer asking
+missing dependency, a flaky check, a tool error, a profile that returns nothing, a reviewer asking
 for evidence this machine cannot produce: work around it (`steps/verify.md` has a table for the common ones), write
 what you could not verify in the run log, and continue with the next step.
 
@@ -353,7 +353,7 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 **Honesty**
 - Never report a check as passed that you did not run and read on the current tree.
 - Never skip, weaken, delete or mark as expected-failure a test to make a check pass.
-- A profile's or subagent's "done" is a claim until you have checked it yourself.
+- A profile's "done" is a claim until you have checked it yourself.
 
 **Cost**
 - Every reply resends the chat: fewer replies and a smaller chat are the saving. Wait by ending the turn, never

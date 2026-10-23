@@ -15,5 +15,4 @@ and the behavior exercised on the real surface where it is reachable.
    do not prove a feature.
 
 Large features: split into units that never touch the same file and build them in order, with a build profile
-in the builder's one session. Without one, independent units can go to subagents in parallel with exact file
-lists; read every diff they return.
+in the builder's one session, or without one, yourself.

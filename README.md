@@ -139,7 +139,7 @@ Budget: not set, each profile reasons at its own setting (/cpipe budget <tier> s
 ✓ 6/11 Build: 2 files, 3 new tests RED → GREEN, 14 min
 ▶ 7/11 Verify: lint, typecheck, full suite, build (this chat)
 ▶ 8/11 QA: edit a discounted invoice on the running app (this chat)
-▶ 9/11 Review: independent review of the diff (subagent)
+▶ 9/11 Review: fresh review of the diff (this chat)
 ▶ 10/11 Clean: last verify on the final tree (this chat)
 ▶ 11/11 Report: commit and report (this chat)
 ```
@@ -304,7 +304,7 @@ Nothing counts until a command has run on the current tree and its result has be
   here** (with the reason and the other proof gathered).
 - **Baseline by name.** The baseline saves the names of failing tests and lint errors, and verify compares names,
   not counts: one new failing name is a fail even when the total went down.
-- **Claims are checked.** A profile's or subagent's "done" is a claim until the chat has run and read the check
+- **Claims are checked.** A profile's "done" is a claim until the chat has run and read the check
   itself. A QA failure is reproduced by a failing test before it is fixed.
 - **Tests that catch something.** Each new test names the break it catches, the line or behavior that makes it
   fail. Tests that catch no realistic break (a constant, a getter, the framework, a mock returning what it was
@@ -451,7 +451,7 @@ S1  src/invoices/update.ts  updateInvoice()
 
 ## Configuration
 
-cpipe works with no configuration: the chat runs every step, with a subagent as the reviewer.
+cpipe works with no configuration: the chat runs every step, reviewing the diff in a fresh pass.
 
 ### Roles
 
@@ -695,9 +695,9 @@ Any. It uses the project's own install, test, lint, typecheck and build commands
 instructions and CI workflow.
 
 **Do I need profiles?**
-No. Without `cpipe.yaml` the chat runs every step and uses a subagent for the independent review. A profile lets
-a different model or setup take a role. A build profile saves the most: it keeps the code out of the chat. A
-plan profile lets planning run on a different model from building.
+No. Without `cpipe.yaml` the chat runs every step and reviews the diff in a fresh pass. A profile lets a
+different model or setup take a role. A review profile makes the review independent. A build profile saves the
+most: it keeps the code out of the chat. A plan profile lets planning run on a different model from building.
 
 **Can two runs share a machine?**
 Yes, in different chats. Installs, full suites and builds from every run on the machine take turns, one at a

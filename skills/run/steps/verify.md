@@ -16,7 +16,7 @@ in the run log with one of four honest states:
 | **not run here** | It cannot run on this machine. Say why and how you verified instead. |
 
 A result counts only for the tree it ran on. After any change, earlier results are stale: run them again. A
-worker's or subagent's "it passes" is a claim until you run the command and read the output yourself.
+worker's "it passes" is a claim until you run the command and read the output yourself.
 
 Compare failures with the baseline by name, never by count: save this run's failing ids the same way as
 `baseline-<check>.txt` (`steps/setup.md`, step 8) and run `comm -13 baseline-<check>.txt now-<check>.txt`.
@@ -99,7 +99,7 @@ Never stop the run for this. Work down the list; the first thing that works wins
 | Times out | Run the failing files alone (Fast checks, New failures), raise the timeout once, look for a hang you caused. A suite that also hit its limit on the base is not finished there (Fast checks, After the baseline). |
 | Flaky | Run it again once, alone. A different result twice means flaky: record both runs. |
 | Expected report or output file is missing | Judge by the exit code and the printed summary. |
-| A tool or subagent errors or returns nothing | Read the error, retry once differently, or do the step yourself. |
+| A tool or profile errors or returns nothing | Read the error, retry once differently, or do the step yourself. |
 
 If nothing works, the check is **not run here**: write the reason and the other proof you gathered, and continue.
 The report shows it plainly; that is enough. Never fake a pass, never skip or delete the test to get one.

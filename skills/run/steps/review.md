@@ -7,14 +7,13 @@ delta review (section 3).
 
 ## 1. Brief the reviewer
 
-Use your subagent tool (`delegate_task` or equivalent) for one reviewer. Use two in parallel when the change
-touches authentication, permissions, payments, data deletion or migrations; findings both report are high
-confidence. If the roles file names a `review` (and, for those areas, a `security`) profile, the reviewer is
-that profile instead (`roles.md` in `cpipe:run`).
+The reviewer is the `review` profile from the roles file (`roles.md` in `cpipe:run`). When the change touches
+authentication, permissions, payments, data deletion or migrations, the `security` profile reviews too, in
+parallel; findings both report are high confidence. Never hand a review to a subagent.
 
-A review always happens. If the profile fails or runs out of time, use a subagent; if that fails too or you have
-no subagent tool, start a fresh review yourself: read only the brief below and the diff, not your earlier
-reasoning, and note in the run log that the review was not independent. Never leave a review for the user.
+A review always happens. If a profile fails or runs out of time, run it once more. If it fails again, or no
+profile is set for the role, start a fresh review yourself: read only the brief below and the diff, not your
+earlier reasoning, and note in the run log that the review was not independent. Never leave a review for the user.
 
 Give the reviewer only what it needs, not your reasoning:
 
