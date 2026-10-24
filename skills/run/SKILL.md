@@ -77,13 +77,14 @@ task; nothing that arrives mid-run replaces it.
 **Waiting ends the turn.** A reply without a tool call ends your turn. Every reply resends the whole chat, so a wait
 costs a full reply each time you look: never poll, sleep, list processes or call the process tool's wait in a loop.
 When a profile or check this run started is running with a completion notification and nothing in the run can move
-until it finishes, end the turn with one line, `⏳ <n>/11 <step>: waiting on <what>, done by <clock time> at the
-latest`, the time its time limit ends, so a long wait never looks like a hang; its notification starts the next
-turn. With nothing running, a reply without a tool call stops the run silently, so end a turn only on such a wait,
-the pause message or the report. Progress updates go in the same reply as your next tool call. Without completion
-notifications, wait on that one process id with your process tool. Whatever you wait on ends on its own: every
-install, check and profile runs under a time limit (`steps/setup.md`, Time limit), so a hang still ends it and its
-notification still comes.
+until it finishes, end the turn with exactly this line, the time being when its time limit ends:
+`⏳ <n>/11 <step>: waiting on <what>, done by <clock time> at the latest. cpipe resumes on its own; no need to
+continue.` Never a line of your own: without the time and the resume note a wait looks like a stop. Its
+notification starts the next turn. With nothing running, a reply without a tool call stops the run silently, so
+end a turn only on such a wait, the pause message or the report. Progress updates go in the same reply as your
+next tool call. Without completion notifications, wait on that one process id with your process tool. Whatever
+you wait on ends on its own: every install, check and profile runs under a time limit (`steps/setup.md`, Time
+limit), so a hang still ends it and its notification still comes.
 
 **Progress while waiting.** A wait that can last past 10 minutes (a profile, the full suite) gets a tick beside it:
 `sh <run dir>/tick.sh <worktree>` in the background with a completion notification (`steps/setup.md`, Progress
@@ -316,7 +317,9 @@ first unfinished step. Do not redo finished steps. Sometimes a report left an in
 user says "continue" or repeats the instruction. That is the same task: do what is unmet, never only report again
 that it is not done. A restart ends this chat's turn, but not the profiles and checks
 it started: before starting one again, check its process (the pid in `now.md`) and its log or reply file, and wait
-for it or use its result. With
+for it or use its result. A "continue" while what the run waits on still runs: do any step that does not need its
+result, else end the turn with the wait line above and `<m> min in` after the step; never read its partial
+output or start it again. With
 several deliveries, finish the unfinished one first, then start the next one its run log names.
 
 ## Limits
