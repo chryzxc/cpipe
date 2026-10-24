@@ -125,23 +125,23 @@ Ask for anything that leaves your machine in the task or a later message: `… a
 starts and ends, a progress line every 10 minutes of a long wait, and a single report at the end:
 
 ```
-▶ cpipe: fix the discount that disappears when an invoice is edited
+▶️ cpipe: fix the discount that disappears when an invoice is edited
 Unattended from here to a report in this chat: plan → tests first → build → verify → QA + review → commit.
 Roles: every step runs in this chat (no roles set in cpipe.yaml).
 Budget: not set, each profile reasons at its own setting (/cpipe budget <tier> saves one).
 
-▶ 1/11 Set up: worktree fix/invoice-discount, dependencies with npm ci, baseline started (this chat)
-▶ 2/11 Explore: callers of updateInvoice(), the invoice API and its consumers (this chat)
+▶️ 1/11 Set up: worktree fix/invoice-discount, dependencies with npm ci, baseline started (this chat)
+▶️ 2/11 Explore: callers of updateInvoice(), the invoice API and its consumers (this chat)
 — 3/11 Design: skipped, nothing user-facing changes
-▶ 4/11 Decide: 1 open question settled as an assumption (this chat)
-▶ 5/11 Plan: 4 build steps, plan gate passed (this chat)
-▶ 6/11 Build: tests first for the invoice update (this chat)
-✓ 6/11 Build: 2 files, 3 new tests RED → GREEN, 14 min
-▶ 7/11 Verify: lint, typecheck, full suite, build (this chat)
-▶ 8/11 QA: edit a discounted invoice on the running app (this chat)
-▶ 9/11 Review: fresh review of the diff (this chat)
-▶ 10/11 Clean: last verify on the final tree (this chat)
-▶ 11/11 Report: commit and report (this chat)
+▶️ 4/11 Decide: 1 open question settled as an assumption (this chat)
+▶️ 5/11 Plan: 4 build steps, plan gate passed (this chat)
+▶️ 6/11 Build: tests first for the invoice update (this chat)
+✅ 6/11 Build: 2 files, 3 new tests RED → GREEN, 14 min
+▶️ 7/11 Verify: lint, typecheck, full suite, build (this chat)
+▶️ 8/11 QA: edit a discounted invoice on the running app (this chat)
+▶️ 9/11 Review: fresh review of the diff (this chat)
+▶️ 10/11 Clean: last verify on the final tree (this chat)
+▶️ 11/11 Report: commit and report (this chat)
 ```
 
 The report that follows is shown in [The report](#the-report).

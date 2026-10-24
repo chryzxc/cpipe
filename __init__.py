@@ -22,14 +22,15 @@ Steps: plan, tests first, build, verify with the project's checks, QA and indepe
   /cpipe continue   pick up a run that stopped, at its first unfinished step
 Example: /cpipe --budget small fix the date filter on the orders page and open a draft pull request"""
 
-STARTED = """▶ cpipe: {task}
+STARTED = """▶️ cpipe: {task}
 Unattended from here to a report in this chat: plan → tests first → build → verify → QA + review → commit.
 {roles}
 {budget}
 Open questions are decided for you and listed in the report. No push or pull request unless you asked.
-One ▶ line per step. If it goes quiet or Hermes restarts, send /cpipe continue."""
+One ▶️ line per step. ⏳ means it waits on a check and resumes on its own.
+If it stops with no ⏳ or Hermes restarts, send /cpipe continue."""
 
-RESUMED = """↻ cpipe: continuing the run in progress
+RESUMED = """🔄 cpipe: continuing the run in progress
 It reads the run log and picks up at the first unfinished step; finished steps are not redone.{note}"""
 
 

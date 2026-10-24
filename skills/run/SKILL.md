@@ -107,7 +107,7 @@ timer or look for a tool to make one; the progress tick is the only one. When th
 asks for a final summary without tools), the final reply is this pause message and nothing else:
 
 ```
-⏸ Paused by the turn limit at <n>/11 <step>, not finished: <goal>
+⏸️ Paused by the turn limit at <n>/11 <step>, not finished: <goal>
 Done: <what this turn finished, in one line>
 Next: <the exact next action>, then <what is left until every instruction is met>
 Decided: <each open question or unexplained result: the decision the next turn acts on, and why>
@@ -121,7 +121,7 @@ do.` The report is the message written from `steps/report.md` once every instruc
 
 **A notification resumes the run.** A completion notification (a check, a profile), or a new turn that starts
 with a note that the last one hit its limit, is never a cue for a status reply. While the run log has unfinished
-steps or `now.md` an unmet instruction, say `↻ Resuming at <n>/11 <step>: <what woke the run>` and continue
+steps or `now.md` an unmet instruction, say `🔄 Resuming at <n>/11 <step>: <what woke the run>` and continue
 there with a tool call in the same reply. When a notice says how much of the turn's iteration budget is used,
 write the next step in `now.md` first, so the next turn picks it up, and start that step's long work in the
 background if it has any.
@@ -151,10 +151,10 @@ Track the steps with your todo tool if you have one, one step active at a time. 
 the report: `After a compaction: read now.md; reload only cpipe:run and the active step's file, no other skill`.
 The todo list survives a compaction word for word (After a compaction, below). When a step starts, post one line
 with your next tool call:
-`▶ <n>/11 <step>: <what it will do> (<who: this chat or the profile>)`; a step that does not apply gets
+`▶️ <n>/11 <step>: <what it will do> (<who: this chat or the profile>)`; a step that does not apply gets
 `— <n>/11 <step>: skipped, <reason>`. When it ends, post its result the same way:
-`✓ <n>/11 <step>: <the result in a few words>, <minutes it took>`, such as
-`✓ 6/11 Build: 4 files, 3 new tests RED → GREEN, 29 min` or `✓ 9/11 Review: 2 findings to fix`. Each step's
+`✅ <n>/11 <step>: <the result in a few words>, <minutes it took>`, such as
+`✅ 6/11 Build: 4 files, 3 new tests RED → GREEN, 29 min` or `✅ 9/11 Review: 2 findings to fix`. Each step's
 instructions are a file in this skill: load it with
 `skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach a step you do in this chat, not
 before; a step a profile does needs only `roles.md` here, and the profile loads its own file. Never work a step
@@ -191,7 +191,7 @@ later, it opens once nothing runs in the worktree, never by pausing a profile.
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
 skipped with a one-line reason in the run log, never silently, and gets no profile. Steps 7 and 11 are always
 yours: the checks and the final word are never handed to anyone else. Steps one session does in one brief (a
-planner's explore to plan, a builder's explore to build) share one ▶ line.
+planner's explore to plan, a builder's explore to build) share one ▶️ line.
 
 ## The user's own skills come first
 
