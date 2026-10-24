@@ -134,6 +134,11 @@ pages to learn the command line.
      suite result for this tree (start QA once verify has it). Ask it to follow `steps/qa.md` without editing the
      repository and reply with each item's result and evidence, a passed item in one line.
    - **review / security:** the reviewer brief from `steps/review.md`.
+   - **plan review** (`steps/plan.md`, Second opinion): the review profile in a session of its own, so the code
+     review later still reads the diff fresh. The brief gives the request, the worktree and `plan.md`'s path,
+     and asks, without editing anything, for what the plan misses: an entrance, consumer or guard; an edge or
+     sequence from the premortem lenses with no rule; a rule whose test does not start at an entrance; a step
+     that cannot work as written. Each as one line with file and line, at most 10. Budget 600.
    - **explore** (no plan or build profile): the request and the worktree. Ask for a read-only map: the
      instructions that apply, the files to change, the flow map as `steps/plan.md` step 2 describes, helpers to
      reuse. Paths and line numbers, no edits.
@@ -163,10 +168,14 @@ pages to learn the command line.
    points there. Never search the profile's session history or transcripts for it: when neither holds a result,
    the role failed.
 
-3. **Follow-ups.** Each role has one session per run. Every later piece of work for that role resumes it: a fix
+3. **Follow-ups.** Each role has one session per run (the plan review has its own). Every later piece of work
+   for that role resumes it: a fix
    round, a correction, a conflict, a QA re-run, the delta review, and the next delivery of the run. With
    deliveries in parallel, each lane has its own sessions.
    `hermes -p <profile> chat -Q --resume <session id> --query-file <brief> --in <worktree> --run-budget <seconds> [--reasoning <effort>]`
+   A resumed session keeps the `--run-budget` it started with and refuses another value: pass the first run's
+   value again, and hold the follow-up to its own budget with the time limit (`limit.pl` at that budget plus 5
+   minutes).
    A new session reads the code again from nothing, tens of replies; start one only when the resume fails or the
    next delivery is in another repository, and note why in the run log. The follow-up brief starts with the
    header's lines from `Every reply resends` to `reading the file.`, word for word: the session's copy of them can

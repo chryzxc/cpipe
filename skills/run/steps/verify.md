@@ -126,9 +126,29 @@ added lines that look like a credential.
 - **Proof:** each acceptance criterion has a test, a check or a recorded manual verification in the reply or the
   run log. Whether the tests assert something real is the review's to judge (`steps/review.md`, Proof).
 - **File size:** every file the change adds or grows is within the budget (below).
+- **Proof by undo:** every new test of an acceptance rule fails with the fix taken out (below).
 - **Port:** every row of the inventory is ported or has its reason (`playbooks/port.md`).
 
 Fix what fails the gate (with a build profile, as one follow-up), then verify again.
+
+### Proof by undo
+
+A test that passes with or without the fix proves nothing, however it was written. Once the narrow tests pass,
+while nobody reads or edits the worktree (before the review starts), take the fix out of the source files,
+never the tests, run the new tests, and put it back. From the worktree root, with the plan's base, the changed
+source files that are not tests, and the narrow command for the new tests:
+
+```sh
+b=$(git merge-base <base> HEAD)
+git diff "$b" -- <source files> > <run dir>/logs/fix.patch && git apply -R <run dir>/logs/fix.patch
+<new tests> > <run dir>/logs/undo.txt 2>&1; echo "exit $?"; git apply <run dir>/logs/fix.patch; git diff --stat "$b"
+```
+
+Each new test of an `A` rule must fail in `undo.txt`; tests of must-not-change items pass either way. One that
+passes there catches nothing: it goes to the builder with the gate's other items, to make it fail without the
+fix. The tree id after must be the one before. A fix that lives only in new files the tests import directly
+cannot be taken out this way: record that, and the review judges those tests (`steps/review.md`, Proof). Record
+in the run log `undo: <n> of <m> new tests RED`.
 
 ### File size
 

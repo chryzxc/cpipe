@@ -18,7 +18,9 @@ every playbook:
    instead: break the line it guards for a moment, see the test fail, and restore it. A test that still passes
    with its code broken catches nothing: fix it or delete it. A table-driven test of the behavior table takes two
    moves: today's results first (it passes; prove it as above), then only the changed rows set to their After
-   results, which fail until the change is made.
+   results, which fail until the change is made. Once a test fails for the right reason it is the contract:
+   the build changes the code, not the test. A test that is itself wrong is changed only with the reason in the
+   round (what was wrong, the assertion now); verify proves the tests still catch the change (Proof by undo).
 2. **Climb the ladder** before writing code: does it need to exist, does the codebase already have it, does the
    standard library or an installed dependency do it. Then write the minimum that works. Keep every file you
    add or grow within the file size budget (`steps/verify.md`, File size): new logic for a large file goes in a
@@ -31,8 +33,10 @@ every playbook:
    and only those results count; do not run them here as well.
 5. **It builds before it leaves.** Before the round ends, run the fastest command that compiles the change: the
    project's typecheck, or for a compiled language its compiler's build (such as `swift build`, `cargo check`,
-   `go build ./...` or `tsc --noEmit`), and the plan's narrow tests, and fix what they report. Code that does not
-   build never leaves a round: a compile error found in verify costs a whole extra round.
+   `go build ./...` or `tsc --noEmit`), the plan's narrow tests, and the two searches and the size check of the
+   completion gate (`steps/verify.md`), and fix what they report. The reply gives each command with its exit
+   code and summary line, not "it passes". Code that does not build or fails the gate never leaves a round:
+   found in verify, it costs a whole extra round.
 6. **Clean before it leaves.** Read your own diff (`git diff` plus new files) once as a stranger would and
    remove:
    - dead code, debug output, commented-out code;

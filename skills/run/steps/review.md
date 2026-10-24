@@ -39,7 +39,10 @@ Review against:
   diff adds or moves whose conditions differ from the side that held it before: a role, an ownership case, a
   state, a flag or a data shape that was allowed there and is not now. For each line the diff removes or
   tightens, find why it was there (`git blame` on the base) and who relied on it.
-- Proof: does each new test fail when the code it covers breaks, and assert the real behavior? Flag tests that
+- Proof: does each new test fail when the code it covers breaks, assert the real behavior, and reach the code
+  the way the user does (from the screen, route or job, in the user's order, not internal calls)? Is every
+  acceptance rule and every sequence in the plan's premortem (retry, cancel and reopen, another record) tested?
+  Flag tests that
   catch no realistic break (duplicates, constants, getters, the framework, their own mocks, loose assertions) for
   removal, and real breaks no test catches.
 - Regressions: do not trust the flow map. Search the whole repository for every usage of what the diff changed

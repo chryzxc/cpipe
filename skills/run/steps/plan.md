@@ -52,7 +52,13 @@ yourself:
    - **Who and where:** each role, tenant, locale, time zone, platform, device, feature-flag state, environment.
    - **Failure paths:** errors, timeouts, retries, empty and huge input, a dependency down, and a new error a
      caller handles wrongly (a denial that signs the user out, a retry that loops, a crash instead of a message).
+     A success status whose body is empty, partial or for another record. A step after a write that throws, so
+     the write is done but the caller is told it failed, and a retry writes again.
    - **User-facing:** loading, empty and error states, navigation, accessibility, wording.
+   - **Sequences:** what the user does next, through the real screen or API: retry after a failure, submit twice,
+     cancel then open again, open another record in the same screen or dialog, go back, refresh, a second tab.
+     State kept from one attempt (ids, uploads, flags, drafts, a cached response) belongs to that attempt and
+     that record: walk each sequence and say where it is kept, cleared or reused.
    - **Concurrency:** two requests, jobs, workers or tabs at once: check-then-write, read-modify-write, double
      submit, a retry that repeats a side effect, ordering between async steps, a missing lock, transaction,
      unique constraint or idempotency key, shared mutable state across requests.
@@ -109,8 +115,10 @@ instructions and is resent with every build reply, so it holds facts in this for
   differs from the code, the code wins and the difference is an assumption.
 - **Approach:** each idea the change rests on, with why, the alternative avoided and the problem it would have
   caused, and the trade-off. The report's Approach table is built from this and the assumptions.
-- **Acceptance:** observable criteria, numbered `A1`, `A2`…, each one checkable, including the design note's
-  states.
+- **Acceptance:** numbered `A1`, `A2`…, each one rule in the form `When <trigger, state or input>, <who or
+  what> <observable result>`, including the design note's states. Each edge the premortem keeps (an empty or
+  wrong response, a failure after the write, a retry, a cancel and reopen) is a rule of its own, never a clause
+  of another, so each gets its own test.
 - **Must not change:** numbered `M1`…; for each row of the behavior table that keeps today's result, each
   entrance, consumer and guard in the map, and each behavior the user's instructions say to keep, the behavior
   that has to stay, with the check, test or QA step that proves it. An
@@ -126,7 +134,12 @@ instructions and is resent with every build reply, so it holds facts in this for
   becomes one table-driven test written first with today's results, passing on the base; the build then edits
   only the changed rows to their After results, so the test's diff is the behavior change. A test of code that
   crosses a boundary (a database query, an HTTP call, auth middleware) goes through the real layer or the
-  project's in-memory version of it; a mock of the code under change proves nothing.
+  project's in-memory version of it; a mock of the code under change proves nothing. A test reaches the change
+  from an entrance in the flow map, the way the user or caller does (the UI action, the route, the job), in the
+  order the user's sequence takes: never internal calls in an order no user can produce. A parser, validator,
+  serializer, converter or other code with a wide input space also gets one property test (a round trip, an
+  invariant, the same result as today on inputs the change must not touch) when the project already has a
+  property-based testing library; never install one.
 - **Checks:** the exact commands, with the baseline result of each (or `running` while it is not back).
 - **Steps:** the build, in the playbook's order, one behavior per step, written so a builder who has not read
   the code can follow it:
@@ -157,8 +170,14 @@ Before building, check the plan item by item and fix every no. It is your own ch
 - No step leaves a file over 4,500 tokens (its size now, `wc -c` / 4, plus what the step adds) except by the
   import and call into a new file: the new code goes in a new file the step names (`steps/verify.md`, File size).
 - Each step depends only on steps before it.
+- Every acceptance rule has the `When … <result>` form and is covered by a test that starts at an entrance.
 - The plan is at most 12,000 characters and has only the sections above. Over it, cut prose, quoted code and
   repeats, and merge steps that change one function, until it fits.
+
+**Second opinion.** With a plan profile and a review profile, a plan of 6 steps or more, or one that touches
+authentication, permissions, payments, deletion, migrations or the shape of stored data, gets one read by the
+review profile before the build (`roles.md` in `cpipe:run`, Plan review). It is never a stop: its findings go
+into the build brief, and the builder corrects the plan where one holds, as for anything the code contradicts.
 
 Post the plan's goal and step count in one line together with your next tool call and start building; do not
 wait for approval.

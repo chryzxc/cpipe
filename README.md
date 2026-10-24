@@ -59,7 +59,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
   in the run's state, settles the questions it answers and wins over cpipe's defaults. The run is done when each
   one is met (a merge when there are no regressions included), not when the steps have run once.
 - **Tests first, proof per kind.** A bug is reproduced with a failing test before the plan is written; a feature
-  shows new tests red then green; a refactor keeps the same checks green before and after.
+  shows new tests red then green; a refactor keeps the same checks green before and after. Acceptance is written
+  as `When <trigger>, <result>` rules, edges and user sequences (retry, cancel and reopen) included, and each
+  rule's test starts where the user does. Verify takes the fix out and checks every new test fails without it.
 - **The project's own checks.** Lint, typecheck, tests and build run with the commands the project and its CI
   use, inside the delivery worktree, with honest states: pass, fail, baseline or not run here.
 - **Today's behavior is the spec.** Before planning, the run records what each role, caller and kind of stored
@@ -194,9 +196,11 @@ step.
 
 - **Gates** guard the two expensive edges. The **plan gate** checks the plan before any code is written: every path
   and function exists, no step is vague or leaves a choice open, every acceptance, must-not-change and risk item is
-  covered, no file is pushed past its size budget. The **completion gate** searches the change before anyone
-  reviews it: no skipped or focused tests, no placeholders, nothing outside the scope, no secrets, proof for every
-  acceptance criterion. A failed gate item is fixed on the spot, never a stop.
+  covered, no file is pushed past its size budget. A large or risky plan also gets one read by the review profile
+  before the build. The **completion gate** searches the change before anyone reviews it: no skipped or focused
+  tests, no placeholders, nothing outside the scope, no secrets, proof for every acceptance criterion, and every
+  new test failing with the fix taken out. The builder runs the same searches before it hands back. A failed gate
+  item is fixed on the spot, never a stop.
 - **Fork and join.** The review only reads the code, so it starts once the narrow tests pass, beside the full
   suite and the build; QA joins when they finish. Their findings join into one fix round, followed by one delta
   review alongside a QA re-run of the items that failed; that is the last round.
