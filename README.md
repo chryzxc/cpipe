@@ -125,10 +125,15 @@ Ask for anything that leaves your machine in the task or a later message: `… a
 starts and ends, a progress line every 10 minutes of a long wait, and a single report at the end:
 
 ```
-▶️ cpipe: fix the discount that disappears when an invoice is edited
-Unattended from here to a report in this chat: plan → tests first → build → verify → QA + review → commit.
-Roles: every step runs in this chat (no roles set in cpipe.yaml).
-Budget: not set, each profile reasons at its own setting (/cpipe budget <tier> saves one).
+🚀 cpipe: fix the discount that disappears when an invoice is edited
+
+  Flow    plan → tests → build → verify → QA + review → commit
+  Team    this chat runs every step (no roles in cpipe.yaml)
+  Budget  each profile's own setting (/cpipe budget <tier> sets one)
+
+Runs on its own and reports here. Open questions are decided for you and listed in the report;
+nothing is pushed unless you asked.
+▶️ step starts · ✅ step done · ⏳ waiting, resumes on its own · stopped with no ⏳? /cpipe continue
 
 ▶️ 1/11 Set up: worktree fix/invoice-discount, dependencies with npm ci, baseline started (this chat)
 ▶️ 2/11 Explore: callers of updateInvoice(), the invoice API and its consumers (this chat)

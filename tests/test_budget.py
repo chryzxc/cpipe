@@ -28,11 +28,11 @@ def test_setter_keeps_roles_and_replaces_budget(tmp_path, monkeypatch):
 def test_one_profile_explores(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  plan: b\n  build: c\n  review: d\n")
-    assert cpipe._roles(False) == "Roles: plan b (explores too) · build c · review d; the rest in this chat."
+    assert cpipe._roles(False) == "plan b · build c · review d, the rest this chat"
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  build: c\n  review: d\n")
-    assert cpipe._roles(False) == "Roles: build c (explores and plans too) · review d; the rest in this chat."
+    assert cpipe._roles(True) == "build c · review d, the rest this chat, as kanban cards"
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  review: d\n")
-    assert cpipe._roles(False) == "Roles: explore a · review d; the rest in this chat."
+    assert cpipe._roles(False) == "explore a · review d, the rest this chat"
 
 
 def test_every_profile_shares_the_roots_file(tmp_path, monkeypatch):

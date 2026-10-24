@@ -22,16 +22,17 @@ Steps: plan, tests first, build, verify with the project's checks, QA and indepe
   /cpipe continue   pick up a run that stopped, at its first unfinished step
 Example: /cpipe --budget small fix the date filter on the orders page and open a draft pull request"""
 
-STARTED = """▶️ cpipe: {task}
-Unattended from here to a report in this chat: plan → tests first → build → verify → QA + review → commit.
-{roles}
-{budget}
-Open questions are decided for you and listed in the report. No push or pull request unless you asked.
-One ▶️ line per step. ⏳ means it waits on a check and resumes on its own.
-If it stops with no ⏳ or Hermes restarts, send /cpipe continue."""
+STARTED = """🚀 cpipe: {task}
 
-RESUMED = """🔄 cpipe: continuing the run in progress
-It reads the run log and picks up at the first unfinished step; finished steps are not redone.{note}"""
+  Flow    plan → tests → build → verify → QA + review → commit
+  Team    {roles}
+  Budget  {budget}
+
+Runs on its own and reports here. Open questions are decided for you and listed in the report;
+nothing is pushed unless you asked.
+▶️ step starts · ✅ step done · ⏳ waiting, resumes on its own · stopped with no ⏳? /cpipe continue"""
+
+RESUMED = """🔄 cpipe: resuming at the first unfinished step; finished steps are not redone.{note}"""
 
 
 def register(ctx):
@@ -64,16 +65,11 @@ def _roles(kanban):
     except OSError:
         roles = {}
     if not roles:
-        return ("Roles: none set in cpipe.yaml, so nothing goes to the board; every step runs in this chat." if kanban
-                else "Roles: every step runs in this chat (no roles set in cpipe.yaml).")
+        return "this chat runs every step (no roles in cpipe.yaml)"
     if "plan" in roles or "build" in roles:  # one reader explores (skills/run/roles.md)
         roles.pop("explore", None)
-        if "plan" in roles:
-            roles["plan"] += " (explores too)"
-        else:
-            roles["build"] += " (explores and plans too)"
-    return (("Roles, as cards on your kanban board: " if kanban else "Roles: ")
-            + " · ".join(f"{role} {profile}" for role, profile in roles.items()) + "; the rest in this chat.")
+    return (" · ".join(f"{role} {profile}" for role, profile in roles.items()) + ", the rest this chat"
+            + (", as kanban cards" if kanban else ""))
 
 
 def _saved_budget():
@@ -86,16 +82,16 @@ def _saved_budget():
 
 def _budget_line(tier, kanban):
     if kanban:
-        return "Budget: not applied on the board (cards take no reasoning setting)."
+        return "not applied on the board (cards take no reasoning setting)"
     if not tier:
-        return "Budget: not set, each profile reasons at its own setting (/cpipe budget <tier> saves one)."
-    return f"Budget: {tier}, every profile run reasons at {BUDGETS[tier]}."
+        return "each profile's own setting (/cpipe budget <tier> sets one)"
+    return f"{tier}, every profile reasons at {BUDGETS[tier]}"
 
 
 def _budget(arg):
     tiers = ", ".join(BUDGETS)
     if not arg:
-        return _budget_line(_saved_budget(), False) + f"\nSet it: /cpipe budget <{tiers}|off>"
+        return f"Budget: {_budget_line(_saved_budget(), False)}\nSet it: /cpipe budget <{tiers}|off>"
     path = _config()
     try:
         text = path.read_text()
@@ -110,7 +106,7 @@ def _budget(arg):
         path.write_text(text)
     except OSError as exc:
         return f"cpipe could not write {path}: {exc}"
-    return _budget_line(arg if arg != "off" else None, False) + " Saved in cpipe.yaml for every run."
+    return f"Budget: {_budget_line(arg if arg != 'off' else None, False)}. Saved in cpipe.yaml for every run."
 
 
 def _flags(task):
@@ -147,7 +143,7 @@ def _start(ctx, raw):
                               session_key=key):
             first, _, rest = brief.partition(" ")
             if first.lower().rstrip(".!") in ("continue", "resume"):
-                return RESUMED.format(note=f'\nYour note goes with it: "{_short(rest)}"' if rest else "")
+                return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
             return STARTED.format(task=_short(brief), roles=_roles(kanban),
                                   budget=_budget_line(budget or _saved_budget(), kanban))
         reason = "the chat did not accept the message"
