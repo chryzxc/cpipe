@@ -232,7 +232,9 @@ In the report, show the same flow as `graph.part`, never a shorter one:
   when to prefer plain text. The flow becomes the graph block (each node titled with the step, the role and its
   profile; its detail the minutes and the result; each edge labelled, retries and interruptions included), the
   steps a workflow block with their states and evidence from the run log, and the run graph's text the
-  fallback. Follow the format exactly as that chat describes it. Never paste `run-graph.html` into a view that
+  fallback. Where the graph block takes a node status or an edge style, the nodes the flow marks `ok` are
+  passed and those it marks `bad` failed or blocked, and the dashed arrows are dashed edges. Follow the format
+  exactly as that chat describes it. Never paste `run-graph.html` into a view that
   runs offline: its diagrams load a remote script.
 - **Otherwise** the flow in a ` ```mermaid ` block.
 
