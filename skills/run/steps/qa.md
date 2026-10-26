@@ -15,6 +15,9 @@ with a browser tool, an HTTP endpoint, a CLI, a library call by script. It is sk
 - the surface cannot be driven here: a desktop or mobile app, a device, a signed-in external service. The tests
   are the proof, and the report's Test it table lists the manual checks with exact steps and expected results.
 
+Signing in to the project's own app on this machine is not an external service: create a local test user (the
+project's seed, fixtures or sign-up page), sign in and run QA behind the login.
+
 ## Steps
 
 Use the project's own dev server, test runner and tools. Write your own harness only for a behavior they cannot

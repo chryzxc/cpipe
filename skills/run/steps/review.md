@@ -88,7 +88,9 @@ regression on it is **act**, even if the code sits outside the scope's files. Wr
 Lessons).
 
 A finding the user's instructions decide is **act**, fixed the way they say. Any difference from today's behavior
-that the goal and the user's instructions do not ask for is a regression and **act**. A check this change adds
+that the goal and the user's instructions do not ask for is a regression and **act**. The change's own
+description, plan or commit message is not the user asking: a feature it turns off or hides (a preview, an export,
+a notification, a button) is a regression unless the user asked for that. A check this change adds
 that rejects something the user did not ask to block, and that works today, is one: narrow the check so the
 existing behavior keeps working. That is not a security weakening, because the code is still stricter than before
 the change. Record what the check now allows and why. A verdict from a reviewer, QA or a role (hold, blocked, not

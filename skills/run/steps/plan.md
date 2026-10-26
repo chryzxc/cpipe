@@ -95,6 +95,10 @@ likely ones the more reversible. Each becomes an assumption in the plan with a o
 the user may do (credentials, destructive actions, an unasked push) is left out of the scope and goes in the
 report.
 
+A fix keeps every feature working. When a risky path has to change, guard it (a safe client, limits, validation,
+an allow list) and keep what the user sees; turning a feature off or hiding it is a step only when the user asked
+for it. Of two ways to fix, never pick the smaller one because it drops a feature.
+
 ## 5. Plan
 
 A plan profile writes the plan, and the builder (or you, without a build profile) builds from it, correcting what

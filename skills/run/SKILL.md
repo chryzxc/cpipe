@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.42.0
+version: 3.43.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -61,7 +61,8 @@ or skip that part and report it. Every choice is yours:
 - **A security problem in code this change does not touch:** finish the rest and lead the report with it. A
   problem this change causes is fixed in this change.
 
-A push, pull request or merge happens only when the user asks for one. A message from the user mid-run is
+A push, pull request or merge happens only when the user asks for one; a task to fix an existing pull request or
+make it right asks for a push to it (`playbooks/review.md`). A message from the user mid-run is
 steering, not a stop: add its instructions to `now.md`, answer it in one line in the same reply as the run's next
 tool call, and go on as Continue says. Never end the turn on the answer: the run only resumes from a turn that
 is still working, and a message that cut off a turn means that turn's work is undone. A question about the run
