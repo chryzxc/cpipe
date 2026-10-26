@@ -195,7 +195,8 @@ is running.
 **Not in this change**: out-of-scope problems, **consider** and **noted** findings not in Findings, known
 limits, a follow-up delivery (a hotfix's root cause). One line each, or omit the section.
 
-**Run graph**: what happened in the whole run, drawn (Run graph below). In the chat, the flow chart only.
+**Run graph**: what happened in the whole run, drawn (Run graph below): a structured view when the chat offers
+one, else the flow chart.
 
 **Details**: the branch and worktree, the commit SHA and subject, the pull request link, `git diff --stat` in one
 line, who did each step (a profile or this chat) and any fallback, the user skills used, and the lessons written.
@@ -221,9 +222,19 @@ never guessed. Two Mermaid diagrams:
 Write them to `<run dir>/graph.part` as two blocks, `<script type="text/x-mermaid" data-title="Flow">` and
 `data-title="Timeline"`, after a `<p>` line with the goal, branch and date. Then
 `cat <this skill's folder>/run-graph.html <run dir>/graph.part > <run dir>/run-graph.html`: the template (beside
-`SKILL.md`) renders them in a browser. In the report, put the flow in a ` ```mermaid ` block. When this chat's
-own instructions say it shows interactive views or web pages, show the graph that way instead, as they
-describe (for a web page, the contents of `run-graph.html`). The Details line names `run-graph.html`.
+`SKILL.md`) renders them in a browser. The Details line names `run-graph.html`.
+
+In the report, show the same flow as `graph.part`, never a shorter one:
+
+- **A structured view, when the chat offers one.** Instructions anywhere in this chat (the system prompt, or a
+  note attached to the user's messages) that describe a fenced format for interactive or structured views with a
+  graph, workflow or timeline block: the run graph always uses it, never a code block, whatever they say about
+  when to prefer plain text. The flow becomes the graph block (each node titled with the step, the role and its
+  profile; its detail the minutes and the result; each edge labelled, retries and interruptions included), the
+  steps a workflow block with their states and evidence from the run log, and the run graph's text the
+  fallback. Follow the format exactly as that chat describes it. Never paste `run-graph.html` into a view that
+  runs offline: its diagrams load a remote script.
+- **Otherwise** the flow in a ` ```mermaid ` block.
 
 ## Rules
 

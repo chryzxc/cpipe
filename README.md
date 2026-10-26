@@ -555,7 +555,8 @@ request was asked for. It is short, one line per row, and complete:
 - **Steps:** all eleven steps with ✅, ⚠️, ⏳, ❌ or — and the proof in a few words.
 - **Run graph:** a flow chart of the whole run: each step and round with its role, minutes and result, fix
   rounds as arrows back, and retries, interruptions and stalls in red. The run folder also gets `run-graph.html`,
-  which shows the flow and a timeline per role in any browser.
+  which shows the flow and a timeline per role in any browser. A chat app that renders structured views (graphs,
+  workflows) gets the run graph as one of those instead of a chart's source.
 - **Findings:** what the run found that the task did not say, and what became of each.
 - **Approach:** each idea the change is built on and each assumption: why, what was avoided and the problem it
   would have caused, and the trade-off.
