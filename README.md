@@ -198,8 +198,9 @@ step.
   and function exists, no step is vague or leaves a choice open, every acceptance, must-not-change and risk item is
   covered, no file is pushed past its size budget. A large or risky plan also gets one read by the review profile
   before the build. The **completion gate** searches the change before anyone reviews it: no skipped or focused
-  tests, no placeholders, nothing outside the scope, no secrets, proof for every acceptance criterion, and every
-  new test failing with the fix taken out. The builder runs the same searches before it hands back. A failed gate
+  tests, no placeholders, nothing outside the scope, no secrets, no silenced type or lint errors or empty catches,
+  proof for every acceptance criterion, and every new test failing with the fix taken out. New typecheck and lint
+  errors are compared with the base by id, so a base that is already red hides none of them. The builder runs the same searches before it hands back. A failed gate
   item is fixed on the spot, never a stop.
 - **Fork and join.** The review only reads the code, so it starts once the narrow tests pass, beside the full
   suite and the build; QA joins when they finish. Their findings join into one fix round, followed by one delta

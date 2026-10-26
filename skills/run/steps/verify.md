@@ -27,7 +27,8 @@ attempts with different ideas per failure, then record it as open and move on
 name and its failure lines from the log, never the log to read.
 
 Formatters and linters fix only the lines the change touches. A red formatting or lint baseline stays the
-baseline: never reformat files or the repository to clear it unless the task asks.
+baseline: never reformat files or the repository to clear it unless the task asks. A red lint or typecheck
+baseline hides nothing: its new errors are found by id like any failure, and each one is yours.
 
 ## Fast checks
 
@@ -113,15 +114,21 @@ needs no code in the chat. From the worktree root, with the plan's base:
 b=$(git merge-base <base> HEAD)
 d() { git diff -U0 "$b"; git ls-files -z --others --exclude-standard | xargs -0 -I{} git diff -U0 --no-index /dev/null {}; }
 d | grep -E '^\+\+\+ |^\+.*(TODO|FIXME|XXX|NotImplemented|\.only\(|[.@]skip\b|xfail|XCTSkip|@Disabled|t\.Skip\(|debugger)'
-d | grep -iE '^\+[^+].*(BEGIN [A-Z ]*PRIVATE KEY|(api[_-]?key|secret|token|passw(or)?d)[^=:]{0,20}[:=])'
+a() { d | grep -v '^+++ '; }
+a | grep -iE '^\+.*(BEGIN [A-Z ]*PRIVATE KEY|(api[_-]?key|secret|token|passw(or)?d)[^=:]{0,20}[:=])'
+a | grep -E '^\+.*(@ts-(ignore|expect-error|nocheck)|eslint-disable|type: *ignore|noqa|nolint|NOLINT|#\[allow\(|'\
+'@SuppressWarnings|swiftlint:disable|\bas any\b|: any\b|catch *(\([^)]*\))? *\{ *\}|except[^:]*: *pass)'
 ```
 
 The first search lists every changed or new file (`+++ b/<path>`) with its hits beneath it; the second lists
-added lines that look like a credential.
+added lines that look like a credential; the third, added escape hatches: a silenced type or lint error, an
+`any`, an empty catch.
 
 - **Scope:** every listed file is in the plan's Scope, or the builder's reply or the run log gives the reason.
 - **Markers:** each hit is judged from its line alone: a skipped, focused or expected-to-fail test, a `TODO` or
   placeholder, or a literal credential fails the gate; a variable named `token` does not.
+- **Escape hatches:** each hit of the third search fails unless the type or rule cannot be met another way and
+  the line or the one above says why. An empty catch fails unless the error is expected and the comment says so.
 - **Plan done:** every plan step is done, or its correction is in the reply or the run log.
 - **Proof:** each acceptance criterion has a test, a check or a recorded manual verification in the reply or the
   run log. Whether the tests assert something real is the review's to judge (`steps/review.md`, Proof).

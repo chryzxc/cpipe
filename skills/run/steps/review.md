@@ -30,7 +30,10 @@ Plan: <run dir>/plan.md (its flow map, behavior table with the After column, mus
 premortem; read them after your own table and premortem below)
 
 Review against:
-- Correctness: does it meet each acceptance criterion? Logic errors, edge cases, error paths.
+- Correctness: does it meet each acceptance criterion? Logic errors, edge cases, error paths: an error
+  swallowed, caught too widely or passed up without its context; a failure the user meets as a crash or silence.
+  For each changed signature, type, field or response shape: does every caller still compile and get what it
+  expects?
 - Behavior: before reading the plan's table, build your own from the base. Read the base version of each changed
   file (`git show <base>:<path>`) and the code on the other side of each boundary it crosses (the client of a
   server change, the server of a client change). For each actor and case (each role, the owner and a stranger,
@@ -62,7 +65,10 @@ Review against:
 - Performance: queries or remote calls in loops, a new query without its index, unbounded results, blocking work
   on a hot path, repeated work that could run once, and how the cost grows with the data. Name the input size
   where it hurts; never flag a micro-optimization the data size does not justify.
-- Simplicity: needless abstraction, duplicated helpers, dead code, comments that restate code.
+- Simplicity and readability: needless abstraction, duplicated helpers, dead code, comments that restate code,
+  names that do not say what a thing is, unnamed meaningful literals, deep nesting, a function doing two jobs,
+  a silenced type or lint error, and code that solves a problem differently from how this codebase already
+  does (name the existing code to follow).
 
 For each finding, in at most 5 lines: file and line, the problem, why it matters, a concrete fix, severity
 (critical, major, minor), and whether it is security-related. Say plainly if you found nothing that needs

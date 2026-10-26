@@ -70,13 +70,15 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
 
 When the background work ends, record each check's result in the run log: pass, fail (which tests), not finished
 (`exit 124`: it hit its time limit, so a test hangs or the suite is slower than its limit), or not run here (why).
-Save the ids of the failing tests and lint errors, one per line and sorted, to `baseline-<check>.txt` beside the run
-log, so verify can compare by name, not by count. A check that did not finish gets a line in `now.md` too: verify
-never runs it whole (`steps/verify.md`, After the baseline). A check already red is the baseline, not your job,
-unless the task is to fix it. A check that will not run is worked through `steps/verify.md` (When a check will not
-run), so the plan names commands that work. If an install fails, try the next way from there and record it; a failed
-install never ends the run. Deliveries of one run from the same base commit share one baseline and its worktree:
-copy the first one's `baseline-<check>.txt` files and `logs/baseline.done` instead of running it again.
+Save the ids of the failing tests, lint errors and typecheck or compiler errors, one per line and sorted, to
+`baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. An error's id is its file,
+rule or code and message, without line or column, since lines move when code is added above them. A check that did
+not finish gets a line in `now.md` too: verify never runs it whole (`steps/verify.md`, After the baseline). A check
+already red is the baseline, not your job, unless the task is to fix it. A check that will not run is worked through
+`steps/verify.md` (When a check will not run), so the plan names commands that work. If an install fails, try the
+next way from there and record it; a failed install never ends the run. Deliveries of one run from the same base
+commit share one baseline and its worktree: copy the first one's `baseline-<check>.txt` files and
+`logs/baseline.done` instead of running it again.
 
 ## Time limit
 

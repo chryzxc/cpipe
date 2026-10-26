@@ -33,23 +33,32 @@ every playbook:
    and only those results count; do not run them here as well.
 5. **It builds before it leaves.** Before the round ends, run the fastest command that compiles the change: the
    project's typecheck, or for a compiled language its compiler's build (such as `swift build`, `cargo check`,
-   `go build ./...` or `tsc --noEmit`), the plan's narrow tests, and the two searches and the size check of the
-   completion gate (`steps/verify.md`), and fix what they report. The reply gives each command with its exit
-   code and summary line, not "it passes". Code that does not build or fails the gate never leaves a round:
-   found in verify, it costs a whole extra round.
+   `go build ./...` or `tsc --noEmit`), the plan's narrow tests, and the three searches and the size check of the
+   completion gate (`steps/verify.md`), and fix what they report. Compare the typecheck's errors with the baseline
+   by id (`steps/verify.md`, Run the checks): a red baseline never excuses a new error. The reply gives each command
+   with its exit code and summary line, not "it passes". Code that does not build or fails the gate never leaves a
+   round: found in verify, it costs a whole extra round.
 6. **Clean before it leaves.** Read your own diff (`git diff` plus new files) once as a stranger would and
    remove:
    - dead code, debug output, commented-out code;
    - duplicates of helpers the codebase already has (reuse them);
    - abstractions with one caller, configuration for a value that never changes;
    - comments that restate the code; keep the ones that explain why;
-   - tests that catch no break: duplicates of an existing test, tests of constants, getters, the framework or
-     their own mocks, assertions so loose any output passes. Merge near-duplicates into one table-driven test.
-   Then check it is sound, and fix what is not: every resource it opens is closed on every path, errors
-   included; every shared write is safe with two at once (a transaction, a lock, an atomic update or a
-   constraint); every cache, queue or retry has a bound; no query or remote call runs in a loop that one
-   batched call could replace; no blocking work sits on a hot path. Prefer the project's own pattern for each.
-   Then the build and the narrow tests once more if anything changed.
+   - unclear code: names that do not say what a thing holds or does in the project's words (`data`, `tmp`,
+     `handle2`, a private abbreviation), a meaningful literal (a limit, a timeout, a status) without a named
+     constant, nesting an early return removes, a function that does two jobs;
+   - tests that catch no break: duplicates of an existing test, tests of constants, getters, the framework or their
+     own mocks, assertions so loose any output passes. Merge near-duplicates into one table-driven test.
+   Then check it is sound, and fix what is not: every error is handled where something can be done about it, or
+   passed up with its context, never swallowed (an empty catch, a catch that logs and carries on as if it worked) or
+   caught wider than what can be thrown; a failure the user can hit reaches them as a message, not a crash or
+   silence; input from outside (a request, a file, the environment, another service) is validated where it enters,
+   and the code inside trusts its types; every signature, type, field or response shape the change alters has each
+   caller the flow map found updated in this diff, or stays compatible; every resource it opens is closed on every
+   path, errors included; every shared write is safe with two at once (a transaction, a lock, an atomic update or a
+   constraint); every cache, queue or retry has a bound; no query or remote call runs in a loop that one batched
+   call could replace; no blocking work sits on a hot path. Prefer the project's own pattern for each. Then the
+   build and the narrow tests once more if anything changed.
 7. **A round** ends with a row in the run log: what changed, why, the check results (a build profile puts it in
    its reply instead).
 8. **Read little.** The plan names the files and lines: read those ranges, search before opening a whole file, and
@@ -82,7 +91,10 @@ is the proof: no review or QA round follows it.
 ## Rules
 
 - Only the plan's scope. Never reformat, rename or "improve" code the task does not need.
-- Follow the project's style, patterns and instructions over your own preferences.
+- Follow the project's style, patterns and instructions over your own preferences: new code looks like the
+  existing code the plan says to follow (its error handling, logging, data access, validation, naming, tests).
+- Never silence the type checker or the linter (an ignore comment, `any`, a cast to make it compile): fix the
+  type. The completion gate's escape-hatch search lists each one.
 - Never skip, weaken or delete a test, and never add `.only`, `skip` or expected-failure markers.
 - Never hard-code secrets, test credentials or environment-specific paths.
 - No new dependency unless the plan names it.

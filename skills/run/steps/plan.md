@@ -16,7 +16,9 @@ yourself:
    for the guard rails in `cpipe:run`. Read the project's and the user's lessons too (`cpipe:run`, Lessons),
    once: each one is a question this run must answer, and the premortem keeps the ones that apply.
 2. **Code.** If you have a code index or code-navigation tool, locate the code with it first. Read the code the
-   task touches and the helpers you could reuse. Skip code that is not on a path below.
+   task touches and the helpers you could reuse. Find the closest existing code that does the same kind of thing
+   (a sibling route, component, job or test) and note how it handles errors, logging, data access, validation
+   and naming: the build follows it. Skip code that is not on a path below.
 3. **Flow map.** Trace every path through the code you will change, end to end, so nothing breaks out of sight:
    - **Entrances:** everything that reaches it: routes and endpoints, pages and UI actions, jobs, event and queue
      handlers, CLI commands, other modules and packages. Search for every usage across the whole repository, not
@@ -117,8 +119,9 @@ instructions and is resent with every build reply, so it holds facts in this for
   where it did not live before (a server check for what only the client enforced) copies today's conditions from
   the side that held it, so only the rows the request names change. Where the request's picture of today
   differs from the code, the code wins and the difference is an assumption.
-- **Approach:** each idea the change rests on, with why, the alternative avoided and the problem it would have
-  caused, and the trade-off. The report's Approach table is built from this and the assumptions.
+- **Approach:** the existing code to follow (path), then each idea the change rests on, with why, the alternative
+  avoided and the problem it would have caused, and the trade-off. The report's Approach table is built from this
+  and the assumptions.
 - **Acceptance:** numbered `A1`, `A2`…, each one rule in the form `When <trigger, state or input>, <who or
   what> <observable result>`, including the design note's states. Each edge the premortem keeps (an empty or
   wrong response, a failure after the write, a retry, a cancel and reopen) is a rule of its own, never a clause
