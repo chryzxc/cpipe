@@ -681,8 +681,8 @@ reply after the report; the follow-up reuses the same worktree.
 **Will it push, open a pull request or merge?**
 Only when you ask, in the task or later. Asking it to fix an existing pull request ("make sure there are no
 regressions") pushes the fixes to that pull request. With a pull request it pushes the branch, opens a draft,
-and waits up to 30 minutes for CI, fixing failures the change caused. Asked for a draft on the first commit, it opens the draft
-right after the first verify and pushes each later round to it. With a merge ("merge it if there are no
+and waits up to 30 minutes for CI, fixing failures the change caused. Asked for a draft on the first commit, it
+opens the draft right after the first verify and pushes each later round to it. With a merge ("merge it if there are no
 regressions") it merges once every check is pass or baseline, no new test fails by name against the baseline
 (checked again after updating onto a moved base), no review finding or QA item is open, CI passes and your
 conditions hold; a failed condition is fixed first, not handed back.
