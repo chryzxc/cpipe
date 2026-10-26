@@ -112,6 +112,9 @@ named only in Run problems and Details. Any other internal name gets a plain des
 ## Steps
 | # | Step | Status | Result |
 
+## Run graph
+<the flow chart>
+
 ## Run problems
 | What failed | Error | Tried | Instead | Effect |
 
@@ -192,12 +195,35 @@ is running.
 **Not in this change**: out-of-scope problems, **consider** and **noted** findings not in Findings, known
 limits, a follow-up delivery (a hotfix's root cause). One line each, or omit the section.
 
+**Run graph**: what happened in the whole run, drawn (Run graph below). In the chat, the flow chart only.
+
 **Details**: the branch and worktree, the commit SHA and subject, the pull request link, `git diff --stat` in one
 line, who did each step (a profile or this chat) and any fallback, the user skills used, and the lessons written.
 
 The report never asks the user to fix, install, run, review or verify anything you could have done yourself, and
 has no "next steps" or "remaining" list for the user beyond Test it and what only the user may do. If you could
 do it, do it before reporting.
+
+## Run graph
+
+Draw the run from the run log's times and the times of the files in `logs/`; a time in neither is left out,
+never guessed. Two Mermaid diagrams:
+
+- **Flow** (`flowchart LR`): one node per step and per round (`Build 2`, `Delta review`), labelled with the step,
+  the role and its profile, the minutes and the result in a few words. Arrows in the order things happened; work
+  that ran in parallel branches from the same node, and a fix round is an arrow back. Retries, interruptions, a
+  wait for the user and any gap over 10 minutes are dashed arrows labelled with the cause, into a node of class
+  `bad`; verified results are class `ok`. At most 25 nodes: fold repeated rounds into one. Colors that read in
+  light and dark: `classDef bad fill:#e5484d33,stroke:#e5484d` and `classDef ok fill:#30a46c33,stroke:#30a46c`.
+- **Timeline** (`gantt`, `dateFormat HH:mm`): one section per role and this chat, a bar per piece of work, and
+  each gap or stall as a `crit` bar named by its cause.
+
+Write them to `<run dir>/graph.part` as two blocks, `<script type="text/x-mermaid" data-title="Flow">` and
+`data-title="Timeline"`, after a `<p>` line with the goal, branch and date. Then
+`cat <this skill's folder>/run-graph.html <run dir>/graph.part > <run dir>/run-graph.html`: the template (beside
+`SKILL.md`) renders them in a browser. In the report, put the flow in a ` ```mermaid ` block. When this chat's
+own instructions say it shows interactive views or web pages, show the graph that way instead, as they
+describe (for a web page, the contents of `run-graph.html`). The Details line names `run-graph.html`.
 
 ## Rules
 
@@ -211,4 +237,5 @@ do it, do it before reporting.
 
 ## Done when
 
-The work is committed on the delivery branch, the run log has the final row, and the report is posted.
+The work is committed on the delivery branch, the run log has the final row, `run-graph.html` is written, and
+the report is posted.

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run graph</title>
+<style>
+  :root { color-scheme: light dark; --bg: #ffffff; --fg: #1d1d1f; --muted: #6e6e73; --card: #f5f5f7; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161617; --fg: #f5f5f7; --muted: #a1a1a6; --card: #232325; }
+  }
+  body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
+         font: 15px/1.5 system-ui, -apple-system, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 0 0 24px; }
+  section { background: var(--card); border-radius: 12px; padding: 16px; margin: 0 0 20px; overflow-x: auto; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  pre { white-space: pre-wrap; }
+</style>
+<script type="module">
+  // The run's diagrams are appended after this file as <script type="text/x-mermaid" data-title="…"> blocks.
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs';
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default', securityLevel: 'strict' });
+  const main = document.querySelector('main');
+  let i = 0;
+  for (const block of document.querySelectorAll('script[type="text/x-mermaid"]')) {
+    const section = document.createElement('section');
+    const heading = document.createElement('h2');
+    heading.textContent = block.dataset.title || '';
+    section.append(heading);
+    try {
+      const { svg } = await mermaid.render('graph' + i++, block.textContent);
+      section.insertAdjacentHTML('beforeend', svg);
+    } catch {
+      const pre = document.createElement('pre');
+      pre.textContent = block.textContent;
+      section.append(pre);
+    }
+    main.append(section);
+  }
+</script>
+</head>
+<body>
+<main>
+<h1>Run graph</h1>

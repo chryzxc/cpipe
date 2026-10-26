@@ -552,6 +552,9 @@ request was asked for. It is short, one line per row, and complete:
 - **Summary:** for a bug, what happened, the cause and the fix; for a feature, what was added and how; otherwise
   before, after and why.
 - **Steps:** all eleven steps with ✅, ⚠️, ⏳, ❌ or — and the proof in a few words.
+- **Run graph:** a flow chart of the whole run: each step and round with its role, minutes and result, fix
+  rounds as arrows back, and retries, interruptions and stalls in red. The run folder also gets `run-graph.html`,
+  which shows the flow and a timeline per role in any browser.
 - **Findings:** what the run found that the task did not say, and what became of each.
 - **Approach:** each idea the change is built on and each assumption: why, what was avoided and the problem it
   would have caused, and the trade-off.
@@ -658,6 +661,7 @@ cpipe/
 └── skills/run/
     ├── SKILL.md          the flow, unattended rules, run log, lessons, limits, guard rails
     ├── roles.md          handing steps to profiles, directly or as kanban cards
+    ├── run-graph.html    page template that draws the run graph
     ├── steps/            one file per step, loaded when the run reaches it
     │   ├── setup.md      worktree, installs, baseline in a base worktree, time limit, tidy-up
     │   ├── plan.md       explore, decide, plan

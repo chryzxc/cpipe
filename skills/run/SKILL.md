@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.43.0
+version: 3.44.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -258,7 +258,8 @@ code (`roles.md`, How the work is split).
 ## Run log
 
 One log per run at `$(git rev-parse --git-dir)/cpipe/run.md`, run inside the delivery worktree. Never committed;
-it survives a restart. Append, never rewrite:
+it survives a restart. Append, never rewrite, and start each row with the clock time (`HH:MM`), which the run
+graph is drawn from (`steps/report.md`, Run graph):
 
 - the task and every instruction from the user, word for word, the roles, the base and the worktree, and every
   card id when on the board;
