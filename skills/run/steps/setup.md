@@ -10,8 +10,12 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    pick the one the conversation used. Fetch the base so it is current.
 2. **Branch name.** cpipe sets no naming rules of its own. Name the branch by what the user's agent setup
    already says (your memory, user profile, persona and skills), then the project's instructions, then the
-   pattern of its recent branches (`git branch -r --sort=-committerdate | head -20`). The user's rules about what
-   may be published apply to the branch name too, since it is pushed. Only when none of these say anything, use
+   pattern of its recent branches (`git branch -r --sort=-committerdate | head -20`). The branch is pushed, so the
+   user's rules about what may be published apply to it: before naming it, load the user's skill for pull
+   requests or publishing (`cpipe:run`, The user's own skills come first) and follow what it says about names
+   and public content. From recent branches take only the shape (prefix, type, separators), never their ids or
+   labels (`r07`, `T12`, a card or ticket id from a private plan), and never copy one from the task either: the
+   slug says what changes. Only when none of these say anything, use
    `<type>/<short-slug>` with the type of the change (`fix`, `feat`, `refactor`, `chore`) and a slug that
    describes the change. Pull request tooling often reads the type from the branch name, so it must match the
    change: if explore finds a different kind, rename the branch with `git branch -m` before anything is pushed.

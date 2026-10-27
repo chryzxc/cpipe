@@ -177,7 +177,8 @@ CLI or output change, the before and after text in short code blocks (the respon
 to the lines that changed. Pairs QA could not judge come first. Omit for a change nobody sees.
 
 **Needs attention**: everything that is not simply done, one row each, most serious first:
-- a role whose profile failed, or a tool or service that blocked a step (from the run log), so the user knows
+- a role whose profile failed, or a tool or service that blocked a step (each `Problem:` line in the run log,
+  `roles.md`, When a role fails), so the user knows
   who did not do their part: **What** names the role, its profile and the exact error in a few words
   (`Review: sentry, provider startup failed twice`); **Why it matters** what it cost (`review done in this chat,
   not independent`); **Recommended** what clears it next time (the provider, the profile's config);
@@ -278,5 +279,6 @@ In the report, show the same flow as `graph.part`, never a shorter one:
 
 ## Done when
 
-The work is committed on the delivery branch, the run log has the final row, `run-graph.html` is written, and
-the report is posted.
+The work is committed on the delivery branch, the run log has the final row, `run-graph.html` is written, every
+`Problem:` line in the run log has its Needs attention row, and the report is posted in this file's sections and
+order, never as free text.

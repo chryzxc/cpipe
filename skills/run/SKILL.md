@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.57.0
+version: 3.58.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -163,7 +163,14 @@ fix round is `6/11 Build · fix round 2`, a merge is `11/11 Report`), plain word
 - does not apply: `— 3/11 Design · skipped: no screen changes`;
 - a problem the run handles (a profile failed, a check would not run, a limit reached): `⚠️ 9/11 Review · sentry
   failed to start (provider error) · running it in this chat`;
+- results that arrive while other work runs (a reviewer's findings, a check's result): their own step's line,
+  `✅ 9/11 Review · cypher · 3 findings to fix`, `⚠️ 7/11 Verify · related tests timed out · retrying narrower`;
+- several things running at once: one ⏳ line for the step that ends last, naming the others
+  (`⏳ 9/11 Review · waiting on sentry, cypher and the server tests · done by 21:49 · resumes on its own`);
 - a wait and its progress: the ⏳ lines below.
+
+Every line you post while the run is going, after a compaction too, is one of these: never free text such as
+"Related server tests running" or "Security review identified three issues".
 
 Icons mark a state and nothing else: ✅ done, ⏳ waiting, ⚠️ a problem, ❌ failed. No other emoji anywhere the
 user reads (status lines, pause message, report), and none for decoration.
@@ -297,7 +304,8 @@ so no reply goes to reading the file. The run log names the file.
 When the chat is compacted, the step files and skills loaded so far are dropped, and the compaction notice may ask
 you to reload every skill this chat ever loaded. Do not: that refills the context and brings the next compaction
 within minutes. Read `now.md`, reload `cpipe:run` and the active step's file (from the plugin's directory when
-`skill_view` returns no text, Flow), and continue. The user's
+`skill_view` returns no text, Flow), and continue. Your next status line keeps the shape in Flow, Status lines.
+The user's
 instructions and the user skills' rules are in `now.md`; the roles, the plan's questions from the learnings and
 every file you read are in the run log or the plan. Read a file again only for the lines the next action needs.
 
