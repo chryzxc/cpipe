@@ -562,12 +562,15 @@ request was asked for. It is short, one line per row, and complete:
   noted findings, baseline failures, limits, follow-ups, each with a recommendation.
 - **Proof:** one line each for the tests (RED → GREEN), the checks, QA, the review (fixed findings named) and the
   rest of the eleven steps.
+- **Where to look:** the two or three `file:line` spots a reviewer should read first, and why.
+- **Risk:** what else reaches the changed code, how to roll it back, and what the confidence rests on.
 - **Approach:** up to four choices a reviewer would question and each assumption, with why and what was avoided.
 - **Run graph:** a flow chart of the whole run: each step and round with its role, minutes and result, fix
   rounds as arrows back, and retries, interruptions and stalls in red. The run folder also gets `run-graph.html`,
   which shows the flow and a timeline per role in any browser. A chat app that renders structured views (graphs,
   workflows) gets the run graph as one of those instead of a chart's source.
-- **Details:** one line: branch, commit, pull request, files, roles, skills, lessons.
+- **Cost:** minutes, tokens with the cached share, and who did each step.
+- **Details:** one line: branch, commit, pull request, files, skills, lessons.
 
 What went as planned is a count, not a row, so the report reads in about a minute. It never asks you to fix,
 install, run, review or verify anything the run could have done itself.
@@ -597,10 +600,18 @@ App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
 ✅ Review: 1 fixed (bulk edit had the same overwrite), 1 noted
 ✅ Steps 1–11; — 3 Design: nothing user-facing changed
 
+## Where to look
+| Where                        | Why                                        |
+| `src/invoices/update.ts:58`  | the merge that replaces the full overwrite |
+| `src/invoices/bulk.ts:21`    | now goes through the same update           |
+
+Risk: 2 routes, 1 import job · Rollback: revert the commit · Confidence: tests and QA; import job by tests only
+
 ## Approach
 | Choice                   | Why                      | Instead of                               |
 | Fix in `updateInvoice()` | every edit path calls it | a fix per caller: bulk edit stays broken |
 
+Cost: 34 min · 1.1M tokens (71% cached) · plan planner · build builder · review reviewer · QA this chat
 Details: fix/invoice-discount · a1b2c3d fix(invoices): keep the discount on edit · 3 files +41 −9
 ```
 

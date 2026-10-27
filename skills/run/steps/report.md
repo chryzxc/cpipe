@@ -103,7 +103,7 @@ left for them. What needs the user comes first; what went as planned is a count,
 technical terms where they are precise; file and function names where they help. One line per row, cells of a
 few words; no paragraph longer than three lines; no line that repeats another section; omit a section with
 nothing in it. Facts only, from the run log. Name the step or role (Review, QA), never a profile; profiles,
-skills and tools are named only in Needs attention and Details. Any other internal name gets a plain
+skills and tools are named only in Needs attention, Cost and Details. Any other internal name gets a plain
 description.
 
 ```
@@ -124,12 +124,18 @@ App: <URL or command, worktree>
 ## Proof
 <one line per kind of proof>
 
+## Where to look
+| Where | Why |
+
+Risk: <blast radius> · Rollback: <how> · Confidence: <what it rests on; the weak spot>
+
 ## Approach
 | Choice | Why | Instead of |
 
 ## Run graph
 <the flow chart>
 
+Cost: <minutes> · <tokens> (<cached share>) · <who did each step>
 Details: <one line>
 ```
 
@@ -184,6 +190,16 @@ Findings that were fixed are not rows here: Proof counts them. Omit the section 
 - **Steps**: one line for the rest of the eleven steps: `✅ 1–11` with each — or non-✅ step and its reason
   (`— 3 Design: no UI change`).
 
+**Where to look**: the two or three places in the diff a human reviewer should read first, as `file:line` (a
+link when the chat renders one) and why each matters: the core of the fix, a changed contract or shared function,
+the line the review argued about, the code QA could not reach. Taken from the plan's flow map and the review.
+Omit for a change of a few lines.
+
+**Risk**, one line under it: **blast radius**, what else reaches the changed code (callers, routes, jobs,
+consumers, from the flow map: `3 routes, 1 nightly job`); **Rollback**, how to undo it (`revert the commit`, or
+`⚠️ the migration cannot be undone: <why>`); **Confidence**, what the result rests on (`6 tests and QA on the
+running app`) and its weakest spot (`the export path is covered by tests only`).
+
 **Approach**: the choices a reviewer would question and every assumption made for an open question, at most
 four rows: **Choice** the approach or assumption; **Why** the deciding fact (from the code, the request or a
 lesson); **Instead of** the alternative not taken and the problem it would have caused. Omit when the change had
@@ -192,9 +208,15 @@ only one sensible way.
 **Run graph**: what happened in the whole run, drawn (Run graph below): a structured view when the chat offers
 one, else the flow chart.
 
+**Cost**: one line, so the user sees what the delivery spent: the minutes from the run log's first to last row;
+the tokens of every session that worked in this delivery's worktree since the run started, with the cached share,
+read-only from each profile's session store (`<Hermes root>/state.db` and `<Hermes root>/profiles/*/state.db`,
+table `sessions`: `input_tokens`, `output_tokens`, `cache_read_tokens` where `cwd` is in the worktree and
+`started_at` is after the run began); who did each step (`plan archon · build forge · review sentry · QA this
+chat`). A number that cannot be read is left out, never guessed.
+
 **Details**: one line: the branch, the commit SHA and subject, the pull request link, `git diff --stat` in a few
-words, who did each step when not the usual role, the user skills used, the lessons written, and
-`run-graph.html`.
+words, the user skills used, the lessons written, and `run-graph.html`.
 
 The report never asks the user to fix, install, run, review or verify anything you could have done yourself, and
 has no "next steps" or "remaining" list for the user beyond Test it and Needs attention. If you could do it, do it
