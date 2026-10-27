@@ -8,19 +8,16 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
 1. **Repository and base.** `git rev-parse --show-toplevel`, `git remote -v`, `git status --short --branch`, the
    default branch. If the task names a repository, path or base branch, use it; if several repositories match,
    pick the one the conversation used. Fetch the base so it is current.
-2. **Branch name.** Name the branch the way the project does: its instructions, your memory and skills (the
-   user's standing rules for this repository win), or the pattern of its recent branches
-   (`git branch -r --sort=-committerdate | head -20`), such as `<area>/fix/<slug>`. With no pattern, use
-   `<type>/<short-slug>` with the type of the change (`fix`, `feat`, `refactor`, `chore`). The branch is public
-   once pushed: the slug says what the change does in plain words (`monthly-summary-authorization`), never a
-   label from the task or a private plan, audit or tracker (`r06`, `t12`, `item-3`), a card or run id, a
-   retry or version suffix (`-v2`), or a tool, bot or person name. An id goes in only when the project's
-   pattern carries one, such as a public issue number. If the name is taken, pick a more specific slug. Pull
-   request tooling often reads the type from the branch name, so it must match the change: if explore finds a
-   different kind, rename the branch with `git branch -m` before anything is pushed.
+2. **Branch name.** cpipe sets no naming rules of its own. Name the branch by what the user's agent setup
+   already says (your memory, user profile, persona and skills), then the project's instructions, then the
+   pattern of its recent branches (`git branch -r --sort=-committerdate | head -20`). The user's rules about what
+   may be published apply to the branch name too, since it is pushed. Only when none of these say anything, use
+   `<type>/<short-slug>` with the type of the change (`fix`, `feat`, `refactor`, `chore`) and a slug that
+   describes the change. Pull request tooling often reads the type from the branch name, so it must match the
+   change: if explore finds a different kind, rename the branch with `git branch -m` before anything is pushed.
 3. **Worktree.** A new branch and worktree from the base, beside the repository:
    `git worktree add -b <branch> <repo>-worktrees/<branch with / replaced by -> <base>`. Follow the project's own
-   worktree convention instead if its instructions name one. If the name exists, pick a more specific slug;
+   worktree convention instead if its instructions name one. If the name exists, name it again by the same rules;
    never reuse or reset someone else's branch.
 4. **Dependencies.** Find how the project installs them (its lockfile and CI show how): `npm ci`,
    `pnpm install --frozen-lockfile`, `yarn install --immutable`, `uv sync`, `pip install -e .` into the project's
