@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.61.0
+version: 3.62.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -379,12 +379,15 @@ new task: reuse the worktree and the run log (or, if it was removed after its me
 base), record the miss and its learning (Learning, Feedback), update the plan, then run build, verify, QA and a
 delta review on the follow-up only, and report again. Reproduce what the user describes before answering. If it
 can mean two things, check both and answer with what you found; do not ask which one they meant. A different task
-starts a new run.
+starts a new run. "Fix it" after a report that said something could not be fixed reopens the loop: never answer
+again that it cannot be done with nothing changed. Take an approach not tried yet, at least the one in
+`steps/review.md` (When fixes fight), and loop until the goal is met.
 
 ## Continue
 
 When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read `now.md` (the
-run log only where it points), check `git status` and the last check results in the worktree, and pick up at the
+run log only where it points), write `limit.pl` and `tick.sh` again from `steps/setup.md` if either is missing,
+check `git status` and the last check results in the worktree, and pick up at the
 first unfinished step. Do not redo finished steps. Sometimes a report left an instruction unmet, and then the
 user says "continue" or repeats the instruction. That is the same task: do what is unmet, never only report again
 that it is not done. A restart ends this chat's turn, but not the profiles and checks
@@ -411,6 +414,9 @@ that already failed is never repeated.
   Fixes for a failing check or a compile error, a resolved conflict, the cleanup and an update onto a moved base
   start no review or QA round: the last verify is their proof (`steps/review.md`).
 - No progress for three rounds in a row: step back to the goal, change the approach, and loop again.
+- Each round closes more than it opens. A round whose fix led to new findings, twice in a row, or a fix that
+  breaks working behavior: go back to the last green tree and take the narrower approach (`steps/review.md`,
+  When fixes fight). Looping is for the goal, not for every finding a reviewer can raise beside it.
 
 ## Guard rails
 

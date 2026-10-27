@@ -242,6 +242,7 @@ changes the approach, and an attempt that failed is never repeated.
 | Review, back to build | 2 rounds: one full review, one delta review of the fixes; a fix after that is proven by its test and the checks (plus a security delta) |
 | Fixes for checks, conflicts, the cleanup | No review or QA round; the last verify is their proof |
 | No progress | 3 rounds in a row: change the approach and loop again |
+| Fixes that fight or chain | A fix that breaks working behavior, or two rounds whose fix raised new findings: back to the last green tree, narrower approach; the finding goes to the report |
 | A role's profile | Its time budget, then the chat does the step; a card not picked up in 10 minutes counts as failed |
 
 ### Context engineering

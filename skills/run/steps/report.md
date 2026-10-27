@@ -203,7 +203,8 @@ Findings that were fixed are not rows here: Proof counts them. Omit the section 
 **Proof**: what the run proved, one line per kind, numbers over words, `✅` or `⚠️` first:
 - **Tests**: the bug reproduced; new tests RED → GREEN, how many.
 - **Checks**: each check and its state (lint, types, the related tests with pass and baseline counts, the
-  build; the full suite: CI).
+  build; the full suite: CI). A CI job that passed with its test steps skipped is not test evidence: say so
+  (`⚠️ CI: test steps skipped`).
 - **QA**: scenarios run on the real surface and how many passed; must-not-change items held.
 - **Review**: findings by outcome (fixed, noted, dismissed), with the fixed ones named in a few words each, and
   the rounds run.

@@ -93,6 +93,11 @@ The scope is the goal, not the files the plan listed. A finding that shows the c
 goal says is **act**, wherever its fix lands: a guard that can be bypassed, a race between the new check and the
 write it protects, a path or caller the fix misses. Add the files and paths it needs to the plan. **consider** is
 for problems the goal does not cover: pre-existing behavior the change leaves as it was, unrelated code.
+A problem the old code already had, in the same form, is **consider** even right beside the change: a
+check-then-write race the old code had on the same data, a hole in a path the goal does not name (a delete path
+in a task about reads). The goal is met when the change does what it says and breaks nothing; hardening the
+neighbourhood is a follow-up delivery, listed in the report. A delta review sorts its new findings the same way:
+one is **act** only when the fix round caused it or the goal still is not met.
 
 A path, behavior row or risk the reviewer found that the plan missed is added to the plan with its check; a
 regression on it is **act**, even if the code sits outside the scope's files. Write a learning for it (`cpipe:run`,
@@ -126,6 +131,16 @@ other files, other write paths, a shared lock or a conditional write) gets the s
 those paths added to the plan and the approach it named as the one to build. It stays open only when the fix
 needs what this run cannot do: a change in another repository or service, a migration of live data, access or
 credentials it does not have. Then it leads the report with what was tried and the fix it needs.
+
+**When fixes fight.** A fix that breaks today's behavior, with no change found that keeps both after one more
+approach: the working behavior wins, unless that fix is the goal itself. Restore the files of the last verify
+that passed (its tree id: `git restore --source=<tree id> --worktree -- .`, and remove files added since), keep
+the rest of the goal, and list the finding as **consider** with the change it needs (a migration, another
+database setup, a shared lock across writers). The same when fixes chain: two delta findings in a row caused by
+the previous fix mean the approach is too big; go back to the last green tree and take the narrower one. Before
+calling a broken behavior a regression, check that it is real: a setup only a test fixture uses (a standalone
+database, a local mode) is checked against how the project deploys and what CI runs (their config and docs). One
+neither uses is a Risk line in the report, not a regression.
 
 The delta review is the last full review round. Its **act** findings are fixed the same way and proven by their
 tests and the checks (a race by a test that forces the interleaving), with no further review, except that a
