@@ -6,7 +6,7 @@ license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [delivery, tdd, code-review, verification, autonomous]
+    tags: [delivery, tdd, code-review, verification, autonomous, self-learning]
 ---
 
 # cpipe: run

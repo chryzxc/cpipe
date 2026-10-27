@@ -2,13 +2,14 @@
 
 # cpipe
 
-**Hand over a coding task. Get back reviewed, verified code and a report.**
+**Hand over a coding task. Get back reviewed, verified code and a report. It learns from every miss.**
 
 An autonomous delivery workflow for [Hermes Agent](https://hermes-agent.nousresearch.com), built entirely from
 skills.
 
 [![Hermes Agent plugin](https://img.shields.io/badge/Hermes_Agent-plugin-6E56CF)](https://hermes-agent.nousresearch.com)
 [![Skills only](https://img.shields.io/badge/built_from-skills-2EA44F)](#how-it-is-built)
+[![Self-learning](https://img.shields.io/badge/self--learning-yes-F59E0B)](#learning-loop)
 [![Dependencies: none](https://img.shields.io/badge/dependencies-none-lightgrey)](#requirements)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -23,7 +24,8 @@ cpipe turns one chat message into a finished delivery. You send the task and wai
 worktree, maps the code the change touches, settles open questions itself, writes a plan a builder can follow,
 writes the tests first, builds one verified change at a time, runs the project's own checks, uses the change
 like a user would, has it reviewed by a context that did not write it, cleans up, commits, and reports back
-with the proof.
+with the proof. Every miss, whether review, QA or you caught it, becomes a learning for the step that should
+have caught it, so your next runs get better without ever overriding cpipe's core rules.
 
 It is a set of skills, not a program. The model in your chat runs every step with its normal tools, so it adapts
 to any repository, language and toolchain: when a command is blocked, a test runner is broken or a dependency is

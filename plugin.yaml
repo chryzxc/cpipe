@@ -7,7 +7,7 @@ author:
   url: https://github.com/chryzxc
 provides_tools: []
 provides_hooks: []
-description: "Autonomous coding delivery: hand over a task, get back reviewed, verified code. Plans, writes the tests first, builds, verifies with the project's own checks, runs QA and an independent review, commits and reports. Built entirely from skills."
+description: "Autonomous coding delivery: hand over a task, get back reviewed, verified code. Plans, writes the tests first, builds, verifies with the project's own checks, runs QA and an independent review, commits and reports. Self-learning: every miss becomes a learning for your next runs, without overriding cpipe's core rules. Built entirely from skills."
 license: MIT
 homepage: https://github.com/chryzxc/cpipe
-tags: [hermes-agent, autonomous-agents, coding-agent, development-workflow, tdd, testing, code-review, qa, skills, graph-engineering, context-engineering]
+tags: [hermes-agent, autonomous-agents, coding-agent, development-workflow, tdd, testing, code-review, qa, skills, self-learning, graph-engineering, context-engineering]
