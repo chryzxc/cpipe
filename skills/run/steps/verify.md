@@ -85,6 +85,11 @@ decides. One that also fails
   the base worktree set up added (`now.md`). When it is gone, add it again the way `steps/setup.md` step 8
   does. Failing there too is **baseline**; passing there is yours to fix. One round, then decide: no copies or
   archives of the tree, no further comparisons.
+- **The run's own tests are claims.** A test this run wrote can be wrong. When one still fails after a fix
+  attempt, or no fix passes it without breaking another test, question the test before the code: check its
+  expectation against the base's behavior today (read or run it on the base), the task and the user's words. A
+  wrong expectation is fixed in the test, with the reason in the run log and the report; never by weakening a
+  check the task asked for.
 - **Stop what is done.** A check this run started that hung or was replaced is stopped by its process id; none is
   left running when the step ends.
 
