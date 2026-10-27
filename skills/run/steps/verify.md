@@ -200,5 +200,5 @@ fixtures and test data, migrations, and data files. Split every other listed fil
 ## Done when
 
 Every check this verify runs (Fast checks) has a state on the current tree; in the last verify, that is every
-check from the plan, with the build from the first verify. Every new failure is fixed or
-recorded as open after three attempts, and the completion gate passes.
+check from the plan, with the build from the first verify. Every new failure is fixed (an
+approach that fails three times is replaced, `cpipe:run`, Limits), and the completion gate passes.

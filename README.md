@@ -187,7 +187,7 @@ flowchart TD
     S8 --> JOIN{{"findings join"}}
     S9 --> JOIN
     JOIN -->|"findings to act on (one fix round, one delta review)"| S6
-    JOIN -->|nothing left to act on, or a limit reached| S10["10 · Clean<br/>last verify on the final tree"]
+    JOIN -->|nothing left to act on| S10["10 · Clean<br/>last verify on the final tree"]
     S10 --> S11["11 · Report<br/>commit, report"]
 ```
 
@@ -230,17 +230,18 @@ step.
 
 ### Loop engineering
 
-Every loop has a bound and an exit. Reaching a bound records the open items and moves to the next step; it never
-ends the run.
+The run loops until the goal is met: fix, verify, check the goal, and go round again. Only what the user alone
+may do, or what the machine cannot run, ends it early. A bound limits one approach, not the run: reaching it
+changes the approach, and an attempt that failed is never repeated.
 
 | Loop | Bound |
 |---|---|
 | Build: change, narrow test, keep or undo | One change at a time; never two unverified changes stacked |
-| A failing check, back to build | 3 attempts, each a different idea |
-| QA failures, back to build | 1 fix round, then one re-run of the items that failed |
+| A failing check, back to build | 3 attempts per approach, each a different idea; then a new approach |
+| QA failures, back to build | Fix and re-run the failed items until they pass; a new idea after 3 rounds |
 | Review, back to build | 2 rounds: one full review, one delta review of the fixes; a fix after that is proven by its test and the checks (plus a security delta) |
 | Fixes for checks, conflicts, the cleanup | No review or QA round; the last verify is their proof |
-| No progress | 3 rounds in a row: change the approach once, then report |
+| No progress | 3 rounds in a row: change the approach and loop again |
 | A role's profile | Its time budget, then the chat does the step; a card not picked up in 10 minutes counts as failed |
 
 ### Context engineering

@@ -55,6 +55,12 @@ each delivery once these hold:
 - the pull request's CI is pass or baseline;
 - every condition the user named.
 
+These are the whole condition. Nothing else holds a merge the user asked for: not a check that was not run here
+(the full suite, a typecheck tool that is missing), a flaky result whose cause is unknown, a deployment or
+production setup that was not verified, a reviewer's or a skill's general readiness gates, or wanting more
+proof. Those go under Risk in the report. When the conditions hold, merge in the same turn: no extra review,
+comparison or readiness pass first.
+
 "No new failing test" is the last verify's by-name comparison with the baseline on the committed tree. When the
 base branch moved since, update the delivery branch on it the project's way (merge or rebase), run the last
 verify once more on that tree, and compare by name again. A conflict goes to that delivery's builder as a
@@ -67,16 +73,16 @@ run the full suite for a merge: CI runs it, and a check the run does not run nev
 Mark the draft ready (`gh pr ready`). That can start the CI checks again, so wait for them on the head commit as
 after a push (Pull request), and merge only when they pass or are baseline, with the method the repository's recent
 merges used (`gh pr merge --squash`, `--merge` or `--rebase`). Then confirm on the remote that it is merged. A
-condition that fails is work, not a stop: fix it within the limits, then merge. Only a regression still open after
-the limits keeps a delivery unmerged, and the status line names it with what was tried.
+condition that fails is work, not a stop: fix it, verify, and check again, round after round (`cpipe:run`,
+Limits), then merge. A report that says "not merged" while every condition above holds is a mistake: merge.
 
 ## Finish before reporting
 
 The report comes after the work is finished, not when the steps have run once. Before writing it, check that
-every step in the report's Proof below would be ✅ or —. For any other step, go back and finish it while the
-limits in `cpipe:run` allow: fix every **act** finding and QA failure, retry a check another way,
+every step in the report's Proof below would be ✅ or — and the goal is met. For any other step, go back and
+loop until it is (`cpipe:run`, Limits): fix every **act** finding and QA failure, retry a check another way,
 wait for CI, merge when asked. A step stays open only when the run truly cannot close it: something only the user
-may do, a check that needs what this machine does not have, or a limit reached. A question about how the code
+may do, or a check that needs what this machine does not have. A question about how the code
 should behave, a needed policy, a role's hold or blocked verdict, a builder saying a fix is out of scope
 (`steps/review.md`, Fix and the delta review), or a flaky result whose cause is unknown
 (`steps/verify.md`, New failures) never keeps a step open. Decide it from the
@@ -149,7 +155,8 @@ Details: <one line>
 - `✅ Done: <goal>`: every step is ✅ or —, and no manual testing is needed.
 - `✅ Done, test by hand: <goal>`: the same, plus the Test it items.
 - `⚠️ Done except <what>: <goal>`: steps that stay open (something only the user may do, an open security
-  finding, a limit reached). Name each, and each unmet instruction with its reason.
+  finding in code this change does not touch, a check this machine cannot run). Name each, and each unmet
+  instruction with its reason.
 - For a review: `✅ Approved: <change>` or `⚠️ Changes needed: <what>`.
 
 **Summary**, by kind, two to four lines with no heading:

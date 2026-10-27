@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.60.0
+version: 3.61.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -41,8 +41,8 @@ pull request or merge gives the permission they ask for.
 An instruction that settles a question is its answer. When a finding is one an instruction decides, fix it the
 way the instruction says, for example a change that rejects what the user said must keep working. Never hold it
 for a decision, a policy or an approval the user already gave. The run is finished when every instruction is
-met. An instruction stays unmet only for a reason the report names: a limit reached after different fixes, or
-something this machine cannot do.
+met. An instruction stays unmet only for a reason the report names: something only the user may do, or
+something this machine cannot do; until then the run loops (Limits).
 
 ## Unattended: the task is the last message
 
@@ -396,15 +396,21 @@ several deliveries, finish the unfinished one first, then start the next one its
 
 ## Limits
 
-These keep a run from grinding. Reaching one is not a stop: record the open items and move to the next step.
+The run loops until the goal is met: fix, verify, check the goal and every instruction in `now.md`, and go
+round again while anything is unmet. Only what the user alone may do (Unattended rules) or what this machine
+cannot run ends a loop early. The limits below keep one approach from grinding, never the run from its goal:
+reaching one means change the approach and loop again, not report. Each round changes something; an attempt
+that already failed is never repeated.
 
-- A failing check: three fix attempts, each with a different idea, then record it as open.
-- QA: one fix round for its failures and one re-run of the items that failed, then record what still fails.
+- A failing check: three fix attempts, each with a different idea; then step back to its cause and change the
+  approach (another design, the builder on another profile, the fix in this chat) and loop again.
+- QA: a fix round for its failures and a re-run of the items that failed, as many rounds as it takes, each with a
+  different idea after the third.
 - Review: one full review, then one delta review of the fixes it and QA led to; no third round. A fix after the
   delta review is proven by its test and the checks, and the report lists it as fixed after the last review.
   Fixes for a failing check or a compile error, a resolved conflict, the cleanup and an update onto a moved base
   start no review or QA round: the last verify is their proof (`steps/review.md`).
-- No progress for three rounds in a row: step back, change the approach once, then go to the report.
+- No progress for three rounds in a row: step back to the goal, change the approach, and loop again.
 
 ## Guard rails
 
