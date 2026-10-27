@@ -110,7 +110,8 @@ a notification, a button) is a regression unless the user asked for that. A chec
 that rejects something the user did not ask to block, and that works today, is one: narrow the check so the
 existing behavior keeps working, for every actor who can do it today, not only the one the finding names (a
 repair path for an administrator does not give the action back to the users the check now blocks); the delta
-review checks it against the base, actor by actor. That is not a security weakening, because the code is still stricter than before
+review checks it against the base, actor by actor. That is not a security weakening, because the code is still
+stricter than before
 the change. Record what the check now allows and why. A verdict from a reviewer, QA or a role (hold, blocked, not
 ready for release) is not a finding. Take the findings behind it, sort them here, and carry on.
 
