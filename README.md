@@ -553,21 +553,24 @@ request was asked for. It is short, one line per row, and complete:
 
 - **Status line:** `✅ Done`, `✅ Done, test by hand` or `⚠️ Done except …`; for a review, `✅ Approved` or
   `⚠️ Changes needed`.
-- **Summary:** for a bug, what happened, the cause and the fix; for a feature, what was added and how; otherwise
-  before, after and why.
-- **Steps:** all eleven steps with ✅, ⚠️, ⏳, ❌ or — and the proof in a few words.
+- **Summary:** two to four lines. For a bug, what happened, the cause and the fix; for a feature, what was added
+  and how; otherwise before, after and why.
+- **Test it:** the app left running from the worktree when there is something to see or use, plus only what this
+  machine could not verify, with steps and the expected result. Every QA gap is listed here.
+- **Before and after:** QA's screenshots or output for each change you would see, shown in the chat.
+- **Needs attention:** whatever is not simply done: a role that failed and who did its part instead, open or
+  noted findings, baseline failures, limits, follow-ups, each with a recommendation.
+- **Proof:** one line each for the tests (RED → GREEN), the checks, QA, the review (fixed findings named) and the
+  rest of the eleven steps.
+- **Approach:** up to four choices a reviewer would question and each assumption, with why and what was avoided.
 - **Run graph:** a flow chart of the whole run: each step and round with its role, minutes and result, fix
   rounds as arrows back, and retries, interruptions and stalls in red. The run folder also gets `run-graph.html`,
   which shows the flow and a timeline per role in any browser. A chat app that renders structured views (graphs,
   workflows) gets the run graph as one of those instead of a chart's source.
-- **Findings:** what the run found that the task did not say, and what became of each.
-- **Approach:** each idea the change is built on and each assumption: why, what was avoided and the problem it
-  would have caused, and the trade-off.
-- **Test it:** the app left running from the worktree when there is something to see or use, plus only what this
-  machine could not verify, with steps and the expected result.
-- **Not in this change** and **Details** (branch, worktree, commit, pull request, files, roles, skills, lessons).
+- **Details:** one line: branch, commit, pull request, files, roles, skills, lessons.
 
-The report never asks you to fix, install, run, review or verify anything the run could have done itself.
+What went as planned is a count, not a row, so the report reads in about a minute. It never asks you to fix,
+install, run, review or verify anything the run could have done itself.
 
 <details>
 <summary>Example report</summary>
@@ -575,32 +578,30 @@ The report never asks you to fix, install, run, review or verify anything the ru
 ```
 ✅ Done, test by hand: invoices keep their discount after an edit
 
-## Summary
 What happened: editing an invoice dropped its discount. Cause: `updateInvoice()` rebuilt the line items
 without the discount field. Fix: the update merges into the stored invoice instead of replacing it.
 
-## Steps
-| # | Step    | Status | Result                                                  |
-| 2 | Explore | ✅     | 3 callers, 1 API consumer mapped; baseline 2 failing    |
-| 3 | Design  | —      | nothing user-facing changed                             |
-| 6 | Build   | ✅     | 2 new tests RED → GREEN                                 |
-| 7 | Verify  | ✅     | lint pass · typecheck pass · 412 tests pass, 2 baseline |
-| 9 | Review  | ✅     | 2 findings: 1 fixed, 1 noted                            |
-
-## Findings
-| Found by | Finding                                       | Outcome                        |
-| Review   | the bulk-edit endpoint had the same overwrite | fixed in the shared update     |
-| Explore  | 2 date tests fail on the base too             | baseline, same names after     |
-
-## Approach
-| Idea                      | Why                           | Avoided                                    | Trade-off               |
-| Fix in `updateInvoice()`  | every edit path calls it      | a fix per caller: bulk edit stays broken   | none                    |
-| Merge, not replace        | keeps fields the form omits   | a full replace: drops fields on old forms  | stale fields need a delete |
-
 ## Test it
 App: http://localhost:3000 (worktree ../app-worktrees/fix-invoice-discount)
-| # | What to check     | How                                   | Expected          |
+| # | What to check     | How                                      | Expected            |
 | 1 | Discount survives | open an invoice with 10% off, edit, save | still shows 10% off |
+
+## Needs attention
+| What                              | Why it matters             | Recommended              |
+| 2 date tests fail on the base too | same names before and after | a separate fix; not this change |
+
+## Proof
+✅ Tests: the bug reproduced; 2 new tests RED → GREEN
+✅ Checks: lint pass · typecheck pass · 412 tests pass, 2 baseline
+✅ QA: 4/4 on the running app; the invoice list unchanged
+✅ Review: 1 fixed (bulk edit had the same overwrite), 1 noted
+✅ Steps 1–11; — 3 Design: nothing user-facing changed
+
+## Approach
+| Choice                   | Why                      | Instead of                               |
+| Fix in `updateInvoice()` | every edit path calls it | a fix per caller: bulk edit stays broken |
+
+Details: fix/invoice-discount · a1b2c3d fix(invoices): keep the discount on edit · 3 files +41 −9
 ```
 
 </details>
