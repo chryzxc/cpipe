@@ -76,6 +76,12 @@ merges used (`gh pr merge --squash`, `--merge` or `--rebase`). Then confirm on t
 condition that fails is work, not a stop: fix it, verify, and check again, round after round (`cpipe:run`,
 Limits), then merge. A report that says "not merged" while every condition above holds is a mistake: merge.
 
+Updating a pushed branch: merge the base into it unless the project rebases; after a rebase, push with
+`--force-with-lease`, and only to this delivery's own branch, never one someone else pushed to. A merge the
+repository's rules refuse until a person acts (a required approving review, a code owner) is never forced:
+no `--admin` or other bypass. Turn on auto-merge when the repository allows it (`gh pr merge --auto` with the
+method), and report `⚠️ Done except` that approval.
+
 ## Finish before reporting
 
 The report comes after the work is finished, not when the steps have run once. Before writing it, check that

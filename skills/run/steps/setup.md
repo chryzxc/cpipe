@@ -7,7 +7,8 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
 
 1. **Repository and base.** `git rev-parse --show-toplevel`, `git remote -v`, `git status --short --branch`, the
    default branch. If the task names a repository, path or base branch, use it; if several repositories match,
-   pick the one the conversation used. Fetch the base so it is current.
+   pick the one the conversation used. Fetch the base so it is current, and from here on the base is the fetched
+   remote branch (`origin/<base>`), never a local branch of that name, which can be days behind it.
 2. **Branch name.** cpipe sets no naming rules of its own. Name the branch by what the user's agent setup
    already says (your memory, user profile, persona and skills), then the project's instructions, then the
    pattern of its recent branches (`git branch -r --sort=-committerdate | head -20`). The branch is pushed, so the
