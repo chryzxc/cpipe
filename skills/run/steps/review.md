@@ -140,7 +140,10 @@ database setup, a shared lock across writers). The same when fixes chain: two de
 the previous fix mean the approach is too big; go back to the last green tree and take the narrower one. Before
 calling a broken behavior a regression, check that it is real: a setup only a test fixture uses (a standalone
 database, a local mode) is checked against how the project deploys and what CI runs (their config and docs). One
-neither uses is a Risk line in the report, not a regression.
+neither uses is a Risk line in the report, not a regression. A regression is measured against the current base:
+after the base moved (an update onto it, a merge from it), read what the base now does on that path before
+calling anything a regression. Behavior the base already has is not one; a test this change added that expects
+otherwise is wrong, so fix the test to the base's behavior and say so in the report.
 
 The delta review is the last full review round. Its **act** findings are fixed the same way and proven by their
 tests and the checks (a race by a test that forces the interleaving), with no further review, except that a
