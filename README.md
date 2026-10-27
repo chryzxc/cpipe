@@ -70,6 +70,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
 - **Independent review.** A reviewer that did not write the code reads the diff and hunts for regressions the
   plan missed; a second reviewer joins for security-sensitive changes.
 - **QA on the real surface.** The change is used the way a user would use it: the page, the endpoint, the CLI.
+  UI changes are screenshotted before and after, at desktop and phone width, and judged by eye, including the
+  pages that must not change. Whatever QA could not verify goes to the report's Test it list, never silently
+  passed.
 - **A graph, not a script.** Steps, gates, fork and join, bounded loops and re-entry, all written as skill text
   and run by the model.
 - **Lean on tokens.** The code is explored once per run, each role resumes one session so its history stays

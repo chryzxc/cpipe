@@ -188,7 +188,10 @@ what this choice costs or leaves open, or `none`. Omit when the change had only 
 
 **Test it**: the running app (Running app above) and only what this machine could not verify (a signed-in
 session, a device, a live service, visual judgment), each with exact steps and the expected result, so the user
-can run it in a few minutes. Never a code review, a re-review, reading a diff, running a check or command, or
+can run it in a few minutes. Every QA gap is in it, so nothing untested passes silently: each QA item that is
+**not run here** or still fails after the last round, each screenshot pair QA could not judge, and QA that was
+skipped or cut short (no QA profile answered, the app would not start, a limit reached), each with what was not
+checked and why. Never a code review, a re-review, reading a diff, running a check or command, or
 confirming a result: the run does those. When nothing is left: `None needed: <why>`, with the app line when one
 is running.
 

@@ -30,16 +30,25 @@ tree.
    code: started from this worktree after the last change, with no stale build, bundle or cache in the way.
 2. **Walk the acceptance criteria** and the design note's states one by one. Record what you did and what you
    saw for each.
-3. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,
+3. **Look at the UI.** When the change touches what a user sees, judge it by eye, not only by its tests. Use the
+   project's own browser test setup when it has one, so the shots repeat; otherwise the browser and image tools
+   you have. Screenshot each changed page and state on the base and on this tree, with the same data, at a
+   desktop and a phone width, and in dark mode when the app has one; also each page the flow map says must not
+   change. Look at each pair against the acceptance criteria and the design note: the intended change is there,
+   and nothing else broke (overlap, cut-off text, spacing, alignment, contrast, an empty, loading or error state
+   that looks wrong). A visible difference on a page that must not change is a fail. New console errors or failed
+   requests on these pages are fails too. A pair you cannot judge with confidence is **not run here**, never a
+   guessed pass.
+4. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,
    a user without permission.
-4. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task named,
+5. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task named,
    and each row of the behavior table you can reach, as that actor and with that data: a changed row gives its
    After result, every other row today's result. Check each must-not-change item and each risk whose check is a QA
    step. Where behavior differs by role, tenant, locale or state, repeat it for each (a seeded or test user per
    role). Then the broader test suite: use verify's result for this tree (the full suite in the first round, the
    related tests in a re-run, `steps/verify.md`, Fast checks); run it yourself only when verify has none. Compare
    its failures with the baseline: only new failures count.
-5. **Clean up** what you started: remove temporary data, and stop the servers unless the report will hand the
+6. **Clean up** what you started: remove temporary data, and stop the servers unless the report will hand the
    running app to the user (`steps/report.md`, Running app).
 
 ## Results
