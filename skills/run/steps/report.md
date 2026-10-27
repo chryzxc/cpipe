@@ -73,10 +73,11 @@ the limits keeps a delivery unmerged, and the status line names it with what was
 
 The report comes after the work is finished, not when the steps have run once. Before writing it, check that
 every step in the report's Proof below would be ✅ or —. For any other step, go back and finish it while the
-limits in `cpipe:run` allow: fix in-scope findings and QA failures, retry a check another way,
+limits in `cpipe:run` allow: fix every **act** finding and QA failure, retry a check another way,
 wait for CI, merge when asked. A step stays open only when the run truly cannot close it: something only the user
 may do, a check that needs what this machine does not have, or a limit reached. A question about how the code
-should behave, a needed policy, a role's hold or blocked verdict, or a flaky result whose cause is unknown
+should behave, a needed policy, a role's hold or blocked verdict, a builder saying a fix is out of scope
+(`steps/review.md`, Fix and the delta review), or a flaky result whose cause is unknown
 (`steps/verify.md`, New failures) never keeps a step open. Decide it from the
 user's instructions (`cpipe:run`, The user's instructions), fix and verify. Then check each instruction in
 `now.md`: every one is met, or has its reason from that list. Test it is the last thing left for the user, and

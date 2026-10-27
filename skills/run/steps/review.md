@@ -84,10 +84,15 @@ evidence. Without a build profile, read each finding against the code yourself.
 
 | Disposition | Means | Then |
 |---|---|---|
-| **act** | Real and inside the scope | Fix it now. |
-| **consider** | Real, but a judgment call or outside the scope | List it in the report. |
+| **act** | Real, and the goal needs it fixed | Fix it now. |
+| **consider** | Real, but a judgment call or a problem the goal does not cover | List it in the report. |
 | **noted** | Minor or stylistic | List it in the report. |
 | **dismissed** | Wrong: the code already handles it | Write the evidence (file, line, test) in the run log. |
+
+The scope is the goal, not the files the plan listed. A finding that shows the change does not yet do what the
+goal says is **act**, wherever its fix lands: a guard that can be bypassed, a race between the new check and the
+write it protects, a path or caller the fix misses. Add the files and paths it needs to the plan. **consider** is
+for problems the goal does not cover: pre-existing behavior the change leaves as it was, unrelated code.
 
 A path, behavior row or risk the reviewer found that the plan missed is added to the plan with its check; a
 regression on it is **act**, even if the code sits outside the scope's files. Write a learning for it (`cpipe:run`,
@@ -103,7 +108,7 @@ the change. Record what the check now allows and why. A verdict from a reviewer,
 ready for release) is not a finding. Take the findings behind it, sort them here, and carry on.
 
 Nothing is dropped silently. A security finding is never dismissed without evidence, and an open security finding
-you cannot fix inside the scope leads the report.
+leads the report.
 
 A finding that asks for evidence this machine cannot produce (a browser run, a device, a live service): do what
 you can locally, then list it as **consider** with what is left for the user to check. Do not stop for it.
@@ -115,8 +120,17 @@ build profile, one builder follow-up), then `steps/verify.md`, then the delta re
 failed items. The delta review resumes the first reviewer's session (`roles.md`, Follow-ups) with the diff since
 the first review and the earlier findings to confirm as resolved. Nothing to act on means no delta review.
 
-The delta review is the last review round. Its **act** findings are fixed the same way and proven by their tests
-and the checks, with no further review; the report lists them as fixed after the last review. Anything else still
+Brief every **act** finding as a fix, never as "fix it if it fits the scope" or "investigate": the builder is
+not the one who decides it is out of scope. A builder that answers it cannot be fixed in scope (the fix needs
+other files, other write paths, a shared lock or a conditional write) gets the same finding back at once, with
+those paths added to the plan and the approach it named as the one to build. It stays open only when the fix
+needs what this run cannot do: a change in another repository or service, a migration of live data, access or
+credentials it does not have. Then it leads the report with what was tried and the fix it needs.
+
+The delta review is the last full review round. Its **act** findings are fixed the same way and proven by their
+tests and the checks (a race by a test that forces the interleaving), with no further review, except that a
+security fix gets one more delta review from the security reviewer on that fix alone; the report lists them as
+fixed after the last review. Anything else still
 open goes into the report with its disposition. Then go to the last verify (`steps/build.md`, step 10).
 
 Fixes for a failing check or a compile error, a conflict, the cleanup and an update onto a moved base get no
@@ -128,9 +142,11 @@ review: their tests and the checks are their proof.
 - Brief the reviewer with facts (goal, acceptance, diff, check states), not your reasoning or your verdict.
 - Never dismiss a finding without evidence in the run log, and never dismiss a security finding by judgment
   alone.
-- Never widen the scope to satisfy a reviewer: an out-of-scope finding is **consider**. A regression the change
-  caused is never out of scope.
-- Two rounds at most: one full review and one delta review.
+- Never widen the goal to satisfy a reviewer: a problem the goal does not cover is **consider**. A regression
+  the change caused, and a finding that the goal is not met yet, are never out of scope.
+- An **act** finding is never left for the user to fix or to ask for again: no report goes out while one is
+  open and the run can still fix it.
+- Two review rounds at most (one full review, one delta review), plus the security delta above.
 - Every review gap is closed by the run, never handed to the user.
 
 ## Done when

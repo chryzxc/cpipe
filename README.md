@@ -238,7 +238,7 @@ ends the run.
 | Build: change, narrow test, keep or undo | One change at a time; never two unverified changes stacked |
 | A failing check, back to build | 3 attempts, each a different idea |
 | QA failures, back to build | 1 fix round, then one re-run of the items that failed |
-| Review, back to build | 2 rounds: one full review, one delta review of the fixes; a fix after that is proven by its test and the checks |
+| Review, back to build | 2 rounds: one full review, one delta review of the fixes; a fix after that is proven by its test and the checks (plus a security delta) |
 | Fixes for checks, conflicts, the cleanup | No review or QA round; the last verify is their proof |
 | No progress | 3 rounds in a row: change the approach once, then report |
 | A role's profile | Its time budget, then the chat does the step; a card not picked up in 10 minutes counts as failed |
@@ -394,16 +394,18 @@ regressions across the whole repository, risks the plan missed, security, concur
 performance, and simplicity. Before a round leaves, the builder checks the same: resources closed, shared writes
 safe, bounds in place, no queries in loops. Changes to
 authentication, permissions, payments, data deletion or migrations get two reviewers in parallel. A run has one
-full review and at most one delta review; a fix after the delta review is proven by its test and the checks and
-listed as fixed after the last review.
+full review and at most one delta review; a fix after the delta review is proven by its test and the checks (a
+security fix also gets a delta from the security reviewer) and listed as fixed after the last review. The scope is
+the goal, not the planned files: a finding that the change does not do what the goal says yet (a bypassable
+guard, a race in the new check) is fixed wherever the fix lands, never left for you.
 
 Every finding is given a disposition and checked against the code (by the builder, when there is one), so
 nothing is filtered silently:
 
 | Disposition | Means | What happens |
 |---|---|---|
-| **act** | Real and inside the scope | Fixed in the fix round, then checked by the delta review |
-| **consider** | Real, but a judgment call or outside the scope | Listed in the report |
+| **act** | Real, and the goal needs it fixed | Fixed in the fix round, then checked by the delta review |
+| **consider** | Real, but a judgment call or a problem the goal does not cover | Listed in the report |
 | **noted** | Minor or stylistic | Listed in the report |
 | **dismissed** | Wrong: the code already handles it | The evidence is written in the run log |
 
