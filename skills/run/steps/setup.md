@@ -14,7 +14,7 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    user's rules about what may be published apply to it: before naming it, load the user's skill for pull
    requests or publishing (`cpipe:run`, The user's own skills come first) and follow what it says about names
    and public content. From recent branches take only the shape (prefix, type, separators), never their ids or
-   labels (`r07`, `T12`, a card or ticket id from a private plan), and never copy one from the task either: the
+   labels (`T12`, `step-4`, a card or ticket id from a private plan), and never copy one from the task either: the
    slug says what changes. Only when none of these say anything, use
    `<type>/<short-slug>` with the type of the change (`fix`, `feat`, `refactor`, `chore`) and a slug that
    describes the change. Pull request tooling often reads the type from the branch name, so it must match the
