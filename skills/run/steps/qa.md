@@ -38,7 +38,9 @@ tree.
    and nothing else broke (overlap, cut-off text, spacing, alignment, contrast, an empty, loading or error state
    that looks wrong). A visible difference on a page that must not change is a fail. New console errors or failed
    requests on these pages are fails too. A pair you cannot judge with confidence is **not run here**, never a
-   guessed pass.
+   guessed pass. Save the shots in `<run dir>/qa/` as `<n>-<page>-before.png` and `<n>-<page>-after.png`. For a
+   change users see as text (an endpoint's response, a command's output, an email or message), save the before
+   and after the same way as `.txt`, trimmed to what changed. The report shows these pairs (Before and after).
 4. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,
    a user without permission.
 5. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task named,

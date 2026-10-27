@@ -124,6 +124,9 @@ named only in Run problems and Details. Any other internal name gets a plain des
 ## Approach
 | Idea | Why | Avoided | Trade-off |
 
+## Before and after
+| # | What | Before | After | QA |
+
 ## Test it
 App: <URL or command, worktree>
 | # | What to check | How | Expected |
@@ -185,6 +188,13 @@ sees the reasoning without reading the diff. One row per idea: **Idea** is the a
 chosen; **Why** the deciding fact (from the code, the request or a lesson); **Avoided** the alternative not taken
 and the problem it would have caused (a regression, a race, a breaking contract, a wider diff); **Trade-off**
 what this choice costs or leaves open, or `none`. Omit when the change had only one sensible way.
+
+**Before and after**: what the user would see change, so they can compare it in the chat without opening the
+app. One row per QA pair (`steps/qa.md`): the page, state or command; before and after; QA's pass, fail or not
+run here. For a UI, the before and after screenshots, attached the way this chat's instructions say a local file
+or image is shown, so they render inline; where the chat has no way to show files, their paths. For an endpoint,
+CLI or output change, the before and after text in short code blocks (the response, output or message), trimmed
+to the lines that changed. Pairs QA could not judge come first. Omit for a change nobody sees.
 
 **Test it**: the running app (Running app above) and only what this machine could not verify (a signed-in
 session, a device, a live service, visual judgment), each with exact steps and the expected result, so the user
