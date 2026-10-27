@@ -130,7 +130,10 @@ instructions and is resent with every build reply, so it holds facts in this for
 - **Must not change:** numbered `M1`…; for each row of the behavior table that keeps today's result, each
   entrance, consumer and guard in the map, and each behavior the user's instructions say to keep, the behavior
   that has to stay, with the check, test or QA step that proves it. An
-  existing test or check that already covers it is named, not duplicated.
+  existing test or check that already covers it is named, not duplicated. A change that adds a check or guard
+  lists the states real data can be in, not only a clean fixture: a reference to a record that was deleted (look
+  for deletes that leave references behind), legacy shapes, empty or missing fields. For each, every actor who
+  can do the action today and still must, each with its test.
 - **Risks:** numbered `R1`…; the premortem, each with its check or the reason it cannot happen. A new test only
   where nothing existing would catch the break.
 - **Tests:** the new tests, each with the break it catches: the line or behavior that, when broken, makes it
