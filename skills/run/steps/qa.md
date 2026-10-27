@@ -1,8 +1,8 @@
 # cpipe: the qa step
 
-Step 8 of `cpipe:run`, once the full suite and the build finish, while the review (`steps/review.md`) runs. Checks
-prove the code; QA proves the behavior. If the roles file names a `qa` profile, hand this step to it (`roles.md` in
-`cpipe:run`). Otherwise do it yourself.
+Step 8 of `cpipe:run`, once the related tests and the build finish, while the review (`steps/review.md`) runs.
+Checks prove the code; QA proves the behavior. If the roles file names a `qa` profile, hand this step to it
+(`roles.md` in `cpipe:run`). Otherwise do it yourself.
 
 ## When it applies
 
@@ -47,8 +47,8 @@ tree.
    and each row of the behavior table you can reach, as that actor and with that data: a changed row gives its
    After result, every other row today's result. Check each must-not-change item and each risk whose check is a QA
    step. Where behavior differs by role, tenant, locale or state, repeat it for each (a seeded or test user per
-   role). Then the broader test suite: use verify's result for this tree (the full suite in the first round, the
-   related tests in a re-run, `steps/verify.md`, Fast checks); run it yourself only when verify has none. Compare
+   role). Then the related tests: use verify's result for this tree (`steps/verify.md`, Fast checks); run them
+   yourself only when verify has none, and never the full suite. Compare
    its failures with the baseline: only new failures count.
 6. **Clean up** what you started: remove temporary data, and stop the servers unless the report will hand the
    running app to the user (`steps/report.md`, Running app).

@@ -124,7 +124,7 @@ pages to learn the command line.
      diff. Ask for this reply: the kind and the plan's step count and assumptions, when it planned; each plan
      step done or corrected (what and why); the build or typecheck and the narrow tests it ran, with their
      results; anything left. You write those rows in the run log. It does not read or write the run log, and
-     does not run the full suite or the production build: verify does. Start it as soon as the plan is in: the
+     does not run the related tests or the production build: verify does. Start it as soon as the plan is in: the
      baseline runs in its own worktree, so the build never waits for it.
    - **plan** and **build** both: dependencies install in the background, so tell it to run nothing in the
      worktree before `<run dir>/logs/install.done` exists (`steps/plan.md` step 2, Wait for the dependencies).

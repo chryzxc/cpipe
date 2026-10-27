@@ -32,37 +32,40 @@ baseline hides nothing: its new errors are found by id like any failure, and eac
 
 ## Fast checks
 
-The full suite and the production build take most of a run's time. Run each only where it proves something:
+Tests run for the change, never the whole suite: the full suite takes most of a run's time, and the pull
+request's CI runs it. Run each check only where it proves something:
 
-- **Narrow first.** The plan's narrow tests first; the full suite and the build only once they pass. In the first
-  verify, start the review then too, before them (`cpipe:run`, Flow): it only reads the code.
-- **When.** The full suite and the build run once, in the first verify. Every later verify (a fix round, and
-  the last one on the final tree that gets committed, `steps/build.md` step 10) runs the narrow tests, the light
-  checks and the tests related to the files changed since the full run, through the runner's related or changed
-  mode (such as `vitest related <files>` or `jest --findRelatedTests <files>`); a runner without one runs the
-  test files beside the changed files. With no fix round, the first verify's results stand for the last one.
-- **After the baseline.** The baseline runs in its own worktree (`steps/setup.md`, step 8). The first verify's
-  full suite and build start only once `logs/baseline.done` exists, so two heavy jobs never run together; until
-  then run the narrow tests and the light checks, then end the turn on the baseline's notification. A full suite
-  the baseline did not finish (`exit 124`, or its log stops before the runner's summary) hangs or outruns its
-  limit there and would here too: no verify runs it whole. Each one runs the narrow tests and the tests related
-  to every file the change touches (as in later verifies, above), and the report lists the full suite as not
-  finished on the base.
-- **No duplicates.** A subset the full suite already runs (a regression script, a focused file) is not run beside
-  it.
+- **Narrow first.** The plan's narrow tests first; the related tests and the build only once they pass. In the
+  first verify, start the review then too, before them (`cpipe:run`, Flow): it only reads the code.
+- **Related tests, every verify.** Each verify (the first, a fix round, and the last one on the final tree that
+  gets committed, `steps/build.md` step 10) runs the narrow tests, the light checks and the tests related to
+  every file the change touches since the base, through the runner's related mode (such as
+  `vitest related <files>` or `jest --findRelatedTests <files>`); a runner without one runs the test files beside
+  the changed files and the ones that import them. The build runs once, in the first verify. With no fix round,
+  the first verify's results stand for the last one.
+- **Never the full suite.** No verify, QA, review or merge runs the project's whole test suite, and "no
+  regressions" does not ask for it: the related tests compared with the base, plus the pull request's CI, are the
+  proof. Only a user who asks for the full suite by name gets it. The report lists the full suite as left to CI,
+  or as not run when the project has no CI for it.
+- **After the baseline.** The baseline (the build and the light checks on the base, `steps/setup.md` step 8) runs
+  in its own worktree. The first verify's build starts only once `logs/baseline.done` exists, so two heavy jobs
+  never run together; until then run the narrow and related tests and the light checks, then end the turn on the
+  baseline's notification.
+- **No duplicates.** A subset the related tests already run (a regression script, a focused file) is not run
+  beside them.
 - **The project's commands only.** Run each check with the project's own command. No wrapper scripts, gates,
-  harnesses, preloads, environment patches, manifests or receipts around it, and no full suites on other trees
+  harnesses, preloads, environment patches, manifests or receipts around it, and no test runs on other trees
   (another base, both heads, a combined branch) to prove parity: the by-name comparison with the baseline, plus
   the one base check under New failures, is the proof.
 - **The runner's own parallelism.** Run the suite the way the project's CI does and let the runner pick its
   workers. Never add serial or single-worker flags (`--runInBand`, a single thread or fork, `--workers=1`) unless
   the project's CI uses them. A parallel option the project already has (such as `pytest -n auto` with
   pytest-xdist installed) is used; one it does not have is never installed.
-- **One heavy job at a time.** The full suite and the build each use every core: run them one after the other,
+- **One heavy job at a time.** A large test run and the build each use every core: run them one after the other,
   never together or beside another suite, or both slow down and tests time out. Each takes its turn with `-h`
   (`steps/setup.md`, Time limit), which also holds it while another run's heavy job runs. Lint, typecheck and
   format checks can run alongside.
-- **In the background.** The full suite and the build run in the background with their output in a file
+- **In the background.** The related tests and the build run in the background with their output in a file
   (`logs/verify-<check>.txt`) and a completion notification, under the time limit (`steps/setup.md`, Time
   limit): `perl <run dir>/limit.pl -h <seconds> <command>`, twice the check's time on the base and at least 5
   minutes. A foreground command is cut off after a few minutes and its result is lost; one without a limit can
@@ -97,7 +100,7 @@ Never stop the run for this. Work down the list; the first thing that works wins
 | The test framework itself crashes on the base too (a tooling mismatch, an old transpiler) | Baseline problem. Run the test another way: a single file, the project's other runner, or a small script that imports and calls the code. Typecheck and build count as partial proof. Record the original check as not run here. |
 | The project's own app, server or local service is not running, or stopped mid-run | Start it again the way the project does (its dev script, its local setup), wait until it answers, and continue. Only a service this machine cannot run is not run here. |
 | Needs a service (database, browser, device, network API) that is not available | Use the project's test doubles or in-memory setup if it has one. Otherwise verify the logic with unit tests and record the end-to-end part as not run here. |
-| Times out | Run the failing files alone (Fast checks, New failures), raise the timeout once, look for a hang you caused. A suite that also hit its limit on the base is not finished there (Fast checks, After the baseline). |
+| Times out | Run the failing files alone (Fast checks, New failures), raise the timeout once, look for a hang you caused. |
 | Flaky | Run it again once, alone. A different result twice means flaky: record both runs. |
 | Expected report or output file is missing | Judge by the exit code and the printed summary. |
 | A tool or profile errors or returns nothing | Read the error, retry once differently, or do the step yourself. |
@@ -197,5 +200,5 @@ fixtures and test data, migrations, and data files. Split every other listed fil
 ## Done when
 
 Every check this verify runs (Fast checks) has a state on the current tree; in the last verify, that is every
-check from the plan, with the full suite and the build from the first verify. Every new failure is fixed or
+check from the plan, with the build from the first verify. Every new failure is fixed or
 recorded as open after three attempts, and the completion gate passes.

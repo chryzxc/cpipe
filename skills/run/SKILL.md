@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.59.0
+version: 3.60.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -92,7 +92,7 @@ next tool call. Without completion notifications, wait on that one process id wi
 you wait on ends on its own: every install, check and profile runs under a time limit (`steps/setup.md`, Time
 limit), so a hang still ends it and its notification still comes.
 
-**Progress while waiting.** A wait that can last past 10 minutes (a profile, the full suite) gets a tick beside it:
+**Progress while waiting.** A wait that can last past 10 minutes (a profile, the build) gets a tick beside it:
 `sh <run dir>/tick.sh <worktree>` in the background with a completion notification (`steps/setup.md`, Progress
 tick). It sleeps 10 minutes, then prints what changed: the diff's size and the newest logs with their last line.
 When it wakes the run and the work still runs, post one line from its output alone, read nothing else, and start
@@ -202,8 +202,8 @@ file tool from this skill's directory (the start message names its `SKILL.md`). 
 | 10. Clean | The builder's cleanup of its own diff, then the last verify on the final tree. | `steps/build.md` | build |
 | 11. Report | Commit, a draft pull request and a merge only if asked, the report. | `steps/report.md` | |
 
-The review only reads the code, so it never waits for the full suite: start it in the background as soon as the
-first verify's narrow tests, light checks and completion gate pass, then start the full suite and the build. QA
+The review only reads the code, so it never waits for the tests: start it in the background as soon as the
+first verify's narrow tests, light checks and completion gate pass, then start the related tests and the build. QA
 runs the change, so it starts once those finish (one heavy job at a time). Nobody edits the worktree while they
 read it: wait for all of them, then fix everything in one round (new failures, findings, QA failures), verify,
 and re-run only the QA items that failed together with the delta review.
@@ -442,9 +442,9 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
 - Review and QA rounds are capped (Limits); the checks, not another round, prove fixes for checks, compile
   errors, conflicts and the cleanup.
 - The project's own commands for checks: no scripts, harnesses, receipts or manifests of your own around them,
-  and no extra full suites on other trees (`steps/verify.md`).
-- Narrow tests while building. The full suite and the build run once, one at a time, in the first verify; every
-  later verify, the last one too, runs the related tests (`steps/verify.md`, Fast checks).
+  and no test runs on other trees (`steps/verify.md`).
+- Narrow tests while building; every verify runs the tests related to the change, never the full suite, which
+  CI runs. The build runs once, in the first verify (`steps/verify.md`, Fast checks).
 - A profile's result is its output or its reply file (`roles.md`); never search its session history for it.
 - A step that does not apply, or mechanical work (format, commit, pull request body, a rebase without
   conflicts), gets no profile (`roles.md`).

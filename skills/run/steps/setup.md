@@ -52,8 +52,8 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    removed in the run log. Anything unclear stays; a failed removal is noted and never ends the run.
 7. **Checks.** Find the project's own commands in its files, not its code: `package.json` scripts, `Makefile`,
    `pyproject.toml`, the CI workflow files (they show how CI installs and tests, and how long it gives each job:
-   `timeout-minutes`), the development section of its instructions. Note the build or typecheck, the lint, the
-   full suite, and how the test runner takes one file or a filter. Read only those files.
+   `timeout-minutes`), the development section of its instructions. Note the build or typecheck, the lint, and
+   how the test runner takes one file, a filter or the files related to a change. Read only those files.
 8. **Background work.** Write the time limit and the progress tick (below) to `<run dir>/limit.pl` and
    `<run dir>/tick.sh`, then start one background command
    with a completion notification that does the rest, one command after the other, each under the time limit
@@ -63,9 +63,9 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    2. the **base worktree**: `git worktree add --detach "$(mktemp -d)/base" <base commit>`, the env files step 4
       copied, and the same install there; its own install, since dependencies linked from the delivery worktree
       can point back to its code (workspace links, an editable install);
-   3. the **baseline**, in the base worktree: the checks from step 7 (the full suite, not only the narrow tests,
-      then the build) the way `steps/verify.md` (Fast checks) runs them, with no serial or single-worker flags,
-      to `logs/baseline-<check>.txt`;
+   3. the **baseline**, in the base worktree: the light checks and the build from step 7, no tests (a failing
+      test is checked on the base file by file, `steps/verify.md`, New failures), the way `steps/verify.md`
+      (Fast checks) runs them, to `logs/baseline-<check>.txt`;
    4. `touch logs/baseline.done`, last and whatever came before.
 
    Write its process id and the base worktree's path in the run log and `now.md`, and start whoever explores at
@@ -79,7 +79,7 @@ When the background work ends, record each check's result in the run log: pass, 
 Save the ids of the failing tests, lint errors and typecheck or compiler errors, one per line and sorted, to
 `baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. An error's id is its file,
 rule or code and message, without line or column, since lines move when code is added above them. A check that did
-not finish gets a line in `now.md` too: verify never runs it whole (`steps/verify.md`, After the baseline). A check
+not finish gets a line in `now.md` too. A check
 already red is the baseline, not your job, unless the task is to fix it. A check that will not run is worked through
 `steps/verify.md` (When a check will not run), so the plan names commands that work. If an install fails, try the
 next way from there and record it; a failed install never ends the run. Deliveries of one run from the same base
@@ -92,8 +92,8 @@ A hung test (an open handle, a server that never closes) never ends its command,
 never comes, and nothing else may wake the run. Every background command the run starts (an install, a check, a
 profile) runs under this limit: at the limit it stops the command and everything it started, and exits 124.
 It also runs it at low priority, so the user's own work on the machine stays responsive. A heavy job (an install,
-a full suite, a build) passes `-h`: it first waits its turn, so heavy jobs from every run and lane on the machine
-go one at a time, and its time limit starts once its turn comes.
+a large test run, a build) passes `-h`: it first waits its turn, so heavy jobs from every run and lane on the
+machine go one at a time, and its time limit starts once its turn comes.
 
 ```perl
 # perl limit.pl [-h] <seconds> <command> [<arguments>]

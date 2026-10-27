@@ -1,9 +1,9 @@
 # cpipe: the review step
 
 Step 9 of `cpipe:run`, started in the background as soon as the first verify's narrow tests and completion gate
-pass, while the full suite and the build run; QA (`steps/qa.md`) joins once those finish. The builder never approves
-its own work: the review runs in a context that did not write the code. A run has one full review and at most one
-delta review (section 3).
+pass, while the related tests and the build run; QA (`steps/qa.md`) joins once those finish. The builder never
+approves its own work: the review runs in a context that did not write the code. A run has one full review and at
+most one delta review (section 3).
 
 ## 1. Brief the reviewer
 

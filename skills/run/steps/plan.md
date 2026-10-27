@@ -75,7 +75,7 @@ yourself:
    Each risk gets a check (a test, a command or a QA step), or a one-line reason it cannot happen here, citing
    the code. These are prompts, not a form: find the risks this change has, including ones no lens names.
 5. **Checks.** From set up's commands, pick the narrowest one that covers the change (one file, a filter), plus
-   the build or typecheck, plus the broader suite for QA.
+   the build or typecheck, plus the related-tests command for the changed files (never the full suite).
 6. **Wait for the dependencies** before the first command that runs code in the worktree (a reproducing test):
    set up installs them in the background and writes `<run dir>/logs/install.done` when they are in. When it is
    not there yet, wait once: `for i in $(seq 60); do [ -f <run dir>/logs/install.done ] && break; sleep 15; done`

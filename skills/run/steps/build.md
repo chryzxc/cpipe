@@ -29,7 +29,7 @@ every playbook:
    the narrow test command, which runs after them and sees them. Never wait for an edit's result before sending
    its test: a failed edit shows in the same reply's results. Keep the change if it moves toward the acceptance
    criteria, otherwise undo it and try a different idea. Never stack two unverified changes.
-4. **Narrow tests only.** The full suite and a slow production bundle run in `steps/verify.md` (Fast checks),
+4. **Narrow tests only.** The related tests and a slow production bundle run in `steps/verify.md` (Fast checks),
    and only those results count; do not run them here as well.
 5. **It builds before it leaves.** Before the round ends, run the fastest command that compiles the change: the
    project's typecheck, or for a compiled language its compiler's build (such as `swift build`, `cargo check`,

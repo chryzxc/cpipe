@@ -276,22 +276,21 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 
 ### Cost engineering
 
-- **Fast checks.** While building, only the narrow tests run. The full suite and the build run once, in the
-  first verify, one after the other and never together, with the runner's own parallel workers; every later
-  verify, the last one too, runs the tests related to the changed files. Serial or single-worker flags are used
+- **Fast checks.** While building, only the narrow tests run. Every verify runs the tests related to the changed
+  files, never the full suite, which the pull request's CI runs; the build runs once, in the first verify, never
+  beside another heavy job, with the runner's own parallel workers. Serial or single-worker flags are used
   only when the project's CI uses them. Long checks run in the background with a completion notification.
 - **Same tree, same result.** Each check result carries a tree id built from the content of the files, so a
   commit does not change it; a check is not run again while the id is unchanged, and QA reuses verify's result.
 - **New failures, once each.** A failure not in the baseline is rerun alone once; a test that passes alone is
   recorded as flaky. One with no baseline result is run once in the base worktree, and that decides it.
-- **Baseline once, never in the way.** The full suite and the build run once on the base, in a worktree of the
+- **Baseline once, never in the way.** The light checks and the build run once on the base, in a worktree of the
   base commit with its own install, started in set up and running in the background while the code is explored
   and built. Only verify waits for them. Deliveries from the same base commit share one baseline, and a check that
   was already red is never chased.
 - **Nothing hangs the run.** Every background job (installs, checks, profiles) runs under a time limit that also
-  stops everything it started, so a hung test still ends and its notification still wakes the run. A suite that
-  did not finish on the base is not run whole again: verify runs the tests related to the change instead.
-- **The machine stays usable.** Background jobs run at low priority, and installs, full suites and builds take
+  stops everything it started, so a hung test still ends and its notification still wakes the run.
+- **The machine stays usable.** Background jobs run at low priority, and installs, test runs and builds take
   turns across every run on the machine, so two lanes never load every core at once.
 - **Proven cause.** A bug is reproduced with a failing test during explore, so the plan is built on the cause,
   not a guess.
@@ -770,7 +769,7 @@ different model or setup take a role. A review profile makes the review independ
 most: it keeps the code out of the chat. A plan profile lets planning run on a different model from building.
 
 **Can two runs share a machine?**
-Yes, in different chats. Installs, full suites and builds from every run on the machine take turns, one at a
+Yes, in different chats. Installs, test runs and builds from every run on the machine take turns, one at a
 time, and every background job runs at low priority, so your own work stays responsive.
 
 ## Contributing

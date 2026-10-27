@@ -61,7 +61,8 @@ verify once more on that tree, and compare by name again. A conflict goes to tha
 follow-up (without a build profile, you resolve it), keeping what both sides meant; that verify is its proof,
 with no review. Several deliveries merge one after another, each
 updated on what the previous merge left. That is the whole proof: no extra suites on other trees, harnesses or
-environment patches, and a failure that passes alone is flaky, never a regression (`steps/verify.md`).
+environment patches, and a failure that passes alone is flaky, never a regression (`steps/verify.md`). Never
+run the full suite for a merge: CI runs it, and a check the run does not run never holds a merge.
 
 Mark the draft ready (`gh pr ready`). That can start the CI checks again, so wait for them on the head commit as
 after a push (Pull request), and merge only when they pass or are baseline, with the method the repository's recent
@@ -194,7 +195,8 @@ Findings that were fixed are not rows here: Proof counts them. Omit the section 
 
 **Proof**: what the run proved, one line per kind, numbers over words, `✅` or `⚠️` first:
 - **Tests**: the bug reproduced; new tests RED → GREEN, how many.
-- **Checks**: each check and its state (lint, types, the suite with pass and baseline counts, the build).
+- **Checks**: each check and its state (lint, types, the related tests with pass and baseline counts, the
+  build; the full suite: CI).
 - **QA**: scenarios run on the real surface and how many passed; must-not-change items held.
 - **Review**: findings by outcome (fixed, noted, dismissed), with the fixed ones named in a few words each, and
   the rounds run.
