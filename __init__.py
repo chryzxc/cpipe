@@ -1,4 +1,5 @@
-"""cpipe: a Hermes plugin made of skills. The model runs the delivery; this file only registers the run skill and /cpipe."""
+"""cpipe: a Hermes plugin made of skills. The model runs the delivery; this file only registers the run skill, /cpipe
+and a reminder on messages sent while a run is going."""
 
 import os
 import re
@@ -49,6 +50,47 @@ def register(ctx):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
                              args_hint="[--kanban] [--budget <tier>] <task> | budget [<tier>] | continue | feedback <text> | learnings", argument_mode="text")
+    if hasattr(ctx, "register_hook"):
+        ctx.register_hook("pre_llm_call", _steering)
+
+
+STEERING = ("[cpipe] A cpipe run is going in this chat and this message arrived mid-run: it is steering, not a new "
+            "task (cpipe:run, A message from the user mid-run). Do what it asks as part of the run, answer it in one "
+            "line in the same reply as the run's next tool call, and continue the run. Never end the turn on the "
+            "answer.")
+# The run's own lines (skills/run/SKILL.md, Status lines) and the report's status lines (steps/report.md).
+STEP_LINE = re.compile(r"^(?:[✅⏳⚠❌—]\ufe0f? )?\d{1,2}/11 |^Resuming at \d{1,2}/11 ", re.M)
+REPORT_LINE = re.compile(r"^(?:✅ Done|⚠\ufe0f? Done except|✅ Approved|⚠\ufe0f? Changes needed)", re.M)
+
+
+def _text(content):
+    if isinstance(content, list):
+        return "\n".join(p.get("text", "") for p in content if isinstance(p, dict))
+    return content if isinstance(content, str) else ""
+
+
+def _running(history):
+    """True when the newest cpipe marker in the chat is a start or a step line, not the report."""
+    for msg in reversed(history or []):
+        if not isinstance(msg, dict):
+            continue
+        text = _text(msg.get("content"))
+        if msg.get("role") == "user" and text.startswith(START[:30]):
+            return True
+        if msg.get("role") == "assistant":
+            if REPORT_LINE.search(text):
+                return False
+            if STEP_LINE.search(text):
+                return True
+    return False
+
+
+def _steering(user_message=None, conversation_history=None, **_):
+    """Context for a user message that arrives while a run is going (no flow control: the skill decides)."""
+    message = _text(user_message).lstrip()
+    if not message or message.startswith((START[:30], "/cpipe")):
+        return None
+    return {"context": STEERING} if _running(conversation_history) else None
 
 
 def _home():

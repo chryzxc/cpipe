@@ -700,13 +700,14 @@ flowchart LR
 ```
 
 The plugin's code only registers one skill and the `/cpipe` command, which injects the task into the chat with
-the instruction to run the skill. Everything else (the flow, the decisions, the recovery) is skill text that the
-model follows with the tools it already has.
+the instruction to run the skill, plus a one-line reminder on any message you send while a run is going, so the
+model treats it as steering and keeps the run moving. Everything else (the flow, the decisions, the recovery) is
+skill text that the model follows with the tools it already has.
 
 ```
 cpipe/
 ├── plugin.yaml           manifest
-├── __init__.py           registers cpipe:run and /cpipe
+├── __init__.py           registers cpipe:run, /cpipe and the mid-run reminder
 ├── AGENTS.md             rules for changing cpipe
 └── skills/run/
     ├── SKILL.md          the flow, unattended rules, run log, learning, limits, guard rails
@@ -751,7 +752,8 @@ ones, using the results of profiles and checks that kept running in the meantime
 
 **Can I steer it mid-run?**
 Yes. A message mid-run is steering: its instructions join the run's contract, it gets a one-line answer, and
-extra work joins the plan or waits for a follow-up after the report.
+extra work joins the plan or waits for a follow-up after the report. A request such as "change the PR title" is
+done inside the run, and the run continues in the same reply.
 
 **Several issues in one task?**
 Each issue is its own delivery with its own branch, worktree and commit, run one after another (or at most two
@@ -775,8 +777,8 @@ time, and every background job runs at low priority, so your own work stays resp
 
 cpipe is skill text first; [AGENTS.md](AGENTS.md) holds the rules for changing it:
 
-- **Skills drive the flow.** `__init__.py` only registers. No code decides the next step, calls a model or stops
-  a run; change the skill text instead.
+- **Skills drive the flow.** `__init__.py` only registers and adds context. No code decides the next step, calls
+  a model or stops a run; change the skill text instead.
 - **Keep going.** A change never adds a reason to stop or a message that asks the user to fix or run something.
 - **No tool lock-in.** Describe a capability ("a code index, if you have one"), never a specific tool, server,
   skill or model.

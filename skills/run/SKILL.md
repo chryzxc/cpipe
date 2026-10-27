@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.58.0
+version: 3.59.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -65,8 +65,11 @@ A push, pull request or merge happens only when the user asks for one; a task to
 make it right asks for a push to it (`playbooks/review.md`). A message from the user mid-run is
 steering, not a stop: add its instructions to `now.md`, answer it in one line in the same reply as the run's next
 tool call, and go on as Continue says. Never end the turn on the answer: the run only resumes from a turn that
-is still working, and a message that cut off a turn means that turn's work is undone. A question about the run
-("is it done?") is handled the same way while any instruction is unmet. Steering that adds work (another bug,
+is still working, and a message that cut off a turn means that turn's work is undone. A request to do something
+now (edit the pull request, change its title, merge, look at a file) is steering too, however it is worded and
+whatever context blocks the chat adds to it: do it as part of the run, then make the run's next tool call in the
+same reply; a reply that only reports the result stops the run. A question about the run ("is it done?") is
+handled the same way while any instruction is unmet. Steering that adds work (another bug,
 another behavior) is either added to the plan as numbered steps with their acceptance criteria, or, when it is a
 different problem, kept for a follow-up after the report; say which in that line and note it in the run log.
 

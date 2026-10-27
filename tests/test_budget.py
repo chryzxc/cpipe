@@ -67,3 +67,15 @@ def test_start_message_counts_learned_rules(tmp_path, monkeypatch):
     (tmp_path / "cpipe" / "learnings" / "qa.md").write_text("# qa\n- a\n- b\n")
     (tmp_path / "cpipe" / "learnings" / "retired.md").write_text("- old\n")
     assert cpipe._learned().startswith("2 rules from past runs")
+
+
+def test_mid_run_message_gets_the_steering_reminder():
+    start = {"role": "user", "content": cpipe.START.format(skill="s", root="r") + "fix it"}
+    step = {"role": "assistant", "content": "✅ 6/11 Build · 29 min · 4 files"}
+    report = {"role": "assistant", "content": "✅ Done: fix it\n\nSummary"}
+    msg = {"role": "user", "content": "change the PR title"}
+    assert cpipe._steering("change the PR title", [start, msg])["context"] == cpipe.STEERING
+    assert cpipe._steering([{"type": "text", "text": "merge it"}], [start, step, msg])
+    assert cpipe._steering("change the PR title", [start, step, report, msg]) is None
+    assert cpipe._steering("/cpipe continue", [start, step]) is None
+    assert cpipe._steering("hello", [msg]) is None
