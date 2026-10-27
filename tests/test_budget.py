@@ -43,3 +43,18 @@ def test_every_profile_shares_the_roots_file(tmp_path, monkeypatch):
     assert cpipe._config() == tmp_path / "cpipe.yaml" and "build c" in cpipe._roles(False)
     (profile / "cpipe.yaml").write_text("roles:\n  review: d\n")
     assert cpipe._config() == profile / "cpipe.yaml"
+
+
+def test_learnings_lists_files_and_user_misses(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    assert "no learnings yet" in cpipe._learnings()
+    (tmp_path / "cpipe" / "learnings").mkdir(parents=True)
+    (tmp_path / "cpipe" / "learnings" / "qa.md").write_text("# qa\n- Cover empty lists · 3.55.0 · applied 1 · last 2026-10-27\n")
+    (tmp_path / "cpipe" / "history.jsonl").write_text(
+        '{"type": "miss", "date": "2026-01-01", "found_by": "user", "step": "qa"}\n'
+        '{"type": "run", "date": "2026-10-01"}\n'
+        '{"type": "miss", "date": "2026-10-02", "found_by": "user", "step": "qa"}\n'
+        '{"type": "miss", "date": "2026-10-02", "found_by": "review", "step": "plan"}\n')
+    out = cpipe._learnings()
+    assert "qa (1)" in out and "Cover empty lists" in out
+    assert out.endswith("Last 1 runs, problems you found after the report: qa 1")

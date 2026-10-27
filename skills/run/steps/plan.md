@@ -13,8 +13,8 @@ yourself:
 
 1. **Instructions.** Read the project's agent and contributor instructions (`AGENTS.md`, `CLAUDE.md`,
    `CONTRIBUTING.md`, the README's development section). They win over these skills where they conflict, except
-   for the guard rails in `cpipe:run`. Read the project's and the user's lessons too (`cpipe:run`, Lessons),
-   once: each one is a question this run must answer, and the premortem keeps the ones that apply.
+   for the guard rails in `cpipe:run`. Read the learnings and the project's lessons too (`cpipe:run`, Learning:
+   the version check, then Reading), once: each one is a check or a question this run must answer.
 2. **Code.** If you have a code index or code-navigation tool, locate the code with it first. Read the code the
    task touches and the helpers you could reuse. Find the closest existing code that does the same kind of thing
    (a sibling route, component, job or test) and note how it handles errors, logging, data access, validation
@@ -70,7 +70,8 @@ yourself:
    - **Performance:** queries in loops (N+1), a new query without the index it needs, unbounded results without
      pagination or a limit, blocking or synchronous work on a hot path, work repeated on every request or render
      that could run once, payload size, the cost as the input or the data grows.
-   - **The project's lessons** and anything its instructions warn about.
+   - **The learnings and the project's lessons**, the areas of past misses, and anything its instructions warn
+     about.
    Each risk gets a check (a test, a command or a QA step), or a one-line reason it cannot happen here, citing
    the code. These are prompts, not a form: find the risks this change has, including ones no lens names.
 5. **Checks.** From set up's commands, pick the narrowest one that covers the change (one file, a filter), plus

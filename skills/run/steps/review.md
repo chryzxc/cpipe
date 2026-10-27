@@ -90,8 +90,8 @@ evidence. Without a build profile, read each finding against the code yourself.
 | **dismissed** | Wrong: the code already handles it | Write the evidence (file, line, test) in the run log. |
 
 A path, behavior row or risk the reviewer found that the plan missed is added to the plan with its check; a
-regression on it is **act**, even if the code sits outside the scope's files. Write a lesson for it (`cpipe:run`,
-Lessons).
+regression on it is **act**, even if the code sits outside the scope's files. Write a learning for it (`cpipe:run`,
+Learning).
 
 A finding the user's instructions decide is **act**, fixed the way they say. Any difference from today's behavior
 that the goal and the user's instructions do not ask for is a regression and **act**. The change's own

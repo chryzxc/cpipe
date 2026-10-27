@@ -207,7 +207,8 @@ Omit for a change of a few lines.
 **Risk**, one line under it: **blast radius**, what else reaches the changed code (callers, routes, jobs,
 consumers, from the flow map: `3 routes, 1 nightly job`); **Rollback**, how to undo it (`revert the commit`, or
 `⚠️ the migration cannot be undone: <why>`); **Confidence**, what the result rests on (`6 tests and QA on the
-running app`) and its weakest spot (`the export path is covered by tests only`).
+running app`) and its weakest spot (`the export path is covered by tests only`), and the past record
+(`cpipe:run`, Learning, Confidence).
 
 **Approach**: the choices a reviewer would question and every assumption made for an open question, at most
 four rows: **Choice** the approach or assumption; **Why** the deciding fact (from the code, the request or a
@@ -225,7 +226,7 @@ table `sessions`: `input_tokens`, `output_tokens`, `cache_read_tokens` where `cw
 chat`). A number that cannot be read is left out, never guessed.
 
 **Details**: one line: the branch, the commit SHA and subject, the pull request link, `git diff --stat` in a few
-words, the user skills used, the lessons written, and `run-graph.html`.
+words, the user skills used, the learnings written, and `run-graph.html`.
 
 The report never asks the user to fix, install, run, review or verify anything you could have done yourself, and
 has no "next steps" or "remaining" list for the user beyond Test it and Needs attention. If you could do it, do it

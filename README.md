@@ -75,6 +75,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
   passed, and a missing sign-in or credential is named every run with the command that provides it. A pull
   request for a visible change carries the screenshots when they can be attached, and goes out without them
   when they cannot.
+- **Self-learning.** Every miss teaches your install: a problem review, QA or you catch after the fact becomes a
+  one-line learning for the step that should have caught it, and the report's confidence shows the measured
+  record. Learnings only add to cpipe's rules and never override them, so updating cpipe keeps its fixes.
 - **A graph, not a script.** Steps, gates, fork and join, bounded loops and re-entry, all written as skill text
   and run by the model.
 - **Lean on tokens.** The code is explored once per run, each role resumes one session so its history stays
@@ -121,6 +124,8 @@ In any Hermes chat, inside or near the repository:
 | `/cpipe --budget <tier> <task>` | The same, with your profiles reasoning at that budget for this run (Budget, below) |
 | `/cpipe budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
 | `/cpipe continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
+| `/cpipe feedback <what you found>` | A problem you found after the report: reproduced, recorded as a miss and a learning, fixed as a follow-up |
+| `/cpipe learnings` | What cpipe has learned from your runs, and the problems that reached you per step |
 | `/cpipe:run <task>` | The skill itself, for chats where the command is not available |
 
 Ask for anything that leaves your machine in the task or a later message: `… and open a draft pull request`,
@@ -419,11 +424,27 @@ workaround, every finding and what became of it. Beside it are the plan (`plan.m
 
 ### Learning loop
 
-When review, QA or you catch something the plan should have seen, the run writes a one-line lesson as a rule
-about the project: where to look, what to check, why. Project lessons live at
-`<git-common-dir>/cpipe/lessons.md`, shared by all its worktrees and never committed; corrections about how you
-work in any project (when to push, branch and pull-request format, naming) go to `~/.hermes/cpipe/lessons.md`.
-Every later run reads both before planning, and the premortem turns each lesson into a question for the change.
+cpipe is self-learning: each install gets better at its user's work.
+
+- **Misses are recorded.** When review, QA or you catch something a run should have seen, the run logs a miss
+  (the kind of change, the area, who found it, the step that should have caught it) in `history.jsonl`, and
+  writes a one-line learning for that step: something to check, where to look, a state to cover. A problem you
+  find after the report (`/cpipe feedback <what you found>`, or just say it) is reproduced first; only a real
+  one inside the task's scope counts, and it is fixed as a follow-up.
+- **Learnings are per step, per user.** They live in `~/.hermes/cpipe/learnings/` (`plan`, `design`, `build`,
+  `qa`, `review`, and `general` for how you work in any project), with optional per-profile files for what is
+  specific to one profile. Facts about one repository stay in its own lessons file.
+- **Every run uses them.** Explore reads them once and puts each one that fits into the plan as a check, a QA
+  item or a question for review, so whoever does the step gets it. A step that let problems through in recent
+  runs gets those areas checked by name.
+- **Confidence is measured.** With at least five runs of the same kind, the report's Confidence line shows the
+  record: `Past: QA missed 1 of 20 UI changes you checked`.
+- **Core rules always win.** A learning only adds detail; it never skips a step, loosens a check, a gate or a
+  limit, or contradicts cpipe's files, and the guard rails always hold. After you update cpipe, the first run
+  checks each older learning against the new instructions: one the update now covers, or that conflicts with
+  it, is retired to `retired.md` with the reason, so an update's fixes are never undone by a local learning.
+- **Kept small.** Matching learnings are merged, a learning that failed to prevent a repeat is rewritten, each
+  file holds at most 30, and one unused for 90 days is retired. Nothing is committed or shared.
 
 A message after the report is a follow-up on the same worktree: it is reproduced, fixed, verified and reviewed,
 then reported again.
@@ -435,7 +456,7 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 | # | Step | Does | File |
 |---|---|---|---|
 | 1 | Set up | Finds the repository and base, creates the worktree, starts the run log, removes merged cpipe worktrees, finds the checks, and starts the installs and the baseline in a base worktree in the background | `steps/setup.md` |
-| 2 | Explore | Reads the project's instructions and lessons, maps entrances, exits, guards and today's behavior, runs the premortem, reproduces a bug | `steps/plan.md` |
+| 2 | Explore | Reads the project's instructions, learnings and lessons, maps entrances, exits, guards and today's behavior, runs the premortem, reproduces a bug | `steps/plan.md` |
 | 3 | Design | States, flow, copy, accessibility and edge cases of anything user-facing | `steps/design.md` |
 | 4 | Decide | Settles open questions as assumptions with a one-line reason each | `steps/plan.md` |
 | 5 | Plan | Goal, scope, behavior change, acceptance, must-not-change, risks, tests, checks, and numbered build steps that pass the plan gate | `steps/plan.md` |
@@ -572,7 +593,7 @@ request was asked for. It is short, one line per row, and complete:
   which shows the flow and a timeline per role in any browser. A chat app that renders structured views (graphs,
   workflows) gets the run graph as one of those instead of a chart's source.
 - **Cost:** minutes, tokens with the cached share, and who did each step.
-- **Details:** one line: branch, commit, pull request, files, skills, lessons.
+- **Details:** one line: branch, commit, pull request, files, skills, learnings.
 
 What went as planned is a count, not a row, so the report reads in about a minute. It never asks you to fix,
 install, run, review or verify anything the run could have done itself.
@@ -635,7 +656,9 @@ Details: fix/invoice-discount · a1b2c3d fix(invoices): keep the discount on edi
 | `<git-dir>/cpipe/tick.sh` | The progress tick of a long wait | Never |
 | `<git-dir>/cpipe/brief-<role>.md`, `<role>-reply.md` | Briefs to profiles and their long replies | Never |
 | `<git-common-dir>/cpipe/lessons.md` | The project's lessons, shared by all its worktrees | Never |
-| `~/.hermes/cpipe/lessons.md` | Your lessons, for every project | — |
+| `~/.hermes/cpipe/learnings/<step>.md` | Your learnings per step, and `general.md` for how you work; `retired.md` holds retired ones | — |
+| `~/.hermes/profiles/<name>/cpipe/learnings/<step>.md` | Optional learnings specific to one profile | — |
+| `~/.hermes/cpipe/history.jsonl` | One line per run and per miss, for the measured confidence | — |
 
 ## Guard rails
 
@@ -678,7 +701,7 @@ cpipe/
 ├── __init__.py           registers cpipe:run and /cpipe
 ├── AGENTS.md             rules for changing cpipe
 └── skills/run/
-    ├── SKILL.md          the flow, unattended rules, run log, lessons, limits, guard rails
+    ├── SKILL.md          the flow, unattended rules, run log, learning, limits, guard rails
     ├── roles.md          handing steps to profiles, directly or as kanban cards
     ├── run-graph.html    page template that draws the run graph
     ├── steps/            one file per step, loaded when the run reaches it

@@ -59,8 +59,8 @@ Record each item in the run log as **pass**, **fail** or **not run here**, with 
 output, the request and response, a screenshot path.
 
 - **fail:** it goes to the fix round with the review's **act** findings (`steps/review.md`, section 3): the
-  builder reproduces it with a failing test, then fixes it. If the plan did not foresee it, write a lesson
-  (`cpipe:run`, Lessons). Verify, then QA the failed items again alongside the delta review; that re-run is the
+  builder reproduces it with a failing test, then fixes it. If the plan did not foresee it, write a learning
+  (`cpipe:run`, Learning). Verify, then QA the failed items again alongside the delta review; that re-run is the
   last QA round, and a failure in it is fixed and proven by its test the same way, without another re-run.
 - **not run here:** the surface needs something this machine does not have (a login, a device, a live
   service). Use the closest stand-in (a test double, a seeded user, a direct call), then list what is left in

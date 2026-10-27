@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.54.0
+version: 3.55.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -241,7 +241,7 @@ loads the playbook of the change it carries, for its proof.
 ## Roles
 
 **The Hermes root** is the folder all the user's profiles share, so every chat runs with the same roles, budget,
-lessons and skills: two levels above `$HERMES_HOME` when that is a profile's folder (`…/profiles/<name>`), else
+learnings and skills: two levels above `$HERMES_HOME` when that is a profile's folder (`…/profiles/<name>`), else
 `$HERMES_HOME`, else `~/.hermes`. The start message names it. The roles file is `<Hermes root>/cpipe.yaml`, or
 `$HERMES_HOME/cpipe.yaml` when this profile has one of its own.
 
@@ -267,7 +267,7 @@ graph is drawn from (`steps/report.md`, Run graph):
 - one row per round: what changed, why, the check results;
 - every workaround and everything you could not verify, with the reason;
 - QA results, review findings and what you did with each;
-- the lessons written.
+- the misses and learnings written.
 
 The plan has its own file beside it, `plan.md`, so a builder reads the plan and not the whole log. Beside both is
 `now.md`, rewritten as the run moves: at most 25 lines, plus the instructions. It holds the user's
@@ -286,31 +286,77 @@ When the chat is compacted, the step files and skills loaded so far are dropped,
 you to reload every skill this chat ever loaded. Do not: that refills the context and brings the next compaction
 within minutes. Read `now.md`, reload `cpipe:run` and the active step's file (from the plugin's directory when
 `skill_view` returns no text, Flow), and continue. The user's
-instructions and the user skills' rules are in `now.md`; the roles, the plan's questions from the lessons and
+instructions and the user skills' rules are in `now.md`; the roles, the plan's questions from the learnings and
 every file you read are in the run log or the plan. Read a file again only for the lines the next action needs.
 
-## Lessons
+## Learning
 
-Every miss teaches the next run. The project's lessons live at
-`$(git rev-parse --git-common-dir)/cpipe/lessons.md`, shared by all its worktrees and never committed. The user's
-lessons live at `<Hermes root>/cpipe/lessons.md` and hold how the user wants work done in any project
-(when to push, branch and pull-request format, naming). Explore reads both; the premortem turns each into a
-question for this change.
+cpipe learns from every miss, so each user's install gets better at their work. Nothing here is ever committed
+or shared.
 
-Write a lesson whenever something was caught later than it should have been: a review or QA finding the plan did
-not foresee, a check that failed for a reason explore could have seen, or a correction from the user after the
-report. One line, as a rule about the project rather than the task: where to look, what to check, why
-(`Changes to <area> must also be checked in <other area>: <reason>.`). A correction about how the user works
-rather than about this code goes in the user's lessons. Merge it into a matching lesson instead of adding a
-near-duplicate. Never put secrets or customer data in a lesson.
+**Where it lives.** Under the Hermes root (Roles), `cpipe/`:
+- `history.jsonl`: one line per finished run (`{"type": "run", "date", "project", "kind", "steps": [the steps that
+  ran]}`) and one per miss (`{"type": "miss", "date", "project", "kind", "area", "severity", "found_by": "user" |
+  "qa" | "review" | "verify", "step": the step that should have caught it, "why"}`). Append only.
+- `learnings/<step>.md` for `plan`, `design`, `build`, `qa` and `review`, and `learnings/general.md` for how the
+  user wants work done in any project (when to push, branch and pull-request format, naming). An older
+  `cpipe/lessons.md` counts as `general.md`.
+- `learnings/retired.md`: learnings taken out of use, each with its reason, so the user can see and restore them.
+
+A profile's own `<Hermes root>/profiles/<name>/cpipe/learnings/<step>.md` adds to these for steps that profile
+does, for what is specific to it. The project's lessons live at
+`$(git rev-parse --git-common-dir)/cpipe/lessons.md`, shared by its worktrees: facts about that code (where to
+look, what breaks together).
+
+**What a learning is.** One line that adds to cpipe's rules: something to check, where to look, a state to cover,
+a question for the premortem, how the user wants a thing done. It is written as a rule, not a story, with why,
+the cpipe version it was written under, how many runs it applied to and when it last did:
+`- QA covers the empty state of every list a change touches: two lists shipped broken empty · 3.55.0 ·
+applied 2 · last 2026-10-27`. Never secrets, customer data or code.
+
+**Core rules come first.** A learning only ever adds. It never skips or reorders a step, loosens a check, a gate
+or a limit, or contradicts what cpipe's files say, and the guard rails always hold. When one does, cpipe's file
+wins and the learning is retired with `conflicts with core`. So updating cpipe never breaks on old learnings: the
+first run after an update (a learning's version older than this skill's) checks each older learning against the
+current step file once: one the file now covers is retired with `now in core`, one that conflicts is retired with
+`conflicts with core`, the rest get the new version. The order, highest first: the user's instructions for this
+task, the user's Hermes setup (`The user's own skills come first`), cpipe's guard rails and step rules, then the
+learnings (profile, then step and general, then the project's), adding detail on top.
+
+**Reading.** Explore reads all of them once, after the version check: each learning that fits this change goes
+into the plan as a check, a QA item, a premortem question or a review question, so whoever does the step gets
+it from the plan and its brief. Count it as applied (`applied <n+1> · last <today>`). From `history.jsonl`, take the last 20
+runs of this kind: a step with a miss in them (a `found_by: user` miss weighs most) gets its misses' areas
+checked by name in this plan.
+
+**Writing.** Write a learning, and a miss in `history.jsonl`, whenever something was caught later than it should
+have been: a review or QA finding the plan did not foresee, a check that failed for a reason explore could have
+seen, and above all a problem the user found after the report. File it under the step that should have caught it;
+a correction about how the user works goes in `general.md`. Merge it into a matching learning rather than adding a
+near-duplicate; when a miss repeats in the area of an existing learning, that learning did not work: rewrite it
+sharper. At most 30 lines per file: retire the least applied first. A learning not applied in the last 90 days is
+retired with `unused`. At the report, append the run's line to `history.jsonl`.
+
+**Confidence.** The report's Confidence line adds the measured record when `history.jsonl` has at least 5 runs of
+this kind: `Past: QA missed 1 of 20 UI changes you checked`, counting `found_by: user` misses per step.
+
+**Feedback.** When the user reports problems after the report (`/cpipe feedback <what they found>` or a plain
+message), find the run (this chat's, else the newest run log of the worktree or branch it names), reproduce each
+first. One that is real and inside the task's scope is a miss: record it with `found_by: user` and the step that
+should have caught it, write or sharpen the learning, then fix it as a follow-up (After the report).
+A new request or a change of mind is not a miss.
+
+**Showing them.** `/cpipe learnings`: list each file's learnings, the retired ones, and per step the misses that
+reached the user in the last 20 runs of each kind. Do not start a run.
 
 ## After the report
 
 A message after the report about the same work (a correction, a missed case, more context) is a follow-up, not a
 new task: reuse the worktree and the run log (or, if it was removed after its merge, a new worktree from the
-base), write a lesson if it reveals a miss, update the plan, then run build, verify, QA and a delta review on the
-follow-up only, and report again. Reproduce what the user describes before answering. If it can mean two things,
-check both and answer with what you found; do not ask which one they meant. A different task starts a new run.
+base), record the miss and its learning (Learning, Feedback), update the plan, then run build, verify, QA and a
+delta review on the follow-up only, and report again. Reproduce what the user describes before answering. If it
+can mean two things, check both and answer with what you found; do not ask which one they meant. A different task
+starts a new run.
 
 ## Continue
 
@@ -385,4 +431,4 @@ These keep a run from grinding. Reaching one is not a stop: record the open item
   (`steps/setup.md`).
 - After the context is compacted, reload only this skill and the current step's file, never the list of skills the
   compaction notice gives (After a compaction).
-- The roles file and the lessons are read once, in steps 1 and 2; their content is in the run log and the plan.
+- The roles file and the learnings are read once, in steps 1 and 2; their content is in the run log and the plan.

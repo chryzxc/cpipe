@@ -20,6 +20,8 @@ Steps: plan, tests first, build, verify with the project's checks, QA and indepe
   --budget <tier>   how hard your profiles reason on this run: unlimited, large, medium or small
   /cpipe budget [<tier>|off]   show or save the default budget in cpipe.yaml
   /cpipe continue   pick up a run that stopped, at its first unfinished step
+  /cpipe feedback <what you found>   a problem you found after the report: recorded, reproduced and fixed
+  /cpipe learnings  what cpipe has learned from your runs
 Example: /cpipe --budget small fix the date filter on the orders page and open a draft pull request"""
 
 STARTED = """🚀 cpipe: {task}
@@ -34,13 +36,18 @@ nothing is pushed unless you asked.
 
 RESUMED = """🔄 cpipe: resuming at the first unfinished step; finished steps are not redone.{note}"""
 
+FEEDBACK = """📝 cpipe: recording your findings. Each is reproduced, counted against the step that should have caught it,
+turned into a learning and fixed as a follow-up."""
+
+STEPS = ("general", "plan", "design", "build", "qa", "review")
+
 
 def register(ctx):
     ctx.register_skill("run", SKILL)
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--kanban] [--budget <tier>] <task> | budget [<tier>] | continue", argument_mode="text")
+                             args_hint="[--kanban] [--budget <tier>] <task> | budget [<tier>] | continue | feedback <text> | learnings", argument_mode="text")
 
 
 def _home():
@@ -109,6 +116,33 @@ def _budget(arg):
     return f"Budget: {_budget_line(arg if arg != 'off' else None, False)}. Saved in cpipe.yaml for every run."
 
 
+def _learnings():
+    """The learnings and, per step, the misses that reached the user in the last 20 runs (skills/run/SKILL.md)."""
+    import json
+    base = _root() / "cpipe"
+    out = []
+    for name in (*STEPS, "retired"):
+        path = base / "learnings" / f"{name}.md"
+        lines = [l for l in path.read_text().splitlines() if l.startswith("- ")] if path.exists() else []
+        if lines:
+            out += [f"{name} ({len(lines)})", *lines, ""]
+    try:
+        rows = [json.loads(l) for l in (base / "history.jsonl").read_text().splitlines() if l.strip()]
+    except (OSError, ValueError):
+        rows = []
+    runs = [r for r in rows if r.get("type") == "run"][-20:]
+    since = runs[0].get("date", "") if runs else ""
+    misses = {}
+    for r in rows:
+        if r.get("type") == "miss" and r.get("found_by") == "user" and r.get("date", "") >= since:
+            misses[r.get("step", "?")] = misses.get(r.get("step", "?"), 0) + 1
+    if runs:
+        out.append(f"Last {len(runs)} runs, problems you found after the report: "
+                   + (", ".join(f"{s} {n}" for s, n in misses.items()) or "none"))
+    return "\n".join(out).strip() or ("cpipe has no learnings yet. They are written when review, QA or you "
+                                       "catch something a run should have seen (/cpipe feedback <what you found>).")
+
+
 def _flags(task):
     """Leading --kanban and --budget <tier>, in any order; returns (kanban, budget, rest, error)."""
     kanban, budget, words = False, None, task.split()
@@ -129,6 +163,8 @@ def _short(text, n=100):
 def _start(ctx, raw):
     task = raw.strip()
     first, _, rest = task.partition(" ")
+    if first.lower() == "learnings" and not rest.strip():
+        return _learnings()
     if first.lower() == "budget" and (not rest.strip() or rest.strip().lower() in (*BUDGETS, "off")):
         return _budget(rest.strip().lower())
     kanban, budget, brief, error = _flags(task)
@@ -142,6 +178,8 @@ def _start(ctx, raw):
         if ctx.inject_message(START.format(skill=SKILL, root=_root()) + task, role="user",
                               session_key=key):
             first, _, rest = brief.partition(" ")
+            if first.lower() == "feedback":
+                return FEEDBACK
             if first.lower().rstrip(".!") in ("continue", "resume"):
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
             return STARTED.format(task=_short(brief), roles=_roles(kanban),
