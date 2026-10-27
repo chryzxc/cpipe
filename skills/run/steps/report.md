@@ -148,7 +148,8 @@ Details: <one line>
 
 **Summary**, by kind, two to four lines with no heading:
 - **bug:** **What happened**: the symptom and where the user saw it. **Cause**: the root cause, with the file and
-  the mechanism (a stale closure, a race between two writes, a missing permission check). **Fix**: what changed
+  the mechanism (a stale closure, a race between two writes, a missing permission check), and the commit and
+  pull request that introduced it, with how sure that is (`playbooks/bug.md`). **Fix**: what changed
   and why it removes the cause, not only the symptom.
 - **feature:** **Added**: what the user or system can do now. **How**: the main pieces and where they live.
 - **refactor, chore, port or improvement:** **Before**, then **After**, then **Why**.

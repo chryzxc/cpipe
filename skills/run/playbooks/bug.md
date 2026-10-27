@@ -8,7 +8,11 @@
 2. **Find the root cause.** Look, do not guess: trace the real values along the flow (a log line, a debugger, a
    small script) for a working case and the failing one; the first place they differ is where the cause is. If
    it worked before, find the commit that broke it with `git bisect run <reproducing test>` between a known good
-   commit and the base. Form two or three hypotheses and eliminate them with evidence (logs, call sites, the
+   commit and the base. Always record where the bug came from: the commit and its pull request that introduced it
+   (bisect, or `git blame -w -C` and `git log -S` on the faulty lines, then the commit's pull request), confirmed
+   when the test passes at its parent and fails there, or "present since the code was added", or "not
+   identified" with what was searched. Never guess from a commit that only touched nearby code.
+   Form two or three hypotheses and eliminate them with evidence (logs, call sites, the
    data); ask why until the answer is in the code, not the symptom. Before editing a function, search every
    caller: one guard in the shared path beats one per caller. Search for the same mistake elsewhere (copied
    code, the same pattern) and fix or list each one.
