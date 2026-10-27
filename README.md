@@ -72,7 +72,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
 - **QA on the real surface.** The change is used the way a user would use it: the page, the endpoint, the CLI.
   UI changes are screenshotted before and after, at desktop and phone width, and judged by eye, including the
   pages that must not change. Whatever QA could not verify goes to the report's Test it list, never silently
-  passed.
+  passed, and a missing sign-in or credential is named every run with the command that provides it. A pull
+  request for a visible change carries the screenshots when they can be attached, and goes out without them
+  when they cannot.
 - **A graph, not a script.** Steps, gates, fork and join, bounded loops and re-entry, all written as skill text
   and run by the model.
 - **Lean on tokens.** The code is explored once per run, each role resumes one session so its history stays

@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.53.0
+version: 3.54.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

@@ -23,6 +23,10 @@ anything not run here and how to check it, open findings. No local paths, intern
 Never merge, mark ready or request reviewers unless asked. If the push or the pull request fails, report the
 error and the exact command to retry; the work stays committed locally.
 
+For a visible change, put QA's before and after screenshots in the pull request the way the user's
+pull-request skill says to attach images. When they cannot be attached (not signed in, no access, no way to
+upload), the pull request still goes out without them, and Needs attention says so with the screenshot files.
+
 After the push, wait for the pull request's CI checks: `gh pr checks --watch` in the background with a completion
 notification, up to 30 minutes, and end the turn while it runs. A failure the change caused is fixed like any
 failing check: fix, verify, commit, push, wait again. A failure also on the base branch is baseline. Checks still
@@ -176,6 +180,10 @@ to the lines that changed. Pairs QA could not judge come first. Omit for a chang
   who did not do their part: **What** names the role, its profile and the exact error in a few words
   (`Review: sentry, provider startup failed twice`); **Why it matters** what it cost (`review done in this chat,
   not independent`); **Recommended** what clears it next time (the provider, the profile's config);
+- every step that ran without a sign-in or credential it needed (QA behind a login, screenshots for the pull
+  request, a live service), every run it happens: **What** names the service and what was missing
+  (`QA: no signed-in GitHub session`); **Why it matters** what was skipped; **Recommended** the exact command
+  or setting that provides it;
 - an open finding, a baseline failure that stays, an unmet instruction, a step left ⚠️, ⏳ or ❌;
 - **consider** and **noted** findings, out-of-scope problems and known limits, and a follow-up delivery (a
   hotfix's root cause), with what you recommend and why; never only "unresolved".

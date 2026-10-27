@@ -64,7 +64,9 @@ output, the request and response, a screenshot path.
   last QA round, and a failure in it is fixed and proven by its test the same way, without another re-run.
 - **not run here:** the surface needs something this machine does not have (a login, a device, a live
   service). Use the closest stand-in (a test double, a seeded user, a direct call), then list what is left in
-  the report's Test it table, with exact steps and the expected result. Never stop for it.
+  the report's Test it table, with exact steps and the expected result. Never stop for it. When the reason is
+  a missing sign-in or credential (no test account, an expired session, a key not set), record which service and
+  what is missing, so the report names it every time.
 
 ## Rules
 
