@@ -43,7 +43,7 @@ push or draft that fails early is noted and tried again here; it never holds the
 Asked later in the run, it opens at once when nothing runs in the worktree, otherwise as soon as what runs there
 ends (a build round once its verify passes), before the next thing starts. Never pause, stop or signal a running
 profile for it, and never park it on a command that was blocked: say when in the reply,
-`⏳ draft pull request after this round's verify, by <clock time> at the latest`, and open it then.
+`⏳ 11/11 Report · draft pull request after this round's verify · by <clock time>`, and open it then.
 
 ## Merge (only when asked)
 

@@ -135,32 +135,36 @@ Ask for anything that leaves your machine in the task or a later message: `… a
 
 ## What a run looks like
 
-`/cpipe` answers with the task, the flow and who runs each step. Then the run posts one line as each step
-starts and ends, a progress line every 10 minutes of a long wait, and a single report at the end:
+`/cpipe` answers with the task, the flow, who runs each step and how many learnings apply. Then the run posts
+one line as each step starts and ends, a progress line every 10 minutes of a long wait, and a single report at
+the end:
 
 ```
-🚀 cpipe: fix the discount that disappears when an invoice is edited
+cpipe · fix the discount that disappears when an invoice is edited
 
-  Flow    plan → tests → build → verify → QA + review → commit
-  Team    this chat runs every step (no roles in cpipe.yaml)
-  Budget  each profile's own setting (/cpipe budget <tier> sets one)
+  Flow     plan → tests → build → verify → QA + review → commit
+  Team     plan archon · build forge · review sentry, the rest this chat
+  Budget   each profile's own setting (/cpipe budget <tier> sets one)
+  Learned  4 rules from past runs, added to this one (/cpipe learnings)
 
-Runs on its own and reports here. Open questions are decided for you and listed in the report;
+Works on its own and reports here: open questions are decided and listed in the report,
 nothing is pushed unless you asked.
-▶️ step starts · ✅ step done · ⏳ waiting, resumes on its own · stopped with no ⏳? /cpipe continue
+✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled · quiet with no ⏳? /cpipe continue
 
-▶️ 1/11 Set up: worktree fix/invoice-discount, dependencies with npm ci, baseline started (this chat)
-▶️ 2/11 Explore: callers of updateInvoice(), the invoice API and its consumers (this chat)
-— 3/11 Design: skipped, nothing user-facing changes
-▶️ 4/11 Decide: 1 open question settled as an assumption (this chat)
-▶️ 5/11 Plan: 4 build steps, plan gate passed (this chat)
-▶️ 6/11 Build: tests first for the invoice update (this chat)
-✅ 6/11 Build: 2 files, 3 new tests RED → GREEN, 14 min
-▶️ 7/11 Verify: lint, typecheck, full suite, build (this chat)
-▶️ 8/11 QA: edit a discounted invoice on the running app (this chat)
-▶️ 9/11 Review: fresh review of the diff (this chat)
-▶️ 10/11 Clean: last verify on the final tree (this chat)
-▶️ 11/11 Report: commit and report (this chat)
+1/11 Set up · this chat · worktree, dependencies, baseline
+✅ 1/11 Set up · 3 min · fix/invoice-discount, baseline: 412 tests pass
+2/11 Explore · archon · callers of updateInvoice(), the invoice API and its consumers
+— 3/11 Design · skipped: no screen changes
+✅ 5/11 Plan · 11 min · 4 build steps, 1 assumption, 2 learnings applied
+6/11 Build · forge · tests first, then the change
+⏳ 6/11 Build · waiting on forge · done by 14:40 · resumes on its own
+✅ 6/11 Build · 14 min · 2 files, 3 new tests RED → GREEN
+✅ 7/11 Verify · 6 min · lint, types, 415 tests, build pass
+⚠️ 9/11 Review · sentry failed to start (provider error) · running it in this chat
+✅ 8/11 QA · 9 min · 5 scenarios pass, screenshots before and after
+✅ 9/11 Review · 12 min · 1 finding fixed
+✅ 10/11 Clean · 4 min · last verify passes
+11/11 Report · this chat · commit and report
 ```
 
 The report that follows is shown in [The report](#the-report).

@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.55.0
+version: 3.56.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -80,8 +80,9 @@ task; nothing that arrives mid-run replaces it.
 costs a full reply each time you look: never poll, sleep, list processes or call the process tool's wait in a loop.
 When a profile or check this run started is running with a completion notification and nothing in the run can move
 until it finishes, end the turn with exactly this line, the time being when its time limit ends:
-`⏳ <n>/11 <step>: waiting on <what>, done by <clock time> at the latest. cpipe resumes on its own; no need to
-continue.` Never a line of your own: without the time and the resume note a wait looks like a stop. Its
+`⏳ <n>/11 <Step> · waiting on <who or what> · done by <clock time> · resumes on its own`, such as
+`⏳ 8/11 QA · waiting on sentinel's checks · done by 12:29 · resumes on its own`. Never a line of your own:
+without the time and the resume note a wait looks like a stop. Its
 notification starts the next turn. With nothing running, a reply without a tool call stops the run silently, so
 end a turn only on such a wait, the pause message or the report. Progress updates go in the same reply as your
 next tool call. Without completion notifications, wait on that one process id with your process tool. Whatever
@@ -93,8 +94,8 @@ limit), so a hang still ends it and its notification still comes.
 tick). It sleeps 10 minutes, then prints what changed: the diff's size and the newest logs with their last line.
 When it wakes the run and the work still runs, post one line from its output alone, read nothing else, and start
 the next tick in the same reply:
-`⏳ <n>/11 <step>, <m> min in: <what changed>; done by <clock time> at the latest`, such as
-`4 files changed (+180 −12), last ran build-green: 71 passed` or `the suite's log silent for 9 min`. One tick runs
+`⏳ <n>/11 <Step> · <m> min in · <what changed> · done by <clock time>`, the change such as
+`4 files changed (+180 −12), 71 tests pass` or `the suite's log silent for 9 min`. One tick runs
 at a time, whatever it watches. Once nothing long runs, stop it with your process tool in the same reply as your
 next tool call; a tick that arrives with nothing running gets no line and no next tick.
 
@@ -109,7 +110,7 @@ timer or look for a tool to make one; the progress tick is the only one. When th
 asks for a final summary without tools), the final reply is this pause message and nothing else:
 
 ```
-⏸️ Paused by the turn limit at <n>/11 <step>, not finished: <goal>
+⏳ Paused by the turn limit at <n>/11 <step>, not finished: <goal>
 Done: <what this turn finished, in one line>
 Next: <the exact next action>, then <what is left until every instruction is met>
 Decided: <each open question or unexplained result: the decision the next turn acts on, and why>
@@ -123,7 +124,7 @@ do.` The report is the message written from `steps/report.md` once every instruc
 
 **A notification resumes the run.** A completion notification (a check, a profile), or a new turn that starts
 with a note that the last one hit its limit, is never a cue for a status reply. While the run log has unfinished
-steps or `now.md` an unmet instruction, say `🔄 Resuming at <n>/11 <step>: <what woke the run>` and continue
+steps or `now.md` an unmet instruction, say `Resuming at <n>/11 <step>: <what woke the run>` and continue
 there with a tool call in the same reply. When a notice says how much of the turn's iteration budget is used,
 write the next step in `now.md` first, so the next turn picks it up, and start that step's long work in the
 background if it has any.
@@ -151,13 +152,24 @@ or the user asked for a single pull request, and record why in Approach.
 
 Track the steps with your todo tool if you have one, one step active at a time. Its first item stays open until
 the report: `After a compaction: read now.md; reload only cpipe:run and the active step's file, no other skill`.
-The todo list survives a compaction word for word (After a compaction, below). When a step starts, post one line
-with your next tool call:
-`▶️ <n>/11 <step>: <what it will do> (<who: this chat or the profile>)`; a step that does not apply gets
-`— <n>/11 <step>: skipped, <reason>`. When it ends, post its result the same way:
-`✅ <n>/11 <step>: <the result in a few words>, <minutes it took>`, such as
-`✅ 6/11 Build: 4 files, 3 new tests RED → GREEN, 29 min` or `✅ 9/11 Review: 2 findings to fix`. Each step's
-instructions are a file in this skill: load it with
+The todo list survives a compaction word for word (After a compaction, below).
+
+**Status lines.** The user follows the run from these lines alone, so each one says what happens, who does it
+and what came out, in the same shape: `[icon] <n>/11 <Step> · <parts>`, the step name as in the table below (a
+fix round is `6/11 Build · fix round 2`, a merge is `11/11 Report`), plain words, no file paths or tool names:
+- starts, with your next tool call, no icon: `6/11 Build · forge · tests first, then the change` (who: the
+  profile, or `this chat`);
+- ends: `✅ 6/11 Build · 29 min · 4 files, 3 new tests RED → GREEN`, `✅ 9/11 Review · 12 min · 2 findings to fix`;
+- does not apply: `— 3/11 Design · skipped: no screen changes`;
+- a problem the run handles (a profile failed, a check would not run, a limit reached): `⚠️ 9/11 Review · sentry
+  failed to start (provider error) · running it in this chat`;
+- a wait and its progress: the ⏳ lines below.
+
+Icons mark a state and nothing else: ✅ done, ⏳ waiting, ⚠️ a problem, ❌ failed. No other emoji anywhere the
+user reads (status lines, pause message, report), and none for decoration.
+
+A clock time is the user's local time as `HH:MM`, without a time zone. Post each line once: a turn that resumes
+after a wait never repeats the ⏳ line it ended on. Each step's instructions are a file in this skill: load it with
 `skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach a step you do in this chat, not
 before; a step a profile does needs only `roles.md` here, and the profile loads its own file. Never work a step
 from memory, and never load a file whose text is still in the context: load it again only when its text is gone
@@ -193,7 +205,7 @@ later, it opens once nothing runs in the worktree, never by pausing a profile.
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
 skipped with a one-line reason in the run log, never silently, and gets no profile. Steps 7 and 11 are always
 yours: the checks and the final word are never handed to anyone else. Steps one session does in one brief (a
-planner's explore to plan, a builder's explore to build) share one ▶️ line.
+planner's explore to plan, a builder's explore to build) share one start line.
 
 ## The user's own skills come first
 
@@ -325,9 +337,9 @@ learnings (profile, then step and general, then the project's), adding detail on
 
 **Reading.** Explore reads all of them once, after the version check: each learning that fits this change goes
 into the plan as a check, a QA item, a premortem question or a review question, so whoever does the step gets
-it from the plan and its brief. Count it as applied (`applied <n+1> · last <today>`). From `history.jsonl`, take the last 20
-runs of this kind: a step with a miss in them (a `found_by: user` miss weighs most) gets its misses' areas
-checked by name in this plan.
+it from the plan and its brief. Count it as applied (`applied <n+1> · last <today>`). From `history.jsonl`,
+take the last 20 runs of this kind: a step with a miss in them (a `found_by: user` miss weighs most) gets its
+misses' areas checked by name in this plan.
 
 **Writing.** Write a learning, and a miss in `history.jsonl`, whenever something was caught later than it should
 have been: a review or QA finding the plan did not foresee, a check that failed for a reason explore could have
@@ -367,7 +379,7 @@ user says "continue" or repeats the instruction. That is the same task: do what 
 that it is not done. A restart ends this chat's turn, but not the profiles and checks
 it started: before starting one again, check its process (the pid in `now.md`) and its log or reply file, and wait
 for it or use its result. A "continue" while what the run waits on still runs: do any step that does not need its
-result, else end the turn with the wait line above and `<m> min in` after the step; never read its partial
+result, else end the turn with the wait line above and ` · <m> min in` after the step; never read its partial
 output or start it again. With
 several deliveries, finish the unfinished one first, then start the next one its run log names.
 

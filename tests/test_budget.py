@@ -58,3 +58,12 @@ def test_learnings_lists_files_and_user_misses(tmp_path, monkeypatch):
     out = cpipe._learnings()
     assert "qa (1)" in out and "Cover empty lists" in out
     assert out.endswith("Last 1 runs, problems you found after the report: qa 1")
+
+
+def test_start_message_counts_learned_rules(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    assert cpipe._learned().startswith("nothing yet")
+    (tmp_path / "cpipe" / "learnings").mkdir(parents=True)
+    (tmp_path / "cpipe" / "learnings" / "qa.md").write_text("# qa\n- a\n- b\n")
+    (tmp_path / "cpipe" / "learnings" / "retired.md").write_text("- old\n")
+    assert cpipe._learned().startswith("2 rules from past runs")

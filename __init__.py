@@ -24,19 +24,20 @@ Steps: plan, tests first, build, verify with the project's checks, QA and indepe
   /cpipe learnings  what cpipe has learned from your runs
 Example: /cpipe --budget small fix the date filter on the orders page and open a draft pull request"""
 
-STARTED = """🚀 cpipe: {task}
+STARTED = """cpipe · {task}
 
-  Flow    plan → tests → build → verify → QA + review → commit
-  Team    {roles}
-  Budget  {budget}
+  Flow     plan → tests → build → verify → QA + review → commit
+  Team     {roles}
+  Budget   {budget}
+  Learned  {learned}
 
-Runs on its own and reports here. Open questions are decided for you and listed in the report;
+Works on its own and reports here: open questions are decided and listed in the report,
 nothing is pushed unless you asked.
-▶️ step starts · ✅ step done · ⏳ waiting, resumes on its own · stopped with no ⏳? /cpipe continue"""
+✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled · quiet with no ⏳? /cpipe continue"""
 
-RESUMED = """🔄 cpipe: resuming at the first unfinished step; finished steps are not redone.{note}"""
+RESUMED = """cpipe · resuming at the first unfinished step; finished steps are not redone.{note}"""
 
-FEEDBACK = """📝 cpipe: recording your findings. Each is reproduced, counted against the step that should have caught it,
+FEEDBACK = """cpipe · recording your findings. Each is reproduced, counted against the step that should have caught it,
 turned into a learning and fixed as a follow-up."""
 
 STEPS = ("general", "plan", "design", "build", "qa", "review")
@@ -116,14 +117,25 @@ def _budget(arg):
     return f"Budget: {_budget_line(arg if arg != 'off' else None, False)}. Saved in cpipe.yaml for every run."
 
 
+def _learned_lines(name):
+    path = _root() / "cpipe" / "learnings" / f"{name}.md"
+    return [l for l in path.read_text().splitlines() if l.startswith("- ")] if path.exists() else []
+
+
+def _learned():
+    n = sum(len(_learned_lines(name)) for name in STEPS)
+    if not n:
+        return "nothing yet; every miss becomes a rule for the next run"
+    return f"{n} rule{'s' * (n != 1)} from past runs, added to this one (/cpipe learnings)"
+
+
 def _learnings():
     """The learnings and, per step, the misses that reached the user in the last 20 runs (skills/run/SKILL.md)."""
     import json
     base = _root() / "cpipe"
     out = []
     for name in (*STEPS, "retired"):
-        path = base / "learnings" / f"{name}.md"
-        lines = [l for l in path.read_text().splitlines() if l.startswith("- ")] if path.exists() else []
+        lines = _learned_lines(name)
         if lines:
             out += [f"{name} ({len(lines)})", *lines, ""]
     try:
@@ -183,7 +195,7 @@ def _start(ctx, raw):
             if first.lower().rstrip(".!") in ("continue", "resume"):
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
             return STARTED.format(task=_short(brief), roles=_roles(kanban),
-                                  budget=_budget_line(budget or _saved_budget(), kanban))
+                                  budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned())
         reason = "the chat did not accept the message"
     except Exception as exc:
         reason = str(exc) or type(exc).__name__
