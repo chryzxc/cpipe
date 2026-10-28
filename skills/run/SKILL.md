@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.63.0
+version: 3.64.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -49,7 +49,12 @@ something this machine cannot do; until then the run loops (Limits).
 The user sends the task and waits for the report. Never ask a question and never wait for an answer: no plan
 approval, no clarifying questions, no "should I". Never call a tool that waits for the user (a clarify or
 question tool, a command that needs the user's approval): it halts the run until they answer. Use another way,
-or skip that part and report it. Every choice is yours:
+or skip that part and report it. Write commands that need no approval: read files with your file tool, and run
+one program with its arguments, never inline code (`python -c`, `node -e`), `sh -c`, heredocs or `if`/`;` chains.
+An approval that is refused or times out is the user's to give: do every part of the run that does not need it,
+never reach the same result another way, and end the turn with this line:
+`⚠️ <n>/11 <Step> · needs your approval: <what the command does> · say continue to be asked again`.
+Every choice is yours:
 
 - **Open questions** (which base, which of two behaviors, a product detail, how old data or another role should
   be treated): decide from the user's instructions first, then the request, the code, the project's history and
@@ -87,10 +92,10 @@ until it finishes, end the turn with exactly this line, the time being when its 
 `⏳ 8/11 QA · waiting on sentinel's checks · done by 12:29 · resumes on its own`. Never a line of your own:
 without the time and the resume note a wait looks like a stop. Its
 notification starts the next turn. With nothing running, a reply without a tool call stops the run silently, so
-end a turn only on such a wait, the pause message or the report. Progress updates go in the same reply as your
-next tool call. Without completion notifications, wait on that one process id with your process tool. Whatever
-you wait on ends on its own: every install, check and profile runs under a time limit (`steps/setup.md`, Time
-limit), so a hang still ends it and its notification still comes.
+end a turn only on such a wait, a needed approval (above), the pause message or the report. Progress updates go in
+the same reply as your next tool call. Without completion notifications, wait on that one process id with your
+process tool. Whatever you wait on ends on its own: every install, check and profile runs under a time limit
+(`steps/setup.md`, Time limit), so a hang still ends it and its notification still comes.
 
 **Progress while waiting.** A wait that can last past 10 minutes (a profile, the build) gets a tick beside it:
 `sh <run dir>/tick.sh <worktree>` in the background with a completion notification (`steps/setup.md`, Progress
@@ -390,12 +395,13 @@ run log only where it points), write `limit.pl` and `tick.sh` again from `steps/
 check `git status` and the last check results in the worktree, and pick up at the
 first unfinished step. Do not redo finished steps. Sometimes a report left an instruction unmet, and then the
 user says "continue" or repeats the instruction. That is the same task: do what is unmet, never only report again
-that it is not done. A restart ends this chat's turn, but not the profiles and checks
-it started: before starting one again, check its process (the pid in `now.md`) and its log or reply file, and wait
-for it or use its result. A "continue" while what the run waits on still runs: do any step that does not need its
-result, else end the turn with the wait line above and ` · <m> min in` after the step; never read its partial
-output or start it again. With
-several deliveries, finish the unfinished one first, then start the next one its run log names.
+that it is not done. A "continue" after an approval that was refused or timed out is the user's answer to it:
+run that command again, so the approval asks again, and go on from there. A restart ends this chat's turn, but
+not the profiles and checks it started: before starting one again, check its process (the pid in `now.md`) and its
+log or reply file, and wait for it or use its result. A "continue" while what the run waits on still runs: do any
+step that does not need its result, else end the turn with the wait line above and ` · <m> min in` after the step;
+never read its partial output or start it again. With several deliveries, finish the unfinished one first, then
+start the next one its run log names.
 
 ## Limits
 
