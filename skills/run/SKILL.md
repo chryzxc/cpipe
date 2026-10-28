@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.2.1
+version: 4.2.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -415,17 +415,20 @@ again that it cannot be done with nothing changed. Take an approach not tried ye
 ## Continue
 
 When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read `now.md`, run
-`track <run dir> open` and `gate <run dir>` (Facts), read the run log only where they point, write `limit.pl` and
-`tick.sh` again from `steps/setup.md` if either is missing, check `git status` and the last check results in the
-worktree, and pick up at the first unfinished step. Do not redo finished steps. Sometimes a report left an
-instruction unmet, and then the user says "continue" or repeats the instruction. That is the same task: do what is
-unmet, never only report again that it is not done. A "continue" after an approval that was refused or timed out is
-the user's answer to it: run that command again, so the approval asks again, and go on from there. A restart ends
-this chat's turn, but not the profiles and checks it started: before starting one again, check its process (the pid
-in `now.md`) and its log or reply file, and wait for it or use its result. A "continue" while what the run waits on
-still runs: do any step that does not need its result, else end the turn with the wait line above and ` · <m> min
-in` after the step; never read its partial output or start it again. With several deliveries, finish the unfinished
-one first, then start the next one its run log names.
+`active <run dir>`, `track <run dir> open` and `gate <run dir>` (Facts), read the run log only where they point,
+write `limit.pl` and `tick.sh` again from `steps/setup.md` if either is missing, check `git status` and the last
+check results in the worktree, and pick up at the first unfinished step. Do not redo finished steps. A run started
+before these files existed is brought up to them first: `now.md` gets its `## Instructions` section with the user's
+instructions word for word, `track.json` the Done when of each step left and every instruction, and `results/` the
+base and delivery results of each check, so the gate decides from facts. Sometimes a report left an instruction
+unmet, and then the user says "continue" or repeats the instruction. That is the same task: do what is unmet, never
+only report again that it is not done. A "continue" after an approval that was refused or timed out is the user's
+answer to it: run that command again, so the approval asks again, and go on from there. A restart ends this chat's
+turn, but not the profiles and checks it started: before starting one again, check its process (the pid in `now.md`)
+and its log or reply file, and wait for it or use its result. A "continue" while what the run waits on still runs:
+do any step that does not need its result, else end the turn with the wait line above and ` · <m> min in` after the
+step; never read its partial output or start it again. With several deliveries, finish the unfinished one first,
+then start the next one its run log names.
 
 ## Limits
 

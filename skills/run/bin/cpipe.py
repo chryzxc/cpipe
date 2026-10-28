@@ -192,14 +192,21 @@ def track(run_dir, action, args):
 def gate(run_dir):
     """FIX before WAIT before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
     fix, wait, user = [], [], []
-    for i in _items(run_dir):
+    items = _items(run_dir)
+    if not items:  # a run from before track.json, or one that lost it: nothing is proven yet
+        fix.append("no checklist: add each step's Done when, the user's instructions and the merge conditions "
+                   "with track add, closing each with its evidence")
+    for i in items:
         if i["status"] == "open" or (i["status"] != "user" and not i["evidence"]):
             fix.append(f"{i['id']} {i['text']}")
         elif i["status"] == "user":
             user.append(f"{i['id']} {i['evidence']}")
     d = Path(run_dir) / "results"
-    for p in sorted(d.glob("*.head.json")):
-        check = p.name[: -len(".head.json")]
+    checks = sorted({p.name.rsplit(".", 2)[0] for p in [*d.glob("*.base.json"), *d.glob("*.head.json")]})
+    if not checks:
+        fix.append("no check results: save each check's results on the base and the delivery with results "
+                   "(results/<check>.base.json, results/<check>.head.json)")
+    for check in checks:
         c = compare(run_dir, check)
         fix += [f"{check}: new failure {n}" for n in c["new"]]
         fix += [f"{check}: run {n} alone on the delivery (results {check}.head-alone.json)" for n in c["rerun-head"]]

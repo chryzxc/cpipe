@@ -68,10 +68,24 @@ def put(run, name, **kw):
     (run / "results" / name).write_text(json.dumps(rec))
 
 
+def closed(run):
+    facts.track(run, "set", [facts.track(run, "add", ["verify", "related", "tests", "pass"]), "done", "41 pass"])
+
+
+def test_missing_state_never_passes(tmp_path):
+    """A run from before the checklist, or one that lost it, has proven nothing."""
+    assert "no checklist" in facts.gate(tmp_path) and "no check results" in facts.gate(tmp_path)
+    assert facts.report(tmp_path).startswith("not ready to report")
+    closed(tmp_path)
+    put(tmp_path, "unit.base.json", passed=["a"])  # saved on the base, never run on the delivery
+    assert facts.gate(tmp_path).startswith("FIX: unit: run * alone")
+
+
 def test_seven_failures_on_both_trees_are_baseline_and_pass_the_gate(tmp_path):
     failing = [f"t{i}" for i in range(7)]
     put(tmp_path, "unit.base.json", failed=failing, passed=["a"])
     put(tmp_path, "unit.head.json", failed=failing, passed=["a", "b"])
+    closed(tmp_path)
     c = facts.compare(tmp_path, "unit")
     assert c["baseline"] == failing and not (c["new"] or c["flaky"] or c["rerun-head"] or c["rerun-base"])
     assert facts.gate(tmp_path).startswith("PASS")
@@ -105,8 +119,9 @@ def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
         facts.track(tmp_path, "set", [a, "done"])
     assert facts.gate(tmp_path).startswith("FIX") and a in facts.track(tmp_path, "open", [])
     facts.track(tmp_path, "set", [a, "done", "41", "pass"])
+    put(tmp_path, "unit.base.json", passed=["a"])
+    put(tmp_path, "unit.head.json", passed=["a"])
     facts.track(tmp_path, "set", [b, "user", "a required approving review"])
-    (tmp_path / "results").mkdir()
     (tmp_path / "results" / "ci.json").write_text(json.dumps([{"name": "test", "bucket": "pending"}]))
     assert facts.gate(tmp_path) == "WAIT: CI test"
     (tmp_path / "results" / "ci.json").write_text(json.dumps([{"name": "test", "bucket": "pass"}]))
@@ -115,6 +130,7 @@ def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
 
 
 def test_the_report_waits_for_the_loop(tmp_path):
+    closed(tmp_path)
     put(tmp_path, "unit.base.json", passed=["a"])
     put(tmp_path, "unit.head.json", failed=["a"])
     put(tmp_path, "unit.head-alone.json", failed=["a"])
