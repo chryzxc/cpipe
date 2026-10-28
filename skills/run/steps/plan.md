@@ -42,9 +42,10 @@ yourself:
      action, validation only in a form, a limit one job applies) is today's policy: record its exact
      conditions, special cases included, and make each caller that does not pass through that side a row too.
    - **Why it is there:** for each check, condition or odd-looking line the change removes, tightens or moves,
-     the reason it exists (`git blame -L <lines> <file>`, then that commit's message and pull request), and who
-     relies on it. Recent fixes and reverts in these files (`git log --oneline -20 -- <files>`) are risks:
-     regressions return where a bug was fixed before.
+     the reason it exists (`git blame -L <lines> <file>`, then `git log -1 --format='%h %s%n%b' <sha>` for that
+     commit's message and pull request, never its whole patch), and who relies on it. Recent fixes and reverts
+     in these files (`git log --oneline -20 -- <files>`) are risks: regressions return where a bug was fixed
+     before.
    Record the map with paths and line numbers. A path you cannot trace is a risk in the plan.
 4. **Premortem.** Imagine the change shipped and something broke that the task never mentioned. List the most
    likely ways, looking through each lens that applies:
@@ -119,7 +120,8 @@ A plan profile writes the plan, and the builder (or you, without a build profile
 the code contradicts. With a build profile and no plan profile, the builder writes the plan and builds from it in
 the same brief. Write the plan to `plan.md` beside the run log (the run log names it). It is the builder's
 instructions and is resent with every build reply, so it holds facts in this format and nothing else: at most
-12,000 characters (`wc -c`), code cited by path and line and never quoted, no sections the format does not list.
+12,000 characters (`wc -c`), existing code cited by path and line and never quoted, no sections the format does
+not list.
 
 - **Goal:** one sentence, in the user's words.
 - **Kind** and playbook.
@@ -171,10 +173,13 @@ instructions and is resent with every build reply, so it holds facts in this for
   property-based testing library; never install one.
 - **Checks:** the exact commands, with the baseline result of each (or `running` while it is not back).
 - **Steps:** the build, in the playbook's order, one behavior per step, written so a builder who has not read
-  the code can follow it:
+  the code, on a model weaker than yours, can follow it without guessing. Where the step's code is not obvious
+  from its Do line (a signature, a condition, a query, a state change), write that new code as a `Code:` block of
+  at most 8 lines in the codebase's own style, so the builder types it in rather than designing it:
   ```
   S1  <path>  <function, class or line it changes>
       Do: <add | change | remove | move | extract> <exactly what: names, values, conditions>
+      Code: <optional: at most 8 lines of the new code>
       Test first: <test file> <test name>, fails now because <reason>; or covered by <existing test>
       Verify: <narrow command from Checks> -> <expected result>
       Covers: A1, M2
@@ -191,6 +196,7 @@ Before building, check the plan item by item and fix every no. It is your own ch
 - Every Do line says exactly what changes. None says "as needed", "if needed", "make sure", "improve", "clean
   up", "etc.", "appropriately", "TBD", or leaves a choice open: decisions belong in step 4.
 - Every step has a Verify command from Checks with its expected result.
+- Every step whose code is not obvious from its Do line has its `Code:` block, at most 8 lines.
 - Every `A`, `M` and `R` is in some step's Covers, or names the existing test or check that covers it (a risk
   may instead give the reason it cannot happen).
 - Every Scope file is in a step, and every step's file is in Scope.

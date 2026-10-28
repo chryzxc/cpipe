@@ -10,6 +10,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py report <run dir>
   python3 cpipe.py active <run dir> [--done]
   python3 cpipe.py chat
+  python3 cpipe.py brief <run dir> <worktree> <role> [--resume] [--card]
   python3 cpipe.py lanes <batch dir> [--at-once <n>] [--report <lane>]
 """
 
@@ -298,6 +299,21 @@ def chat():
     return " ".join(flags)
 
 
+def brief(run_dir, worktree, role, resume=False, card=False):
+    """A role's query: header.md's lines, filled in, then <run dir>/brief-<role>.md as the run wrote it."""
+    skill = Path(__file__).resolve().parent.parent
+    parts = dict(re.findall(r"(?ms)^## (\w+)\n(.*?)(?=^## |\Z)", (skill / "header.md").read_text()))
+    try:
+        told = re.search(r"(?ms)^## Instructions\n(.*?)(?=^## |\Z)", (Path(run_dir) / "now.md").read_text())
+    except OSError:
+        told = None
+    head = parts["Lean"] if resume else parts["Card" if card else "Direct"] + parts["Rules"] + parts["Lean"]
+    for key, value in (("<worktree>", worktree), ("<run dir>", run_dir), ("<role>", role),
+                       ("<skill dir>", str(skill)), ("<instructions>", told and told.group(1).strip() or "none")):
+        head = head.replace(key, value)
+    return head + "\n" + (Path(run_dir) / f"brief-{role}.md").read_text()
+
+
 REPORT_LINE = re.compile(r"^(?:✅ Done|⚠️? Done except|✅ Approved|⚠️? Changes needed)", re.M)
 QUICK = 300  # a lane that stopped this soon after its start waits before it is resumed
 
@@ -402,6 +418,8 @@ def main(argv):
         print(active(args[0], "--done" in args))
     elif cmd == "chat":
         print(chat())
+    elif cmd == "brief":
+        print(brief(*args[:3], "--resume" in args, "--card" in args), end="")
     elif cmd == "lanes":
         opt = dict(zip(args[1::2], args[2::2]))
         print(lanes(args[0], int(opt.get("--at-once", 4)), opt.get("--report")))

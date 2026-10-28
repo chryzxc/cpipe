@@ -224,3 +224,15 @@ def test_lanes_start_resume_and_report(tmp_path):
     for name in "13456":
         (tmp_path / name / "brief.md").unlink()
     assert facts.lanes(tmp_path).splitlines()[-1] == "DONE"
+
+
+def test_brief_puts_the_header_in_front(tmp_path):
+    (tmp_path / "now.md").write_text("## Instructions\n- merge it if no regressions\n\n## Step\n9 review\n")
+    (tmp_path / "brief-review.md").write_text("Review this change.\n")
+    first = facts.brief(str(tmp_path), "/wt", "review")
+    assert first.startswith("Direct request") and "Work only in /wt." in first and "<" + "instructions>" not in first
+    assert "- merge it if no regressions" in first and "## Step" not in first
+    assert f"{tmp_path}/review-reply.md" in first and first.endswith("read them.\n\nReview this change.\n")
+    again = facts.brief(str(tmp_path), "/wt", "review", resume=True)
+    assert again.startswith("Every reply resends") and "Work only in" not in again
+    assert facts.brief(str(tmp_path), "/wt", "review", card=True).startswith("Card from a delivery run.")

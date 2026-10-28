@@ -9,7 +9,8 @@ most one delta review (section 3).
 
 The reviewer is the `review` profile from the roles file (`roles.md` in `cpipe:run`). When the change touches
 authentication, permissions, payments, data deletion or migrations, the `security` profile reviews too, in
-parallel; findings both report are high confidence. Never hand a review to a subagent.
+parallel, with the security brief below: it does not repeat the full review. Findings both report are high
+confidence. Never hand a review to a subagent.
 
 A review always happens. If a profile fails or runs out of time, run it once more. Without a review profile it runs
 on this chat's own profile and model in a session of its own (`roles.md`). If every session fails, start a fresh
@@ -20,12 +21,13 @@ the user.
 Give the reviewer only what it needs, not your reasoning:
 
 ```
-Review this change. You did not write it. Read the code; do not edit anything.
+Review this change. You did not write it. Read the code; do not edit anything. The checks below already ran
+on this tree: do not run the suite or the build again.
 
 Goal: <the plan's goal, one sentence>
 User's instructions: <each one from now.md, word for word; they settle the questions they answer>
 Acceptance: <the plan's acceptance criteria>
-Repository: <worktree path>   Diff: git diff <base>...HEAD
+Repository: <worktree path>   Diff: git diff <base>...HEAD (`--stat` first, then each file's diff once)
 Checks run: <each check with its state from the run log>
 Plan: <run dir>/plan.md (its flow map, behavior table with the After column, must-not-change list and
 premortem; read them after your own table and premortem below)
@@ -84,6 +86,21 @@ For each finding, in at most 5 lines: file and line, the problem, why it matters
 changing. Give findings, not a verdict: no hold, block or release decision. The delivery run decides.
 ```
 
+The security reviewer gets the same brief up to `Plan:`, then only these items, so the two reviews never read
+the same things twice:
+
+```
+Review against:
+- Access: for each role, the owner and a stranger, signed out, and another tenant: what each can read, change
+  or delete before and after (`git show <base>:<path>` for before), through every entrance in the plan's flow
+  map, with forged ids, fields and query parameters. Each difference the goal does not ask for, and each guard
+  the diff adds whose conditions differ from the side that held it before.
+- Input and output: injection (queries, commands, paths, templates, HTML), unsafe parsing, open redirects, data
+  of another user or tenant in a response, log or error message.
+- Secrets and trust: credentials or tokens in code, logs or the client; checks only the client enforces.
+- Concurrent writes: a check-then-write gap or a repeated request that gets past a guard.
+```
+
 ## 2. Sort the findings
 
 Give each finding a disposition from its text and record it in the run log. With a build profile you do not
@@ -135,7 +152,8 @@ you can locally, then list it as **consider** with what is left for the user to 
 When both the review and QA are back, the **act** findings and the QA failures are fixed in one round (with a
 build profile, one builder follow-up), then `steps/verify.md`, then the delta review alongside a QA re-run of the
 failed items. The delta review resumes the first reviewer's session (`roles.md`, Follow-ups) with the diff since
-the first review and the earlier findings to confirm as resolved. Nothing to act on means no delta review.
+the first review (`git diff <the first review's tree id>`, never the whole diff again) and the earlier findings
+to confirm as resolved. Nothing to act on means no delta review.
 
 Brief every **act** finding as a fix at its cause (`steps/build.md`, Root cause), never as "fix it if it fits the
 scope" or "investigate": the builder is not the one who decides it is out of scope. A builder that answers it cannot

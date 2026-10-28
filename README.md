@@ -255,7 +255,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   context (a follow-up or a compaction), so no step is worked from memory and nothing is loaded twice.
 - **Read once.** One session explores and plans, so the code is read once per run: a plan profile on its own model,
   or the builder in the session it builds in. The flow map and the plan go to `plan.md` with paths and line numbers,
-  and a builder working from a planner's plan reads only those. The chat never reads the project's code: it works
+  and a builder working from a planner's plan reads only those. Each plan step is written for a builder on a
+  weaker model: the exact change, its test, its check, and the new code itself where it is not obvious (at most 8
+  lines), so the builder follows instead of designing. The chat never reads the project's code: it works
   from the replies, `git status`, the diff stats, the completion gate's searches, the result lines of the checks and
   the sections of the plan it needs, found by heading.
 - **A short plan.** The plan is facts in a fixed format, at most 12,000 characters, with code cited by path and
@@ -269,6 +271,8 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   each item closed only with its evidence. The run's core rules, your instructions and the open items are pinned in
   the system prompt of every session of the run, so a compaction never drops them; after one, the chat reads
   `now.md` and reloads only the run skill and the current step, never every skill it loaded before.
+- **One header.** The launcher puts the same header of working rules in front of every role brief (`header.md`),
+  and only those rules in front of a follow-up, so no brief can drop or reword them.
 - **Lean briefs.** A role's brief holds facts (goal, acceptance, diff, check states), not reasoning, and points
   to `plan.md` by its path instead of copying it or the run log. A fix round lists the findings themselves, not
   the reviewers' reports. A profile replies in at most 20 lines; findings, failures and corrections that do not
@@ -276,7 +280,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Lean reading.** Every reply resends all the context, so a profile reads the line ranges it needs, never a file
   twice, batches independent reads, edits and commands in one reply (a change's edits and the command that checks
   it go out together, without waiting for the edits' results), sends test output to a file with the same command
-  printing only the summary and failures, and loads only the cpipe step files its brief names.
+  printing only the summary and failures, and loads only the cpipe step files its brief names. Review, security
+  and QA never run the suite or the build again: the brief gives their results. A diff is read by its stat, then
+  each file once; the planner reads a commit's message, never its whole patch.
 
 ### Cost engineering
 
@@ -408,7 +414,9 @@ did not write the code, and reviews for correctness, behavior before and after f
 regressions across the whole repository, risks the plan missed, security, concurrency and resources,
 performance, and simplicity. Before a round leaves, the builder checks the same: resources closed, shared writes
 safe, bounds in place, no queries in loops. Changes to
-authentication, permissions, payments, data deletion or migrations get two reviewers in parallel. A run has one
+authentication, permissions, payments, data deletion or migrations also get a security reviewer in parallel,
+on a brief of its own (access per actor, injection, secrets, concurrent writes) so the two never read the same
+things twice. A run has one
 full review and at most one delta review; a fix after the delta review is proven by its test and the checks (a
 security fix also gets a delta from the security reviewer) and listed as fixed after the last review. The scope is
 the goal, not the planned files: a finding that the change does not do what the goal says yet (a bypassable
@@ -754,6 +762,7 @@ cpipe/
     ├── contract.md       the rules pinned in the system prompt while a run is going
     ├── bin/cpipe.py      facts: check results, comparison, checklist, gate, report skeleton
     ├── parallel.md       --parallel: one background session per issue, reporting to the chat
+    ├── header.md         the working rules in front of every role brief
     ├── bin/step.sh       runs one role session from its brief, under the time limit
     ├── bin/lane.sh       runs one --parallel lane in its own session, under the time limit
     ├── bin/limit.pl      the time limit and low priority of every background job

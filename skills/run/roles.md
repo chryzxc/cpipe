@@ -68,42 +68,10 @@ You stay in charge: the flow, the checks, the run log and every decision are you
 step and reports back. This file has every command you need to run a profile: do not load other skills or help
 pages to learn the command line.
 
-1. **Brief.** Write it to a file next to the run log (`brief-<role>.md`). Start with this header, word for word:
-   fill in the `<…>` parts and never shorten, reword or drop a line. Its rules keep the role from reading the code
-   again and again, and a role cannot ask for them later.
-
-   ```
-   Direct request from a delivery run. No task board, no cards: do this work and reply with the result.
-   Work only in <worktree>. Do not commit, push, merge, open pull requests or message anyone.
-   Do not skip or weaken tests. Never print secrets or .env contents.
-   A failure that also happens without this change is the baseline: note it and keep going. Never stop for a
-   decision: choose within the request's scope and say what you chose.
-   The user's instructions for this work, word for word; they settle the questions they answer:
-   <each instruction from now.md>
-   Report findings with their evidence and the fix you suggest, never a verdict such as hold, blocked or not
-   ready for release: the delivery run decides.
-   Use your own skills for this kind of work where you have them.
-   Keep it lean: the project's own dev server, test runner and tools first; evidence is the command and its
-   result; no hash manifests, integrity receipts or copies of the tree. At your time budget, stop and reply
-   with what you have and what is left.
-   Every reply resends all you have read, so read little: the lines you need (search first, a whole file only
-   when you need all of it), never a file you already have, never a file again to check an edit the tool
-   reported applied. Work in few replies: independent reads, searches, edits and commands go together in one
-   reply. A change and its check are one reply, not two: all its edits, then the command that checks it. Calls
-   in one reply run in the order given, so the check sees the edits: never wait for an edit's result before
-   sending its check. Test and build output goes to a file in <run dir>/logs/, and the same command prints the
-   exit code and only the summary and failure lines, so no reply goes to reading the file.
-   Load only the cpipe files named below, each as skill_view(name='cpipe:run', file_path='<file>') (without
-   skill_view, read <skill dir>/<file> with your file tool), once per session (again only when its text has left
-   your context); never load cpipe:run's SKILL.md itself: that is the delivery run's own procedure, not yours.
-   Skip the project's general guides (architecture, standards, contributing) unless your step says to read them.
-   Never list or poll processes. Write only the files your work needs and your reply file, never the run log,
-   now.md, receipts or helper scripts around the project's own commands.
-   Reply in at most 20 lines: the result, the evidence, what is left. Only what does not fit goes in
-   <run dir>/<role>-reply.md, and you give its path: findings, failures and corrections, each in at most 5 lines
-   (a finding: file and line, what is wrong, why it matters, the fix, the check that shows it). Never what passed,
-   what you did not do or the brief restated.
-   ```
+1. **Brief.** Write the role's part (below) to a file next to the run log (`brief-<role>.md`). The launcher puts
+   the header in front of it (`header.md` beside this file, filled in by `cpipe.py brief` with the user's
+   instructions from `now.md`), so never write the header or its rules into the brief yourself: they keep the
+   role from reading the code again and again, and a role cannot ask for them later.
 
    A step file named below is loaded with `skill_view(name='cpipe:run', file_path='steps/<name>.md')`; `<skill dir>`
    is the directory of this skill's `SKILL.md`, so a profile without `skill_view` finds it too. What is already in a
@@ -137,7 +105,7 @@ pages to learn the command line.
    - **qa:** the acceptance criteria (`plan.md`), the design note, how to start the app, and verify's broader
      suite result for this tree (start QA once verify has it). Ask it to follow `steps/qa.md` without editing the
      repository and reply with each item's result and evidence, a passed item in one line.
-   - **review / security:** the reviewer brief from `steps/review.md`.
+   - **review:** the reviewer brief from `steps/review.md`; **security:** its security brief, not the full one.
    - **plan review** (`steps/plan.md`, Second opinion): the review profile in a session of its own, so the code
      review later still reads the diff fresh. The brief gives the request, the worktree and `plan.md`'s path,
      and asks, without editing anything, for what the plan misses: an entrance, consumer or guard; an edge or
@@ -187,11 +155,11 @@ pages to learn the command line.
    A new session reads the code again from nothing, tens of replies; start one only when the resume fails, the next
    delivery is in another repository, or the session ended at its turns or budget with work left: a session that
    long is past its best, so the next one starts fresh from a handoff (the role part, then what its reply says it
-   finished and what is left, and the files it changed). Note why in the run log. The follow-up brief starts with
-   the header's lines from `Every reply resends` to `reading the file.`, word for word: the session's copy of them
-   can be older than this file or lost to a compaction. Then only what is new: the session already has the rest of
-   the header and the step files. The next delivery's brief is that delivery's role part with its own worktree, base
-   commit and run dir. A fix round's brief lists each item itself: the file and line, what is wrong, the expected
+   finished and what is left, and the files it changed). Note why in the run log. A follow-up brief holds only
+   what is new: the launcher puts the header's working rules (Lean in `header.md`) in front of it again, as the
+   session's copy can be older or lost to a compaction, and the session already has the rest and the step files,
+   so the brief never names a step file again. The next delivery's brief is that delivery's role part with its
+   own worktree, base commit and run dir. A fix round's brief lists each item itself: the file and line, what is wrong, the expected
    behavior and the check that shows it, as the finding or the failing check gave them. Never the paths of review,
    QA or probe files for the builder to read.
 
@@ -202,17 +170,11 @@ instead of running the profile directly, so the work shows on the board. Everyth
 the budgets, the checks you run yourself and the fallback. A role without a profile runs directly, as above: a card
 cannot take this chat's model.
 
-1. **Brief.** Start the brief with this instead of the first line of the header above:
-
-   ```
-   Card from a delivery run. This brief is your procedure and outranks your usual card rules.
-   When done, complete this card with your full result as the summary:
-   hermes kanban complete <card id> --summary "<result>"
-   Whatever the outcome, complete the card: do not block it, request changes or create other cards.
-   ```
+1. **Brief.** The card's body is the brief behind the card header (Card in `header.md`):
+   `python3 <skill dir>/bin/cpipe.py brief <run dir> <worktree> <role> --card > <run dir>/card-<role>.md`
 
 2. **Create the card:**
-   `hermes kanban create "cpipe <role>: <goal>" --assignee <profile> --body-file <brief> --workspace dir:<worktree> --max-runtime <budget>s --max-retries 1 --idempotency-key <branch>-<role>-<round> --json`
+   `hermes kanban create "cpipe <role>: <goal>" --assignee <profile> --body-file <run dir>/card-<role>.md --workspace dir:<worktree> --max-runtime <budget>s --max-retries 1 --idempotency-key <branch>-<role>-<round> --json`
    Write the card id in the run log. A follow-up to the same role is a new card with `--parent <previous card id>`.
 3. **Wait** with one background command and a completion notification: it checks
    `hermes kanban show <card id> --json` every 30 seconds and exits when the status is `done`, `blocked`, `review`
@@ -245,7 +207,7 @@ The checks decide, not a reply, and with a build profile you check without readi
 ## When a role fails
 
 The profile does not exist, the command errors, it returns nothing usable, or it broke a rule in the brief: try once
-more with a shorter role part (the header stays whole), then run it on this chat's own profile and model (Run,
+more with a shorter role part (the header is the launcher's), then run it on this chat's own profile and model (Run,
 above), and only when that fails too, do the step yourself in this chat. If it timed out, do not retry: go to the
 next of these right away. Tell the user in one ⚠️ status line (`⚠️ 2/11 Explore · archon failed (provider error) ·
 forge plans it`), the moment it happens, before the next brief. In the run log, write one line for it, kept through

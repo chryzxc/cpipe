@@ -9,8 +9,8 @@ You do them yourself only when every builder session failed (`roles.md`, When a 
 
 Follow the plan's steps in order (`steps/plan.md`, Steps); the playbook says what proof the kind needs. A step
 that turns out wrong (the code is not where it says, its test cannot fail as written, a helper to reuse turns up)
-is never improvised silently: record the correction (what was wrong, what instead), then follow it. In
-every playbook:
+is never improvised silently: record the correction (what was wrong, what instead), then follow it. A step's
+`Code:` block goes in as written, adapted only to the names the code really has. In every playbook:
 
 1. **Tests first.** Write only the tests the plan lists, and see each fail for the right reason (an assertion,
    not an import error) before writing the change. The playbook says what proof the kind needs. A test written
