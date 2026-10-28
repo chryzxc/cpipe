@@ -226,6 +226,27 @@ def test_lanes_start_resume_and_report(tmp_path):
     assert facts.lanes(tmp_path).splitlines()[-1] == "DONE"
 
 
+def test_a_chat_that_continues_a_stopped_lane_takes_it_over(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    batch, run = tmp_path / "cpipe" / "lanes" / "b", tmp_path / "run"
+    lane = batch / "1"
+    lane.mkdir(parents=True)
+    run.mkdir()
+    (run / "now.md").write_text("## Step\n2/11 Explore\n")
+    (lane / "brief.md").write_text("# issue 1\n")
+    (lane / "run").write_text(str(run))
+    (lane / "log.txt").write_text("lane started 100\n")  # killed: no exit line
+    (lane / "pid").write_text(str(os.getpid()))
+    assert "taken over" not in facts.active(run)  # its launcher still runs it
+    (lane / "pid").write_text("999999999")
+    assert "RESUME 1" in facts.lanes(batch)
+    assert "taken over by this chat" in facts.active(run)
+    assert facts.lanes(batch).splitlines() == ["1 issue 1 · taken over in its chat · 2/11 Explore", "WAIT"]
+    (lane / "report.md").write_text("✅ Done: issue 1\n")
+    assert facts.lanes(batch, report_of="1").splitlines()[:2] == ["1 issue 1 · reported · ✅ Done: issue 1", "DONE"]
+
+
 def test_brief_puts_the_header_in_front(tmp_path):
     (tmp_path / "now.md").write_text("## Instructions\n- merge it if no regressions\n\n## Step\n9 review\n")
     (tmp_path / "brief-review.md").write_text("Review this change.\n")

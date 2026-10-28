@@ -271,8 +271,16 @@ def active(run_dir, done=False):
         path.unlink(missing_ok=True)
         return f"run closed for {sid}"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"run_dir": str(Path(run_dir).resolve())}) + "\n")
-    return f"run registered for {sid}"
+    run = str(Path(run_dir).resolve())
+    path.write_text(json.dumps({"run_dir": run}) + "\n")
+    out = f"run registered for {sid}"
+    for lane in (hermes_root() / "cpipe" / "lanes").glob("*/*/run"):
+        if lane.read_text().strip() not in (run_dir, run) or _alive(lane.parent):
+            continue
+        # Its launcher is gone and a chat picked the run up: the dispatcher leaves the lane to it (lanes()).
+        (lane.parent / "taken").write_text(sid + "\n")
+        out += f"\nlane {lane.parent}: taken over by this chat; its report goes to {lane.parent}/report.md too"
+    return out
 
 
 def chat():
@@ -334,6 +342,14 @@ def _segment(lane):
     return seg, ran, int(end.group(1))
 
 
+def _lane_report(lane, seg):
+    """A taken-over lane's report.md, else the report in its log."""
+    try:
+        return (lane / "report.md").read_text().strip()
+    except OSError:
+        return _report(seg)
+
+
 def _report(seg):
     """The lane's final reply from its first report line, without the session footer."""
     found = REPORT_LINE.search(seg or "")
@@ -373,8 +389,11 @@ def lanes(batch, at_once=4, report_of=None):
         elif ran is None and _alive(lane):
             state = f"running · {_now_step(lane)}"
             running += 1
-        elif _report(seg):
-            state = "reported · " + _report(seg).splitlines()[0]
+        elif _lane_report(lane, seg):
+            state = "reported · " + _lane_report(lane, seg).splitlines()[0]
+        elif (lane / "taken").exists():
+            state = f"taken over in its chat · {_now_step(lane)}"
+            running += 1
         else:
             sid = re.findall(r"^session_id: (\S+)", seg, re.M)
             how = f"exit {code} after {ran // 60} min" if ran is not None else "its process is gone"
@@ -388,9 +407,9 @@ def lanes(batch, at_once=4, report_of=None):
         todo = ["WAIT"] if running or queued else ["DONE"]
     out = rows + todo
     if report_of:
-        seg = _segment(batch / report_of)[0]
-        if _report(seg):
-            out += ["", f"Report of {report_of}:", _report(seg)]
+        report = _lane_report(batch / report_of, _segment(batch / report_of)[0])
+        if report:
+            out += ["", f"Report of {report_of}:", report]
     return "\n".join(out)
 
 

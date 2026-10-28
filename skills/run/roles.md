@@ -209,7 +209,9 @@ The checks decide, not a reply, and with a build profile you check without readi
 The profile does not exist, the command errors, it returns nothing usable, or it broke a rule in the brief: try once
 more with a shorter role part (the header is the launcher's), then run it on this chat's own profile and model (Run,
 above), and only when that fails too, do the step yourself in this chat. If it timed out, do not retry: go to the
-next of these right away. Tell the user in one ⚠️ status line (`⚠️ 2/11 Explore · archon failed (provider error) ·
+next of these right away. Only its log ending in `exit 124` is a timeout; a tool call that Hermes cut off while
+waiting on the step is not, the step still runs: wait on it again.
+Tell the user in one ⚠️ status line (`⚠️ 2/11 Explore · archon failed (provider error) ·
 forge plans it`), the moment it happens, before the next brief. In the run log, write one line for it, kept through
 every compaction: `Problem: <step> · <role> <profile> · <each attempt's first error line and exit code> · done by
 <who instead>`. The report's Needs attention has a row for every `Problem:` line. A failed plan profile's steps go

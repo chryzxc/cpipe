@@ -30,7 +30,8 @@ Steps: plan, tests first, build, verify with the project's checks, QA and indepe
   --kanban          hand the role steps to your profiles as cards on your Hermes kanban board
   --budget <tier>   how hard your profiles reason on this run: unlimited, large, medium or small
   /cpipe budget [<tier>|off]   show or save the default budget in cpipe.yaml
-  /cpipe continue   pick up a run that stopped, at its first unfinished step
+  /cpipe --continue   pick up a run that stopped, at its first unfinished step (or just: continue)
+  /cpipe --restart [<step>]   redo the run from that step (default: explore) on its own roles
   /cpipe feedback <what you found>   a problem you found after the report: recorded, reproduced and fixed
   /cpipe learnings  what cpipe has learned from your runs
 Example: /cpipe --budget small fix the date filter on the orders page and open a draft pull request"""
@@ -44,11 +45,12 @@ STARTED = """cpipe · {task}
 
 Works on its own and reports here: open questions are decided and listed in the report,
 nothing is pushed unless you asked.
-✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled · quiet with no ⏳? /cpipe continue"""
+✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled · quiet with no ⏳? /cpipe --continue"""
 
 LANES = "\n  Lanes    each issue in its own background session, up to 4 at once, each reporting here"
 
 RESUMED = """cpipe · resuming at the first unfinished step; finished steps are not redone.{note}"""
+RESTARTED = """cpipe · redoing the run from {step} on its own roles; code it replaces is saved beside the run log first."""
 
 FEEDBACK = """cpipe · recording your findings. Each is reproduced, counted against the step that should have caught it,
 turned into a learning and fixed as a follow-up."""
@@ -61,7 +63,7 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--parallel] [--kanban] [--budget <tier>] <task> | budget [<tier>] | continue | feedback <text> | learnings", argument_mode="text")
+                             args_hint="[--parallel] [--kanban] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings", argument_mode="text")
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
     if hasattr(ctx, "register_system_prompt_section"):
@@ -324,11 +326,13 @@ def _start(ctx, raw):
     key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
     try:
         first, _, rest = brief.partition(" ")
-        resume = first.lower().rstrip(".!") in ("continue", "resume")
+        resume = first.lower().rstrip(".!") in ("continue", "resume", "--continue", "--restart")
         if ctx.inject_message((CONTINUE if resume else START).format(skill=SKILL, root=_root()) + task, role="user",
                               session_key=key):
             if first.lower() == "feedback":
                 return FEEDBACK
+            if first.lower() == "--restart":
+                return RESTARTED.format(step=rest.split()[0] if rest.split() else "explore")
             if resume:
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
             return STARTED.format(task=_short(brief), roles=_roles(kanban),

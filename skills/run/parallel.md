@@ -32,8 +32,8 @@ worktree, or waits on anything but the lanes. One issue in a `--parallel` task i
    own`. A lane's notification starts the next turn.
 
 **A notification.** It holds `lanes <batch dir>` as the lane printed it when it ended: one line per lane, what to
-do, and the ended lane's report. Post that report as it is, under `Lane <n> · <issue>`. Then act on each verdict in
-the same reply: `START <n>` starts a queued lane; `RESUME <n> [-w <s>] [--resume <id>]` starts that lane again
+do, and the ended lane's report. A lane `taken over in its chat` is the user's: never start it again. Post
+that report as it is, under `Lane <n> · <issue>`. Then act on each verdict in the same reply: `START <n>` starts a queued lane; `RESUME <n> [-w <s>] [--resume <id>]` starts that lane again
 as in Start, with those options before the lane folder (`sh <skill dir>/bin/lane.sh -w <s> <lane dir> …
 --resume <id>`), so a lane that stopped without its report (the turn limit, the time limit, a crash) goes on where it was; `WAIT` ends the
 turn on the wait line. Run `lanes <batch dir>` again before acting when the notification is not the newest
@@ -73,4 +73,8 @@ these differences.
   the user's to give: finish the rest and name it in the report's `⚠️ Done except` line.
 - **Only this issue.** Never touch another lane's branch, worktree or pull request. Before a merge, update this
   branch onto the base as it is then (`steps/report.md`, Merge): another lane may have merged first.
+- **Taken over.** When `active` says this chat took the lane over (its launcher had stopped and the user
+  continued it here), this is a chat like any other from then on: run and wait on role steps as `roles.md`, Run
+  says, and write the report to `<lane dir>/report.md` as well as replying with it. The dispatcher leaves the lane
+  to this chat and posts that file.
 - **The report** is this session's final reply, in the sections of `steps/report.md`; the dispatcher posts it.

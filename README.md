@@ -126,7 +126,8 @@ In any Hermes chat, inside or near the repository:
 | `/cpipe --kanban <task>` | The same, with the role steps handed to your profiles as cards on your kanban board |
 | `/cpipe --budget <tier> <task>` | The same, with your profiles reasoning at that budget for this run (Budget, below) |
 | `/cpipe budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
-| `/cpipe continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
+| `/cpipe --continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
+| `/cpipe --restart [<step>]` | Redoes the run from that step (Explore by default) on its own roles, in the same chat |
 | `/cpipe feedback <what you found>` | A problem you found after the report: reproduced, recorded as a miss and a learning, fixed as a follow-up |
 | `/cpipe learnings` | What cpipe has learned from your runs, and the problems that reached you per step |
 | `/cpipe:run <task>` | The skill itself, for chats where the command is not available |
@@ -150,7 +151,7 @@ cpipe · fix the discount that disappears when an invoice is edited
 
 Works on its own and reports here: open questions are decided and listed in the report,
 nothing is pushed unless you asked.
-✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled · quiet with no ⏳? /cpipe continue
+✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled · quiet with no ⏳? /cpipe --continue
 
 1/11 Set up · this chat · worktree, dependencies, baseline
 ✅ 1/11 Set up · 3 min · fix/invoice-discount, baseline: 412 tests pass
@@ -605,8 +606,10 @@ lane's report as it arrives, and writes a summary once every lane has reported.
 - A lane that stops before its report (a turn or time limit, a crash) is resumed in its own session; one that
   stopped within five minutes waits ten before it is resumed.
 - Steering for a lane goes to its `inbox.md`, which the lane reads at each step.
+- A lane that stopped can be continued by hand in its own chat: that chat takes the lane over, the dispatcher no
+  longer starts it, and its report goes to the lane's `report.md`, which the dispatcher posts.
 - `cpipe.py lanes <batch dir>` reads each lane's state from its files, so a lost notification loses nothing:
-  `/cpipe continue` picks every lane up again.
+  `/cpipe --continue` picks every lane up again.
 - Heavy jobs (installs, large test runs, builds) from all lanes take turns on the machine.
 
 ### Your own skills
@@ -803,7 +806,7 @@ In a new worktree and branch beside your repository, created from the base. Your
 Merged cpipe worktrees are removed by later runs; the branches stay.
 
 **The run went quiet. What now?**
-Send `/cpipe continue`. It reads `now.md` and the run log and picks up at the first unfinished step without redoing finished
+Send `/cpipe --continue`. It reads `now.md` and the run log and picks up at the first unfinished step without redoing finished
 ones, using the results of profiles and checks that kept running in the meantime.
 
 **Can I steer it mid-run?**
