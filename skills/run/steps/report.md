@@ -17,11 +17,18 @@ rather than skipping it.
 ## Pull request (only when asked)
 
 Only if the user asked for one in this task: push the branch and open a **draft** pull request against the plan's
-base, one per delivery (`cpipe:run`, One issue, one delivery). Title in the commit style. Body: the issue it
-resolves, in the project's linking style (`Closes #123`), what changed and why, how it was verified (each check with its state),
+base, one per delivery (`cpipe:run`, One issue, one delivery). Title in the commit style. Body: any verified GitHub
+issue it resolves in the project's linking style (`Closes #123`), what changed and why, how it was verified (each check with its state),
 anything not run here and how to check it, open findings. No local paths, internal tool names or chat details.
 Never merge, mark ready or request reviewers unless asked. If the push or the pull request fails, report the
 error and the exact command to retry; the work stays committed locally.
+
+Use `Closes`, `Fixes` or `Resolves` only for a GitHub issue whose repository and number were explicitly provided
+as an issue or independently verified against the requested work. Never infer an issue number from a task, backlog,
+card, lane or audit identifier. If no matching issue is verified, omit the closing reference; never invent or
+substitute one. After publishing or editing, read back the body and inspect its closing keywords against those
+verified issues, even if `closingIssuesReferences` is empty on a non-default base. A syntax linter cannot verify
+issue identity; correct unintended references when authorized.
 
 For a visible change, put QA's before and after screenshots in the pull request the way the user's
 pull-request skill says to attach images. When they cannot be attached (not signed in, no access, no way to
