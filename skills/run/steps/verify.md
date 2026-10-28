@@ -18,12 +18,12 @@ in the run log with one of four honest states:
 A result counts only for the tree it ran on. After any change, earlier results are stale: run them again. A
 worker's "it passes" is a claim until you run the command and read the output yourself.
 
-Compare failures with the baseline by name, never by count: save this run's failing ids the same way as
-`baseline-<check>.txt` (`steps/setup.md`, step 8) and run `comm -13 baseline-<check>.txt now-<check>.txt`.
-Every id it prints is new and yours to fix, even when the total went down; no output means the check is
-**baseline**. Find each new failure's cause first, the way `playbooks/bug.md` step 2 does, then up to three fix
-attempts with different ideas per failure, then record it as open and move on
-(`cpipe:run`, limits). With a build profile, the builder does that in a follow-up: give it each new failure's
+Compare failures with the baseline by name, never by count: save this run's results with
+`results <run dir>/results/<check>.head.json` and run `compare <run dir> <check>` (`cpipe:run`, Facts). Every
+**new** name is yours to fix, even when the total went down; a check with none is **pass** or **baseline**. Do every
+rerun it lists and compare again, until nothing is left to rerun. Find each new failure's cause first (Root cause,
+in `steps/build.md`), then up to three fix attempts with different ideas per failure, then change the approach and
+loop (`cpipe:run`, Limits). With a build profile, the builder does that in a follow-up: give it each new failure's
 name and its failure lines from the log, never the log to read.
 
 Formatters and linters fix only the lines the change touches. A red formatting or lint baseline stays the
@@ -53,8 +53,9 @@ request's CI runs it. Run each check only where it proves something:
   baseline's notification.
 - **No duplicates.** A subset the related tests already run (a regression script, a focused file) is not run
   beside them.
-- **The project's commands only.** Run each check with the project's own command. No wrapper scripts, gates,
-  harnesses, preloads, environment patches, manifests or receipts around it, and no test runs on other trees
+- **The project's commands only.** Run each check with the project's own command and its reporter flag. No
+  wrapper scripts, gates, harnesses, preloads, environment patches, manifests or receipts around it (`cpipe.py`
+  only reads the files it writes), and no test runs on other trees
   (another base, both heads, a combined branch) to prove parity: the by-name comparison with the baseline, plus
   the one base check under New failures, is the proof.
 - **The runner's own parallelism.** Run the suite the way the project's CI does and let the runner pick its
@@ -76,20 +77,18 @@ request's CI runs it. Run each check only where it proves something:
   A check whose tree id has not changed since it ran is not run again; committing a verified tree keeps its
   results.
 - **Names from the runner, not the log.** Every test run also writes its results to a file through the runner's
-  machine-readable reporter (`--json --outputFile=<file>`, `--junitxml=<file>`, the project's own), on the base
-  and the delivery alike; the failing names come from that file, never from a log that can be cut off. When a
-  run has no such file, run its failing files again with the reporter on both trees. A comparison is never left
-  "not established": finish it, then each name is new or baseline. Type-check and lint errors are compared the
-  same way, by file, code and message, from each tree's full output written to a file.
-- **New failures, once each.** A failure that is not in the baseline: run its file again, alone, once. A test
-  that passes alone is flaky or load-sensitive: record both runs; it is not a regression, whether or not its cause
-is known, so it never holds a commit, a pull request or a merge. Do not build tools to chase its cause. A failure
-seen while two suites or builds ran side by side in one worktree says nothing about the code: the run alone
-decides. One that also fails
-  alone is yours to fix, unless the baseline has no result for it (it did not run, did not finish, or left that
-  file out); then check it on the base once: run only those files, with the same command and its time limit, in
-  the base worktree set up added (`now.md`). When it is gone, add it again the way `steps/setup.md` step 8
-  does. Failing there too is **baseline**; passing there is yours to fix. One round, then decide: no copies or
+  machine-readable reporter (`--json --outputFile=<file>` for Jest and Vitest, `--junitxml=<file>` for pytest,
+  JUnit XML for the rest), on the base and the delivery alike, and `results` reads that file, never a log that
+  can be cut off. Type-check and lint output goes to a file whole (`eslint -f json`, the compiler's plain output)
+  and is read the same way, by file, code and message. When `results` says the file is missing or cut off, run
+  the check again with the reporter.
+- **New failures, once each.** `compare` lists each name that needs a rerun. `rerun-head`: run its file again,
+  alone, on the delivery, into `results/<check>.head-alone.json`. `rerun-base`: run only those files on the
+  base, with the same command and its time limit, in the base worktree set up added (`now.md`; when it is gone,
+  add it again the way `steps/setup.md` step 8 does), into `results/<check>.base-alone.json`. Then compare
+  again. **Flaky** (it passed alone) is not a regression, whether or not its cause is known, so it never holds a
+  commit, a pull request or a merge; do not build tools to chase its cause. A failure seen while two suites or
+  builds ran side by side in one worktree says nothing about the code: the run alone decides. No copies or
   archives of the tree, no further comparisons.
 - **The run's own tests are claims.** A test this run wrote can be wrong. When one still fails after a fix
   attempt, or no fix passes it without breaking another test, question the test before the code: check its
@@ -211,5 +210,6 @@ fixtures and test data, migrations, and data files. Split every other listed fil
 ## Done when
 
 Every check this verify runs (Fast checks) has a state on the current tree; in the last verify, that is every
-check from the plan, with the build from the first verify. Every new failure is fixed (an
-approach that fails three times is replaced, `cpipe:run`, Limits), and the completion gate passes.
+check from the plan, with the build from the first verify. `compare` lists no new name and nothing to rerun for
+any check (an approach that fails three times is replaced, `cpipe:run`, Limits), the completion gate passes, and
+this step's items in `track.json` are closed with their evidence.

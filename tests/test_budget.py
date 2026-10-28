@@ -79,3 +79,33 @@ def test_mid_run_message_gets_the_steering_reminder():
     assert cpipe._steering("change the PR title", [start, step, report, msg]) is None
     assert cpipe._steering("/cpipe continue", [start, step]) is None
     assert cpipe._steering("hello", [msg]) is None
+
+
+def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):
+    import json
+    import sqlite3
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("CPIPE_RUN", raising=False)
+    assert cpipe._pinned({"session_id": "child"}) == ""
+    db = sqlite3.connect(tmp_path / "state.db")
+    db.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT)")
+    db.executemany("INSERT INTO sessions VALUES (?, ?)", [("root", None), ("child", "root")])
+    db.commit()
+    db.close()
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "now.md").write_text("## Instructions\n- merge it if no regressions (not yet)\n\n## Step\n7 verify\n")
+    (run / "track.json").write_text(json.dumps([
+        {"id": "verify-1", "text": "related tests pass", "status": "open"},
+        {"id": "verify-2", "text": "build", "status": "done"}]))
+    (tmp_path / "cpipe" / "active").mkdir(parents=True)
+    (tmp_path / "cpipe" / "active" / "root.json").write_text(json.dumps({"run_dir": str(run)}))
+    text = cpipe._pinned({"session_id": "child"})  # compacted twice over: still the run's rules
+    assert "loops until the goal" in text and "merge it if no regressions" in text and "## Step" not in text
+    assert "verify-1 related tests pass" in text and "verify-2" not in text and "<skill dir>" not in text
+    assert len(text) <= cpipe.PINNED_MAX and cpipe._pinned({"session_id": "other"}) == ""
+    (run / "track.json").write_text(json.dumps([{"id": f"x-{i}", "text": "y" * 80, "status": "open"}
+                                                for i in range(100)]))
+    assert len(cpipe._pinned({"session_id": "root"})) <= cpipe.PINNED_MAX
+    monkeypatch.setenv("CPIPE_RUN", str(run))
+    assert "Run folder: " + str(run) in cpipe._pinned({"session_id": ""})

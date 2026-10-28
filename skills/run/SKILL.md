@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.66.0
+version: 4.0.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -158,9 +158,7 @@ or the user asked for a single pull request, and record why in Approach.
 
 ## Flow
 
-Track the steps with your todo tool if you have one, one step active at a time. Its first item stays open until the
-report: `After a compaction: read now.md and track.md; reload only cpipe:run and the active step's file, no other
-skill`. The todo list survives a compaction word for word (After a compaction, below).
+Track the steps with your todo tool if you have one, one step active at a time.
 
 **Status lines.** The user follows the run from these lines alone, so each one says what happens, who does it
 and what came out, in the same shape: `[icon] <n>/11 <Step> · <parts>`, the step name as in the table below (a
@@ -297,18 +295,36 @@ graph is drawn from (`steps/report.md`, Run graph):
 - the misses and learnings written.
 
 The plan has its own file beside it, `plan.md`, so a builder reads the plan and not the whole log. Beside both is
-`now.md`, rewritten as the run moves: at most 25 lines, plus the instructions. It holds the user's
-instructions word for word, each marked met or not yet; the current step and its next action; the processes
-running (process id, log or reply file); the roles line; the rules taken from user skills; and the open items.
+`now.md`, rewritten as the run moves: at most 25 lines, plus the instructions. Its first section is
+`## Instructions`: the user's instructions word for word, each marked met or not yet. Then `## ` sections for the
+current step and its next action; the processes running (process id, log or reply file); the roles line; the rules
+taken from user skills; and the open items.
 Rewrite it in the same reply as each step's first tool call and whenever something starts or finishes in the
 background. It is what you read to resume, instead of the whole log.
 
-Beside it is `track.md`, the active step's checklist. When a step starts, copy its Done when into it as `- [ ]`
-items, one per condition, and at the report also each merge condition that applies (`steps/report.md`, Merge) and
-the report's section names in order. Tick an item only with its evidence on the line (a result, a file, a count). An
-item that is unclear, "not established" or "inconclusive" stays open and is work for the loop; a step ends only when
-every item is ticked or has its reason from Finish before reporting (`steps/report.md`). Skill text can be dropped
-from the chat; this file cannot, so its items are the step's rules after a compaction.
+## Facts
+
+Questions with an exact answer are answered by `bin/cpipe.py` beside this file, never by judgment. Run it as
+`python3 <this skill's folder>/bin/cpipe.py <command> …` from the worktree; it reads files and prints data and a
+verdict, and you act on what it prints:
+
+- `results <run dir>/results/<check>.<tree>.json <junit|jest|tsc|eslint|lines> <files>`: a check's results from
+  the runner's machine-readable output (`<tree>` is `base`, `head`, `base-alone` or `head-alone`), so a cut-off
+  log never decides anything (`steps/verify.md`, Names from the runner).
+- `compare <run dir> <check>`: every failing name on the delivery as **new**, **baseline**, **flaky** or a rerun
+  to do (`rerun-head`: run it alone on the delivery; `rerun-base`: run it on the base). Never undecided: do the
+  reruns and compare again.
+- `track <run dir> add <step> <text>`, `set <id> done|skip|user <evidence>`, `open [<step>]`: the checklist in
+  `track.json`. When a step starts, add its Done when items, one per condition; at the report also each merge
+  condition and each instruction in `now.md`. An item closes only with its evidence (a result, a file, a count):
+  `done` when met, `skip` with the reason it does not apply or this machine cannot run it, `user` for what only
+  the user may do. Unclear, "not established" or "inconclusive" stays open and is work for the loop.
+- `gate <run dir>`: the run's verdict. `FIX: …` is the loop's next work; `WAIT: …` ends the turn on a wait line;
+  `NEEDS-USER: …` is what only the user may do; `PASS` means every condition holds: merge when asked, then report.
+- `report <run dir>`: the report's skeleton with its facts filled in (`steps/report.md`, Report).
+- `active <run dir>` once the run log exists, `active <run dir> --done` after the report: registers this chat's run,
+  so the run's rules, the user's instructions and the open items stay pinned in this chat's system prompt
+  whatever a compaction drops.
 
 Long command output goes to a file beside the run log (`logs/<step>-<check>.txt`); read the result lines or the
 tail, not the whole output. A command you wait for prints them itself (`grep` the summary and failures, `tail`),
@@ -318,13 +334,10 @@ so no reply goes to reading the file. The run log names the file.
 
 When the chat is compacted, the step files and skills loaded so far are dropped, and the compaction notice may ask
 you to reload every skill this chat ever loaded. Do not: that refills the context and brings the next compaction
-within minutes. Read `now.md` and `track.md`, reload `cpipe:run` and the active step's file (from the plugin's
-directory when `skill_view` returns no text, Flow), and continue. At the report that is `steps/report.md`, loaded
-again before the merge or the report is written: a report written from memory loses its merge conditions and its
-format. The final reply of a run is never free text: it is the pause message or the report in the sections and order
-of `steps/report.md`, Report. Your next status line keeps the shape in Flow, Status lines. The user's instructions
-and the user skills' rules are in `now.md`; the roles, the plan's questions from the learnings and every file you
-read are in the run log or the plan. Read a file again only for the lines the next action needs.
+within minutes. The run's rules, the user's instructions and the open checklist items stay in the system prompt
+(Facts, `active`). Read `now.md`, reload `cpipe:run` and the active step's file (from the plugin's directory when
+`skill_view` returns no text, Flow), and continue. The roles, the plan's questions from the learnings and every
+file you read are in the run log or the plan. Read a file again only for the lines the next action needs.
 
 ## Learning
 
@@ -399,18 +412,18 @@ again that it cannot be done with nothing changed. Take an approach not tried ye
 
 ## Continue
 
-When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read `now.md` and
-`track.md` (the run log only where it points), write `limit.pl` and `tick.sh` again from `steps/setup.md` if either
-is missing, check `git status` and the last check results in the worktree, and pick up at the first unfinished step.
-Do not redo finished steps. Sometimes a report left an instruction unmet, and then the user says "continue" or
-repeats the instruction. That is the same task: do what is unmet, never only report again that it is not done. A
-"continue" after an approval that was refused or timed out is the user's answer to it: run that command again, so
-the approval asks again, and go on from there. A restart ends this chat's turn, but not the profiles and checks it
-started: before starting one again, check its process (the pid in `now.md`) and its log or reply file, and wait for
-it or use its result. A "continue" while what the run waits on still runs: do any step that does not need its
-result, else end the turn with the wait line above and ` · <m> min in` after the step; never read its partial output
-or start it again. With several deliveries, finish the unfinished one first, then start the next one its run log
-names.
+When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read `now.md`, run
+`track <run dir> open` and `gate <run dir>` (Facts), read the run log only where they point, write `limit.pl` and
+`tick.sh` again from `steps/setup.md` if either is missing, check `git status` and the last check results in the
+worktree, and pick up at the first unfinished step. Do not redo finished steps. Sometimes a report left an
+instruction unmet, and then the user says "continue" or repeats the instruction. That is the same task: do what is
+unmet, never only report again that it is not done. A "continue" after an approval that was refused or timed out is
+the user's answer to it: run that command again, so the approval asks again, and go on from there. A restart ends
+this chat's turn, but not the profiles and checks it started: before starting one again, check its process (the pid
+in `now.md`) and its log or reply file, and wait for it or use its result. A "continue" while what the run waits on
+still runs: do any step that does not need its result, else end the turn with the wait line above and ` · <m> min
+in` after the step; never read its partial output or start it again. With several deliveries, finish the unfinished
+one first, then start the next one its run log names.
 
 ## Limits
 
@@ -420,8 +433,9 @@ cannot run ends a loop early. The limits below keep one approach from grinding, 
 reaching one means change the approach and loop again, not report. Each round changes something; an attempt
 that already failed is never repeated.
 
-- A failing check: three fix attempts, each with a different idea; then step back to its cause and change the
-  approach (another design, the builder on another profile, the fix in this chat) and loop again.
+- A failing check: three fix attempts, each from a Cause line (`steps/build.md`, Root cause) with a different idea;
+  then write the Cause again from scratch and change the approach (another design, the builder on another profile,
+  the fix in this chat) and loop again.
 - QA: a fix round for its failures and a re-run of the items that failed, as many rounds as it takes, each with a
   different idea after the third.
 - Review: one full review, then one delta review of the fixes it and QA led to; no third round. A fix after the

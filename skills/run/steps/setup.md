@@ -30,7 +30,8 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    about dependencies. Copy local env files (`.env`) from the user's checkout only if the checks need them, and
    never print their contents. The install itself runs in step 8.
 5. **Run log.** Start it and `now.md` (`cpipe:run`, Run log) with the task, the user's instructions word for word
-   (from the task and from the conversation about this work), the base, the worktree and the roles line.
+   (from the task and from the conversation about this work), the base, the worktree and the roles line. Then
+   register the run (`cpipe:run`, Facts: `active <run dir>`) and add this step's Done when to `track.json`.
 6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A repository can
    have dozens of worktrees and branches, so never list them into the chat; this prints only the candidates:
    ```sh
@@ -66,7 +67,8 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
       can point back to its code (workspace links, an editable install);
    3. the **baseline**, in the base worktree: the light checks and the build from step 7, no tests (a failing
       test is checked on the base file by file, `steps/verify.md`, New failures), the way `steps/verify.md`
-      (Fast checks) runs them, to `logs/baseline-<check>.txt`;
+      (Fast checks) runs them, to `logs/baseline-<check>.*`, each with its machine-readable output where the
+      tool has one (`steps/verify.md`, Names from the runner);
    4. `touch logs/baseline.done`, last and whatever came before.
 
    Write its process id and the base worktree's path in the run log and `now.md`, and start whoever explores at
@@ -77,15 +79,14 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
 
 When the background work ends, record each check's result in the run log: pass, fail (which tests), not finished
 (`exit 124`: it hit its time limit, so a test hangs or the suite is slower than its limit), or not run here (why).
-Save the ids of the failing tests, lint errors and typecheck or compiler errors, one per line and sorted, to
-`baseline-<check>.txt` beside the run log, so verify can compare by name, not by count. An error's id is its file,
-rule or code and message, without line or column, since lines move when code is added above them. A check that did
-not finish gets a line in `now.md` too. A check
-already red is the baseline, not your job, unless the task is to fix it. A check that will not run is worked through
-`steps/verify.md` (When a check will not run), so the plan names commands that work. If an install fails, try the
-next way from there and record it; a failed install never ends the run. Deliveries of one run from the same base
-commit share one baseline and its worktree: copy the first one's `baseline-<check>.txt` files and
-`logs/baseline.done` instead of running it again.
+Save each check's results with `results <run dir>/results/<check>.base.json` (`cpipe:run`, Facts), run in the base
+worktree so its paths are read from there, so verify compares by name, not by count. An error's id is its file, rule
+or code and message, without line or column, since lines move when code is added above them. A check that did not
+finish gets a line in `now.md` too. A check already red is the baseline, not your job, unless the task is to fix it.
+A check that will not run is worked through `steps/verify.md` (When a check will not run), so the plan names
+commands that work. If an install fails, try the next way from there and record it; a failed install never ends the
+run. Deliveries of one run from the same base commit share one baseline and its worktree: copy the first one's
+`results/<check>.base.json` files and `logs/baseline.done` instead of running it again.
 
 ## Time limit
 

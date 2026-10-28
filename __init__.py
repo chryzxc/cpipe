@@ -1,8 +1,10 @@
-"""cpipe: a Hermes plugin made of skills. The model runs the delivery; this file only registers the run skill, /cpipe
-and a reminder on messages sent while a run is going."""
+"""cpipe: a Hermes plugin made of skills. The model runs the delivery; this file only registers the run skill,
+/cpipe, a reminder on messages sent while a run is going, and the run's rules pinned in the system prompt."""
 
+import json
 import os
 import re
+import sqlite3
 from pathlib import Path
 
 SKILL = Path(__file__).parent / "skills" / "run" / "SKILL.md"
@@ -52,6 +54,78 @@ def register(ctx):
                              args_hint="[--kanban] [--budget <tier>] <task> | budget [<tier>] | continue | feedback <text> | learnings", argument_mode="text")
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
+    if hasattr(ctx, "register_system_prompt_section"):
+        ctx.register_system_prompt_section("cpipe.run", _pinned, max_chars=PINNED_MAX)
+
+
+PINNED_MAX = 4000
+
+
+def _lineage(session_id, hops=50):
+    """This session and the ones it was compacted from: a compaction continues the chat under a new id."""
+    ids, sid = [], session_id
+    try:
+        db = sqlite3.connect(f"file:{_home() / 'state.db'}?mode=ro", uri=True, timeout=1)
+        try:
+            while sid and sid not in ids and len(ids) < hops:
+                ids.append(sid)
+                row = db.execute("SELECT parent_session_id FROM sessions WHERE id = ?", (sid,)).fetchone()
+                sid = row[0] if row else None
+        finally:
+            db.close()
+    except sqlite3.Error:
+        pass
+    return ids or ([session_id] if session_id else [])
+
+
+def _run_dir(info):
+    """The run this session works on: CPIPE_RUN for a step's own session, else the chat's registered run."""
+    if os.environ.get("CPIPE_RUN"):
+        return Path(os.environ["CPIPE_RUN"])
+    active = _root() / "cpipe" / "active"
+    if not active.is_dir():
+        return None
+    for sid in _lineage(str(info.get("session_id") or "")):
+        try:
+            return Path(json.loads((active / f"{sid}.json").read_text())["run_dir"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return None
+
+
+def _instructions(now):
+    """now.md's `## Instructions` section: the user's words, which win over every default."""
+    try:
+        text = now.read_text()
+    except OSError:
+        return ""
+    found = re.search(r"(?ms)^## Instructions\b.*?(?=^## |\Z)", text)
+    return found.group(0).strip() if found else ""
+
+
+def _pinned(info):
+    """The run's rules and open items, in the system prompt so a compaction cannot drop them (no flow control)."""
+    try:
+        run = _run_dir(info)
+        if not run or not run.is_dir():
+            return ""
+        rules = (SKILL.parent / "contract.md").read_text().replace("<skill dir>", str(SKILL.parent)).strip()
+        parts = [rules, f"Run folder: {run}"]
+        told = _instructions(run / "now.md")
+        if told:
+            parts.append(told)
+        try:
+            items = [i for i in json.loads((run / "track.json").read_text()) if i.get("status") == "open"]
+        except (OSError, ValueError):
+            items = []
+        if items:
+            parts.append("Open in track.json:\n" + "\n".join(f"- {i['id']} {i['text']}" for i in items))
+        text = "\n\n".join(parts)
+        if len(text) > PINNED_MAX:
+            text = text[:PINNED_MAX - 40].rstrip() + "\n… (the rest is in the run folder)"
+        return text
+    except Exception:  # a prompt section never breaks a session
+        return ""
 
 
 STEERING = ("[cpipe] A cpipe run is going in this chat and this message arrived mid-run: it is steering, not a new "

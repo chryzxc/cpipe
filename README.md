@@ -264,11 +264,10 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Distilled skills.** Your skills are loaded once per run, only for work done in the chat and only when the
   step that uses them starts, and the rules that apply are written to `now.md` as one line each.
 - **Compaction-proof.** A short state file, `now.md`, holds your instructions word for word, the current step, the
-  running processes, the roles and the rules from your skills. Beside it, `track.md` holds the current step's
-  checklist, each item ticked only with its evidence, so a step's rules survive even when its skill text is dropped.
-  After the context is compacted, the chat reads it and reloads only the run skill and the current step, never every
-  skill the chat loaded before, so one compaction does not cause the next. The first item of the todo list, which
-  survives a compaction word for word, says so.
+  running processes, the roles and the rules from your skills. Beside it, `track.json` holds the run's checklist,
+  each item closed only with its evidence. The run's core rules, your instructions and the open items are pinned in
+  the system prompt of every session of the run, so a compaction never drops them; after one, the chat reads
+  `now.md` and reloads only the run skill and the current step, never every skill it loaded before.
 - **Lean briefs.** A role's brief holds facts (goal, acceptance, diff, check states), not reasoning, and points
   to `plan.md` by its path instead of copying it or the run log. A fix round lists the findings themselves, not
   the reviewers' reports. A profile replies in at most 20 lines; findings, failures and corrections that do not
@@ -331,8 +330,15 @@ Nothing counts until a command has run on the current tree and its result has be
 
 - **Honest states.** Every check is **pass**, **fail**, **baseline** (already failing on the base) or **not run
   here** (with the reason and the other proof gathered).
+- **Facts decided in code.** A small helper (`bin/cpipe.py`, standard library only) reads the runners' own
+  machine-readable output and decides what the model must not guess: which failures are new, baseline or flaky
+  and what to rerun, whether every checklist item is closed with evidence, and whether the run may report. The
+  model runs what it asks for and never stops on "not sure".
 - **Baseline by name.** The baseline saves the names of failing tests and lint errors, and verify compares names,
   not counts: one new failing name is a fail even when the total went down.
+- **Root cause first.** Every failure, finding and QA item gets a Cause line (the mechanism, file and line) and
+  the class of places it can happen, before its fix, and the fix goes where every caller passes through. A
+  special-cased input, a weakened test, a retry, a sleep, a timeout bump or a silenced error is not a fix.
 - **Claims are checked.** A profile's "done" is a claim until the chat has run and read the check
   itself. A QA failure is reproduced by a failing test before it is fixed.
 - **Tests that catch something.** Each new test names the break it catches, the line or behavior that makes it
@@ -661,8 +667,9 @@ Details: fix/invoice-discount · a1b2c3d fix(invoices): keep the discount on edi
 | `<git-dir>/cpipe/run.md` | The run log: rounds, workarounds, findings | Never |
 | `<git-dir>/cpipe/plan.md` | The plan, the builder's instructions | Never |
 | `<git-dir>/cpipe/now.md` | Your instructions, the current step, running processes, roles and skill rules; read to resume | Never |
-| `<git-dir>/cpipe/track.md` | The current step's checklist (and at the report, the merge conditions and report sections), each ticked with its evidence | Never |
-| `<git-dir>/cpipe/baseline-<check>.txt` | Names of the tests and lint errors failing on the base | Never |
+| `<git-dir>/cpipe/track.json` | The run's checklist (each step's Done when, your instructions, the merge conditions), each item closed with its evidence | Never |
+| `<git-dir>/cpipe/results/` | Each check's failing names on the base and the change, as JSON, for the comparison | Never |
+| `<Hermes root>/cpipe/active/` | Which sessions are running a delivery, so their rules are pinned; removed at the report | — |
 | `<git-dir>/cpipe/logs/` | Long command output | Never |
 | `<git-dir>/cpipe/limit.pl` | The time limit and low priority every background job runs under; heavy jobs take turns | Never |
 | `<git-dir>/cpipe/tick.sh` | The progress tick of a long wait | Never |
@@ -703,19 +710,22 @@ flowchart LR
     C -->|report| U
 ```
 
-The plugin's code only registers one skill and the `/cpipe` command, which injects the task into the chat with
-the instruction to run the skill, plus a one-line reminder on any message you send while a run is going, so the
-model treats it as steering and keeps the run moving. Everything else (the flow, the decisions, the recovery) is
-skill text that the model follows with the tools it already has.
+The plugin's code only registers one skill and the `/cpipe` command, which injects the task into the chat with the
+instruction to run the skill, plus a one-line reminder on any message you send while a run is going, so the model
+treats it as steering and keeps the run moving, and a system prompt section that pins the run's rules, instructions
+and open checklist items in every session of the run. It renders text and decides nothing. Everything else (the
+flow, the decisions, the recovery) is skill text that the model follows with the tools it already has.
 
 ```
 cpipe/
 ├── plugin.yaml           manifest
-├── __init__.py           registers cpipe:run, /cpipe and the mid-run reminder
+├── __init__.py           registers cpipe:run, /cpipe, the mid-run reminder and the pinned rules
 ├── AGENTS.md             rules for changing cpipe
 └── skills/run/
     ├── SKILL.md          the flow, unattended rules, run log, learning, limits, guard rails
     ├── roles.md          handing steps to profiles, directly or as kanban cards
+    ├── contract.md       the rules pinned in the system prompt while a run is going
+    ├── bin/cpipe.py      facts: check results, comparison, checklist, gate, report skeleton
     ├── run-graph.html    page template that draws the run graph
     ├── steps/            one file per step, loaded when the run reaches it
     │   ├── setup.md      worktree, installs, baseline in a base worktree, time limit, tidy-up

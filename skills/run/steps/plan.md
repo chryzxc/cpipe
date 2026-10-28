@@ -78,7 +78,13 @@ yourself:
    - **The learnings and the project's lessons**, the areas of past misses, and anything its instructions warn
      about.
    Each risk gets a check (a test, a command or a QA step), or a one-line reason it cannot happen here, citing
-   the code. These are prompts, not a form: find the risks this change has, including ones no lens names.
+   the code. These are prompts, not a form: find the risks this change has, including ones no lens names. Name
+   each risk's class, not only the instance: where else the same mechanism lives (the other callers of a shared
+   helper, the other routes past the same missing check), so the plan covers them together.
+   **Why does the problem exist?** For a bug, a failing check or a request to change behavior, ask what lets it
+   happen at all (a validation layer that is missing, a rule kept on one side only, a helper used wrongly, a
+   contract nobody owns) and plan the change at that level, so every caller is covered by one fix
+   (`steps/build.md`, Root cause).
 5. **Checks.** From set up's commands, pick the narrowest one that covers the change (one file, a filter), plus
    the build or typecheck, plus the related-tests command for the changed files (never the full suite).
 6. **Wait for the dependencies** before the first command that runs code in the worktree (a reproducing test):

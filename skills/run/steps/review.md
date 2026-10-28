@@ -65,6 +65,11 @@ Review against:
 - Performance: queries or remote calls in loops, a new query without its index, unbounded results, blocking work
   on a hot path, repeated work that could run once, and how the cost grows with the data. Name the input size
   where it hurts; never flag a micro-optimization the data size does not justify.
+- Symptom patches: for each fix, is it at the cause or at the symptom (`steps/build.md`, Root cause)? An
+  **act** finding when it special-cases the failing input or test data; edits or loosens a test so it passes;
+  adds a retry, sleep, longer timeout or broad catch around the failure; guards one caller while its siblings
+  share the path (search them); or silences a type or lint error without fixing its cause. Name the shared point
+  where the fix belongs.
 - Simplicity and readability: needless abstraction, duplicated helpers, dead code, comments that restate code,
   names that do not say what a thing is, unnamed meaningful literals, deep nesting, a function doing two jobs,
   a silenced type or lint error, and code that solves a problem differently from how this codebase already
@@ -128,12 +133,12 @@ build profile, one builder follow-up), then `steps/verify.md`, then the delta re
 failed items. The delta review resumes the first reviewer's session (`roles.md`, Follow-ups) with the diff since
 the first review and the earlier findings to confirm as resolved. Nothing to act on means no delta review.
 
-Brief every **act** finding as a fix, never as "fix it if it fits the scope" or "investigate": the builder is
-not the one who decides it is out of scope. A builder that answers it cannot be fixed in scope (the fix needs
-other files, other write paths, a shared lock or a conditional write) gets the same finding back at once, with
-those paths added to the plan and the approach it named as the one to build. It stays open only when the fix
-needs what this run cannot do: a change in another repository or service, a migration of live data, access or
-credentials it does not have. Then it leads the report with what was tried and the fix it needs.
+Brief every **act** finding as a fix at its cause (`steps/build.md`, Root cause), never as "fix it if it fits the
+scope" or "investigate": the builder is not the one who decides it is out of scope. A builder that answers it cannot
+be fixed in scope (the fix needs other files, other write paths, a shared lock or a conditional write) gets the same
+finding back at once, with those paths added to the plan and the approach it named as the one to build. It stays
+open only when the fix needs what this run cannot do: a change in another repository or service, a migration of live
+data, access or credentials it does not have. Then it leads the report with what was tried and the fix it needs.
 
 **When fixes fight.** A fix that breaks today's behavior, with no change found that keeps both after one more
 approach: the working behavior wins, unless that fix is the goal itself. Restore the files of the last verify

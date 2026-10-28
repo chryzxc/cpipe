@@ -67,11 +67,34 @@ every playbook:
    worktree), and the same command prints only what you need from it, so no reply goes to reading the file:
    `<test> > <log> 2>&1; echo "exit $?"; grep -E '<the runner's summary and failure lines>' <log> | tail -40`.
 
-**A fix round** (a failing check, a review finding, a QA failure, a conflict) gets the same rules. Check each
-item against the code first. A real one is fixed, with a failing test first when it is about behavior: a QA
-failure is reproduced by that test before the fix. One the code shows is not real is left alone and answered
-with the evidence (file and line, a test or a command's output). Reply per item: fixed (how, and the test) or not
-real (the evidence). A conflict from an update onto a moved base is resolved keeping what both sides meant.
+**A fix round** (a failing check, a review finding, a QA failure, a conflict) gets the same rules. Check each item
+against the code first. A real one is fixed at its root cause (below), with a failing test first when it is about
+behavior: a QA failure is reproduced by that test before the fix. One the code shows is not real is left alone and
+answered with the evidence (file and line, a test or a command's output). Reply per item: fixed (how, and the test)
+or not real (the evidence). A conflict from an update onto a moved base is resolved keeping what both sides meant.
+
+### Root cause
+
+Every failure, finding and QA item is fixed where it comes from, not where it shows. A symptom fixed in one place
+comes back through the next caller, so the loop finds it again and again.
+
+1. **Cause before fix.** Before any edit, write the item's row in the run log (or the reply) as
+   `Cause: <the mechanism, file:line> · Class: <every other place the same cause can act>`. The mechanism says why
+   it happens (a check that lives only in the client, a shared helper called with the wrong unit, state kept
+   across records), not what was seen. Find it the way `playbooks/bug.md` step 2 does. No Cause line, no fix.
+2. **Fix at the shared point.** Search every caller and sibling of the code the cause lives in, and fix where
+   they all pass through: one guard in the shared function, not one in each caller the item names. Each place
+   on the Class list is fixed in this change or shown not to be affected (file:line, the reason).
+3. **The test fails for the cause.** The regression test fails on the base for the stated cause (its failure
+   message shows the mechanism, not only the symptom) and passes with the fix; Proof by undo
+   (`steps/verify.md`) checks it.
+4. **Not a fix:** special-casing the failing input or test data; editing or loosening a test so it passes;
+   a retry, sleep, longer timeout or broad catch around the failure; a guard on one caller while its siblings
+   share the path; silencing a type or lint error. Each one hides the cause, and review sends it back
+   (`steps/review.md`, Symptom patches).
+5. **Twice in one area means a wrong cause.** An item in an area a fix round already touched, or a fix that did
+   not hold, gets its Cause line written again from scratch with a new hypothesis, never a second patch on the
+   first (`cpipe:run`, Limits).
 
 Side discoveries that block the acceptance (a broken helper, a wrong fixture): fix them inside the scope and note
 them. Anything outside the scope goes in the report.

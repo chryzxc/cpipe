@@ -48,18 +48,18 @@ profile for it, and never park it on a command that was blocked: say when in the
 ## Merge (only when asked)
 
 When the user asked for a merge, with or without a condition ("merge it if there are no regressions"), merge
-each delivery once these hold:
-- every check is pass or baseline on the committed tree;
-- no new failing test since the baseline, and every must-not-change item has its proof;
+each delivery once these hold, each one an item in `track.json` (`cpipe:run`, Facts) and `gate` says `PASS`:
+- every check is pass or baseline on the committed tree (`compare` for each check: no new name, no rerun left);
+- every must-not-change item has its proof;
 - no open **act** finding and no failing QA item;
-- the pull request's CI is pass or baseline;
-- every condition the user named.
+- the pull request's CI is pass or baseline (`gh pr checks --json name,bucket` saved to `results/ci.json`);
+- every condition the user named (`now.md`, Instructions).
 
 These are the whole condition. Nothing else holds a merge the user asked for: not a check that was not run here
 (the full suite, a typecheck tool that is missing), a flaky result whose cause is unknown, a deployment or
 production setup that was not verified, a reviewer's or a skill's general readiness gates, or wanting more
-proof. Those go under Risk in the report. When the conditions hold, merge in the same turn: no extra review,
-comparison or readiness pass first.
+proof. Those go under Risk in the report. When `gate` says `PASS`, merge in the same turn: no extra review,
+comparison or readiness pass first. `FIX` is work, `WAIT` a wait line, `NEEDS-USER` the `⚠️ Done except` line.
 
 "No new failing test" is the last verify's by-name comparison with the baseline on the committed tree. When the
 base branch moved since, update the delivery branch on it the project's way (merge or rebase), run the last
@@ -84,19 +84,16 @@ method), and report `⚠️ Done except` that approval.
 
 ## Finish before reporting
 
-The report comes after the work is finished, not when the steps have run once. Before writing it, check that
-every step in the report's Proof below would be ✅ or — and the goal is met. For any other step, go back and
-loop until it is (`cpipe:run`, Limits): fix every **act** finding and QA failure, retry a check another way,
-wait for CI, merge when asked. A step stays open only when the run truly cannot close it: something only the user
-may do, or a check that needs what this machine does not have. A question about how the code
-should behave, a needed policy, a role's hold or blocked verdict, a builder saying a fix is out of scope
-(`steps/review.md`, Fix and the delta review), or a flaky result whose cause is unknown
-(`steps/verify.md`, New failures) never keeps a step open, and neither does a comparison or check that is "not
-established", "inconclusive" or "not classified": that is work left undone, so finish it the way
-`steps/verify.md` says and act on what it shows. Decide it from the
-user's instructions (`cpipe:run`, The user's instructions), fix and verify. Then check each instruction in
-`now.md`: every one is met, or has its reason from that list. Test it is the last thing left for the user, and
-only when needed.
+The report comes after the work is finished, not when the steps have run once. Before writing it, add every
+instruction in `now.md` and each merge condition that applies to `track.json` and run `gate`: only `PASS` or
+`NEEDS-USER` lets the report be written. Check that every step in the report's Proof below would be ✅ or — and the
+goal is met. For any other step, go back and loop until it is (`cpipe:run`, Limits): fix every **act** finding and
+QA failure, retry a check another way, wait for CI, merge when asked. A step stays open only when the run truly
+cannot close it: something only the user may do, or a check that needs what this machine does not have. A question
+about how the code should behave, a needed policy, a role's hold or blocked verdict, a builder saying a fix is out
+of scope (`steps/review.md`, Fix and the delta review), or a flaky result whose cause is unknown (`steps/verify.md`,
+New failures) never keeps a step open. Decide it from the user's instructions (`cpipe:run`, The user's
+instructions), fix and verify. Test it is the last thing left for the user, and only when needed.
 
 ## Running app
 
@@ -115,8 +112,10 @@ removal is noted in the run log and never holds the report.
 
 ## Report
 
-Post one message in the chat, in this order. With several deliveries, one status line per delivery first, then
-this report for each under a heading naming its issue.
+Post one message in the chat, in this order, starting from what `report <run dir>` prints (`cpipe:run`, Facts):
+its status line and Proof lines are facts, kept as they are; you write the `<…>` cells. When it prints "not ready
+to report", that is the loop's work: do it first. With several deliveries, one status line per delivery first,
+then this report for each under a heading naming its issue. After posting it, `active <run dir> --done`.
 
 Short, and still complete: the user reads it in a minute and knows what changed, what was proven and what is
 left for them. What needs the user comes first; what went as planned is a count, not a row. Plain words,
