@@ -44,7 +44,10 @@ Post them as they are, one line each, and end the turn on the wait line; nothing
 
 **A message from the user.** Steering for one lane (it names its issue or number) is appended to that lane's
 `inbox.md`, for every lane to every `inbox.md` and to the queued lanes' `brief.md`; add it to the batch's
-`now.md` too. A question about progress is answered from `lanes <batch dir>`. Then end the turn on the wait line.
+`now.md` too. A question about progress is answered from `lanes <batch dir>`. The user taking a lane over (to
+continue or restart it in its own chat): write `user` to `<lane dir>/taken` first, then stop the lane with your
+process tool's kill and any role step it left running (`pkill -f <its run dir>/logs/`).
+Then end the turn on the wait line.
 
 **Continue** (or a restart): `active <batch dir>`, then `lanes <batch dir>` and act on its verdicts: a lane whose
 process is gone is resumed, so a notification that never came loses nothing.

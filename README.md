@@ -607,7 +607,8 @@ lane's report as it arrives, and writes a summary once every lane has reported.
   stopped within five minutes waits ten before it is resumed.
 - Steering for a lane goes to its `inbox.md`, which the lane reads at each step.
 - A lane that stopped can be continued by hand in its own chat: that chat takes the lane over, the dispatcher no
-  longer starts it, and its report goes to the lane's `report.md`, which the dispatcher posts.
+  longer starts it, and its report goes to the lane's `report.md`, which the dispatcher posts. To take over a lane
+  that still runs, tell the dispatcher: it marks the lane taken, then stops it and the role steps it started.
 - `cpipe.py lanes <batch dir>` reads each lane's state from its files, so a lost notification loses nothing:
   `/cpipe --continue` picks every lane up again.
 - Heavy jobs (installs, large test runs, builds) from all lanes take turns on the machine.
