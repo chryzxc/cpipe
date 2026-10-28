@@ -1,8 +1,8 @@
 # sh lane.sh [-w <seconds>] <lane dir> <repo> <limit> <who> [--resume <id>]
 # Runs one delivery of a --parallel batch in its own session, from <lane dir>/brief.md, under the time limit, its
 # output appended to <lane dir>/log.txt, then prints the batch's lanes (`cpipe.py lanes`) and this lane's report.
-# The session waits on its role steps in the foreground: like Hermes' kanban dispatcher does for a long worker, the
-# terminal's timeouts are raised for this session only. -w: wait that long first (a lane that just stopped).
+# The session waits on its role steps with the process tool (parallel.md, In a lane); TERMINAL_TIMEOUT caps one
+# wait, so it is raised for this session only. -w: wait that long first (a lane that just stopped).
 # <who>: -p <profile>, or the output of `cpipe.py chat`. --source cli: Hermes files a one-shot run as `oneshot`,
 # which its session lists hide; a lane is the user's to open, so it is filed as a chat.
 w=0; if [ "$1" = -w ]; then w=$2; shift 2; fi
@@ -22,7 +22,7 @@ issue=$(head -n 1 "$d/brief.md" | sed 's/^# *//')
     [ "$s" = "$last" ] || echo "LANE $(basename "$d") · $issue · $s"; last=$s
   done ) &
 watch=$!
-CPIPE_LANE="$d" TERMINAL_TIMEOUT="$limit" TERMINAL_MAX_FOREGROUND_TIMEOUT="$limit" \
+CPIPE_LANE="$d" TERMINAL_TIMEOUT="$limit" \
   perl "$(dirname "$0")/limit.pl" "$limit" hermes "$@" -Q --source cli --query-file "$q" --in "$repo" --max-turns 400 \
   >>"$d/log.txt" 2>&1
 echo "exit $? $(date +%s)" >>"$d/log.txt"

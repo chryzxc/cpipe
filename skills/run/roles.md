@@ -120,7 +120,7 @@ pages to learn the command line.
    their edits, back to the saved state, and follow "When a role fails".
 
 2. **Run** it in the worktree, directly, or as a card when the run is on the board (below), with the launcher
-   beside this file, in the background with a completion notification (in a `--parallel` lane, in the foreground:
+   beside this file, in the background with a completion notification (in a `--parallel` lane, waited on instead:
    `parallel.md`, In a lane):
    `sh <skill dir>/bin/step.sh <run dir> <worktree> <role> <round> <run budget> <limit> <who> [--reasoning <effort>]`
    It runs `hermes chat` from `<run dir>/brief-<role>.md` with the role's turns (build 150, plan 120, the rest 60),

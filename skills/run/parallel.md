@@ -60,11 +60,13 @@ these differences.
 
 - **Register.** Once the run log exists, write the run folder's path to `<lane dir>/run`: the dispatcher reads the
   current step from its `now.md`, and the run's rules stay pinned in this session from it.
-- **Wait in the foreground.** This session ends when a turn ends, and no notification wakes it. Run each role step
-  (`roles.md`, Run) as a foreground command whose timeout is that step's time limit plus 60 seconds; this
-  session's terminal allows that. Start other long work (installs, the baseline) in the background as the flow
-  says, and when the next step needs its result, wait on it with your process tool's wait and its time limit as
-  the timeout. No ⏳ wait lines and no progress tick: a turn ends only on the report or the pause message.
+- **Wait on each step.** This session ends when a turn ends, and no notification wakes it, and Hermes cuts any one
+  tool call off after a few minutes, a foreground command included, while the command itself goes on. So run each
+  role step (`roles.md`, Run) and other long work (installs, the baseline) in the background, and wait on it with
+  your process tool's wait, 300 seconds at a time, until it exits. A wait that ends with the process still running,
+  or that Hermes cut off, means wait again: the step is still working, so never start it again, hand its work to
+  another role or go on without its result. It ends on its own at its time limit. No ⏳ wait lines and no progress
+  tick: a turn ends only on the report or the pause message.
 - **Steering.** At the start of each step, read `<lane dir>/inbox.md`. A line not yet in `now.md` is the user's
   steering (`cpipe:run`, Unattended): add it to `now.md` and act on it.
 - **Approvals.** A command that needs an approval takes Hermes' path for one-shot sessions. One that is refused is

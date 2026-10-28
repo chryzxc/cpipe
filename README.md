@@ -600,8 +600,8 @@ lanes, posts a line each time a lane's step changes (at most every five minutes,
 lane's report as it arrives, and writes a summary once every lane has reported.
 
 - Up to four lanes run at once (name another number in the task); the rest start as lanes finish.
-- A lane waits on its role steps in the foreground: its launcher raises the terminal's timeouts for that session
-  only, the way Hermes' kanban dispatcher does for a long worker, so a lane spends nothing while a step runs.
+- A lane runs each role step in the background and waits on it with the process tool, five minutes per wait, so
+  a long step is never cut off by Hermes' limit on one tool call and a lane spends one short reply per wait.
 - A lane that stops before its report (a turn or time limit, a crash) is resumed in its own session; one that
   stopped within five minutes waits ten before it is resumed.
 - Steering for a lane goes to its `inbox.md`, which the lane reads at each step.
