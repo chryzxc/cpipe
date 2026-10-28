@@ -23,9 +23,10 @@ worktree, or waits on anything but the lanes. One issue in a `--parallel` task i
    limit is 14400 seconds unless the user gave one. `lanes <batch dir>` prints the lanes and what to do
    (`START <n>`); run every start in one reply, each in the background with a completion notification:
    `sh <skill dir>/bin/lane.sh <batch dir>/<n> <repository> <limit> <who>`, the repository being the checkout the
-   task came from: a session started in it, like a role session in its worktree, is filed by Hermes under that
-   repository's project, so every lane shows there. Up to four run at once
-   (`--at-once <n>` when the user names another number); the rest are queued and start as lanes finish.
+   task came from: a session started in it is filed by Hermes under that repository's project, and the launcher
+   saves it as a chat (role sessions stay hidden), so every lane shows in the session list there. Up to four
+   run at once (`--at-once <n>` when the user names another number); the rest are queued and start as lanes
+   finish.
 4. **Wait.** End the turn with `⏳ <running> lanes running, <queued> queued · each reports here · resumes on its
    own`. A lane's notification starts the next turn.
 
