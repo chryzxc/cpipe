@@ -82,17 +82,19 @@ standard way, never a workaround that only makes the symptom or the check go awa
 1. **Follow the source the plan names.** How this codebase already does the same thing; else the documented way
    of the framework or library at the installed version (read its docs, types or source in the dependency folder
    rather than guessing an API); else the language's or platform's standard. Use the existing helper, type,
-   component or pattern instead of writing a second one.
+   component or pattern instead of writing a second one. Talking to another system goes through the extension
+   point that system provides for it, never around it from the outside.
 2. **Not standard, never shipped:** a timer or sleep to order events; a type cast, `any`, non-null assertion or
-   ignore comment to quiet the compiler; a lint, test or check disabled; `!important`, inline styles or DOM
-   reaching around the framework; editing generated, vendored or installed code; patching a library at runtime;
-   a global or module-level flag for state the framework already manages; copied code instead of the shared
-   helper; a hard-coded id, URL, path, secret or environment value; an error caught and ignored; a feature turned
-   off or hidden; a new dependency for what the codebase or standard library already does; code marked
-   temporary, quick fix, hack or "TODO later".
-3. **When the standard way does not fit,** the plan was wrong, not the standard: rewrite that step's Approach in
-   `plan.md` with what the code showed and the next standard option, and note it in the run log. Never fall back
-   to an item of the list above to get past it.
+   ignore comment to quiet the compiler; a lint, test or check disabled; `!important`, inline styles or DOM reaching
+   around the framework; editing generated, vendored or installed code; patching a library at runtime; a global or
+   module-level flag for state the framework already manages; copied code instead of the shared helper; a hard-coded
+   id, URL, path, secret or environment value; an error caught and ignored; a feature turned off or hidden; the same
+   context or instructions added to every message, request or render where the system has a place to give them once
+   (a prompt section, a session or context hook, a setting); a new dependency for what the codebase or standard
+   library already does; code marked temporary, quick fix, hack or "TODO later". 3. **When the standard way does not
+   fit,** the plan was wrong, not the standard: rewrite that step's Approach in `plan.md` with what the code showed
+   and the next standard option, and note it in the run log. Never fall back to an item of the list above to get
+   past it.
 
 ### Root cause
 

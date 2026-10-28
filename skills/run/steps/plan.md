@@ -133,7 +133,10 @@ instructions and is resent with every build reply, so it holds facts in this for
   differs from the code, the code wins and the difference is an assumption.
 - **Approach:** the standard way to do this, from the first source that has one: how this codebase already does
   it (path), else the documented way of the framework or library at the installed version (its docs, types or
-  source in the dependency folder: cite which), else the language's or platform's standard. Then each idea the
+  source in the dependency folder: cite which), else the language's or platform's standard. A change that plugs
+  into another system (an agent runtime, a host app, a server, a plugin host, an API) uses that system's own
+  extension point for it (its hooks, context or prompt providers, events, settings, public API): find it in the
+  system's docs or source, wherever that lives on this machine, and cite it, before planning. Then each idea the
   change rests on, with its source, why, the alternative avoided and the problem it would have caused, and the
   trade-off. A step away from the standard way names the reason it cannot apply here; a workaround is never the
   plan (`steps/build.md`, Standard approach). The report's Approach table is built from this

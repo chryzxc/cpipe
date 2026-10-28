@@ -336,10 +336,11 @@ Nothing counts until a command has run on the current tree and its result has be
   model runs what it asks for and never stops on "not sure".
 - **Baseline by name.** The baseline saves the names of failing tests and lint errors, and verify compares names,
   not counts: one new failing name is a fail even when the total went down.
-- **The standard way.** Every change follows how the codebase already does the same thing, else the documented
-  way of the installed framework or library, else the language's standard, and the plan names that source. Timers
-  to order events, casts and ignore comments, disabled checks, edits to generated or vendored code, copied code,
-  hard-coded values and "temporary" code are not shipped; review sends them back.
+- **The standard way.** Every change follows how the codebase already does the same thing, else the documented way
+  of the installed framework or library, else the language's standard, and the plan names that source. A change that
+  plugs into another system uses that system's own extension point, never a way around it. Timers to order events,
+  casts and ignore comments, disabled checks, edits to generated or vendored code, copied code, hard-coded values
+  and "temporary" code are not shipped; review sends them back.
 - **Root cause first.** Every failure, finding and QA item gets a Cause line (the mechanism, file and line) and
   the class of places it can happen, before its fix, and the fix goes where every caller passes through. A
   special-cased input, a weakened test, a retry, a sleep, a timeout bump or a silenced error is not a fix.
