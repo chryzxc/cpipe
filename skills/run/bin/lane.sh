@@ -14,8 +14,17 @@ printf 'Continue this lane (cpipe:run, In a lane in parallel.md): read now.md an
 echo $$ >"$d/pid"  # running from here on, the wait included, so it is never started twice
 echo "lane started $(($(date +%s) + w))" >>"$d/log.txt"
 sleep "$w"
+# One line each time the lane's step changes, for the dispatcher's heartbeat (parallel.md, Start); it ends with
+# this script.
+issue=$(head -n 1 "$d/brief.md" | sed 's/^# *//')
+( last=; while sleep 20 && kill -0 $$ 2>/dev/null; do
+    s=$(python3 "$(dirname "$0")/cpipe.py" step "$d")
+    [ "$s" = "$last" ] || echo "LANE $(basename "$d") · $issue · $s"; last=$s
+  done ) &
+watch=$!
 CPIPE_LANE="$d" TERMINAL_TIMEOUT="$limit" TERMINAL_MAX_FOREGROUND_TIMEOUT="$limit" \
   perl "$(dirname "$0")/limit.pl" "$limit" hermes "$@" -Q --source cli --query-file "$q" --in "$repo" --max-turns 400 \
   >>"$d/log.txt" 2>&1
 echo "exit $? $(date +%s)" >>"$d/log.txt"
+{ kill "$watch"; wait "$watch"; } 2>/dev/null
 python3 "$(dirname "$0")/cpipe.py" lanes "$(dirname "$d")" --report "$(basename "$d")"

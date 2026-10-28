@@ -21,7 +21,8 @@ worktree, or waits on anything but the lanes. One issue in a `--parallel` task i
    - The other lanes: `Lane <n> of <total>; others: <their issues>`.
 3. **Start.** Who runs a lane is this chat's own profile and model: the flags `chat` prints (Facts). The time
    limit is 14400 seconds unless the user gave one. `lanes <batch dir>` prints the lanes and what to do
-   (`START <n>`); run every start in one reply, each in the background with a completion notification:
+   (`START <n>`); run every start in one reply, each in the background with a completion notification and a
+   heartbeat of 300 seconds (the lane prints a `LANE` line each time its step changes; a quiet tick is skipped):
    `sh <skill dir>/bin/lane.sh <batch dir>/<n> <repository> <limit> <who>`, the repository being the checkout the
    task came from: a session started in it is filed by Hermes under that repository's project, and the launcher
    saves it as a chat (role sessions stay hidden), so every lane shows in the session list there. Up to four
@@ -32,11 +33,14 @@ worktree, or waits on anything but the lanes. One issue in a `--parallel` task i
 
 **A notification.** It holds `lanes <batch dir>` as the lane printed it when it ended: one line per lane, what to
 do, and the ended lane's report. Post that report as it is, under `Lane <n> · <issue>`. Then act on each verdict in
-the same reply: `START <n>` starts a queued lane; `RESUME <n> [-w <s>] [--resume <id>]` starts that lane again with
-those options before the lane folder (`sh <skill dir>/bin/lane.sh -w <s> <lane dir> … --resume <id>`), so a lane
-that stopped without its report (the turn limit, the time limit, a crash) goes on where it was; `WAIT` ends the
+the same reply: `START <n>` starts a queued lane; `RESUME <n> [-w <s>] [--resume <id>]` starts that lane again
+as in Start, with those options before the lane folder (`sh <skill dir>/bin/lane.sh -w <s> <lane dir> …
+--resume <id>`), so a lane that stopped without its report (the turn limit, the time limit, a crash) goes on where it was; `WAIT` ends the
 turn on the wait line. Run `lanes <batch dir>` again before acting when the notification is not the newest
 thing in the chat. `DONE` writes the summary.
+
+**A heartbeat.** It holds the `LANE <n> · <issue> · <step>` lines a running lane printed since the last one.
+Post them as they are, one line each, and end the turn on the wait line; nothing else runs.
 
 **A message from the user.** Steering for one lane (it names its issue or number) is appended to that lane's
 `inbox.md`, for every lane to every `inbox.md` and to the queued lanes' `brief.md`; add it to the batch's

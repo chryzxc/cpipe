@@ -12,6 +12,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py chat
   python3 cpipe.py brief <run dir> <worktree> <role> [--resume] [--card]
   python3 cpipe.py lanes <batch dir> [--at-once <n>] [--report <lane>]
+  python3 cpipe.py step <lane dir>
 """
 
 import json
@@ -420,6 +421,8 @@ def main(argv):
         print(chat())
     elif cmd == "brief":
         print(brief(*args[:3], "--resume" in args, "--card" in args), end="")
+    elif cmd == "step":
+        print(_now_step(Path(args[0])))
     elif cmd == "lanes":
         opt = dict(zip(args[1::2], args[2::2]))
         print(lanes(args[0], int(opt.get("--at-once", 4)), opt.get("--report")))
