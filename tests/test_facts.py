@@ -160,9 +160,9 @@ def test_chat_flags_follow_this_chats_profile_model_and_switched_provider(tmp_pa
     db.close()
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_SESSION_ID", "s1")
-    assert facts.chat() == "-p builder -m model-a --provider prov-a"
+    assert facts.chat() == "hermes -p builder chat -m model-a --provider prov-a"
     monkeypatch.setenv("HERMES_SESSION_ID", "s2")
-    assert facts.chat() == "-p builder -m model-b --provider prov-b"
+    assert facts.chat() == "hermes -p builder chat -m model-b --provider prov-b"
 
 
 def test_a_whole_loop_through_the_command_line(tmp_path):

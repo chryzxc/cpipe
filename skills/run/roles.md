@@ -126,9 +126,10 @@ pages to learn the command line.
    It runs `hermes chat` from `<run dir>/brief-<role>.md` with the role's turns (build 150, plan 120, the rest 60),
    under the time limit (`steps/setup.md`, Time limit), its output in `<run dir>/logs/<role>-<round>.txt`, and
    prints the log's end, so the notification carries the reply and the session id and no reply goes to reading
-   them. Never type the `hermes chat` command yourself. `<who>` is `-p <profile>`, or for a role without one, the
-   output of `python3 <skill dir>/bin/cpipe.py chat` (this chat's profile, model and provider, so a step never runs
-   on a weaker model). The launcher sets `CPIPE_RUN` and `CPIPE_STEP`, which pin the run's rules, the user's
+   them. Never type the `hermes chat` command yourself. `<who>` is `hermes -p <profile> chat`, written out so the
+   chat's UI shows the handoff to that profile, or for a role without one, the output of
+   `python3 <skill dir>/bin/cpipe.py chat` (this chat's profile, model and provider, so a step never runs on a
+   weaker model). The launcher sets `CPIPE_RUN` and `CPIPE_STEP`, which pin the run's rules, the user's
    instructions and the open checklist items in the session's system prompt, so they hold through a compaction
    there too (in a profile with the cpipe plugin enabled; elsewhere the brief is the only copy).
    `--reasoning` only when a budget is set (Budget, above), on every run and resume. Run budgets in seconds: a

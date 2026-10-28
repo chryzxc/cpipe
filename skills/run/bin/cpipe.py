@@ -284,7 +284,7 @@ def active(run_dir, done=False):
 
 
 def chat():
-    """The `hermes chat` flags that run a step on this chat's own profile, model and provider."""
+    """The `hermes chat` command that runs a step on this chat's own profile, model and provider."""
     sid = os.environ.get("HERMES_SESSION_ID", "")
     home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
     if not sid:
@@ -302,8 +302,8 @@ def chat():
         provider = json.loads(config or "{}").get("provider") or provider  # a /model switch stores it here
     except ValueError:
         pass
-    flags = [f"-p {profile}"] if profile else []
-    flags += [f"-m {model}"] if model else []
+    flags = ["hermes", f"-p {profile}"] if profile else ["hermes"]
+    flags += ["chat"] + ([f"-m {model}"] if model else [])
     flags += [f"--provider {provider}"] if provider else []
     return " ".join(flags)
 

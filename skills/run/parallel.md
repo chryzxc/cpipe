@@ -19,7 +19,7 @@ worktree, or waits on anything but the lanes. One issue in a `--parallel` task i
    - The issue in full: its number or link and everything the user said about it.
    - The user's instructions, word for word, every one that applies to all issues (push, pull request, merge).
    - The other lanes: `Lane <n> of <total>; others: <their issues>`.
-3. **Start.** Who runs a lane is this chat's own profile and model: the flags `chat` prints (Facts). The time
+3. **Start.** Who runs a lane is this chat's own profile and model: the command `chat` prints (Facts). The time
    limit is 14400 seconds unless the user gave one. `lanes <batch dir>` prints the lanes and what to do
    (`START <n>`); run every start in one reply, each in the background with a completion notification and a
    heartbeat of 300 seconds (the lane prints a `LANE` line each time its step changes; a quiet tick is skipped):
