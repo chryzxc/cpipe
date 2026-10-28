@@ -146,3 +146,33 @@ def test_chat_flags_follow_this_chats_profile_model_and_switched_provider(tmp_pa
     assert facts.chat() == "-p builder -m model-a --provider prov-a"
     monkeypatch.setenv("HERMES_SESSION_ID", "s2")
     assert facts.chat() == "-p builder -m model-b --provider prov-b"
+
+
+def test_a_whole_loop_through_the_command_line(tmp_path):
+    """'Merge it if there are no regressions': failures on both trees are baseline, a new one loops, then PASS."""
+    import subprocess
+    import sys
+
+    def cli(*args):
+        out = subprocess.run([sys.executable, spec.origin, *map(str, args)], capture_output=True, text=True)
+        return (out.stdout + out.stderr).strip()
+
+    def junit(name, failing):
+        cases = "".join(f'<testcase classname="t" name="{n}">' + ('<failure message="x"/>' if n in failing else "")
+                        + "</testcase>" for n in ["old", "new", "ok"])
+        return write(tmp_path / name, f"<testsuites><testsuite>{cases}</testsuite></testsuites>")
+
+    run, res = tmp_path / "run", tmp_path / "run" / "results"
+    res.mkdir(parents=True)
+    item = cli("track", run, "add", "report", "merge it if there are no regressions").split()[-1]
+    cli("results", res / "unit.base.json", "junit", junit("base.xml", {"old"}))
+    cli("results", res / "unit.head.json", "junit", junit("head.xml", {"old", "new"}))
+    assert "rerun-head: t::new" in cli("compare", run, "unit") and cli("gate", run).startswith("FIX")
+    cli("results", res / "unit.head-alone.json", "junit", junit("alone.xml", {"new"}))
+    assert "new: t::new" in cli("compare", run, "unit") and "new failure t::new" in cli("gate", run)
+    cli("results", res / "unit.head.json", "junit", junit("fixed.xml", {"old"}))  # fixed at its cause
+    for stale in res.glob("unit.head-alone*.json"):
+        stale.unlink()
+    assert "baseline: t::old" in cli("compare", run, "unit") and cli("gate", run) == f"FIX: {item} merge it if there are no regressions"
+    cli("track", run, "set", item, "done", "no new failures; merged")
+    assert cli("gate", run).startswith("PASS") and cli("report", run).startswith("✅ Done")
