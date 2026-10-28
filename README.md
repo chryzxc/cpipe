@@ -264,9 +264,11 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
 - **Distilled skills.** Your skills are loaded once per run, only for work done in the chat and only when the
   step that uses them starts, and the rules that apply are written to `now.md` as one line each.
 - **Compaction-proof.** A short state file, `now.md`, holds your instructions word for word, the current step, the
-  running processes, the roles and the rules from your skills. After the context is compacted, the chat reads it and
-  reloads only the run skill and the current step, never every skill the chat loaded before, so one compaction does
-  not cause the next. The first item of the todo list, which survives a compaction word for word, says so.
+  running processes, the roles and the rules from your skills. Beside it, `track.md` holds the current step's
+  checklist, each item ticked only with its evidence, so a step's rules survive even when its skill text is dropped.
+  After the context is compacted, the chat reads it and reloads only the run skill and the current step, never every
+  skill the chat loaded before, so one compaction does not cause the next. The first item of the todo list, which
+  survives a compaction word for word, says so.
 - **Lean briefs.** A role's brief holds facts (goal, acceptance, diff, check states), not reasoning, and points
   to `plan.md` by its path instead of copying it or the run log. A fix round lists the findings themselves, not
   the reviewers' reports. A profile replies in at most 20 lines; findings, failures and corrections that do not
@@ -659,6 +661,7 @@ Details: fix/invoice-discount · a1b2c3d fix(invoices): keep the discount on edi
 | `<git-dir>/cpipe/run.md` | The run log: rounds, workarounds, findings | Never |
 | `<git-dir>/cpipe/plan.md` | The plan, the builder's instructions | Never |
 | `<git-dir>/cpipe/now.md` | Your instructions, the current step, running processes, roles and skill rules; read to resume | Never |
+| `<git-dir>/cpipe/track.md` | The current step's checklist (and at the report, the merge conditions and report sections), each ticked with its evidence | Never |
 | `<git-dir>/cpipe/baseline-<check>.txt` | Names of the tests and lint errors failing on the base | Never |
 | `<git-dir>/cpipe/logs/` | Long command output | Never |
 | `<git-dir>/cpipe/limit.pl` | The time limit and low priority every background job runs under; heavy jobs take turns | Never |
