@@ -21,6 +21,9 @@ This session does one step of a cpipe run, from its brief. These rules hold over
 
 ## Both
 - The user's instructions are in now.md, word for word, and win over every default.
+- The standard way every time: how this codebase already does it, else the documented way of the installed
+  framework or library, else the language's standard. No workaround, hack, ignore comment or "temporary" code;
+  when the standard way does not fit, change the plan, never the standard (steps/build.md, Standard approach).
 - Root cause first: every failure, finding or QA item gets `Cause: <mechanism, file:line> · Class: <where else>`
   before its fix, and the fix goes where every caller passes through. No special-cased input, weakened test,
   retry, sleep, timeout bump, broad catch or silenced type or lint error in place of a cause.

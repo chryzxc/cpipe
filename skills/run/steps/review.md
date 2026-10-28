@@ -71,6 +71,9 @@ Review against:
   adds a retry, sleep, longer timeout or broad catch around the failure; guards one caller while its siblings
   share the path (search them); or silences a type or lint error without fixing its cause. Name the shared point
   where the fix belongs.
+- Standard approach: an **act** finding for anything on the not-standard list of `steps/build.md` (Standard
+  approach), or for a solution that departs from how this codebase, or the framework's documentation for the
+  installed version, does the same thing, without a reason in `plan.md`. Name the standard way to use instead.
 - Simplicity and readability: needless abstraction, duplicated helpers, dead code, comments that restate code,
   names that do not say what a thing is, unnamed meaningful literals, deep nesting, a function doing two jobs,
   a silenced type or lint error, and code that solves a problem differently from how this codebase already

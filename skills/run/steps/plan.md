@@ -131,8 +131,12 @@ instructions and is resent with every build reply, so it holds facts in this for
   where it did not live before (a server check for what only the client enforced) copies today's conditions from
   the side that held it, so only the rows the request names change. Where the request's picture of today
   differs from the code, the code wins and the difference is an assumption.
-- **Approach:** the existing code to follow (path), then each idea the change rests on, with why, the alternative
-  avoided and the problem it would have caused, and the trade-off. The report's Approach table is built from this
+- **Approach:** the standard way to do this, from the first source that has one: how this codebase already does
+  it (path), else the documented way of the framework or library at the installed version (its docs, types or
+  source in the dependency folder: cite which), else the language's or platform's standard. Then each idea the
+  change rests on, with its source, why, the alternative avoided and the problem it would have caused, and the
+  trade-off. A step away from the standard way names the reason it cannot apply here; a workaround is never the
+  plan (`steps/build.md`, Standard approach). The report's Approach table is built from this
   and the assumptions.
 - **Acceptance:** numbered `A1`, `A2`…, each one rule in the form `When <trigger, state or input>, <who or
   what> <observable result>`, including the design note's states. Each edge the premortem keeps (an empty or
@@ -192,6 +196,8 @@ Before building, check the plan item by item and fix every no. It is your own ch
 - No step leaves a file over 4,500 tokens (its size now, `wc -c` / 4, plus what the step adds) except by the
   import and call into a new file: the new code goes in a new file the step names (`steps/verify.md`, File size).
 - Each step depends only on steps before it.
+- Every idea in Approach names its source (a path in this codebase, or the installed version's docs or types),
+  and no step is on the not-standard list of `steps/build.md`, Standard approach.
 - Every acceptance rule has the `When … <result>` form and is covered by a test that starts at an entrance.
 - The plan is at most 12,000 characters and has only the sections above. Over it, cut prose, quoted code and
   repeats, and merge steps that change one function, until it fits.
