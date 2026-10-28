@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 3.64.0
+version: 3.65.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -312,10 +312,12 @@ so no reply goes to reading the file. The run log names the file.
 When the chat is compacted, the step files and skills loaded so far are dropped, and the compaction notice may ask
 you to reload every skill this chat ever loaded. Do not: that refills the context and brings the next compaction
 within minutes. Read `now.md`, reload `cpipe:run` and the active step's file (from the plugin's directory when
-`skill_view` returns no text, Flow), and continue. Your next status line keeps the shape in Flow, Status lines.
-The user's
-instructions and the user skills' rules are in `now.md`; the roles, the plan's questions from the learnings and
-every file you read are in the run log or the plan. Read a file again only for the lines the next action needs.
+`skill_view` returns no text, Flow), and continue. At the report that is `steps/report.md`, loaded again before the
+merge or the report is written: a report written from memory loses its merge conditions and its format. The final
+reply of a run is never free text: it is the pause message or the report in the sections and order of
+`steps/report.md`, Report. Your next status line keeps the shape in Flow, Status lines. The user's instructions and
+the user skills' rules are in `now.md`; the roles, the plan's questions from the learnings and every file you read
+are in the run log or the plan. Read a file again only for the lines the next action needs.
 
 ## Learning
 

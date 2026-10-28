@@ -75,6 +75,12 @@ request's CI runs it. Run each check only where it proves something:
   `t=$(mktemp); cp "$(git rev-parse --git-path index)" "$t"; GIT_INDEX_FILE=$t git add -A; GIT_INDEX_FILE=$t git write-tree; rm -f "$t"`.
   A check whose tree id has not changed since it ran is not run again; committing a verified tree keeps its
   results.
+- **Names from the runner, not the log.** Every test run also writes its results to a file through the runner's
+  machine-readable reporter (`--json --outputFile=<file>`, `--junitxml=<file>`, the project's own), on the base
+  and the delivery alike; the failing names come from that file, never from a log that can be cut off. When a
+  run has no such file, run its failing files again with the reporter on both trees. A comparison is never left
+  "not established": finish it, then each name is new or baseline. Type-check and lint errors are compared the
+  same way, by file, code and message, from each tree's full output written to a file.
 - **New failures, once each.** A failure that is not in the baseline: run its file again, alone, once. A test
   that passes alone is flaky or load-sensitive: record both runs; it is not a regression, whether or not its cause
 is known, so it never holds a commit, a pull request or a merge. Do not build tools to chase its cause. A failure

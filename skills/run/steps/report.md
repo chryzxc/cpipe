@@ -91,7 +91,9 @@ wait for CI, merge when asked. A step stays open only when the run truly cannot 
 may do, or a check that needs what this machine does not have. A question about how the code
 should behave, a needed policy, a role's hold or blocked verdict, a builder saying a fix is out of scope
 (`steps/review.md`, Fix and the delta review), or a flaky result whose cause is unknown
-(`steps/verify.md`, New failures) never keeps a step open. Decide it from the
+(`steps/verify.md`, New failures) never keeps a step open, and neither does a comparison or check that is "not
+established", "inconclusive" or "not classified": that is work left undone, so finish it the way
+`steps/verify.md` says and act on what it shows. Decide it from the
 user's instructions (`cpipe:run`, The user's instructions), fix and verify. Then check each instruction in
 `now.md`: every one is met, or has its reason from that list. Test it is the last thing left for the user, and
 only when needed.
