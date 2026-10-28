@@ -28,11 +28,11 @@ def test_setter_keeps_roles_and_replaces_budget(tmp_path, monkeypatch):
 def test_one_profile_explores(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  plan: b\n  build: c\n  review: d\n")
-    assert cpipe._roles(False) == "plan b · build c · review d, the rest this chat"
+    assert cpipe._roles(False) == "plan b · build c · review d, the rest on this chat's model"
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  build: c\n  review: d\n")
-    assert cpipe._roles(True) == "build c · review d, the rest this chat, as kanban cards"
+    assert cpipe._roles(True) == "build c · review d, the rest on this chat's model, as kanban cards"
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  review: d\n")
-    assert cpipe._roles(False) == "explore a · review d, the rest this chat"
+    assert cpipe._roles(False) == "explore a · review d, the rest on this chat's model"
 
 
 def test_every_profile_shares_the_roots_file(tmp_path, monkeypatch):
@@ -86,6 +86,7 @@ def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):
     import sqlite3
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.delenv("CPIPE_RUN", raising=False)
+    monkeypatch.delenv("CPIPE_STEP", raising=False)
     assert cpipe._pinned({"session_id": "child"}) == ""
     db = sqlite3.connect(tmp_path / "state.db")
     db.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT)")
@@ -101,7 +102,7 @@ def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):
     (tmp_path / "cpipe" / "active").mkdir(parents=True)
     (tmp_path / "cpipe" / "active" / "root.json").write_text(json.dumps({"run_dir": str(run)}))
     text = cpipe._pinned({"session_id": "child"})  # compacted twice over: still the run's rules
-    assert "loops until the goal" in text and "merge it if no regressions" in text and "## Step" not in text
+    assert "loops until the goal" in text and "Root cause first" in text and "merge it if no regressions" in text and "## Step" not in text
     assert "verify-1 related tests pass" in text and "verify-2" not in text and "<skill dir>" not in text
     assert len(text) <= cpipe.PINNED_MAX and cpipe._pinned({"session_id": "other"}) == ""
     (run / "track.json").write_text(json.dumps([{"id": f"x-{i}", "text": "y" * 80, "status": "open"}
@@ -109,3 +110,6 @@ def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):
     assert len(cpipe._pinned({"session_id": "root"})) <= cpipe.PINNED_MAX
     monkeypatch.setenv("CPIPE_RUN", str(run))
     assert "Run folder: " + str(run) in cpipe._pinned({"session_id": ""})
+    monkeypatch.setenv("CPIPE_STEP", "build")  # a step session: its own rules, never the coordinator's report
+    step = cpipe._pinned({"session_id": ""})
+    assert "one step of a cpipe run" in step and "Root cause first" in step and "cpipe.py report" not in step

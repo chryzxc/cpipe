@@ -109,8 +109,10 @@ def _pinned(info):
         run = _run_dir(info)
         if not run or not run.is_dir():
             return ""
-        rules = (SKILL.parent / "contract.md").read_text().replace("<skill dir>", str(SKILL.parent)).strip()
-        parts = [rules, f"Run folder: {run}"]
+        text = (SKILL.parent / "contract.md").read_text().replace("<skill dir>", str(SKILL.parent))
+        sections = dict(re.findall(r"(?ms)^## (\w+)\n(.*?)(?=^## |\Z)", text))
+        own = sections["Step" if os.environ.get("CPIPE_STEP") else "Run"].strip()
+        parts = [own + "\n" + sections["Both"].strip(), f"Run folder: {run}"]
         told = _instructions(run / "now.md")
         if told:
             parts.append(told)
@@ -189,10 +191,10 @@ def _roles(kanban):
     except OSError:
         roles = {}
     if not roles:
-        return "this chat runs every step (no roles in cpipe.yaml)"
+        return "build, QA and review on this chat's model, each in its own session (no roles in cpipe.yaml)"
     if "plan" in roles or "build" in roles:  # one reader explores (skills/run/roles.md)
         roles.pop("explore", None)
-    return (" · ".join(f"{role} {profile}" for role, profile in roles.items()) + ", the rest this chat"
+    return (" · ".join(f"{role} {profile}" for role, profile in roles.items()) + ", the rest on this chat's model"
             + (", as kanban cards" if kanban else ""))
 
 

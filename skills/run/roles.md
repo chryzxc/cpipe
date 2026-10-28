@@ -1,6 +1,8 @@
 # cpipe: roles
 
-Optional. Without a roles file, you run every step yourself in this chat.
+Build, QA and review always run in a session of their own, so each starts from a short context and never inherits
+this chat's history: on the profile the roles file names, else on this chat's own profile and model (Run, below).
+Plan, design, security and explore get a session only when the roles file names a profile for them.
 
 ## The roles file
 
@@ -18,13 +20,15 @@ roles:
   explore: <profile>    # maps the code (step 2), only when no plan or build profile is set
 ```
 
-Every key is optional; a role that is missing or empty is done by you in this chat. Read the file once in step 1,
+Every key is optional. A missing or empty `build`, `qa` or `review` runs on this chat's own profile and model; a
+missing `plan`, `design`, `security` or `explore` is done as the flow says without it. Read the file once in step 1,
 write the roles in the run log, and tell the user in one line who does each step:
 
-`Roles: plan → <profile> (explores too), build → <profile>, design → this chat (no profile set), …`
+`Roles: plan → <profile> (explores too), build → <profile>, review → this chat's model (own session), …`
 
-Without a roles file: `Roles: no cpipe.yaml, every step runs in this chat`. This is a notice, not a question:
-keep going. When the task came from `/cpipe`, its start message already showed the team: skip this line.
+Without a roles file: `Roles: no cpipe.yaml, build, QA and review on this chat's model, each in its own session`.
+This is a notice, not a question: keep going. When the task came from `/cpipe`, its start message already showed the
+team: skip this line.
 
 **Budget.** How hard the profiles reason, as the reasoning effort of every profile run: `unlimited` is `max`,
 `large` is `xhigh`, `medium` is `high`, `small` is `medium`. A `--budget <tier>` at the start of the task wins
@@ -148,7 +152,12 @@ pages to learn the command line.
    their edits, back to the saved state, and follow "When a role fails".
 
 2. **Run** it in the worktree, directly, or as a card when the run is on the board (below):
-   `hermes -p <profile> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds> [--reasoning <effort>]`
+   `CPIPE_RUN=<run dir> CPIPE_STEP=<role> hermes <who> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds> --max-turns <turns> [--reasoning <effort>]`
+   `<who>` is `-p <profile>`, or for a role without one, the output of `python3 <skill dir>/bin/cpipe.py chat`
+   (this chat's profile, model and provider, so a step never runs on a weaker model). `CPIPE_RUN` and
+   `CPIPE_STEP` pin the run's rules, the user's instructions and the open checklist items in the session's system
+   prompt, so they hold through a compaction there too (in a profile with the cpipe plugin enabled; elsewhere the
+   brief is the only copy). Turns: build 150, plan 120, the rest 60.
    `--reasoning` only when a budget is set (Budget, above), on every run and resume. Budgets in seconds: a
    delivery's first build brief 3600, a build follow-up 1500; plan 1800; design and explore 600; review, security
    and qa 900. These are fixed: never raise one for a slow suite or a large change; a profile at its budget
@@ -158,10 +167,11 @@ pages to learn the command line.
    this chat restarts, a continue reads its result instead of starting it again, and every follow-up resumes that
    session. Then wait the way `cpipe:run` says (Waiting ends the turn). The budget is a hard limit: run the
    profile under the time limit (`steps/setup.md`, Time limit) at its budget plus 5 minutes,
-   `perl <run dir>/limit.pl <seconds> hermes -p <profile> chat …`, so a profile that hangs still ends and its
-   notification still comes. Its output goes to its own log, `<run dir>/logs/<role>-<round>.txt`, and the same
-   command then prints the log's end, so the notification carries the reply and the session id and no reply goes
-   to reading them: `perl … > <log> 2>&1; echo "exit $?" >> <log>; tail -n 30 <log>`.
+   `CPIPE_RUN=… CPIPE_STEP=… perl <run dir>/limit.pl <seconds> hermes <who> chat …`, so a profile that hangs
+   still ends and its notification still comes. Its output goes to its own log,
+   `<run dir>/logs/<role>-<round>.txt`, and the same command then prints the log's end, so the notification carries
+   the reply and the session id and no reply goes to reading them:
+   `perl … > <log> 2>&1; echo "exit $?" >> <log>; tail -n 30 <log>`.
    One the limit ended (`exit 124`) timed out: treat the role as failed.
 
    The result is what the notification carried (after a restart, the end of the log), or `<role>-reply.md` when it
@@ -172,24 +182,27 @@ pages to learn the command line.
    for that role resumes it: a fix
    round, a correction, a conflict, a QA re-run, the delta review, and the next delivery of the run. With
    deliveries in parallel, each lane has its own sessions.
-   `hermes -p <profile> chat -Q --resume <session id> --query-file <brief> --in <worktree> --run-budget <seconds> [--reasoning <effort>]`
+   `CPIPE_RUN=<run dir> CPIPE_STEP=<role> hermes <who> chat -Q --resume <session id> --query-file <brief> --in <worktree> --run-budget <seconds> --max-turns <turns> [--reasoning <effort>]`
    A resumed session keeps the `--run-budget` it started with and refuses another value: pass the first run's
    value again, and hold the follow-up to its own budget with the time limit (`limit.pl` at that budget plus 5
    minutes).
-   A new session reads the code again from nothing, tens of replies; start one only when the resume fails or the
-   next delivery is in another repository, and note why in the run log. The follow-up brief starts with the
-   header's lines from `Every reply resends` to `reading the file.`, word for word: the session's copy of them can
-   be older than this file or lost to a compaction. Then only what is new: the session already has the rest of
-   the header and the step files. The next delivery's brief is that delivery's role part with its own worktree,
-   base commit and run dir. A fix round's brief lists each item itself: the file and line, what is wrong, the
-   expected behavior and the check that shows it, as the finding or the failing check gave them. Never the paths
-   of review, QA or probe files for the builder to read.
+   A new session reads the code again from nothing, tens of replies; start one only when the resume fails, the next
+   delivery is in another repository, or the session ended at its turns or budget with work left: a session that
+   long is past its best, so the next one starts fresh from a handoff (the role part, then what its reply says it
+   finished and what is left, and the files it changed). Note why in the run log. The follow-up brief starts with
+   the header's lines from `Every reply resends` to `reading the file.`, word for word: the session's copy of them
+   can be older than this file or lost to a compaction. Then only what is new: the session already has the rest of
+   the header and the step files. The next delivery's brief is that delivery's role part with its own worktree, base
+   commit and run dir. A fix round's brief lists each item itself: the file and line, what is wrong, the expected
+   behavior and the check that shows it, as the finding or the failing check gave them. Never the paths of review,
+   QA or probe files for the builder to read.
 
 ## On the board (`--kanban`)
 
-When the task message starts with `--kanban`, hand each role step over as a card on the user's Hermes kanban
-board instead of running the profile directly, so the work shows on the board. Everything else stays the same:
-the brief, the budgets, the checks you run yourself and the fallback.
+When the task message starts with `--kanban`, hand each role step over as a card on the user's Hermes kanban board
+instead of running the profile directly, so the work shows on the board. Everything else stays the same: the brief,
+the budgets, the checks you run yourself and the fallback. A role without a profile runs directly, as above: a card
+cannot take this chat's model.
 
 1. **Brief.** Start the brief with this instead of the first line of the header above:
 
@@ -233,12 +246,12 @@ The checks decide, not a reply, and with a build profile you check without readi
 
 ## When a role fails
 
-The profile does not exist, the command errors, it returns nothing usable, or it broke a rule in the brief: try
-once more with a shorter role part (the header stays whole), then do the step yourself in this chat. If it timed
-out, do not retry: do the step yourself right away. Tell the user in one ⚠️ status line
-(`⚠️ 2/11 Explore · archon failed (provider error) · forge plans it`), the moment it happens, before the next
-brief. In the run log, write one line for it, kept through every compaction:
-`Problem: <step> · <role> <profile> · <each attempt's first error line and exit code> · done by <who instead>`.
-The report's Needs attention has a row for every `Problem:` line. A failed plan profile's steps go to the build
-profile when there is one: its first brief explores and plans as it does
-without a plan profile, and this chat still never reads the code. A role failing is never a reason to stop the run.
+The profile does not exist, the command errors, it returns nothing usable, or it broke a rule in the brief: try once
+more with a shorter role part (the header stays whole), then run it on this chat's own profile and model (Run,
+above), and only when that fails too, do the step yourself in this chat. If it timed out, do not retry: go to the
+next of these right away. Tell the user in one ⚠️ status line (`⚠️ 2/11 Explore · archon failed (provider error) ·
+forge plans it`), the moment it happens, before the next brief. In the run log, write one line for it, kept through
+every compaction: `Problem: <step> · <role> <profile> · <each attempt's first error line and exit code> · done by
+<who instead>`. The report's Needs attention has a row for every `Problem:` line. A failed plan profile's steps go
+to the build profile when there is one: its first brief explores and plans as it does without a plan profile, and
+this chat still never reads the code. A role failing is never a reason to stop the run.

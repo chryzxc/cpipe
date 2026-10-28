@@ -9,11 +9,13 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py gate <run dir>
   python3 cpipe.py report <run dir>
   python3 cpipe.py active <run dir> [--done]
+  python3 cpipe.py chat
 """
 
 import json
 import os
 import re
+import sqlite3
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -263,6 +265,31 @@ def active(run_dir, done=False):
     return f"run registered for {sid}"
 
 
+def chat():
+    """The `hermes chat` flags that run a step on this chat's own profile, model and provider."""
+    sid = os.environ.get("HERMES_SESSION_ID", "")
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    if not sid:
+        raise SystemExit("no HERMES_SESSION_ID in this shell: run the step without -p/-m (the default profile)")
+    db = sqlite3.connect(f"file:{home / 'state.db'}?mode=ro", uri=True)
+    try:
+        row = db.execute("SELECT profile_name, model, billing_provider, model_config FROM sessions WHERE id = ?",
+                         (sid,)).fetchone()
+    finally:
+        db.close()
+    if not row:
+        raise SystemExit(f"session {sid} not found in {home / 'state.db'}")
+    profile, model, provider, config = row
+    try:
+        provider = json.loads(config or "{}").get("provider") or provider  # a /model switch stores it here
+    except ValueError:
+        pass
+    flags = [f"-p {profile}"] if profile else []
+    flags += [f"-m {model}"] if model else []
+    flags += [f"--provider {provider}"] if provider else []
+    return " ".join(flags)
+
+
 def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
@@ -286,6 +313,8 @@ def main(argv):
         print(report(args[0]))
     elif cmd == "active":
         print(active(args[0], "--done" in args))
+    elif cmd == "chat":
+        print(chat())
     else:
         raise SystemExit(__doc__)
 

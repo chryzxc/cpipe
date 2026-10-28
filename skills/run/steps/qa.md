@@ -1,8 +1,8 @@
 # cpipe: the qa step
 
 Step 8 of `cpipe:run`, once the related tests and the build finish, while the review (`steps/review.md`) runs.
-Checks prove the code; QA proves the behavior. If the roles file names a `qa` profile, hand this step to it
-(`roles.md` in `cpipe:run`). Otherwise do it yourself.
+Checks prove the code; QA proves the behavior. Hand this step to the `qa` profile, else to this chat's own profile
+and model in a session of its own (`roles.md` in `cpipe:run`).
 
 ## When it applies
 

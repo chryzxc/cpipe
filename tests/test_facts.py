@@ -1,6 +1,7 @@
 """skills/run/bin/cpipe.py over recorded runner output: every failing name ends up new, baseline, flaky or to rerun."""
 import importlib.util
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -130,3 +131,18 @@ def test_active_registers_this_chat(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "cpipe/active/s1.json").read_text())["run_dir"] == str((tmp_path / "run").resolve())
     facts.active(tmp_path / "run", done=True)
     assert not (tmp_path / "cpipe/active/s1.json").exists()
+
+
+def test_chat_flags_follow_this_chats_profile_model_and_switched_provider(tmp_path, monkeypatch):
+    db = sqlite3.connect(tmp_path / "state.db")
+    db.execute("CREATE TABLE sessions (id TEXT, profile_name TEXT, model TEXT, billing_provider TEXT, "
+               "model_config TEXT)")
+    db.execute("INSERT INTO sessions VALUES ('s1', 'builder', 'model-a', 'prov-a', NULL)")
+    db.execute("INSERT INTO sessions VALUES ('s2', 'builder', 'model-b', 'prov-a', '{\"provider\": \"prov-b\"}')")
+    db.commit()
+    db.close()
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    assert facts.chat() == "-p builder -m model-a --provider prov-a"
+    monkeypatch.setenv("HERMES_SESSION_ID", "s2")
+    assert facts.chat() == "-p builder -m model-b --provider prov-b"

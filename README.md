@@ -143,7 +143,7 @@ the end:
 cpipe · fix the discount that disappears when an invoice is edited
 
   Flow     plan → tests → build → verify → QA + review → commit
-  Team     plan archon · build forge · review sentry, the rest this chat
+  Team     plan archon · build forge · review sentry, the rest on this chat's model
   Budget   each profile's own setting (/cpipe budget <tier> sets one)
   Learned  4 rules from past runs, added to this one (/cpipe learnings)
 
@@ -253,10 +253,10 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   step the chat does itself: a profile loads its own. A file is loaded again only when its text has left the
   context (a follow-up or a compaction), so no step is worked from memory and nothing is loaded twice.
 - **Read once.** One session explores and plans, so the code is read once per run: a plan profile on its own model,
-  or the builder in the session it builds in. The flow map and the plan go to `plan.md` with paths and line
-  numbers, and a builder working from a planner's plan reads only those. With a build profile the chat never reads
-  the project's code: it works from the replies, `git status`, the diff stats, the completion gate's searches,
-  the result lines of the checks and the sections of the plan it needs, found by heading.
+  or the builder in the session it builds in. The flow map and the plan go to `plan.md` with paths and line numbers,
+  and a builder working from a planner's plan reads only those. The chat never reads the project's code: it works
+  from the replies, `git status`, the diff stats, the completion gate's searches, the result lines of the checks and
+  the sections of the plan it needs, found by heading.
 - **A short plan.** The plan is facts in a fixed format, at most 12,000 characters, with code cited by path and
   line rather than quoted, because the builder resends it with every reply.
 - **Output to files.** Long command output goes to a file beside the run log; the chat reads the result lines
@@ -508,7 +508,8 @@ S1  src/invoices/update.ts  updateInvoice()
 
 ## Configuration
 
-cpipe works with no configuration: the chat runs every step, reviewing the diff in a fresh pass.
+cpipe works with no configuration: build, QA and review each run in a fresh session on the chat's own profile and
+model, and the chat runs the flow and the checks.
 
 ### Roles
 
@@ -527,11 +528,14 @@ roles:
   explore: <profile>    # maps the code, only when no plan or build profile is set
 ```
 
-Every role is optional; a role with no profile runs in the chat. The chat stays in charge: it runs the flow and
-the checks, writes each brief to a file, and treats each profile's answer as a claim to verify. With a build
-profile, one builder session builds and makes every fix for the whole run, and the chat never reads the
-project's code. The builder explores and plans too, unless a plan profile does: then planning runs on the plan
-profile's model, in its own session, and the builder works from its plan. Each role keeps one session per run.
+Every role is optional. Build, QA and review always run in a session of their own: on the profile you name, else on
+the chat's own profile and model, so a step never starts on a weaker model or inherits the chat's long history. The
+chat stays in charge: it runs the flow and the checks, writes each brief to a file, and treats each answer as a
+claim to verify. One builder session builds and makes every fix for the whole run, and the chat never reads the
+project's code. Each step session has the run's rules pinned in its system prompt too, and one that reaches its turn
+or time limit with work left hands off to a fresh session instead of growing further. The builder explores and plans
+too, unless a plan profile does: then planning runs on the plan profile's model, in its own session, and the builder
+works from its plan. Each role keeps one session per run.
 
 Whichever profile's chat runs `/cpipe`, the flow is cpipe's: that chat's persona and standing rules set its tone,
 not the steps, the roles or the bar for done. A chat without a skill tool reads cpipe's files from the plugin's
@@ -779,9 +783,9 @@ Any. It uses the project's own install, test, lint, typecheck and build commands
 instructions and CI workflow.
 
 **Do I need profiles?**
-No. Without `cpipe.yaml` the chat runs every step and reviews the diff in a fresh pass. A profile lets a
-different model or setup take a role. A review profile makes the review independent. A build profile saves the
-most: it keeps the code out of the chat. A plan profile lets planning run on a different model from building.
+No. Without `cpipe.yaml`, build, QA and review run in fresh sessions on the chat's own model. A profile lets a
+different model or setup take a role. A review profile makes the review independent of the builder's model. A
+plan profile lets planning run on a different model from building.
 
 **Can two runs share a machine?**
 Yes, in different chats. Installs, test runs and builds from every run on the machine take turns, one at a

@@ -11,10 +11,11 @@ The reviewer is the `review` profile from the roles file (`roles.md` in `cpipe:r
 authentication, permissions, payments, data deletion or migrations, the `security` profile reviews too, in
 parallel; findings both report are high confidence. Never hand a review to a subagent.
 
-A review always happens. If a profile fails or runs out of time, run it once more. If it fails again, or no
-profile is set for the role, start a fresh review yourself: read only the brief below and the diff, not your
-earlier reasoning, and note in the run log that the review was not independent, with each attempt's error
-(`roles.md`, When a role fails). Never leave a review for the user.
+A review always happens. If a profile fails or runs out of time, run it once more. Without a review profile it runs
+on this chat's own profile and model in a session of its own (`roles.md`). If every session fails, start a fresh
+review yourself: read only the brief below and the diff, not your earlier reasoning, and note in the run log that
+the review was not independent, with each attempt's error (`roles.md`, When a role fails). Never leave a review for
+the user.
 
 Give the reviewer only what it needs, not your reasoning:
 

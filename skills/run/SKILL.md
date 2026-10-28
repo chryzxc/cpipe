@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.0.0
+version: 4.1.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -163,8 +163,8 @@ Track the steps with your todo tool if you have one, one step active at a time.
 **Status lines.** The user follows the run from these lines alone, so each one says what happens, who does it
 and what came out, in the same shape: `[icon] <n>/11 <Step> · <parts>`, the step name as in the table below (a
 fix round is `6/11 Build · fix round 2`, a merge is `11/11 Report`), plain words, no file paths or tool names:
-- starts, with your next tool call, no icon: `6/11 Build · forge · tests first, then the change` (who: the
-  profile, or `this chat`);
+- starts, with your next tool call, no icon: `6/11 Build · forge · tests first, then the change` (who: the profile,
+  `this chat's model` for a role session without one, or `this chat`);
 - ends: `✅ 6/11 Build · 29 min · 4 files, 3 new tests RED → GREEN`, `✅ 9/11 Review · 12 min · 2 findings to fix`;
 - does not apply: `— 3/11 Design · skipped: no screen changes`;
 - a problem the run handles (a profile failed, a check would not run, a limit reached): `⚠️ 9/11 Review · sentry
@@ -270,15 +270,17 @@ learnings and skills: two levels above `$HERMES_HOME` when that is a profile's f
 `$HERMES_HOME`, else `~/.hermes`. The start message names it. The roles file is `<Hermes root>/cpipe.yaml`, or
 `$HERMES_HOME/cpipe.yaml` when this profile has one of its own.
 
-If the roles file exists, it names a Hermes profile for some of the roles in the flow table. Hand those
-steps to the named profiles as `skill_view(name='cpipe:run', file_path='roles.md')` describes. Without the file, or
-for a role it does not name, do the step yourself. Either way, tell the user once at the start who does each step.
-When the task message starts with `--kanban`, the named profiles get their steps as cards on the user's kanban board
-(`roles.md`, On the board); without a roles file there is nothing to hand over, so say that in the roles line and
-continue. A `--budget <tier>` at the start of the task, or `budget:` in the file, sets how hard the profiles reason
-(`roles.md`, Budget). A plan profile explores and plans on its own model and the builder builds from its plan;
-without one, the builder does the reading and planning too. With a build profile this chat never reads the project's
-code (`roles.md`, How the work is split).
+If the roles file exists, it names a Hermes profile for some of the roles in the flow table. Hand those steps to the
+named profiles as `skill_view(name='cpipe:run', file_path='roles.md')` describes. Build, QA and review always run in
+a session of their own: without a profile for them, on this chat's own profile and model (`roles.md`). Other roles
+the file does not name are done as the flow says without them. Either way, tell the user once at the start who does
+each step. When the task message starts with `--kanban`, the named profiles get their steps as cards on the user's
+kanban board (`roles.md`, On the board); without a roles file there is nothing to hand over, so say that in the
+roles line and continue. A `--budget <tier>` at the start of the task, or `budget:` in the file, sets how hard the
+profiles reason (`roles.md`, Budget). A plan profile explores and plans on its own model and the builder builds from
+its plan; without one, the builder does the reading and planning too. This chat never reads the project's code
+(`roles.md`, How the work is split): it runs the flow, the checks and the facts, and stays small, so it rarely
+compacts.
 
 ## Run log
 
