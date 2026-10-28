@@ -21,7 +21,7 @@ def test_setter_keeps_roles_and_replaces_budget(tmp_path, monkeypatch):
     cpipe._budget("large")
     assert config.read_text() == "roles:\n  build: builder\nbudget: large\n"
     assert cpipe._saved_budget() == "large"
-    assert "builder" in cpipe._roles(False) and "budget" not in cpipe._roles(False)
+    assert cpipe._roles()[0] == ("build", "builder") and len(cpipe._roles()) == 2
     cpipe._budget("off")
     assert cpipe._saved_budget() is None and "budget" not in config.read_text()
 
@@ -29,11 +29,12 @@ def test_setter_keeps_roles_and_replaces_budget(tmp_path, monkeypatch):
 def test_one_profile_explores(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  plan: b\n  build: c\n  review: d\n")
-    assert cpipe._roles(False) == "plan b · build c · review d, the rest on this chat's model"
-    (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  build: c\n  review: d\n")
-    assert cpipe._roles(True) == "build c · review d, the rest on this chat's model, as kanban cards"
+    rest = ("everything else", "this chat's model")
+    assert cpipe._roles() == [("plan", "b"), ("build", "c"), ("review", "d"), rest]
+    (tmp_path / "cpipe.yaml").write_text("roles:\n  review: d\n  build: c\n  explore: a\n")
+    assert cpipe._roles() == [("build", "c"), ("review", "d"), rest]
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  review: d\n")
-    assert cpipe._roles(False) == "explore a · review d, the rest on this chat's model"
+    assert cpipe._team().splitlines()[2:] == ["| explore | a |", "| review | d |", "| everything else | this chat's model |"]
 
 
 def test_every_profile_shares_the_roots_file(tmp_path, monkeypatch):
@@ -41,7 +42,7 @@ def test_every_profile_shares_the_roots_file(tmp_path, monkeypatch):
     profile.mkdir(parents=True)
     monkeypatch.setenv("HERMES_HOME", str(profile))
     (tmp_path / "cpipe.yaml").write_text("roles:\n  build: c\n")
-    assert cpipe._config() == tmp_path / "cpipe.yaml" and "build c" in cpipe._roles(False)
+    assert cpipe._config() == tmp_path / "cpipe.yaml" and ("build", "c") in cpipe._roles()
     (profile / "cpipe.yaml").write_text("roles:\n  review: d\n")
     assert cpipe._config() == profile / "cpipe.yaml"
 
@@ -57,7 +58,7 @@ def test_learnings_lists_files_and_user_misses(tmp_path, monkeypatch):
         '{"type": "miss", "date": "2026-10-02", "found_by": "user", "step": "qa"}\n'
         '{"type": "miss", "date": "2026-10-02", "found_by": "review", "step": "plan"}\n')
     out = cpipe._learnings()
-    assert "qa (1)" in out and "Cover empty lists" in out
+    assert "**qa** (1)" in out and "Cover empty lists" in out
     assert out.endswith("Last 1 runs, problems you found after the report: qa 1")
 
 
@@ -94,11 +95,26 @@ def test_continue_reuses_the_loaded_skill():
     sys.modules.setdefault("gateway", types.ModuleType("gateway"))
     sys.modules["gateway.session_context"] = types.SimpleNamespace(get_session_env=lambda _: None)
     ctx = Ctx()
-    assert cpipe._start(ctx, "continue merge it").startswith("cpipe · resuming")
+    assert cpipe._start(ctx, "continue merge it").startswith("**cpipe** · resuming")
     assert ctx.text.startswith("Continue the cpipe run") and "only when its text is no longer" in ctx.text
     cpipe._start(ctx, "fix the date filter")
     assert ctx.text.startswith("Load the skill cpipe:run")
     assert "Lanes" in cpipe._start(ctx, "--parallel fix #1 and #2") and ctx.text.endswith("--parallel fix #1 and #2")
+
+
+def test_a_dash_typed_for_two_hyphens_is_still_the_flag():
+    class Ctx:
+        def inject_message(self, text, **_):
+            self.text = text
+            return True
+    import sys, types
+    sys.modules.setdefault("gateway", types.ModuleType("gateway"))
+    sys.modules["gateway.session_context"] = types.SimpleNamespace(get_session_env=lambda _: None)
+    ctx = Ctx()
+    assert "restarting from **build**" in cpipe._start(ctx, "—restart build")
+    assert ctx.text.startswith("Continue the cpipe run") and ctx.text.endswith("--restart build")
+    assert "Lanes" in cpipe._start(ctx, "–parallel fix #1 and #2")
+    assert cpipe._start(ctx, "fix the A—B toggle").startswith("**cpipe** · fix the A—B toggle")
 
 
 def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):

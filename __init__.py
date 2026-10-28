@@ -23,37 +23,56 @@ MARKS = (START[:30], CONTINUE[:30])  # how the chat's run messages start
 # Budget tier -> reasoning effort of every profile run (passed as `hermes chat --reasoning`).
 BUDGETS = {"unlimited": "max", "large": "xhigh", "medium": "high", "small": "medium"}
 
-USAGE = """Usage: /cpipe [--parallel] [--kanban] [--budget <tier>] <task>
-Delivers a coding task unattended in this chat and reports back here.
-Steps: plan, tests first, build, verify with the project's checks, QA and independent review, commit.
-  --parallel        several issues: each in its own background session, reporting here
-  --kanban          hand the role steps to your profiles as cards on your Hermes kanban board
-  --budget <tier>   how hard your profiles reason on this run: unlimited, large, medium or small
-  /cpipe budget [<tier>|off]   show or save the default budget in cpipe.yaml
-  /cpipe --continue   pick up a run that stopped, at its first unfinished step (or just: continue)
-  /cpipe --restart [<step>]   redo the run from that step (default: explore) on its own roles
-  /cpipe feedback <what you found>   a problem you found after the report: recorded, reproduced and fixed
-  /cpipe learnings  what cpipe has learned from your runs
-Example: /cpipe --budget small fix the date filter on the orders page and open a draft pull request"""
+FLOW = "plan → tests → build → verify → QA + review → commit"
 
-STARTED = """cpipe · {task}
+USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports back here.
 
-  Flow     plan → tests → build → verify → QA + review → commit
-  Team     {roles}
-  Budget   {budget}
-  Learned  {learned}{lanes}
+{FLOW}
 
-Works on its own and reports here: open questions are decided and listed in the report,
+| Command | What it does |
+|---|---|
+| `/cpipe <task>` | start a run |
+| `--parallel` | several issues, each in its own background session, reporting here |
+| `--kanban` | role steps go to your profiles as cards on your Hermes kanban board |
+| `--budget <tier>` | how hard your profiles reason: unlimited, large, medium or small |
+| `/cpipe --continue` | pick up a run that stopped, at its first unfinished step (or just: continue) |
+| `/cpipe --restart [<step>]` | redo the run from that step (default: explore) on its own roles |
+| `/cpipe feedback <text>` | a problem you found after the report: recorded, reproduced and fixed |
+| `/cpipe budget [<tier>\\|off]` | show or save the default budget in cpipe.yaml |
+| `/cpipe learnings` | what cpipe has learned from your runs |
+
+Example: `/cpipe --budget small fix the date filter on the orders page and open a draft pull request`"""
+
+STARTED = """**cpipe** · {task}
+
+{flow}
+
+{team}
+
+- **Budget:** {budget}
+- **Learned:** {learned}{extra}
+
+Runs on its own and reports here. Open questions are decided and listed in the report;
 nothing is pushed unless you asked.
-✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled · quiet with no ⏳? /cpipe --continue"""
 
-LANES = "\n  Lanes    each issue in its own background session, up to 4 at once, each reporting here"
+✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled
 
-RESUMED = """cpipe · resuming at the first unfinished step; finished steps are not redone.{note}"""
-RESTARTED = """cpipe · redoing the run from {step} on its own roles; code it replaces is saved beside the run log first."""
+Quiet with no ⏳? `/cpipe --continue`"""
 
-FEEDBACK = """cpipe · recording your findings. Each is reproduced, counted against the step that should have caught it,
-turned into a learning and fixed as a follow-up."""
+LANES = "\n- **Lanes:** each issue in its own background session, up to 4 at once, each reporting here"
+BOARD = "\n- **Board:** role steps run as cards on your Hermes kanban board"
+
+RESUMED = """**cpipe** · resuming
+
+Picks up at the first unfinished step; finished steps are not redone.{note}"""
+RESTARTED = """**cpipe** · restarting from **{step}**
+
+Redone on the run's own roles, in new sessions. Code it replaces is saved beside the run log first."""
+
+FEEDBACK = """**cpipe** · recording your findings
+
+Each one is reproduced, counted against the step that should have caught it, turned into a learning
+and fixed as a follow-up."""
 
 STEPS = ("general", "plan", "design", "build", "qa", "review")
 
@@ -203,17 +222,23 @@ def _config():
     return own if own.exists() else _root() / "cpipe.yaml"
 
 
-def _roles(kanban):
+def _roles():
+    """(step, who runs it) rows for the start message, in flow order."""
     try:
         roles = dict(re.findall(r"(?m)^[ \t]+(\w+):[ \t]*([\w.-]+)", _config().read_text()))
     except OSError:
         roles = {}
     if not roles:
-        return "build, QA and review on this chat's model, each in its own session (no roles in cpipe.yaml)"
+        return [("build, QA, review", "this chat's model, each in its own session (no roles in cpipe.yaml)")]
     if "plan" in roles or "build" in roles:  # one reader explores (skills/run/roles.md)
         roles.pop("explore", None)
-    return (" · ".join(f"{role} {profile}" for role, profile in roles.items()) + ", the rest on this chat's model"
-            + (", as kanban cards" if kanban else ""))
+    order = ("explore", "plan", "design", "build", "qa", "review", "security")
+    rows = sorted(roles.items(), key=lambda r: order.index(r[0]) if r[0] in order else len(order))
+    return rows + [("everything else", "this chat's model")]
+
+
+def _team():
+    return "\n".join(["| Step | Runs on |", "|---|---|", *(f"| {s} | {p} |" for s, p in _roles())])
 
 
 def _saved_budget():
@@ -228,14 +253,14 @@ def _budget_line(tier, kanban):
     if kanban:
         return "not applied on the board (cards take no reasoning setting)"
     if not tier:
-        return "each profile's own setting (/cpipe budget <tier> sets one)"
-    return f"{tier}, every profile reasons at {BUDGETS[tier]}"
+        return "each profile's own setting · `/cpipe budget <tier>` sets one"
+    return f"{tier} · every profile reasons at {BUDGETS[tier]}"
 
 
 def _budget(arg):
     tiers = ", ".join(BUDGETS)
     if not arg:
-        return f"Budget: {_budget_line(_saved_budget(), False)}\nSet it: /cpipe budget <{tiers}|off>"
+        return f"**cpipe budget** · {_budget_line(_saved_budget(), False)}\n\nSet it: `/cpipe budget <{tiers}|off>`"
     path = _config()
     try:
         text = path.read_text()
@@ -250,7 +275,8 @@ def _budget(arg):
         path.write_text(text)
     except OSError as exc:
         return f"cpipe could not write {path}: {exc}"
-    return f"Budget: {_budget_line(arg if arg != 'off' else None, False)}. Saved in cpipe.yaml for every run."
+    return (f"**cpipe budget** · {_budget_line(arg if arg != 'off' else None, False)}\n\n"
+            "Saved in cpipe.yaml for every run.")
 
 
 def _learned_lines(name):
@@ -262,7 +288,7 @@ def _learned():
     n = sum(len(_learned_lines(name)) for name in STEPS)
     if not n:
         return "nothing yet; every miss becomes a rule for the next run"
-    return f"{n} rule{'s' * (n != 1)} from past runs, added to this one (/cpipe learnings)"
+    return f"{n} rule{'s' * (n != 1)} from past runs, added to this one · `/cpipe learnings`"
 
 
 def _learnings():
@@ -273,7 +299,7 @@ def _learnings():
     for name in (*STEPS, "retired"):
         lines = _learned_lines(name)
         if lines:
-            out += [f"{name} ({len(lines)})", *lines, ""]
+            out += [f"**{name}** ({len(lines)})", *lines, ""]
     try:
         rows = [json.loads(l) for l in (base / "history.jsonl").read_text().splitlines() if l.strip()]
     except (OSError, ValueError):
@@ -287,8 +313,8 @@ def _learnings():
     if runs:
         out.append(f"Last {len(runs)} runs, problems you found after the report: "
                    + (", ".join(f"{s} {n}" for s, n in misses.items()) or "none"))
-    return "\n".join(out).strip() or ("cpipe has no learnings yet. They are written when review, QA or you "
-                                       "catch something a run should have seen (/cpipe feedback <what you found>).")
+    return ("**cpipe learnings**\n\n" + "\n".join(out).strip()) if out else ( "cpipe has no learnings yet. They are written when review, QA or you catch something a run should "
+                     "have seen (`/cpipe feedback <what you found>`).")
 
 
 def _flags(task):
@@ -309,8 +335,12 @@ def _short(text, n=100):
     return text if len(text) <= n else text[:n - 1] + "…"
 
 
+# Text input often turns a typed "--" into a dash: "—restart" is still the flag.
+DASHED = re.compile(r"(?<!\S)[—–](?=(parallel|kanban|budget|continue|restart)\b)")
+
+
 def _start(ctx, raw):
-    task = raw.strip()
+    task = DASHED.sub("--", raw.strip())
     first, _, rest = task.partition(" ")
     if first.lower() == "learnings" and not rest.strip():
         return _learnings()
@@ -335,11 +365,11 @@ def _start(ctx, raw):
                 return RESTARTED.format(step=rest.split()[0] if rest.split() else "explore")
             if resume:
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
-            return STARTED.format(task=_short(brief), roles=_roles(kanban),
+            return STARTED.format(task=_short(brief), flow=FLOW, team=_team(),
                                   budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned(),
-                                  lanes=LANES if "--parallel" in flags else "")
+                                  extra=(LANES if "--parallel" in flags else "") + (BOARD if kanban else ""))
         reason = "the chat did not accept the message"
     except Exception as exc:
         reason = str(exc) or type(exc).__name__
-    return (f"cpipe could not start the run here ({reason}).\n"
-            "Type /cpipe:run followed by the task instead: it runs the same flow.")
+    return (f"**cpipe** · could not start the run here ({reason})\n\n"
+            "Type `/cpipe:run` followed by the task instead: it runs the same flow.")

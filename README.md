@@ -137,22 +137,32 @@ Ask for anything that leaves your machine in the task or a later message: `… a
 
 ## What a run looks like
 
-`/cpipe` answers with the task, the flow, who runs each step and how many learnings apply. Then the run posts
-one line as each step starts and ends, a progress line every 10 minutes of a long wait, and a single report at
-the end:
+`/cpipe` answers with the task, the flow, a table of who runs each step and how many learnings apply.
+Then the run posts one line as each step starts and ends, a progress line every 10 minutes of a long wait, and a
+single report at the end:
+
+> **cpipe** · fix the discount that disappears when an invoice is edited
+>
+> plan → tests → build → verify → QA + review → commit
+>
+> | Step | Runs on |
+> |---|---|
+> | plan | archon |
+> | build | forge |
+> | review | sentry |
+> | everything else | this chat's model |
+>
+> - **Budget:** each profile's own setting · `/cpipe budget <tier>` sets one
+> - **Learned:** 4 rules from past runs, added to this one · `/cpipe learnings`
+>
+> Runs on its own and reports here. Open questions are decided and listed in the report;
+> nothing is pushed unless you asked.
+>
+> ✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled
+>
+> Quiet with no ⏳? `/cpipe --continue`
 
 ```
-cpipe · fix the discount that disappears when an invoice is edited
-
-  Flow     plan → tests → build → verify → QA + review → commit
-  Team     plan archon · build forge · review sentry, the rest on this chat's model
-  Budget   each profile's own setting (/cpipe budget <tier> sets one)
-  Learned  4 rules from past runs, added to this one (/cpipe learnings)
-
-Works on its own and reports here: open questions are decided and listed in the report,
-nothing is pushed unless you asked.
-✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled · quiet with no ⏳? /cpipe --continue
-
 1/11 Set up · this chat · worktree, dependencies, baseline
 ✅ 1/11 Set up · 3 min · fix/invoice-discount, baseline: 412 tests pass
 2/11 Explore · archon · callers of updateInvoice(), the invoice API and its consumers
