@@ -10,6 +10,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py report <run dir>
   python3 cpipe.py active <run dir> [--done]
   python3 cpipe.py chat
+  python3 cpipe.py lanes <batch dir> [--at-once <n>] [--report <lane>]
 """
 
 import json
@@ -297,6 +298,85 @@ def chat():
     return " ".join(flags)
 
 
+REPORT_LINE = re.compile(r"^(?:✅ Done|⚠️? Done except|✅ Approved|⚠️? Changes needed)", re.M)
+QUICK = 300  # a lane that stopped this soon after its start waits before it is resumed
+
+
+def _segment(lane):
+    """The lane's last session in log.txt: (its text, seconds it ran or None while running, exit code)."""
+    try:
+        log = (lane / "log.txt").read_text(errors="replace")
+    except OSError:
+        return None, None, None
+    seg = log[log.rfind("lane started "):]
+    start = re.match(r"lane started (\d+)", seg)
+    end = re.search(r"^exit (\d+) (\d+)\s*\Z", seg, re.M)
+    if not end:
+        return seg, None, None
+    ran = int(end.group(2)) - int(start.group(1)) if start else 0
+    return seg, ran, int(end.group(1))
+
+
+def _report(seg):
+    """The lane's final reply from its first report line, without the session footer."""
+    found = REPORT_LINE.search(seg or "")
+    if not found:
+        return ""
+    return re.split(r"^(?:session_id: |exit \d+ )", seg[found.start():], flags=re.M)[0].strip()
+
+
+def _alive(lane):
+    try:
+        os.kill(int((lane / "pid").read_text()), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _now_step(lane):
+    """The first line of the `## Step` section of the lane's now.md (the run dir is in <lane>/run)."""
+    try:
+        text = (Path((lane / "run").read_text().strip()) / "now.md").read_text()
+    except OSError:
+        return "setting up"
+    found = re.search(r"(?m)^## Step\w*\n+(.+)", text)
+    return found.group(1).strip() if found else "running"
+
+
+def lanes(batch, at_once=4, report_of=None):
+    """Each lane of a --parallel batch with its state, then what to do: START, RESUME, WAIT or DONE."""
+    batch = Path(batch)
+    rows, todo, running, queued = [], [], 0, []
+    for lane in sorted((p for p in batch.iterdir() if (p / "brief.md").exists()), key=lambda p: (len(p.name), p.name)):
+        issue = (lane / "brief.md").read_text().splitlines()[0].lstrip("# ").strip()
+        seg, ran, code = _segment(lane)
+        if seg is None:
+            state = "queued"
+            queued.append(lane.name)
+        elif ran is None and _alive(lane):
+            state = f"running · {_now_step(lane)}"
+            running += 1
+        elif _report(seg):
+            state = "reported · " + _report(seg).splitlines()[0]
+        else:
+            sid = re.findall(r"^session_id: (\S+)", seg, re.M)
+            how = f"exit {code} after {ran // 60} min" if ran is not None else "its process is gone"
+            state = f"stopped · {how}" + (f" · session {sid[-1]}" if sid else " · never started")
+            wait = f" -w {QUICK * 2}" if ran is not None and ran < QUICK else ""
+            todo.append(f"RESUME {lane.name}{wait}" + (f" --resume {sid[-1]}" if sid else ""))
+        rows.append(f"{lane.name} {issue} · {state}")
+    free = max(at_once - running - len(todo), 0)
+    todo += [f"START {name}" for name in queued[:free]]
+    if not todo:
+        todo = ["WAIT"] if running or queued else ["DONE"]
+    out = rows + todo
+    if report_of:
+        seg = _segment(batch / report_of)[0]
+        if _report(seg):
+            out += ["", f"Report of {report_of}:", _report(seg)]
+    return "\n".join(out)
+
+
 def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
@@ -322,6 +402,9 @@ def main(argv):
         print(active(args[0], "--done" in args))
     elif cmd == "chat":
         print(chat())
+    elif cmd == "lanes":
+        opt = dict(zip(args[1::2], args[2::2]))
+        print(lanes(args[0], int(opt.get("--at-once", 4)), opt.get("--report")))
     else:
         raise SystemExit(__doc__)
 

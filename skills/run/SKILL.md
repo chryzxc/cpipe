@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.3.0
+version: 4.4.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -156,6 +156,11 @@ base moved is updated onto it (`steps/report.md`, Merge).
 Deliver two issues together only when one cannot work without the other (the same root cause or the same lines)
 or the user asked for a single pull request, and record why in Approach.
 
+With `--parallel` at the start of the task, each issue is delivered in a background session of its own instead,
+up to four at once, and this chat only starts them and posts their reports:
+`skill_view(name='cpipe:run', file_path='parallel.md')`. A session started from a lane's brief follows the same
+file, In a lane.
+
 ## Flow
 
 Track the steps with your todo tool if you have one, one step active at a time.
@@ -308,8 +313,8 @@ background. It is what you read to resume, instead of the whole log.
 
 Questions with an exact answer are answered by `bin/cpipe.py` beside this file, never by judgment. Run it as
 `python3 <skill dir>/bin/cpipe.py <command> …` from the worktree (`<skill dir>`: this file's folder, which the start
-message names; `bin/` also holds the time limit, the progress tick and the role launcher); it reads files and prints
-data and a verdict, and you act on what it prints:
+message names; `bin/` also holds the time limit, the progress tick and the role and lane launchers); it reads files
+and prints data and a verdict, and you act on what it prints:
 
 - `results <run dir>/results/<check>.<tree>.json <junit|jest|tsc|eslint|lines> <files>`: a check's results from
   the runner's machine-readable output (`<tree>` is `base`, `head`, `base-alone` or `head-alone`), so a cut-off
@@ -328,6 +333,8 @@ data and a verdict, and you act on what it prints:
 - `active <run dir>` once the run log exists, `active <run dir> --done` after the report: registers this chat's run,
   so the run's rules, the user's instructions and the open items stay pinned in this chat's system prompt
   whatever a compaction drops.
+- `lanes <batch dir> [--at-once <n>] [--report <lane>]`: each lane of a `--parallel` batch as queued, running,
+  reported or stopped, then what to do: `START`, `RESUME`, `WAIT` or `DONE` (`parallel.md`).
 
 Long command output goes to a file beside the run log (`logs/<step>-<check>.txt`); read the result lines or the
 tail, not the whole output. A command you wait for prints them itself (`grep` the summary and failures, `tail`),

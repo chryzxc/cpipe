@@ -23,9 +23,10 @@ MARKS = (START[:30], CONTINUE[:30])  # how the chat's run messages start
 # Budget tier -> reasoning effort of every profile run (passed as `hermes chat --reasoning`).
 BUDGETS = {"unlimited": "max", "large": "xhigh", "medium": "high", "small": "medium"}
 
-USAGE = """Usage: /cpipe [--kanban] [--budget <tier>] <task>
+USAGE = """Usage: /cpipe [--parallel] [--kanban] [--budget <tier>] <task>
 Delivers a coding task unattended in this chat and reports back here.
 Steps: plan, tests first, build, verify with the project's checks, QA and independent review, commit.
+  --parallel        several issues: each in its own background session, reporting here
   --kanban          hand the role steps to your profiles as cards on your Hermes kanban board
   --budget <tier>   how hard your profiles reason on this run: unlimited, large, medium or small
   /cpipe budget [<tier>|off]   show or save the default budget in cpipe.yaml
@@ -39,11 +40,13 @@ STARTED = """cpipe · {task}
   Flow     plan → tests → build → verify → QA + review → commit
   Team     {roles}
   Budget   {budget}
-  Learned  {learned}
+  Learned  {learned}{lanes}
 
 Works on its own and reports here: open questions are decided and listed in the report,
 nothing is pushed unless you asked.
 ✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled · quiet with no ⏳? /cpipe continue"""
+
+LANES = "\n  Lanes    each issue in its own background session, up to 4 at once, each reporting here"
 
 RESUMED = """cpipe · resuming at the first unfinished step; finished steps are not redone.{note}"""
 
@@ -58,7 +61,7 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--kanban] [--budget <tier>] <task> | budget [<tier>] | continue | feedback <text> | learnings", argument_mode="text")
+                             args_hint="[--parallel] [--kanban] [--budget <tier>] <task> | budget [<tier>] | continue | feedback <text> | learnings", argument_mode="text")
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
     if hasattr(ctx, "register_system_prompt_section"):
@@ -86,9 +89,15 @@ def _lineage(session_id, hops=50):
 
 
 def _run_dir(info):
-    """The run this session works on: CPIPE_RUN for a step's own session, else the chat's registered run."""
+    """The run this session works on: CPIPE_RUN for a step's own session, the run a --parallel lane wrote to its
+    lane folder (bin/lane.sh), else the chat's registered run."""
     if os.environ.get("CPIPE_RUN"):
         return Path(os.environ["CPIPE_RUN"])
+    if os.environ.get("CPIPE_LANE"):
+        try:
+            return Path((Path(os.environ["CPIPE_LANE"]) / "run").read_text().strip())
+        except OSError:
+            return None
     active = _root() / "cpipe" / "active"
     if not active.is_dir():
         return None
@@ -281,16 +290,17 @@ def _learnings():
 
 
 def _flags(task):
-    """Leading --kanban and --budget <tier>, in any order; returns (kanban, budget, rest, error)."""
-    kanban, budget, words = False, None, task.split()
-    while words and words[0] in ("--kanban", "--budget"):
-        if words.pop(0) == "--kanban":
-            kanban = True
+    """Leading --parallel, --kanban and --budget <tier>, in any order; returns (flags, budget, rest, error)."""
+    flags, budget, words = set(), None, task.split()
+    while words and words[0] in ("--parallel", "--kanban", "--budget"):
+        flag = words.pop(0)
+        if flag != "--budget":
+            flags.add(flag)
         elif words and words[0] in BUDGETS:
             budget = words.pop(0)
         else:
-            return kanban, budget, "", "--budget needs one of: " + ", ".join(BUDGETS)
-    return kanban, budget, " ".join(words), None
+            return flags, budget, "", "--budget needs one of: " + ", ".join(BUDGETS)
+    return flags, budget, " ".join(words), None
 
 
 def _short(text, n=100):
@@ -304,7 +314,8 @@ def _start(ctx, raw):
         return _learnings()
     if first.lower() == "budget" and (not rest.strip() or rest.strip().lower() in (*BUDGETS, "off")):
         return _budget(rest.strip().lower())
-    kanban, budget, brief, error = _flags(task)
+    flags, budget, brief, error = _flags(task)
+    kanban = "--kanban" in flags
     if error:
         return error + "\n\n" + USAGE
     if not brief:
@@ -321,7 +332,8 @@ def _start(ctx, raw):
             if resume:
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
             return STARTED.format(task=_short(brief), roles=_roles(kanban),
-                                  budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned())
+                                  budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned(),
+                                  lanes=LANES if "--parallel" in flags else "")
         reason = "the chat did not accept the message"
     except Exception as exc:
         reason = str(exc) or type(exc).__name__

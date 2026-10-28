@@ -122,6 +122,7 @@ In any Hermes chat, inside or near the repository:
 | Command | Does |
 |---|---|
 | `/cpipe <task>` | Delivers the task unattended and reports back in the same chat |
+| `/cpipe --parallel <issues>` | Each issue delivered in its own background session, up to four at once, each reporting back here |
 | `/cpipe --kanban <task>` | The same, with the role steps handed to your profiles as cards on your kanban board |
 | `/cpipe --budget <tier> <task>` | The same, with your profiles reasoning at that budget for this run (Budget, below) |
 | `/cpipe budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
@@ -581,6 +582,24 @@ With `/cpipe --kanban <task>`, each handed-over step becomes a card assigned to 
 dispatcher, so the work shows on the board. A card that ends blocked, times out, or is not picked up within 10
 minutes counts as a failed role. The run only ever touches cards it created.
 
+### In parallel
+
+Without a flag, the issues of one task are delivered in the chat, one after another, so the role sessions carry
+over and two issues that belong together can share a delivery. With `/cpipe --parallel <issues>`, each issue gets
+a lane: a session of its own in the background, started from the repository the task came from, so Hermes files
+it under that repository's project. The chat only starts lanes, posts each lane's report as it arrives, and
+writes a summary once every lane has reported.
+
+- Up to four lanes run at once (name another number in the task); the rest start as lanes finish.
+- A lane waits on its role steps in the foreground: its launcher raises the terminal's timeouts for that session
+  only, the way Hermes' kanban dispatcher does for a long worker, so a lane spends nothing while a step runs.
+- A lane that stops before its report (a turn or time limit, a crash) is resumed in its own session; one that
+  stopped within five minutes waits ten before it is resumed.
+- Steering for a lane goes to its `inbox.md`, which the lane reads at each step.
+- `cpipe.py lanes <batch dir>` reads each lane's state from its files, so a lost notification loses nothing:
+  `/cpipe continue` picks every lane up again.
+- Heavy jobs (installs, large test runs, builds) from all lanes take turns on the machine.
+
 ### Your own skills
 
 cpipe sets the order of the steps; your skills say how a step is done. At each step it does itself, the chat looks
@@ -734,7 +753,9 @@ cpipe/
     ├── learning.md       where learnings live, how they are read, written and retired
     ├── contract.md       the rules pinned in the system prompt while a run is going
     ├── bin/cpipe.py      facts: check results, comparison, checklist, gate, report skeleton
+    ├── parallel.md       --parallel: one background session per issue, reporting to the chat
     ├── bin/step.sh       runs one role session from its brief, under the time limit
+    ├── bin/lane.sh       runs one --parallel lane in its own session, under the time limit
     ├── bin/limit.pl      the time limit and low priority of every background job
     ├── bin/tick.sh       the progress tick of a long wait
     ├── run-graph.html    page template that draws the run graph

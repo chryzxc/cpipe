@@ -1,6 +1,7 @@
 """skills/run/bin/cpipe.py over recorded runner output: every failing name ends up new, baseline, flaky or to rerun."""
 import importlib.util
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -192,3 +193,34 @@ def test_a_whole_loop_through_the_command_line(tmp_path):
     assert "baseline: t::old" in cli("compare", run, "unit") and cli("gate", run) == f"FIX: {item} merge it if there are no regressions"
     cli("track", run, "set", item, "done", "no new failures; merged")
     assert cli("gate", run).startswith("PASS") and cli("report", run).startswith("✅ Done")
+
+
+def test_lanes_start_resume_and_report(tmp_path):
+    def lane(name, log=None, pid=None):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "brief.md").write_text(f"# issue {name}\nLoad the skill…\n")
+        if log is not None:
+            (d / "log.txt").write_text(log)
+        if pid:
+            (d / "pid").write_text(str(pid))
+        return d
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "now.md").write_text("## Instructions\n- merge it\n\n## Step\n6/11 Build · round 2\n")
+    (lane("1", "lane started 100\n", os.getpid()) / "run").write_text(str(run))
+    lane("2", "lane started 100\n✅ Done: fix the filter\n\nSummary\nsession_id: s2\nexit 0 4000\n")
+    lane("3", "lane started 100\n⏳ Paused by the turn limit at 6/11\nsession_id: s3\nexit 0 3000\n")
+    lane("4", "lane started 100\nsession_id: s4\nexit 1 160\n")
+    lane("5")
+    lane("6")
+    out = facts.lanes(tmp_path, at_once=4, report_of="2").splitlines()
+    assert out[0] == "1 issue 1 · running · 6/11 Build · round 2"
+    assert out[1] == "2 issue 2 · reported · ✅ Done: fix the filter"
+    assert out[2].startswith("3 issue 3 · stopped · exit 0 after 48 min · session s3")
+    assert "RESUME 3 --resume s3" in out and "RESUME 4 -w 600 --resume s4" in out
+    assert "START 5" in out and "START 6" not in out  # four at once: one running, two resuming
+    assert out[-4:] == ["Report of 2:", "✅ Done: fix the filter", "", "Summary"]
+    for name in "13456":
+        (tmp_path / name / "brief.md").unlink()
+    assert facts.lanes(tmp_path).splitlines()[-1] == "DONE"

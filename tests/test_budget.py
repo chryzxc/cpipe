@@ -7,8 +7,9 @@ spec.loader.exec_module(cpipe)
 
 
 def test_flags_in_any_order():
-    assert cpipe._flags("--budget small --kanban fix it") == (True, "small", "fix it", None)
-    assert cpipe._flags("fix --budget small") == (False, None, "fix --budget small", None)
+    assert cpipe._flags("--budget small --kanban fix it") == ({"--kanban"}, "small", "fix it", None)
+    assert cpipe._flags("--parallel fix #1 and #2") == ({"--parallel"}, None, "fix #1 and #2", None)
+    assert cpipe._flags("fix --budget small") == (set(), None, "fix --budget small", None)
     assert cpipe._flags("--budget huge fix it")[3]
 
 
@@ -97,6 +98,7 @@ def test_continue_reuses_the_loaded_skill():
     assert ctx.text.startswith("Continue the cpipe run") and "only when its text is no longer" in ctx.text
     cpipe._start(ctx, "fix the date filter")
     assert ctx.text.startswith("Load the skill cpipe:run")
+    assert "Lanes" in cpipe._start(ctx, "--parallel fix #1 and #2") and ctx.text.endswith("--parallel fix #1 and #2")
 
 
 def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):
