@@ -151,28 +151,26 @@ pages to learn the command line.
    `git diff` beside the run log, and compare after: a file they changed or added means the role failed. Undo only
    their edits, back to the saved state, and follow "When a role fails".
 
-2. **Run** it in the worktree, directly, or as a card when the run is on the board (below):
-   `CPIPE_RUN=<run dir> CPIPE_STEP=<role> hermes <who> chat -Q --query-file <brief> --in <worktree> --run-budget <seconds> --max-turns <turns> [--reasoning <effort>]`
-   `<who>` is `-p <profile>`, or for a role without one, the output of `python3 <skill dir>/bin/cpipe.py chat`
-   (this chat's profile, model and provider, so a step never runs on a weaker model). `CPIPE_RUN` and
-   `CPIPE_STEP` pin the run's rules, the user's instructions and the open checklist items in the session's system
-   prompt, so they hold through a compaction there too (in a profile with the cpipe plugin enabled; elsewhere the
-   brief is the only copy). Turns: build 150, plan 120, the rest 60.
-   `--reasoning` only when a budget is set (Budget, above), on every run and resume. Budgets in seconds: a
+2. **Run** it in the worktree, directly, or as a card when the run is on the board (below), with the launcher
+   beside this file, in the background with a completion notification:
+   `sh <skill dir>/bin/step.sh <run dir> <worktree> <role> <round> <run budget> <limit> <who> [--reasoning <effort>]`
+   It runs `hermes chat` from `<run dir>/brief-<role>.md` with the role's turns (build 150, plan 120, the rest 60),
+   under the time limit (`steps/setup.md`, Time limit), its output in `<run dir>/logs/<role>-<round>.txt`, and
+   prints the log's end, so the notification carries the reply and the session id and no reply goes to reading
+   them. Never type the `hermes chat` command yourself. `<who>` is `-p <profile>`, or for a role without one, the
+   output of `python3 <skill dir>/bin/cpipe.py chat` (this chat's profile, model and provider, so a step never runs
+   on a weaker model). The launcher sets `CPIPE_RUN` and `CPIPE_STEP`, which pin the run's rules, the user's
+   instructions and the open checklist items in the session's system prompt, so they hold through a compaction
+   there too (in a profile with the cpipe plugin enabled; elsewhere the brief is the only copy).
+   `--reasoning` only when a budget is set (Budget, above), on every run and resume. Run budgets in seconds: a
    delivery's first build brief 3600, a build follow-up 1500; plan 1800; design and explore 600; review, security
    and qa 900. These are fixed: never raise one for a slow suite or a large change; a profile at its budget
-   replies with what it finished. Use your terminal's background mode with a completion notification when it
-   has one; otherwise a timeout above the budget. Write its process id and output file in the run log and
-   `now.md`, and once it ends, the session id it prints last (`session_id: …`): the profile keeps running when
-   this chat restarts, a continue reads its result instead of starting it again, and every follow-up resumes that
-   session. Then wait the way `cpipe:run` says (Waiting ends the turn). The budget is a hard limit: run the
-   profile under the time limit (`steps/setup.md`, Time limit) at its budget plus 5 minutes,
-   `CPIPE_RUN=… CPIPE_STEP=… perl <run dir>/limit.pl <seconds> hermes <who> chat …`, so a profile that hangs
-   still ends and its notification still comes. Its output goes to its own log,
-   `<run dir>/logs/<role>-<round>.txt`, and the same command then prints the log's end, so the notification carries
-   the reply and the session id and no reply goes to reading them:
-   `perl … > <log> 2>&1; echo "exit $?" >> <log>; tail -n 30 <log>`.
-   One the limit ended (`exit 124`) timed out: treat the role as failed.
+   replies with what it finished. The limit is the budget plus 300, so a profile that hangs still ends and its
+   notification still comes. Write its process id and log in the run log and `now.md`, and once it ends, the
+   session id it prints last (`session_id: …`): the profile keeps running when this chat restarts, a continue reads
+   its result instead of starting it again, and every follow-up resumes that session. Then wait the way `cpipe:run`
+   says (Waiting ends the turn). A log ending in `exit 124` timed out: treat the role as failed; a log that ends
+   with no reply and no session id means the session never started: launch it again once, then "When a role fails".
 
    The result is what the notification carried (after a restart, the end of the log), or `<role>-reply.md` when it
    points there. Never search the profile's session history or transcripts for it: when neither holds a result,
@@ -182,10 +180,9 @@ pages to learn the command line.
    for that role resumes it: a fix
    round, a correction, a conflict, a QA re-run, the delta review, and the next delivery of the run. With
    deliveries in parallel, each lane has its own sessions.
-   `CPIPE_RUN=<run dir> CPIPE_STEP=<role> hermes <who> chat -Q --resume <session id> --query-file <brief> --in <worktree> --run-budget <seconds> --max-turns <turns> [--reasoning <effort>]`
+   `sh <skill dir>/bin/step.sh <run dir> <worktree> <role> <round> <first run budget> <limit> <who> --resume <session id> [--reasoning <effort>]`
    A resumed session keeps the `--run-budget` it started with and refuses another value: pass the first run's
-   value again, and hold the follow-up to its own budget with the time limit (`limit.pl` at that budget plus 5
-   minutes).
+   value again, and hold the follow-up to its own budget with the limit (that budget plus 300).
    A new session reads the code again from nothing, tens of replies; start one only when the resume fails, the next
    delivery is in another repository, or the session ended at its turns or budget with work left: a session that
    long is past its best, so the next one starts fresh from a handoff (the role part, then what its reply says it

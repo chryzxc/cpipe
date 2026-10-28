@@ -79,6 +79,24 @@ def test_mid_run_message_gets_the_steering_reminder():
     assert cpipe._steering("change the PR title", [start, step, report, msg]) is None
     assert cpipe._steering("/cpipe continue", [start, step]) is None
     assert cpipe._steering("hello", [msg]) is None
+    resumed = {"role": "user", "content": cpipe.CONTINUE.format(skill="s", root="r") + "continue"}
+    assert cpipe._steering("merge it", [resumed, msg])
+    assert cpipe._steering(resumed["content"], [start, step]) is None
+
+
+def test_continue_reuses_the_loaded_skill():
+    class Ctx:
+        def inject_message(self, text, **_):
+            self.text = text
+            return True
+    import sys, types
+    sys.modules.setdefault("gateway", types.ModuleType("gateway"))
+    sys.modules["gateway.session_context"] = types.SimpleNamespace(get_session_env=lambda _: None)
+    ctx = Ctx()
+    assert cpipe._start(ctx, "continue merge it").startswith("cpipe · resuming")
+    assert ctx.text.startswith("Continue the cpipe run") and "only when its text is no longer" in ctx.text
+    cpipe._start(ctx, "fix the date filter")
+    assert ctx.text.startswith("Load the skill cpipe:run")
 
 
 def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):

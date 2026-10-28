@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.2.2
+version: 4.3.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -98,10 +98,10 @@ process tool. Whatever you wait on ends on its own: every install, check and pro
 (`steps/setup.md`, Time limit), so a hang still ends it and its notification still comes.
 
 **Progress while waiting.** A wait that can last past 10 minutes (a profile, the build) gets a tick beside it:
-`sh <run dir>/tick.sh <worktree>` in the background with a completion notification (`steps/setup.md`, Progress
-tick). It sleeps 10 minutes, then prints what changed: the diff's size and the newest logs with their last line.
-When it wakes the run and the work still runs, post one line from its output alone, read nothing else, and start
-the next tick in the same reply:
+`sh <skill dir>/bin/tick.sh <run dir> <worktree>` in the background with a completion notification
+(`steps/setup.md`, Progress tick). It sleeps 10 minutes, then prints what changed: the diff's size and the newest
+logs with their last line. When it wakes the run and the work still runs, post one line from its output alone,
+read nothing else, and start the next tick in the same reply:
 `⏳ <n>/11 <Step> · <m> min in · <what changed> · done by <clock time>`, the change such as
 `4 files changed (+180 −12), 71 tests pass` or `the suite's log silent for 9 min`. One tick runs
 at a time, whatever it watches. Once nothing long runs, stop it with your process tool in the same reply as your
@@ -307,8 +307,9 @@ background. It is what you read to resume, instead of the whole log.
 ## Facts
 
 Questions with an exact answer are answered by `bin/cpipe.py` beside this file, never by judgment. Run it as
-`python3 <this skill's folder>/bin/cpipe.py <command> …` from the worktree; it reads files and prints data and a
-verdict, and you act on what it prints:
+`python3 <skill dir>/bin/cpipe.py <command> …` from the worktree (`<skill dir>`: this file's folder, which the start
+message names; `bin/` also holds the time limit, the progress tick and the role launcher); it reads files and prints
+data and a verdict, and you act on what it prints:
 
 - `results <run dir>/results/<check>.<tree>.json <junit|jest|tsc|eslint|lines> <files>`: a check's results from
   the runner's machine-readable output (`<tree>` is `base`, `head`, `base-alone` or `head-alone`), so a cut-off
@@ -343,69 +344,16 @@ file you read are in the run log or the plan. Read a file again only for the lin
 
 ## Learning
 
-cpipe learns from every miss, so each user's install gets better at their work. Nothing here is ever committed
-or shared.
-
-**Where it lives.** Under the Hermes root (Roles), `cpipe/`:
-- `history.jsonl`: one line per finished run (`{"type": "run", "date", "project", "kind", "steps": [the steps that
-  ran]}`) and one per miss (`{"type": "miss", "date", "project", "kind", "area", "severity", "found_by": "user" |
-  "qa" | "review" | "verify", "step": the step that should have caught it, "why"}`). Append only.
-- `learnings/<step>.md` for `plan`, `design`, `build`, `qa` and `review`, and `learnings/general.md` for how the
-  user wants work done in any project (when to push, branch and pull-request format, naming). An older
-  `cpipe/lessons.md` counts as `general.md`.
-- `learnings/retired.md`: learnings taken out of use, each with its reason, so the user can see and restore them.
-
-A profile's own `<Hermes root>/profiles/<name>/cpipe/learnings/<step>.md` adds to these for steps that profile
-does, for what is specific to it. The project's lessons live at
-`$(git rev-parse --git-common-dir)/cpipe/lessons.md`, shared by its worktrees: facts about that code (where to
-look, what breaks together).
-
-**What a learning is.** One line that adds to cpipe's rules: something to check, where to look, a state to cover,
-a question for the premortem, how the user wants a thing done. It is written as a rule, not a story, with why,
-the cpipe version it was written under, how many runs it applied to and when it last did:
-`- QA covers the empty state of every list a change touches: two lists shipped broken empty · 3.55.0 ·
-applied 2 · last 2026-10-27`. Never secrets, customer data or code.
-
-**Core rules come first.** A learning only ever adds. It never skips or reorders a step, loosens a check, a gate
-or a limit, or contradicts what cpipe's files say, and the guard rails always hold. When one does, cpipe's file
-wins and the learning is retired with `conflicts with core`. So updating cpipe never breaks on old learnings: the
-first run after an update (a learning's version older than this skill's) checks each older learning against the
-current step file once: one the file now covers is retired with `now in core`, one that conflicts is retired with
-`conflicts with core`, the rest get the new version. The order, highest first: the user's instructions for this
-task, the user's Hermes setup (`The user's own skills come first`), cpipe's guard rails and step rules, then the
-learnings (profile, then step and general, then the project's), adding detail on top.
-
-**Reading.** Explore reads all of them once, after the version check: each learning that fits this change goes
-into the plan as a check, a QA item, a premortem question or a review question, so whoever does the step gets
-it from the plan and its brief. Count it as applied (`applied <n+1> · last <today>`). From `history.jsonl`,
-take the last 20 runs of this kind: a step with a miss in them (a `found_by: user` miss weighs most) gets its
-misses' areas checked by name in this plan.
-
-**Writing.** Write a learning, and a miss in `history.jsonl`, whenever something was caught later than it should
-have been: a review or QA finding the plan did not foresee, a check that failed for a reason explore could have
-seen, and above all a problem the user found after the report. File it under the step that should have caught it;
-a correction about how the user works goes in `general.md`. Merge it into a matching learning rather than adding a
-near-duplicate; when a miss repeats in the area of an existing learning, that learning did not work: rewrite it
-sharper. At most 30 lines per file: retire the least applied first. A learning not applied in the last 90 days is
-retired with `unused`. At the report, append the run's line to `history.jsonl`.
-
-**Confidence.** The report's Confidence line adds the measured record when `history.jsonl` has at least 5 runs of
-this kind: `Past: QA missed 1 of 20 UI changes you checked`, counting `found_by: user` misses per step.
-
-**Feedback.** When the user reports problems after the report (`/cpipe feedback <what they found>` or a plain
-message), find the run (this chat's, else the newest run log of the worktree or branch it names), reproduce each
-first. One that is real and inside the task's scope is a miss: record it with `found_by: user` and the step that
-should have caught it, write or sharpen the learning, then fix it as a follow-up (After the report).
-A new request or a change of mind is not a miss.
-
-**Showing them.** `/cpipe learnings`: list each file's learnings, the retired ones, and per step the misses that
-reached the user in the last 20 runs of each kind. Do not start a run.
+cpipe learns from every miss: a learning is one line that adds a check, a place to look or how the user wants
+something done, kept under the Hermes root. Where they live, how they are read, written and retired, and feedback:
+`skill_view(name='cpipe:run', file_path='learning.md')`, loaded when explore reads them, when a miss is found and
+at the report, never before.
 
 ## After the report
 
 A message after the report about the same work (a correction, a missed case, more context) is a follow-up, not a
 new task: reuse the worktree and the run log (or, if it was removed after its merge, a new worktree from the
-base), record the miss and its learning (Learning, Feedback), update the plan, then run build, verify, QA and a
+base), record the miss and its learning (`learning.md`, Feedback), update the plan, then run build, verify, QA and a
 delta review on the follow-up only, and report again. Reproduce what the user describes before answering. If it
 can mean two things, check both and answer with what you found; do not ask which one they meant. A different task
 starts a new run. "Fix it" after a report that said something could not be fixed reopens the loop: never answer
@@ -415,8 +363,7 @@ again that it cannot be done with nothing changed. Take an approach not tried ye
 ## Continue
 
 When the user says "continue", a notification arrives mid-run, or the chat restarted mid-run: read `now.md`, run
-`active <run dir>`, `track <run dir> open` and `gate <run dir>` (Facts), read the run log only where they point,
-write `limit.pl` and `tick.sh` again from `steps/setup.md` if either is missing, check `git status` and the last
+`active <run dir>`, `track <run dir> open` and `gate <run dir>` (Facts), read the run log only where they point, check `git status` and the last
 check results in the worktree, and pick up at the first unfinished step. Do not redo finished steps. A run started
 before these files existed is brought up to them first: `now.md` gets its `## Instructions` section with the user's
 instructions word for word, `track.json` the Done when of each step left and every instruction, and `results/` the

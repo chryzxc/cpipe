@@ -227,7 +227,7 @@ Omit for a change of a few lines.
 consumers, from the flow map: `3 routes, 1 nightly job`); **Rollback**, how to undo it (`revert the commit`, or
 `⚠️ the migration cannot be undone: <why>`); **Confidence**, what the result rests on (`6 tests and QA on the
 running app`) and its weakest spot (`the export path is covered by tests only`), and the past record
-(`cpipe:run`, Learning, Confidence).
+(`learning.md` beside `cpipe:run`, Confidence).
 
 **Approach**: the choices a reviewer would question and every assumption made for an open question, at most
 four rows: **Choice** the approach or assumption; **Why** the deciding fact (from the code, the request or a

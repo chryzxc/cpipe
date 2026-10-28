@@ -68,7 +68,7 @@ request's CI runs it. Run each check only where it proves something:
   format checks can run alongside.
 - **In the background.** The related tests and the build run in the background with their output in a file
   (`logs/verify-<check>.txt`) and a completion notification, under the time limit (`steps/setup.md`, Time
-  limit): `perl <run dir>/limit.pl -h <seconds> <command>`, twice the check's time on the base and at least 5
+  limit): `perl <skill dir>/bin/limit.pl -h <seconds> <command>`, twice the check's time on the base and at least 5
   minutes. A foreground command is cut off after a few minutes and its result is lost; one without a limit can
   hang the run.
 - **Same tree, same result.** Write the tree id beside each result. It is the content of the files, so a commit

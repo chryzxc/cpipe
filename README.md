@@ -680,8 +680,6 @@ Details: fix/invoice-discount · a1b2c3d fix(invoices): keep the discount on edi
 | `<git-dir>/cpipe/results/` | Each check's failing names on the base and the change, as JSON, for the comparison | Never |
 | `<Hermes root>/cpipe/active/` | Which sessions are running a delivery, so their rules are pinned; removed at the report | — |
 | `<git-dir>/cpipe/logs/` | Long command output | Never |
-| `<git-dir>/cpipe/limit.pl` | The time limit and low priority every background job runs under; heavy jobs take turns | Never |
-| `<git-dir>/cpipe/tick.sh` | The progress tick of a long wait | Never |
 | `<git-dir>/cpipe/brief-<role>.md`, `<role>-reply.md` | Briefs to profiles and their long replies | Never |
 | `<git-common-dir>/cpipe/lessons.md` | The project's lessons, shared by all its worktrees | Never |
 | `~/.hermes/cpipe/learnings/<step>.md` | Your learnings per step, and `general.md` for how you work; `retired.md` holds retired ones | — |
@@ -731,10 +729,14 @@ cpipe/
 ├── __init__.py           registers cpipe:run, /cpipe, the mid-run reminder and the pinned rules
 ├── AGENTS.md             rules for changing cpipe
 └── skills/run/
-    ├── SKILL.md          the flow, unattended rules, run log, learning, limits, guard rails
+    ├── SKILL.md          the flow, unattended rules, run log, limits, guard rails
     ├── roles.md          handing steps to profiles, directly or as kanban cards
+    ├── learning.md       where learnings live, how they are read, written and retired
     ├── contract.md       the rules pinned in the system prompt while a run is going
     ├── bin/cpipe.py      facts: check results, comparison, checklist, gate, report skeleton
+    ├── bin/step.sh       runs one role session from its brief, under the time limit
+    ├── bin/limit.pl      the time limit and low priority of every background job
+    ├── bin/tick.sh       the progress tick of a long wait
     ├── run-graph.html    page template that draws the run graph
     ├── steps/            one file per step, loaded when the run reaches it
     │   ├── setup.md      worktree, installs, baseline in a base worktree, time limit, tidy-up

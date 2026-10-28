@@ -13,6 +13,13 @@ START = ("Load the skill cpipe:run with skill_view (without skill_view, read {sk
          "it to deliver this task: its files decide how the work is done, whichever profile this chat is. The "
          "Hermes root: {root}. Run it unattended to the report: this is my last message, so never stop to ask or wait.\n\n")
 
+# A continue reuses the skill already in the chat: reloading it on every continue resends ~10k tokens per reply.
+CONTINUE = ("Continue the cpipe run in this chat (cpipe:run, Continue). Load the skill cpipe:run with skill_view only "
+            "when its text is no longer in this chat (without skill_view, read {skill} with your file tool). The "
+            "Hermes root: {root}. Run it unattended to the report: this is my last message, so never stop to ask or "
+            "wait.\n\n")
+MARKS = (START[:30], CONTINUE[:30])  # how the chat's run messages start
+
 # Budget tier -> reasoning effort of every profile run (passed as `hermes chat --reasoning`).
 BUDGETS = {"unlimited": "max", "large": "xhigh", "medium": "high", "small": "medium"}
 
@@ -151,7 +158,7 @@ def _running(history):
         if not isinstance(msg, dict):
             continue
         text = _text(msg.get("content"))
-        if msg.get("role") == "user" and text.startswith(START[:30]):
+        if msg.get("role") == "user" and text.startswith(MARKS):
             return True
         if msg.get("role") == "assistant":
             if REPORT_LINE.search(text):
@@ -164,7 +171,7 @@ def _running(history):
 def _steering(user_message=None, conversation_history=None, **_):
     """Context for a user message that arrives while a run is going (no flow control: the skill decides)."""
     message = _text(user_message).lstrip()
-    if not message or message.startswith((START[:30], "/cpipe")):
+    if not message or message.startswith((*MARKS, "/cpipe")):
         return None
     return {"context": STEERING} if _running(conversation_history) else None
 
@@ -305,12 +312,13 @@ def _start(ctx, raw):
     from gateway.session_context import get_session_env
     key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
     try:
-        if ctx.inject_message(START.format(skill=SKILL, root=_root()) + task, role="user",
+        first, _, rest = brief.partition(" ")
+        resume = first.lower().rstrip(".!") in ("continue", "resume")
+        if ctx.inject_message((CONTINUE if resume else START).format(skill=SKILL, root=_root()) + task, role="user",
                               session_key=key):
-            first, _, rest = brief.partition(" ")
             if first.lower() == "feedback":
                 return FEEDBACK
-            if first.lower().rstrip(".!") in ("continue", "resume"):
+            if resume:
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
             return STARTED.format(task=_short(brief), roles=_roles(kanban),
                                   budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned())
