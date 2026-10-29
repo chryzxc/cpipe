@@ -611,7 +611,8 @@ lanes, posts a line each time a lane's step changes (at most every five minutes,
 lane's report as it arrives, and writes a summary once every lane has reported.
 
 - The chat finds each issue's repository once and hands it to the lane. When the chat is not in that repository,
-  a candidate counts only when its own remote holds the branch the task branches from and the task's issues.
+  a candidate counts only when its own remote holds the branch the task branches from; the task's issues decide
+  between candidates that do.
 - Up to four lanes run at once (name another number in the task); the rest start as lanes finish.
 - A lane runs each role step in the background and waits on it with the process tool, five minutes per wait, so
   a long step is never cut off by Hermes' limit on one tool call and a lane spends one short reply per wait.
