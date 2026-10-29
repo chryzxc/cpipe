@@ -1,6 +1,7 @@
 """skills/run/bin/cpipe.py over recorded runner output: every failing name ends up new, baseline, flaky or to rerun."""
 import importlib.util
 import json
+import re
 import os
 import sqlite3
 from pathlib import Path
@@ -139,6 +140,17 @@ def test_the_report_waits_for_the_loop(tmp_path):
     put(tmp_path, "unit.head.json", passed=["a"])
     out = facts.report(tmp_path)
     assert out.startswith("✅ Done") and "✅ unit: 1 pass, 0 baseline, 0 new" in out
+    assert facts.check_report(tmp_path).startswith("FIX: write the report")
+    (tmp_path / "report.md").write_text("Merged PR #5.\n\nProof\n- 95 passed\n")
+    bad = facts.check_report(tmp_path)
+    assert "status line" in bad and "missing `## Test it`" in bad and "Proof line changed" in bad
+    (tmp_path / "report.md").write_text(out)
+    assert "unwritten cell <goal>" in facts.check_report(tmp_path)
+    filled = re.sub(r"<[^<>\n]+>", "x", out)
+    (tmp_path / "report.md").write_text(filled)
+    assert facts.check_report(tmp_path).startswith("PASS")
+    (tmp_path / "report.md").write_text(filled.replace("✅ Done: x", "✅ Approved: x"))
+    assert facts.check_report(tmp_path).startswith("PASS")
 
 
 def test_active_registers_this_chat(tmp_path, monkeypatch):
@@ -243,7 +255,7 @@ def test_a_chat_that_continues_a_stopped_lane_takes_it_over(tmp_path, monkeypatc
     assert "RESUME 1" in facts.lanes(batch)
     assert "taken over by this chat" in facts.active(run)
     assert facts.lanes(batch).splitlines() == ["1 issue 1 · taken over in its chat · 2/11 Explore", "WAIT"]
-    (lane / "report.md").write_text("✅ Done: issue 1\n")
+    (run / "report.md").write_text("✅ Done: issue 1\n")
     assert facts.lanes(batch, report_of="1").splitlines()[:2] == ["1 issue 1 · reported · ✅ Done: issue 1", "DONE"]
 
 

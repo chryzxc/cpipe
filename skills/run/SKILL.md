@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.8.4
+version: 4.9.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -333,7 +333,9 @@ and prints data and a verdict, and you act on what it prints:
   the user may do. Unclear, "not established" or "inconclusive" stays open and is work for the loop.
 - `gate <run dir>`: the run's verdict. `FIX: …` is the loop's next work; `WAIT: …` ends the turn on a wait line;
   `NEEDS-USER: …` is what only the user may do; `PASS` means every condition holds: merge when asked, then report.
-- `report <run dir>`: the report's skeleton with its facts filled in (`steps/report.md`, Report).
+- `report <run dir>`: the report's skeleton with its facts filled in; `report <run dir> --check`: `PASS` when
+  `<run dir>/report.md` keeps those facts and has every section and cell written, else `FIX` with what is wrong
+  (`steps/report.md`, Report).
 - `active <run dir>` once the run log exists, `active <run dir> --done` after the report: registers this chat's run,
   so the run's rules, the user's instructions and the open items stay pinned in this chat's system prompt
   whatever a compaction drops.

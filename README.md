@@ -647,7 +647,9 @@ worktree locations, commit conventions and check commands follow the project.
 ## The report
 
 The run reports only once the work is finished: findings fixed and proven, CI waited for when a pull
-request was asked for. It is short, one line per row, and complete:
+request was asked for. It is written to the run folder's `report.md` and posted word for word once
+`cpipe.py report <run dir> --check` passes: the status line and Proof facts kept, every section and cell written,
+so it reads the same way every time. It is short, one line per row, and complete:
 
 - **Status line:** `✅ Done`, `✅ Done, test by hand` or `⚠️ Done except …`; for a review, `✅ Approved` or
   `⚠️ Changes needed`.

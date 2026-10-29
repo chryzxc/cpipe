@@ -87,6 +87,5 @@ these differences.
   branch onto the base as it is then (`steps/report.md`, Merge): another lane may have merged first.
 - **Taken over.** When `active` says this chat took the lane over (its launcher had stopped and the user
   continued it here), this is a chat like any other from then on: run and wait on role steps as `roles.md`, Run
-  says, and write the report to `<lane dir>/report.md` as well as replying with it. The dispatcher leaves the lane
-  to this chat and posts that file.
+  says. The dispatcher leaves the lane to this chat and posts the run's `report.md` (`steps/report.md`, Report).
 - **The report** is this session's final reply, in the sections of `steps/report.md`; the dispatcher posts it.

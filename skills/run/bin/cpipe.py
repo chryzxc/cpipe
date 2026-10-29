@@ -7,7 +7,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py compare <run dir> <check>
   python3 cpipe.py track <run dir> add <step> <text> | set <id> <open|done|skip|user> [<evidence>] | open [<step>]
   python3 cpipe.py gate <run dir>
-  python3 cpipe.py report <run dir>
+  python3 cpipe.py report <run dir> [--check]
   python3 cpipe.py active <run dir> [--done]
   python3 cpipe.py chat
   python3 cpipe.py brief <run dir> <worktree> <role> [--resume] [--card]
@@ -256,6 +256,33 @@ def report(run_dir):
     return "\n".join(parts)
 
 
+REPORT_PARTS = ("## Test it", "## Proof", "## Run graph", "Risk: ", "Cost: ", "Details: ")
+
+
+def check_report(run_dir):
+    """Whether <run dir>/report.md is the report: the skeleton's status and Proof facts kept, every <…> written."""
+    path = Path(run_dir) / "report.md"
+    skeleton = report(run_dir)
+    if skeleton.startswith("not ready"):
+        return "FIX: " + skeleton
+    try:
+        text = path.read_text()
+    except OSError:
+        return f"FIX: write the report to {path}, starting from `report {run_dir}`"
+    # A review's verdict line stands for the status line (steps/report.md, Status line).
+    passed = skeleton.startswith("✅")
+    status = ("✅ Done", "✅ Approved", "⚠️ Changes needed") if passed else ("⚠️ Done except", "⚠️ Changes needed")
+    problems = [] if text.lstrip().startswith(status) else [f"the first line is not the status line `{status[0]}…`"]
+    problems += [f"missing `{part.strip()}`" for part in REPORT_PARTS
+                 if not re.search(rf"^{re.escape(part)}", text, re.M)]
+    proof = skeleton.split("## Proof\n", 1)[1].split("\n<", 1)[0].splitlines()
+    problems += [f"Proof line changed or missing: {line}" for line in proof if line not in text]
+    problems += [f"unwritten cell {cell}" for cell in sorted(set(re.findall(r"<[^<>\n]+>", skeleton))) if cell in text]
+    if problems:
+        return "FIX: " + "; ".join(problems)
+    return f"PASS: post {path} word for word as the final reply"
+
+
 def hermes_root():
     home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
     return home.parent.parent if home.parent.name == "profiles" else home
@@ -279,7 +306,7 @@ def active(run_dir, done=False):
             continue
         # Its launcher is gone and a chat picked the run up: the dispatcher leaves the lane to it (lanes()).
         (lane.parent / "taken").write_text(sid + "\n")
-        out += f"\nlane {lane.parent}: taken over by this chat; its report goes to {lane.parent}/report.md too"
+        out += f"\nlane {lane.parent}: taken over by this chat; the dispatcher posts this run's report.md"
     return out
 
 
@@ -343,9 +370,9 @@ def _segment(lane):
 
 
 def _lane_report(lane, seg):
-    """A taken-over lane's report.md, else the report in its log."""
+    """The lane's run's report.md (check_report), else the report in its log."""
     try:
-        return (lane / "report.md").read_text().strip()
+        return (Path((lane / "run").read_text().strip()) / "report.md").read_text().strip()
     except OSError:
         return _report(seg)
 
@@ -433,7 +460,7 @@ def main(argv):
     elif cmd == "gate":
         print(gate(args[0]))
     elif cmd == "report":
-        print(report(args[0]))
+        print(check_report(args[0]) if "--check" in args else report(args[0]))
     elif cmd == "active":
         print(active(args[0], "--done" in args))
     elif cmd == "chat":

@@ -119,10 +119,13 @@ removal is noted in the run log and never holds the report.
 
 ## Report
 
-Post one message in the chat, in this order, starting from what `report <run dir>` prints (`cpipe:run`, Facts):
-its status line and Proof lines are facts, kept as they are; you write the `<…>` cells. When it prints "not ready
-to report", that is the loop's work: do it first. With several deliveries, one status line per delivery first,
-then this report for each under a heading naming its issue. After posting it, `active <run dir> --done`.
+Write the report to `<run dir>/report.md`, in this order, starting from what `report <run dir>` prints
+(`cpipe:run`, Facts): its status line and Proof lines are facts, kept as they are; you write the `<…>` cells.
+When it prints "not ready to report", that is the loop's work: do it first. Then `report <run dir> --check`:
+each `FIX` is a fix to the file, and the check runs again until it prints `PASS`. Your final reply is that file,
+word for word: never a summary of it, a merge note or a reply in your own shape, which the user cannot read the
+same way every time. With several deliveries, one status line per delivery first, then each delivery's file under
+a heading naming its issue. After posting it, `active <run dir> --done`.
 
 Short, and still complete: the user reads it in a minute and knows what changed, what was proven and what is
 left for them. What needs the user comes first; what went as planned is a count, not a row. Plain words,

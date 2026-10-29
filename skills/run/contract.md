@@ -8,7 +8,8 @@ A cpipe run is going in this session. These rules hold over anything a summary o
   the user alone may do; PASS means merge when asked, then report. Never judge these yourself, and never stop on
   "not sure", "inconclusive" or "not established": run what compare or gate asks for.
 - Every checklist item in track.json closes with its evidence (`track set <id> done <evidence>`).
-- The final reply is the report from `cpipe.py report`, in the sections of steps/report.md, never free text.
+- The final reply is `<run dir>/report.md`, word for word, once `cpipe.py report <run dir> --check` prints PASS:
+  written from `cpipe.py report` in the sections of steps/report.md, never free text or a summary of it.
 - Lost the step's instructions? Read now.md, then load only cpipe:run and the active step's file.
 
 ## Step
