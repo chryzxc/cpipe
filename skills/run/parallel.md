@@ -72,8 +72,13 @@ these differences.
   tick: a turn ends only on the report or the pause message.
 - **Steering.** At the start of each step, read `<lane dir>/inbox.md`. A line not yet in `now.md` is the user's
   steering (`cpipe:run`, Unattended): add it to `now.md` and act on it.
-- **Approvals.** A command that needs an approval takes Hermes' path for one-shot sessions. One that is refused is
-  the user's to give: finish the rest and name it in the report's `⚠️ Done except` line.
+- **Approvals.** A lane is a one-shot session: Hermes asks no one and blocks a command that needs an approval at
+  once, so no approval ever reaches the user from here. A blocked command is done the standard way (`cpipe:run`,
+  Unattended): file tools for edits, a script file, the program with its arguments; a role step's reply that one
+  was blocked gets a follow-up saying that, never "run it again". Only an action that needs the user in itself
+  (deleting their data, a forced push) and has no other way is left: finish the rest and name the exact command
+  in the report's `⚠️ Done except` line, with `approve it by taking this lane over in its chat`. Never the
+  needs-your-approval line in a lane: a "continue" runs one-shot again and cannot ask.
 - **Only this issue.** Never touch another lane's branch, worktree or pull request. Before a merge, update this
   branch onto the base as it is then (`steps/report.md`, Merge): another lane may have merged first.
 - **Taken over.** When `active` says this chat took the lane over (its launcher had stopped and the user

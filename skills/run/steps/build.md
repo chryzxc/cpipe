@@ -122,8 +122,9 @@ comes back through the next caller, so the loop finds it again and again.
 Side discoveries that block the acceptance (a broken helper, a wrong fixture): fix them inside the scope and note
 them. Anything outside the scope goes in the report.
 
-Commands you cannot run as written (an approval policy blocks inline `-c`/`-e` code, `sh -c` or heredocs): write
-the script to a file and run the file, or call the program directly with its arguments. This never ends a step.
+Commands you cannot run as written (an approval policy blocks `execute_code`, inline `-c`/`-e` code, `sh -c` or
+heredocs): edit files with your file tools (patch, write), write a script to a file and run the file, or call the
+program directly with its arguments. Never run the blocked command again as it was. This never ends a step.
 
 ## 10. Clean
 

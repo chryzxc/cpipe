@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.8.1
+version: 4.8.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -49,10 +49,14 @@ something this machine cannot do; until then the run loops (Limits).
 The user sends the task and waits for the report. Never ask a question and never wait for an answer: no plan
 approval, no clarifying questions, no "should I". Never call a tool that waits for the user (a clarify or
 question tool, a command that needs the user's approval): it halts the run until they answer. Use another way,
-or skip that part and report it. Write commands that need no approval: read files with your file tool, and run
-one program with its arguments, never inline code (`python -c`, `node -e`), `sh -c`, heredocs or `if`/`;` chains.
-An approval that is refused or times out is the user's to give: do every part of the run that does not need it,
-never reach the same result another way, and end the turn with this line:
+or skip that part and report it. Write commands that need no approval: read and edit files with your file tools
+(read, search, patch, write), and run one program with its arguments, never `execute_code`, inline code
+(`python -c`, `node -e`), `sh -c`, heredocs or `if`/`;` chains; a script you need goes in a file you then run.
+A command blocked because no one can be asked (a one-shot or scheduled session: "runs without a user present")
+was never put to the user: do the same work the standard way above, never run it again as it was, and never
+pass it on as the user's approval. Only an approval Hermes asked the user in this chat, refused or timed out,
+is the user's to give: do every part of the run that does not need it, never reach the same result another
+way, and end the turn with this line:
 `⚠️ <n>/11 <Step> · needs your approval: <what the command does> · say continue to be asked again`.
 Every choice is yours:
 
@@ -376,8 +380,9 @@ before these files existed is brought up to them first: `now.md` gets its `## In
 instructions word for word, `track.json` the Done when of each step left and every instruction, and `results/` the
 base and delivery results of each check, so the gate decides from facts. Sometimes a report left an instruction
 unmet, and then the user says "continue" or repeats the instruction. That is the same task: do what is unmet, never
-only report again that it is not done. A "continue" after an approval that was refused or timed out is the user's
-answer to it: run that command again, so the approval asks again, and go on from there. A restart ends this chat's
+only report again that it is not done. A "continue" after an approval this chat asked, refused or timed out, is
+the user's answer to it: run that command again here, so the approval asks again, and go on from there; never
+hand it to a role step, which cannot ask. A restart ends this chat's
 turn, but not the profiles and checks it started: before starting one again, check its process (the pid in `now.md`)
 and its log or reply file, and wait for it or use its result. A "continue" while what the run waits on still runs:
 do any step that does not need its result, else end the turn with the wait line above and ` · <m> min in` after the

@@ -619,6 +619,10 @@ lane's report as it arrives, and writes a summary once every lane has reported.
 - A lane that stopped can be continued by hand in its own chat: that chat takes the lane over, the dispatcher no
   longer starts it, and its report goes to the lane's `report.md`, which the dispatcher posts. To take over a lane
   that still runs, tell the dispatcher: it marks the lane taken, then stops it and the role steps it started.
+- Lanes and role steps are one-shot sessions, where Hermes asks no one for an approval and blocks the command at
+  once. They edit with file tools and run scripts from files, so nothing needs one; a blocked command is done that
+  way instead of retried. An action that needs you in itself is named in the lane's report, and you approve it by
+  taking the lane over in its chat, where Hermes can ask.
 - `cpipe.py lanes <batch dir>` reads each lane's state from its files, so a lost notification loses nothing:
   `/cpipe --continue` picks every lane up again.
 - Heavy jobs (installs, large test runs, builds) from all lanes take turns on the machine.

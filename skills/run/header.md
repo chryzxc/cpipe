@@ -15,6 +15,9 @@ Whatever the outcome, complete the card: do not block it, request changes or cre
 ## Rules
 Work only in <worktree>. Do not commit, push, merge, open pull requests or message anyone.
 Do not skip or weaken tests. Never print secrets or .env contents.
+No one can approve a command in this session. Edit files with your file tools (patch, write), never with
+execute_code or inline -c/-e code; a script you need goes in a file you run. A command blocked for an
+approval is done that way instead, never run again as it was, and never ends your step.
 A failure that also happens without this change is the baseline: note it and keep going. Never stop for a
 decision: choose within the request's scope and say what you chose.
 The user's instructions for this work, word for word; they settle the questions they answer:
