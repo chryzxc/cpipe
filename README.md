@@ -605,11 +605,13 @@ minutes counts as a failed role. The run only ever touches cards it created.
 
 Without a flag, the issues of one task are delivered in the chat, one after another, so the role sessions carry
 over and two issues that belong together can share a delivery. With `/cpipe --parallel <issues>`, each issue gets
-a lane: a session of its own in the background, started from the repository the task came from, so Hermes files
-it under that repository's project and lists it with your chats (role sessions stay hidden). The chat only starts
+a lane: a session of its own in the background, started in the issue's repository, so Hermes files it under that
+repository's project and lists it with your chats (role sessions stay hidden). The chat only starts
 lanes, posts a line each time a lane's step changes (at most every five minutes, nothing when none did), posts each
 lane's report as it arrives, and writes a summary once every lane has reported.
 
+- The chat finds each issue's repository once and hands it to the lane. When the chat is not in that repository,
+  a candidate counts only when the task's base branch is on its remote and the task's issues are in it.
 - Up to four lanes run at once (name another number in the task); the rest start as lanes finish.
 - A lane runs each role step in the background and waits on it with the process tool, five minutes per wait, so
   a long step is never cut off by Hermes' limit on one tool call and a lane spends one short reply per wait.

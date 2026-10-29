@@ -7,15 +7,19 @@ worktree, or waits on anything but the lanes. One issue in a `--parallel` task i
 
 ## In this chat
 
-1. **Batch.** Split the task into its issues. The batch folder is `<Hermes root>/cpipe/lanes/<YYYYMMDD-HHMMSS>/`.
-   Write its `now.md`: `## Instructions` with the user's instructions word for word (Run log), then `## Lanes`
-   with each lane's number and issue. Register it: `active <batch dir>` (`cpipe:run`, Facts).
+1. **Batch.** Split the task into its issues. Find each issue's repository (usually one for all) as
+   `steps/setup.md`, Set up, step 1 says, with its checks when this chat is not in it; it is the only step file
+   the dispatcher reads, and a lane never looks for its repository again.
+   The batch folder is `<Hermes root>/cpipe/lanes/<YYYYMMDD-HHMMSS>/`.
+   Write its `now.md`: `## Instructions` with the user's instructions word for word (Run log), then
+   `## Lanes` with each lane's number, issue and repository (its top-level path). Register it:
+   `active <batch dir>` (`cpipe:run`, Facts).
 2. **Lanes.** One folder per issue, `<batch dir>/<n>/`, numbered from 1, each with an empty `inbox.md` and a
    `brief.md` that starts with `# <the issue in one line>` and then says, in this order:
    - Load the skill cpipe:run with skill_view (without skill_view, read `<skill dir>/SKILL.md` with your file
      tool) and deliver this one issue as a lane of a parallel batch: follow `parallel.md` beside it, In a lane.
-     The Hermes root: `<root>`. Lane folder: `<lane dir>`. Run it unattended to the report: this is my last
-     message, so never stop to ask or wait.
+     The Hermes root: `<root>`. Lane folder: `<lane dir>`. Repository: `<its repository>`. Run it
+     unattended to the report: this is my last message, so never stop to ask or wait.
    - The issue in full: its number or link and everything the user said about it.
    - The user's instructions, word for word, every one that applies to all issues (push, pull request, merge).
    - The other lanes: `Lane <n> of <total>; others: <their issues>`.
@@ -23,9 +27,9 @@ worktree, or waits on anything but the lanes. One issue in a `--parallel` task i
    limit is 14400 seconds unless the user gave one. `lanes <batch dir>` prints the lanes and what to do
    (`START <n>`); run every start in one reply, each in the background with a completion notification and a
    heartbeat of 300 seconds (the lane prints a `LANE` line each time its step changes; a quiet tick is skipped):
-   `sh <skill dir>/bin/lane.sh <batch dir>/<n> <repository> <limit> <who>`, the repository being the checkout the
-   task came from: a session started in it is filed by Hermes under that repository's project, and the launcher
-   saves it as a chat (role sessions stay hidden), so every lane shows in the session list there. Up to four
+   `sh <skill dir>/bin/lane.sh <batch dir>/<n> <repository> <limit> <who>`, with the lane's repository from Batch:
+   a session started in it is filed by Hermes under that repository's project, and the launcher saves it as a
+   chat (role sessions stay hidden), so every lane shows in the session list there. Up to four
    run at once (`--at-once <n>` when the user names another number); the rest are queued and start as lanes
    finish.
 4. **Wait.** End the turn with `⏳ <running> lanes running, <queued> queued · each reports here · resumes on its
