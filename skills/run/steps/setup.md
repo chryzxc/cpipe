@@ -17,8 +17,8 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    repository it was forked from, holds each issue the task names with a title that fits
    (`gh issue view <n> --repo <owner/repo> --json title`, or the hosting service's own CLI). A number from a plan,
    backlog or report is not an issue: no title fits it anywhere, and it rules out no candidate; the plan or report
-   it came from often names the repository or base. Fetch the base so it is current, and from here on the base is the fetched remote branch (`origin/<base>`), never a local branch of
-   that name, which can be days behind it.
+   it came from often names the repository or base. Fetch the base so it is current, and from here on the base is
+   the fetched remote branch (`origin/<base>`), never a local branch of that name, which can be days behind it.
 2. **Branch name.** cpipe sets no naming rules of its own. Name the branch by what the user's agent setup
    already says (your memory, user profile, persona and skills), then the project's instructions, then the
    pattern of its recent branches (`git branch -r --sort=-committerdate | head -20`). The branch is pushed, so the
