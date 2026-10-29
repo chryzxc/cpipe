@@ -9,11 +9,15 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    default branch. A lane's brief names its repository: use that one. Otherwise, if the task names a repository,
    path or base branch, use it; if several repositories match, pick the one the conversation used. When this chat
    is not in the repository the task means (no checkout here, or a different one), a candidate found another way
-   (a file name, a search) is checked before it is used: the base the task names is on its remote
-   (`git ls-remote --heads origin <base>`), and each issue the task names is in its hosting repository with a
-   title that fits (`gh issue view <n> --repo <owner/repo> --json title`, or the hosting service's own CLI). A
-   candidate that fails a check is not the repository; one that passes them all is. Fetch the base so it is
-   current, and from here on the base is the fetched remote branch (`origin/<base>`), never a local branch of
+   (a file name, a search) is checked against its own remote, the one its branches come from, before it is used:
+   its `owner/repo` is read from `git -C <candidate> remote get-url origin`; each branch the task names (the base
+   to branch from, a branch or pull request to continue) is on that remote
+   (`git -C <candidate> ls-remote --heads origin <branch>`). A candidate without them is not the repository.
+   When several have them, or the task names no branch, the issues decide: the one whose `owner/repo`, or the
+   repository it was forked from, holds each issue the task names with a title that fits
+   (`gh issue view <n> --repo <owner/repo> --json title`, or the hosting service's own CLI). A number from a plan,
+   backlog or report is not an issue: no title fits it anywhere, and it rules out no candidate; the plan or report
+   it came from often names the repository or base. Fetch the base so it is current, and from here on the base is the fetched remote branch (`origin/<base>`), never a local branch of
    that name, which can be days behind it.
 2. **Branch name.** cpipe sets no naming rules of its own. Name the branch by what the user's agent setup
    already says (your memory, user profile, persona and skills), then the project's instructions, then the
