@@ -213,6 +213,7 @@ def gate(run_dir):
             fix.append(f"{i['id']} {i['text']}")
         elif i["status"] == "user":
             user.append(f"{i['id']} {i['evidence']}")
+    fix += [UNSAID.format(line) for line in unsaid(run_dir)]
     d = Path(run_dir) / "results"
     checks = sorted({p.name.rsplit(".", 2)[0] for p in [*d.glob("*.base.json"), *d.glob("*.head.json")]})
     if not checks:
@@ -321,6 +322,35 @@ def active(run_dir, done=False):
     return out
 
 
+def unsaid(run_dir):
+    """Lines under now.md's Instructions the user never wrote in this chat: a reading passed off as their words."""
+    sid = os.environ.get("HERMES_SESSION_ID", "")
+    db_path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "state.db"
+    try:
+        told = re.search(r"(?ms)^## Instructions\n(.*?)(?=^## |\Z)", (Path(run_dir) / "now.md").read_text())
+    except OSError:
+        told = None
+    if not (sid and told and db_path.is_file()):  # outside a Hermes chat there is nothing to check against
+        return []
+    said, seen = [], set()
+    db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        while sid and sid not in seen:  # this chat and the chats it was compacted from
+            seen.add(sid)
+            said += [str(c) for (c,) in db.execute(
+                "SELECT content FROM messages WHERE session_id = ? AND role = 'user' AND content IS NOT NULL", (sid,))]
+            row = db.execute("SELECT parent_session_id FROM sessions WHERE id = ?", (sid,)).fetchone()
+            sid = row and row[0]
+    finally:
+        db.close()
+    said = " ".join(" ".join(said).split())
+    lines = [re.sub(r"^- \[.?\]\s*", "", line).strip() for line in told.group(1).splitlines() if line.startswith("- [")]
+    return [line for line in lines if line and " ".join(line.split()) not in said]
+
+
+UNSAID = "instruction not in the user's words: {} (write only what they wrote; your reading goes in the run log)"
+
+
 def chat():
     """The `hermes chat` command that runs a step on this chat's own profile, model and provider."""
     sid = os.environ.get("HERMES_SESSION_ID", "")
@@ -354,6 +384,8 @@ def brief(run_dir, worktree, role, round_, resume=False, card=False):
         told = re.search(r"(?ms)^## Instructions\n(.*?)(?=^## |\Z)", (Path(run_dir) / "now.md").read_text())
     except OSError:
         told = None
+    if bad := unsaid(run_dir):  # a role takes these as settled, so a reading here decides the work
+        raise SystemExit(" | ".join(UNSAID.format(line) for line in bad))
     head = parts["Lean"] if resume else parts["Card" if card else "Direct"] + parts["Rules"] + parts["Lean"]
     for key, value in (("<worktree>", worktree), ("<run dir>", run_dir), ("<role>", role),
                        ("<skill dir>", str(skill)), ("<instructions>", told and told.group(1).strip() or "none")):

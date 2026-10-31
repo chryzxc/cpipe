@@ -59,7 +59,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
   open questions are decided and listed with their reasons in the report.
 - **Your instructions are the contract.** Every instruction you give, in the task or later, is kept word for word
   in the run's state, settles the questions it answers and wins over cpipe's defaults. The run is done when each
-  one is met (a merge when there are no regressions included), not when the steps have run once.
+  one is met (a merge when there are no regressions included), not when the steps have run once. Each line is
+  checked against what you wrote in the chat, so the run's own reading of an answer never passes as yours, and an
+  answer that rules out one fix narrows how the goal is met, never the goal.
 - **Tests first, proof per kind.** A bug is reproduced with a failing test before the plan is written; a feature
   shows new tests red then green; a refactor keeps the same checks green before and after. Acceptance is written
   as `When <trigger>, <result>` rules, edges and user sequences (retry, cancel and reopen) included, and each

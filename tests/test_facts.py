@@ -182,6 +182,32 @@ def test_chat_flags_follow_this_chats_profile_model_and_switched_provider(tmp_pa
     assert facts.chat() == "hermes -p builder chat -m model-b --provider prov-b"
 
 
+def test_an_instruction_the_user_never_wrote_holds_the_gate_and_every_brief(tmp_path, monkeypatch):
+    """A reading of an answer ("disclose the gap") written as the user's words would let a role stop short."""
+    db = sqlite3.connect(tmp_path / "state.db")
+    db.execute("CREATE TABLE sessions (id TEXT, parent_session_id TEXT)")
+    db.execute("CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT)")
+    db.executemany("INSERT INTO sessions VALUES (?, ?)", [("s1", None), ("s2", "s1")])
+    db.executemany("INSERT INTO messages VALUES (?, ?, ?)", [
+        ("s1", "user", "Fix it and do an incremental\ncommit"), ("s2", "user", "Just use what is current now"),
+        ("s2", "assistant", "Disclose the gap")])
+    db.commit()
+    db.close()
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_SESSION_ID", "s2")
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "brief-plan-1.md").write_text("plan it")
+    now = run / "now.md"
+    now.write_text("## Instructions\n- [x] do an incremental commit\n- [ ] Just use what is current now\n## Current\n")
+    assert facts.unsaid(run) == [] and "plan it" in facts.brief(str(run), "/w", "plan", 1)
+    now.write_text("## Instructions\n- [ ] Just use what is current now. Disclose the gap\n## Current\n")
+    assert facts.unsaid(run) == ["Just use what is current now. Disclose the gap"]
+    assert "not in the user's words" in facts.gate(run)
+    with pytest.raises(SystemExit, match="not in the user's words"):
+        facts.brief(str(run), "/w", "plan", 1)
+
+
 def test_a_whole_loop_through_the_command_line(tmp_path):
     """'Merge it if there are no regressions': failures on both trees are baseline, a new one loops, then PASS."""
     import subprocess

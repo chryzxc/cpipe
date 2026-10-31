@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.10.2
+version: 4.11.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -37,7 +37,8 @@ one fix ("keep what is current" to a fix that needs a new setup) narrows how, ne
 within it (`steps/design.md`), and leave the gap open only when the user says so. That covers how to work (in parallel, which base, draft pull
 requests), what the change must respect (keep the client's behavior, follow an existing rule) and how to finish (push, open a pull request, merge when a
 condition holds). Write each one word for word in the run log and under `Instructions:` in `now.md` the moment it
-arrives. Check every plan, decision, fix and report against them. Where an instruction differs from a default
+arrives: only what the user wrote, never your reading of it (that goes in the run log). `gate` and `brief` refuse
+a line the user never wrote, since every role takes these lines as settled. Check every plan, decision, fix and report against them. Where an instruction differs from a default
 in these files, the instruction wins. Only the Safety guard rails still apply, and an instruction to push, open a
 pull request or merge gives the permission they ask for.
 
@@ -400,6 +401,9 @@ that already failed is never repeated.
   delta review is proven by its test and the checks, and the report lists it as fixed after the last review.
   Fixes for a failing check or a compile error, a resolved conflict, the cleanup and an update onto a moved base
   start no review or QA round: the last verify is their proof (`steps/review.md`).
+- A reply that offers less than the goal (part of it, a gap left open and disclosed, "not feasible within
+  the constraint") is not a result: brief that role again for the fix within the constraint, or change the
+  approach, and loop again. Only the user ends a goal short.
 - No progress for three rounds in a row: step back to the goal, change the approach, and loop again.
 - Each round closes more than it opens. A round whose fix led to new findings, twice in a row, or a fix that
   breaks working behavior: go back to the last green tree and take the narrower approach (`steps/review.md`,
