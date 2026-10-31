@@ -94,6 +94,7 @@ def register(ctx):
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
         ctx.register_hook("pre_verify", _unfinished)
+        ctx.register_hook("post_llm_call", lambda **kw: _watch(ctx, **kw))
     if hasattr(ctx, "register_system_prompt_section"):
         ctx.register_system_prompt_section("cpipe.run", _pinned, max_chars=PINNED_MAX)
 
@@ -211,7 +212,7 @@ def _running(history):
 def _steering(user_message=None, conversation_history=None, **_):
     """Context for a user message that arrives while a run is going (no flow control: the skill decides)."""
     message = _text(user_message).lstrip()
-    if not message or message.startswith((*MARKS, "/cpipe")):
+    if not message or message.startswith((*MARKS, "/cpipe", "[cpipe")):
         return None
     return {"context": STEERING} if _running(conversation_history) else None
 
@@ -274,6 +275,87 @@ def _unfinished(session_id="", final_response="", **_):
         return {"action": "continue", "message": UNFINISHED.format(verdict=_short(verdict, 1500))}
     except Exception:  # a hook never breaks a session
         return None
+
+
+WATCH = ("[cpipe watcher] Your last reply ended the turn, but the run is not finished and nothing it started is "
+         "running to wake it. The gate: {verdict}\n{ask}\nCheck that reply against the goal and spec.md: was "
+         "what it did right, and what is the next item? Do it now and go on to the report (cpipe:run).")
+ASKS = {
+    "paused": "The turn limit paused it: go on from its Next line.",
+    "wait": "It ended on a ⏳ wait with nothing running: start what it waits on in the background, or do the work.",
+    "ask": "Only your questions are left: end the turn on the ❓ waiting-on-your-answer lines (spec.md).",
+    "user": "Only the user's own items are left: end the turn on their ⚠️ lines, or finish what you still can.",
+    "report": "Every item is done: write the report now (steps/report.md).",
+    "fix": "Do the next item.",
+    "stuck": "This is nudge {n} with no change in the gate or the checklist: the same approach is not working. "
+             "Change it (cpipe:run, Limits): re-read the failure, re-plan that item, or take another design.",
+}
+STUCK_AT, GIVE_UP = 3, 8  # ponytail: identical nudges before "change approach" / before the watcher lets go
+HALT = re.compile(r"\b(stop|pause|hold|cancel|abort)\b", re.I)
+
+
+def _nudge(reply, verdict):
+    """What the watcher asks of the next turn, or None when this turn may end where it did."""
+    if REPORT_LINE.search(reply):
+        return None
+    kind = verdict.split(":", 1)[0]
+    if reply.lstrip().startswith("⏳ Paused"):
+        return "paused"
+    if kind in ("SPEC", "ASK"):
+        return None if "❓" in reply else "ask"
+    if kind == "NEEDS-USER":
+        return None if "⚠" in reply else "user"
+    if kind == "PASS":
+        return "report"
+    return "wait" if "⏳" in reply else "fix"
+
+
+def _progress(run, verdict, ask):
+    """How many nudges in a row found the run as it is now (gate and checklist unchanged), this one included."""
+    import hashlib
+    try:
+        track = (run / "track.md").read_text()
+    except OSError:
+        track = ""
+    mark = hashlib.sha1(f"{verdict}\n{track}\n{ask}".encode()).hexdigest()
+    seen = run / "watch.txt"
+    try:
+        last, n = seen.read_text().split()
+        n = int(n) + 1 if last == mark else 1
+    except (OSError, ValueError):
+        n = 1
+    seen.write_text(f"{mark} {n}")
+    return n
+
+
+def _watch(ctx, session_id="", user_message="", assistant_response="", conversation_history=None, **_):
+    """post_llm_call: the run's watcher. After each turn of a run's chat it reads the gate; when the turn ended
+    with the run unfinished and nothing running to wake it, it queues the next turn, the way Hermes' goal loop
+    continues one, with the gate's facts and a check of the last reply. A turn the user stopped is left alone."""
+    try:
+        if os.environ.get("CPIPE_STEP") or os.environ.get("CPIPE_LANE"):
+            return  # a role's session ends on its step; a stopped lane is resumed by its dispatcher
+        message = _text(user_message)
+        if not message.startswith(MARKS) and not message.startswith("[cpipe") and HALT.search(message[:200]):
+            return
+        if not _running(conversation_history):
+            return
+        run = _run_dir({"session_id": session_id})
+        if not run or not run.is_dir() or _waiting(session_id):
+            return
+        verdict = _gate(run, session_id)
+        ask = _nudge(_text(assistant_response), verdict)
+        if not ask:
+            return
+        n = _progress(run, verdict, ask)
+        if n > GIVE_UP:
+            return
+        hint = ASKS["stuck"].format(n=n) if n >= STUCK_AT else ASKS[ask]
+        from gateway.session_context import get_session_env
+        key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
+        ctx.inject_message(WATCH.format(verdict=_short(verdict, 1500), ask=hint), role="user", session_key=key)
+    except Exception:  # a hook never breaks a session
+        return
 
 
 def _home():

@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.18.0
+version: 4.19.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -104,7 +104,7 @@ until it finishes, end the turn with exactly this line, the time being when its 
 `⏳ <n>/11 <Step> · waiting on <who or what> · done by <clock time> · resumes on its own`, such as
 `⏳ 8/11 QA · waiting on sentinel's checks · done by 12:29 · resumes on its own`. Never a line of your own:
 without the time and the resume note a wait looks like a stop. Its
-notification starts the next turn. With nothing running, a reply without a tool call stops the run silently, so
+notification starts the next turn. With nothing running, a reply without a tool call ends the turn on nothing, so
 end a turn only on such a wait, a needed approval (above), the pause message, the `❓` waiting-on-your-answer
 lines when `gate` says `ASK` (`spec.md`), or the report. A wait line with
 nothing of this chat's running comes back to you as unfinished. Progress updates go in
@@ -138,7 +138,7 @@ asks for a final summary without tools), the final reply is this pause message a
 Done: <what this turn finished, in one line>
 Next: <the exact next action>, then <what is left until every instruction is met>
 Decided: <each open question or unexplained result: the decision the next turn acts on, and why>
-Resumes: when <what is running> finishes | on your next message (nothing is running)
+Resumes: when <what is running> finishes | on its own (nothing is running)
 ```
 
 Leave out `Decided` when nothing is open. An open item is never only "unresolved" or "cause unknown": it carries

@@ -57,6 +57,11 @@ missing, it works around the obstacle, records what it could not verify, and kee
 
 - **Unattended, end to end.** The task is the last message you send. No plan approval, no stops to ask: open
   questions are decided and listed with their reasons in the report.
+- **A watcher that keeps it going.** After every turn of a run, cpipe reads the run's gate. When a turn ended
+  with work left and nothing running to wake it (a turn-limit pause, a wait on nothing, a summary instead of the
+  next step), it queues the next turn with the gate's facts and asks the run to check its last reply against the
+  goal and the spec. When several nudges in a row change nothing, it tells the run to change approach. It never
+  nudges a turn you stopped, a ❓ question waiting on you, or a finished report.
 - **Spec questions that never block.** Each run writes `spec.md`: every requirement and constraint quoting your
   words, checked against the code. Where the two disagree and nothing settles it, the run posts a `❓` question
   and keeps building on its recommended answer; it waits for you only when nothing else is left, and never

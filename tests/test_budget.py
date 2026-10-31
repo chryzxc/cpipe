@@ -181,3 +181,46 @@ def test_a_turn_cannot_end_on_a_question_while_the_gate_has_work(tmp_path, monke
     assert cpipe._unfinished(session_id="other", final_response=ask) is None  # no run in that chat
     monkeypatch.setenv("CPIPE_STEP", "build")  # a role's own session ends on its reply
     assert cpipe._unfinished(session_id="s1", final_response=ask) is None
+
+
+def test_the_watcher_queues_the_next_turn_until_the_run_is_done(tmp_path, monkeypatch):
+    import sys, types
+    sys.modules.setdefault("gateway", types.ModuleType("gateway"))
+    sys.modules["gateway.session_context"] = types.SimpleNamespace(get_session_env=lambda _: None)
+    run = tmp_path / "run"
+    run.mkdir()
+    verdict = {"v": "FIX: R1 has no proof"}
+    monkeypatch.setattr(cpipe, "_run_dir", lambda _: run)
+    monkeypatch.setattr(cpipe, "_gate", lambda *_: verdict["v"])
+    monkeypatch.setattr(cpipe, "_waiting", lambda _: False)
+    monkeypatch.delenv("CPIPE_STEP", raising=False)
+    monkeypatch.delenv("CPIPE_LANE", raising=False)
+
+    class Ctx:
+        text = None
+        def inject_message(self, text, **_):
+            self.text = text
+            return True
+    started = [{"role": "user", "content": cpipe.START.format(skill="s", root="r") + "fix it"}]
+
+    def turn(reply, user="go"):
+        ctx = Ctx()
+        cpipe._watch(ctx, session_id="s", user_message=user, assistant_response=reply,
+                     conversation_history=started + [{"role": "assistant", "content": reply}])
+        return ctx.text
+
+    assert "Do the next item" in turn("I could not finish R1, here is a summary.")
+    assert "turn limit" in turn("⏳ Paused by the turn limit at 6/11 build, not finished: x")
+    assert turn("ok, stopping", user="please stop the run") is None  # the user's stop wins
+    for _ in range(4):
+        last = turn("same summary")
+    assert "Change it" in last  # nudges that change nothing ask for another approach
+    for _ in range(cpipe.GIVE_UP):
+        last = turn("same summary")
+    assert last is None  # and never loop forever
+    verdict["v"] = "ASK: answer: R2"
+    assert turn("❓ 6/11 Build · waiting on your answer · R2: which?") is None
+    assert "❓" in turn("Still working.")
+    verdict["v"] = "PASS: every item done"
+    assert "write the report" in turn("All done!")
+    assert turn("✅ Done · fix it") is None
