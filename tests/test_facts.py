@@ -130,6 +130,15 @@ def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
     with pytest.raises(SystemExit, match="loop's work"):  # a choice of fix or scope is never the user's
         facts.track(tmp_path, "set", [b, "user", "the smallest-fix scope rules out the transaction fix"])
     facts.track(tmp_path, "set", [b, "user", "external: a required approving review"])
+    c = facts.track(tmp_path, "add", ["design", "screens", "match"])
+    with pytest.raises(SystemExit, match="cannot be skipped"):  # "too big" or "out of scope" is the loop's work
+        facts.track(tmp_path, "set", [c, "skip", "out of scope for the smallest fix"])
+    facts.track(tmp_path, "set", [c, "skip", "n/a: no screen changes"])
+    (tmp_path / "now.md").write_text("## Instructions\n- [ ] merge it if there are no regressions\n")
+    d = facts.track(tmp_path, "add", ["report", "merge", "it", "if", "there", "are", "no", "regressions"])
+    with pytest.raises(SystemExit, match="only the user drops it"):
+        facts.track(tmp_path, "set", [d, "skip", "machine: no merge rights here"])
+    facts.track(tmp_path, "set", [d, "done", "merged"])
     (tmp_path / "results" / "ci.json").write_text(json.dumps([{"name": "test", "bucket": "pending"}]))
     assert facts.gate(tmp_path) == "WAIT: CI test"
     ci = [{"name": "test", "bucket": "pass"}, {"name": "quality", "bucket": "skipping"}, {"name": "lint", "bucket": "fail"}]

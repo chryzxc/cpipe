@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.12.0
+version: 4.13.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -100,7 +100,8 @@ until it finishes, end the turn with exactly this line, the time being when its 
 `⏳ 8/11 QA · waiting on sentinel's checks · done by 12:29 · resumes on its own`. Never a line of your own:
 without the time and the resume note a wait looks like a stop. Its
 notification starts the next turn. With nothing running, a reply without a tool call stops the run silently, so
-end a turn only on such a wait, a needed approval (above), the pause message or the report. Progress updates go in
+end a turn only on such a wait, a needed approval (above), the pause message or the report. A wait line with
+nothing of this chat's running comes back to you as unfinished. Progress updates go in
 the same reply as your next tool call. Without completion notifications, wait on that one process id with your
 process tool. Whatever you wait on ends on its own: every install, check and profile runs under a time limit
 (`steps/setup.md`, Time limit), so a hang still ends it and its notification still comes.
@@ -334,8 +335,9 @@ and prints data and a verdict, and you act on what it prints:
 - `track <run dir> add <step> <text>`, `set <id> done|skip|user <evidence>`, `open [<step>]`: the checklist in
   `track.json`. When a step starts, add its Done when items, one per condition; at the report also each merge
   condition and each instruction in `now.md`. An item closes only with its evidence (a result, a file, a count):
-  `done` when met, `skip` with the reason it does not apply or this machine cannot run it, `user` for what only
-  the user may do, its evidence starting with its kind: `credentials:`, `destructive:`, `external:` (push, pull
+  `done` when met, `skip` only as `n/a: <why it does not exist in this change>` or `machine: <what this machine
+  cannot run>` and never for a user's instruction, `user` for what only the user may do, its evidence starting
+  with its kind: `credentials:`, `destructive:`, `external:` (push, pull
   request, merge, deploy, messages) or `approval:` (one Hermes asked the user, refused or timed out). `track` and
   `gate` refuse any other: which fix, the scope or how the code behaves is the run's to decide. Unclear, "not established" or "inconclusive" stays open and is work for the loop.
 - `gate <run dir>`: the run's verdict. `FIX: …` is the loop's next work; `WAIT: …` ends the turn on a wait line;

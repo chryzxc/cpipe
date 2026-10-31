@@ -213,13 +213,31 @@ UNFINISHED = ("[cpipe] The run's gate still has work, so this turn cannot end he
               "gate has work (cpipe:run, Limits). Do the next item now, and finish the goal.")
 
 
+IDLE_WAIT = ("[cpipe] This turn ends on a ⏳ wait, but nothing this chat started is running, so nothing will "
+             "wake the run: start the work it waits on in the background with a completion notification, or do "
+             "the next item now.")
+
+
+def _waiting(session_id):
+    """True when this chat has a background process running: its completion notification starts the next turn
+    (the same snapshot Hermes' own goal loop waits on)."""
+    try:
+        from hermes_cli.goals import gather_background_processes
+    except ImportError:  # a host without the snapshot: take the ⏳ line at its word
+        return True
+    return bool(gather_background_processes(owner_task_id=session_id or None))
+
+
 def _unfinished(session_id="", final_response="", **_):
     """pre_verify: the chat is about to end its turn. While `cpipe.py gate` says FIX, only a wait or pause line
-    (⏳) may end it; anything else (a question, a "not ready" summary) gets the gate's own verdict back."""
+    (⏳) with work running may end it; anything else (a question, a "not ready" summary, a wait on nothing)
+    gets the gate's own verdict back."""
     try:
         run = None if os.environ.get("CPIPE_STEP") else _run_dir({"session_id": session_id})
-        if not run or not run.is_dir() or _text(final_response).lstrip().startswith("⏳"):
+        if not run or not run.is_dir():
             return None
+        if _text(final_response).lstrip().startswith("⏳"):
+            return None if _waiting(session_id) else {"action": "continue", "message": IDLE_WAIT}
         import importlib.util
         spec = importlib.util.spec_from_file_location("cpipe_facts", SKILL.parent / "bin" / "cpipe.py")
         facts = importlib.util.module_from_spec(spec)

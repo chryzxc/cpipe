@@ -30,8 +30,20 @@ NOT_USER = ("{} is the loop's work, not the user's: `user` is only for " + ", ".
             " (evidence `<kind>: …`); a choice between fixes or scope is decided by the run")
 
 
+# What `skip` may mean: the item does not exist in this change, or this machine cannot run it; never "too big" or
+# "out of scope", and never a user's instruction (only the user drops one)
+SKIP_KINDS = ("n/a", "machine")
+NOT_SKIP = ("{} cannot be skipped: `skip` is only for " + ", ".join(SKIP_KINDS) + " (evidence `<kind>: …`: "
+            "it does not exist in this change, or this machine cannot run it); anything else is the loop's work")
+NOT_SKIP_TOLD = "{} is the user's instruction: only the user drops it, so it is done or still the loop's work"
+
+
+def _kind(evidence, kinds):
+    return evidence.split(":", 1)[0].strip().lower() in kinds
+
+
 def _for_user(evidence):
-    return evidence.split(":", 1)[0].strip().lower() in USER_KINDS
+    return _kind(evidence, USER_KINDS)
 LINE_COL = re.compile(r"[:(]\d+(?:[:,]\d+)?\)?(?=[:\s]|$)")
 
 
@@ -192,9 +204,13 @@ def track(run_dir, action, args):
             raise SystemExit(f"{ident}: {status} needs its evidence (a result, a file, a count) or its reason")
         if status == "user" and not _for_user(evidence):
             raise SystemExit(NOT_USER.format(ident))
+        if status == "skip" and not _kind(evidence, SKIP_KINDS):
+            raise SystemExit(NOT_SKIP.format(ident))
         match = [i for i in items if i["id"] == ident]
         if not match:
             raise SystemExit(f"no item {ident}")
+        if status == "skip" and _fold(match[0]["text"]) in map(_fold, _told(run_dir)):
+            raise SystemExit(NOT_SKIP_TOLD.format(ident))
         match[0].update(status=status, evidence=evidence)
         result = f"{ident} {status}"
     else:
@@ -217,6 +233,7 @@ def gate(run_dir, sid=None):
     """FIX before WAIT before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
     fix, wait, user = [], [], []
     items = _items(run_dir)
+    told = set(map(_fold, _told(run_dir)))
     if not items:  # a run from before track.json, or one that lost it: nothing is proven yet
         fix.append("no checklist: add each step's Done when, the user's instructions and the merge conditions "
                    "with track add, closing each with its evidence")
@@ -225,6 +242,10 @@ def gate(run_dir, sid=None):
             fix.append(f"{i['id']} {i['text']}")
         elif i["status"] == "user" and not _for_user(i["evidence"]):
             fix.append(f"{NOT_USER.format(i['id'])}: {i['text']}")
+        elif i["status"] == "skip" and not _kind(i["evidence"], SKIP_KINDS):
+            fix.append(f"{NOT_SKIP.format(i['id'])}: {i['text']}")
+        elif i["status"] == "skip" and _fold(i["text"]) in told:
+            fix.append(f"{NOT_SKIP_TOLD.format(i['id'])}: {i['text']}")
         elif i["status"] == "user":
             user.append(f"{i['id']} {i['evidence']}")
     fix += [UNSAID.format(line) for line in unsaid(run_dir, sid)]
@@ -336,14 +357,26 @@ def active(run_dir, done=False):
     return out
 
 
+def _fold(text):
+    return " ".join(str(text).split())
+
+
+def _told(run_dir):
+    """The lines under now.md's Instructions: the user's instructions, word for word."""
+    try:
+        told = re.search(r"(?ms)^## Instructions\n(.*?)(?=^## |\Z)", (Path(run_dir) / "now.md").read_text())
+    except OSError:
+        return []
+    lines = [re.sub(r"^- \[.?\]\s*", "", line).strip() for line in told.group(1).splitlines()
+             if line.startswith("- [")] if told else []
+    return [line for line in lines if line]
+
+
 def unsaid(run_dir, sid=None):
     """Lines under now.md's Instructions the user never wrote in this chat: a reading passed off as their words."""
     sid = sid or os.environ.get("HERMES_SESSION_ID", "")
     db_path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "state.db"
-    try:
-        told = re.search(r"(?ms)^## Instructions\n(.*?)(?=^## |\Z)", (Path(run_dir) / "now.md").read_text())
-    except OSError:
-        told = None
+    told = _told(run_dir)
     if not (sid and told and db_path.is_file()):  # outside a Hermes chat there is nothing to check against
         return []
     said, seen = [], set()
@@ -357,9 +390,8 @@ def unsaid(run_dir, sid=None):
             sid = row and row[0]
     finally:
         db.close()
-    said = " ".join(" ".join(said).split())
-    lines = [re.sub(r"^- \[.?\]\s*", "", line).strip() for line in told.group(1).splitlines() if line.startswith("- [")]
-    return [line for line in lines if line and " ".join(line.split()) not in said]
+    said = _fold(" ".join(said))
+    return [line for line in told if _fold(line) not in said]
 
 
 UNSAID = "instruction not in the user's words: {} (write only what they wrote; your reading goes in the run log)"

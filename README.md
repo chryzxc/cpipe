@@ -248,8 +248,10 @@ The run loops until the goal is met: fix, verify, check the goal, and go round a
 may do, or what the machine cannot run, ends it early. A bound limits one approach, not the run: reaching it
 changes the approach, and an attempt that failed is never repeated. What the user alone may do is a closed list
 (credentials, destructive actions, anything that leaves the machine, an approval Hermes asked for); a choice of
-fix or scope never is. The run cannot end a turn on a question while its gate still has work: through Hermes'
-`pre_verify` hook, the gate's verdict goes back to the chat, which keeps working.
+fix or scope never is. A checklist item is skipped only when it does not exist in the change or the machine cannot
+run it, and never when it is one of your instructions. The run cannot end a turn on a question while its gate
+still has work, nor on a wait while nothing it started is running: through Hermes' `pre_verify` hook, the gate's
+verdict goes back to the chat, which keeps working.
 
 | Loop | Bound |
 |---|---|

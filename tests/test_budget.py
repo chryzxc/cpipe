@@ -167,7 +167,14 @@ def test_a_turn_cannot_end_on_a_question_while_the_gate_has_work(tmp_path, monke
     ask = "⚠️ Needs your decision: authorize a broader approach or accept the risk?"
     nudge = cpipe._unfinished(session_id="s1", final_response=ask)
     assert nudge["action"] == "continue" and "verify-1 race tests pass" in nudge["message"]
-    assert cpipe._unfinished(session_id="s1", final_response="⏳ 6/11 Build · waiting on x · done by 1:00 · resumes on its own") is None
+    wait = "⏳ 6/11 Build · waiting on x · done by 1:00 · resumes on its own"
+    import types, sys
+    running = []  # Hermes' snapshot of this chat's background processes
+    goals = types.SimpleNamespace(gather_background_processes=lambda owner_task_id=None: running)
+    monkeypatch.setitem(sys.modules, "hermes_cli.goals", goals)
+    assert "nothing this chat started is running" in cpipe._unfinished(session_id="s1", final_response=wait)["message"]
+    running.append({"pid": 1, "status": "running"})
+    assert cpipe._unfinished(session_id="s1", final_response=wait) is None
     assert cpipe._unfinished(session_id="other", final_response=ask) is None  # no run in that chat
     monkeypatch.setenv("CPIPE_STEP", "build")  # a role's own session ends on its reply
     assert cpipe._unfinished(session_id="s1", final_response=ask) is None
