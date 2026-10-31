@@ -32,7 +32,7 @@ yourself:
    - **Work in flight:** open pull requests against the same base that change these files
      (`gh pr list --base <base> --json number,files`, filtered to the files on this map). Read what each one
      changes on these paths: the plan builds on behavior that may land first, and its tests do not assume a base
-     that one of them is about to change. Name them in the run log; Merge (`steps/report.md`) updates onto what
+     that one of them is about to change. Name them in the run log; Merge (`steps/publish.md`) updates onto what
      lands first.
    - **Behavior today:** a table of what happens now, read from the code on both sides of each boundary, not
      from the request. One row per actor and case: each role, the owner and a stranger, signed out, a job or

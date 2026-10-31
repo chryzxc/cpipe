@@ -16,6 +16,6 @@ and a verdict backed by them.
    changes needed, with each finding.
 5. **Fixes reach the pull request** when the task asks to fix it or make it right ("make sure there are no
    regressions", "fix the findings") or the user asked for that pull request earlier in this work: commit, push to
-   its branch, update its body and wait for its CI (`steps/report.md`, Pull request). Otherwise they stay
+   its branch, update its body and wait for its CI (`steps/publish.md`, Pull request). Otherwise they stay
    committed locally and the report gives the push command.
 6. **Never** approve on the hosting service, merge, mark ready or open another pull request unless the task asks.

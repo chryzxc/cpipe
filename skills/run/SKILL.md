@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.9.0
+version: 4.10.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -31,8 +31,9 @@ what you could not verify in the run log, and continue with the next step.
 ## The user's instructions are the contract
 
 Every instruction the user gives about this work, in the task or in any later message, holds until the user
-changes it. That covers how to work (in parallel, which base, draft pull requests), what the change must respect
-(keep the client's behavior, follow an existing rule) and how to finish (push, open a pull request, merge when a
+changes it. A later instruction replaces an earlier one it contradicts ("merge it" after "do not push" asks for
+the push and the pull request a merge needs): act on it, never ask which one holds. That covers how to work (in parallel, which base, draft pull
+requests), what the change must respect (keep the client's behavior, follow an existing rule) and how to finish (push, open a pull request, merge when a
 condition holds). Write each one word for word in the run log and under `Instructions:` in `now.md` the moment it
 arrives. Check every plan, decision, fix and report against them. Where an instruction differs from a default
 in these files, the instruction wins. Only the Safety guard rails still apply, and an instruction to push, open a
@@ -115,7 +116,8 @@ next tool call; a tick that arrives with nothing running gets no line and no nex
 replies, not calls: put independent tool calls (reads, briefs, checks to start) together in one reply. Calls in one
 reply run in the order given, so each sees what the ones before it wrote: a brief and the command that starts its
 profile go out in one reply, never the start after the brief's result. Long work
-(installs, checks, profiles) runs in the background with a completion notification: when a turn ends early, the
+(installs, checks, profiles, anything that can take over a minute: a tool call is cut off after a few minutes)
+runs in the background with a completion notification: when a turn ends early, the
 next notification starts a new turn and the run picks up there. A turn that ends with nothing running has no
 notification to resume it, so start the next long piece of work before a stretch of short steps. Do not start a
 timer or look for a tool to make one; the progress tick is the only one. When the cap ends the turn (a message
@@ -156,7 +158,7 @@ sessions, and only issues in different areas of the code: one that turns out to 
 running one waits for it. A notification moves only the delivery it names: read that delivery's `now.md`, not
 the others'. Each run log names the others (`Delivery 2 of 3; others: <branches>`). No combined or integration
 branch unless the user asks for one: each delivery is verified, reviewed and merged on its own, and one whose
-base moved is updated onto it (`steps/report.md`, Merge).
+base moved is updated onto it (`steps/publish.md`, Merge).
 Deliver two issues together only when one cannot work without the other (the same root cause or the same lines)
 or the user asked for a single pull request, and record why in Approach.
 
@@ -212,7 +214,7 @@ file tool from this skill's directory (the start message names its `SKILL.md`). 
 | 8. QA | Use the change on the real surface, try to break it, check the broader suite. Runs alongside 9. | `steps/qa.md` | qa |
 | 9. Review | Independent review in a fresh context; act on findings; at most two rounds. Runs alongside 8. | `steps/review.md` | review, security |
 | 10. Clean | The builder's cleanup of its own diff, then the last verify on the final tree. | `steps/build.md` | build |
-| 11. Report | Commit, a draft pull request and a merge only if asked, the report. | `steps/report.md` | |
+| 11. Report | Commit, a draft pull request and a merge only if asked, the report. | `steps/publish.md`, then `steps/report.md` | |
 
 The review only reads the code, so it never waits for the tests: start it in the background as soon as the
 first verify's narrow tests, light checks and completion gate pass, then start the related tests and the build. QA
@@ -221,7 +223,7 @@ read it: wait for all of them, then fix everything in one round (new failures, f
 and re-run only the QA items that failed together with the delta review.
 
 When the user asks for a draft pull request on the first commit, early or first, it opens right after the first
-verify passes its gate, and later rounds push to it (`steps/report.md`, Early draft); step 11 finishes it. Asked
+verify passes its gate, and later rounds push to it (`steps/publish.md`, Early draft); step 11 finishes it. Asked
 later, it opens once nothing runs in the worktree, never by pausing a profile.
 
 Every step runs on every task. A step that does not apply (design for an internal fix, QA for a docs change) is
@@ -375,28 +377,9 @@ again that it cannot be done with nothing changed. Take an approach not tried ye
 
 ## Continue
 
-When the user says "continue" (or `--continue`), a notification arrives mid-run, or the chat restarted mid-run: read `now.md`, run
-`active <run dir>`, `track <run dir> open` and `gate <run dir>` (Facts), read the run log only where they point, check `git status` and the last
-check results in the worktree, and pick up at the first unfinished step. Do not redo finished steps. A run started
-before these files existed is brought up to them first: `now.md` gets its `## Instructions` section with the user's
-instructions word for word, `track.json` the Done when of each step left and every instruction, and `results/` the
-base and delivery results of each check, so the gate decides from facts. Sometimes a report left an instruction
-unmet, and then the user says "continue" or repeats the instruction. That is the same task: do what is unmet, never
-only report again that it is not done. A "continue" after an approval this chat asked, refused or timed out, is
-the user's answer to it: run that command again here, so the approval asks again, and go on from there; never
-hand it to a role step, which cannot ask. A restart ends this chat's
-turn, but not the profiles and checks it started: before starting one again, check its process (the pid in `now.md`)
-and its log or reply file, and wait for it or use its result. A "continue" while what the run waits on still runs:
-do any step that does not need its result, else end the turn with the wait line above and ` · <m> min in` after the
-step; never read its partial output or start it again. With several deliveries, finish the unfinished one first,
-then start the next one its run log names.
-
-**Restart.** `--restart [<step>]` redoes the run from that step (Explore when none is named), on the
-roles this run sets and with new role sessions, whoever did it before. Before a restart at Explore through Build,
-save the worktree's changes from the base as `<run dir>/restart-<n>.patch`, then put the worktree back on the base
-(reset, and remove the files the run added). Mark that step and every later one unfinished in `now.md` and
-`track.json`, write `Restart: from <step> · <the user's reason>` in the run log, and go on from that step. The
-steps before it keep their results; a restart at Verify or later keeps the code.
+A "continue" (or `--continue`), a `--restart` or a chat restarted mid-run: load
+`skill_view(name='cpipe:run', file_path='continue.md')` and do what it says. A notification mid-run resumes the
+run as Unattended says.
 
 ## Limits
 
@@ -432,7 +415,7 @@ that already failed is never repeated.
 
 **Safety**
 - Never merge, push, open a pull request, deploy or message anyone unless the user asked for it in this work.
-  When they did, do it once its condition holds (`steps/report.md`).
+  When they did, do it once its condition holds (`steps/publish.md`).
 - Never put credentials, tokens or secrets in code, commits, logs, briefs or the report. Never print `.env`
   contents.
 - Never run destructive commands outside the worktree (deleting data, resetting branches, dropping databases),

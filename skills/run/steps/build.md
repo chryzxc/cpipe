@@ -145,7 +145,7 @@ is the proof: no review or QA round follows it.
 - Never skip, weaken or delete a test, and never add `.only`, `skip` or expected-failure markers.
 - Never hard-code secrets, test credentials or environment-specific paths.
 - No new dependency unless the plan names it.
-- Do not commit in this step; the report step commits (or the early draft, `steps/report.md`).
+- Do not commit in this step; the report step commits (or the early draft, `steps/publish.md`).
 
 ## Done when
 

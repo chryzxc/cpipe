@@ -1,6 +1,6 @@
 # The header of every role brief
 
-`cpipe.py brief` puts it in front of `brief-<role>.md` (`roles.md`, Handing a step to a role): Direct or Card,
+`cpipe.py brief` puts it in front of `brief-<role>-<round>.md` (`roles.md`, Handing a step to a role): Direct or Card,
 then Rules and Lean for a new session, Lean alone for a resumed one. `<…>` parts are filled in by it.
 
 ## Direct

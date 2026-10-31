@@ -68,7 +68,8 @@ You stay in charge: the flow, the checks, the run log and every decision are you
 step and reports back. This file has every command you need to run a profile: do not load other skills or help
 pages to learn the command line.
 
-1. **Brief.** Write the role's part (below) to a file next to the run log (`brief-<role>.md`). The launcher puts
+1. **Brief.** Write the role's part (below) to a new file next to the run log, `brief-<role>-<round>.md` with the
+   round you start it with, so no brief overwrites another. The launcher puts
    the header in front of it (`header.md` beside this file, filled in by `cpipe.py brief` with the user's
    instructions from `now.md`), so never write the header or its rules into the brief yourself: they keep the
    role from reading the code again and again, and a role cannot ask for them later.
@@ -123,7 +124,8 @@ pages to learn the command line.
    beside this file, in the background with a completion notification (in a `--parallel` lane, waited on instead:
    `parallel.md`, In a lane):
    `sh <skill dir>/bin/step.sh <run dir> <worktree> <role> <round> <run budget> <limit> <who> [--reasoning <effort>]`
-   It runs `hermes chat` from `<run dir>/brief-<role>.md` with the role's turns (build 150, plan 120, the rest 60),
+   It runs `hermes chat` from `<run dir>/brief-<role>-<round>.md` with the role's turns (build 150, plan 120,
+   the rest 60),
    under the time limit (`steps/setup.md`, Time limit), its output in `<run dir>/logs/<role>-<round>.txt`, and
    prints the log's end, so the notification carries the reply and the session id and no reply goes to reading
    them. Never type the `hermes chat` command yourself. `<who>` is `hermes -p <profile> chat`, written out so the
@@ -166,28 +168,8 @@ pages to learn the command line.
 
 ## On the board (`--kanban`)
 
-When the task message starts with `--kanban`, hand each role step over as a card on the user's Hermes kanban board
-instead of running the profile directly, so the work shows on the board. Everything else stays the same: the brief,
-the budgets, the checks you run yourself and the fallback. A role without a profile runs directly, as above: a card
-cannot take this chat's model.
-
-1. **Brief.** The card's body is the brief behind the card header (Card in `header.md`):
-   `python3 <skill dir>/bin/cpipe.py brief <run dir> <worktree> <role> --card > <run dir>/card-<role>.md`
-
-2. **Create the card:**
-   `hermes kanban create "cpipe <role>: <goal>" --assignee <profile> --body-file <run dir>/card-<role>.md --workspace dir:<worktree> --max-runtime <budget>s --max-retries 1 --idempotency-key <branch>-<role>-<round> --json`
-   Write the card id in the run log. A follow-up to the same role is a new card with `--parent <previous card id>`.
-3. **Wait** with one background command and a completion notification: it checks
-   `hermes kanban show <card id> --json` every 30 seconds and exits when the status is `done`, `blocked`, `review`
-   or `archived`, when it is still not claimed after 10 minutes, or 10 minutes past the card's budget whatever its
-   status, so the wait always ends (a script file if the approval policy blocks the loop). Keep working on
-   anything that does not depend on it, then end the turn (`cpipe:run`, Waiting ends the turn).
-4. **Read** the result from `latest_summary` and the comments. It is a claim, as below.
-
-The card failed if it ends blocked or with no usable result, is still running two minutes past its budget, or is
-still not claimed after 10 minutes
-(no dispatcher is running). Archive it (`hermes kanban archive <card id>`), note why, and follow "When a role
-fails". Only ever touch cards this run created.
+With `--kanban`, role steps go out as cards on the user's board: load
+`skill_view(name='cpipe:run', file_path='kanban.md')` once and follow it.
 
 ## What comes back is a claim
 

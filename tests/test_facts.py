@@ -126,7 +126,11 @@ def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
     facts.track(tmp_path, "set", [b, "user", "a required approving review"])
     (tmp_path / "results" / "ci.json").write_text(json.dumps([{"name": "test", "bucket": "pending"}]))
     assert facts.gate(tmp_path) == "WAIT: CI test"
-    (tmp_path / "results" / "ci.json").write_text(json.dumps([{"name": "test", "bucket": "pass"}]))
+    ci = [{"name": "test", "bucket": "pass"}, {"name": "quality", "bucket": "skipping"}, {"name": "lint", "bucket": "fail"}]
+    (tmp_path / "results" / "ci.json").write_text(json.dumps(ci))
+    assert facts.gate(tmp_path) == "FIX: CI lint: fail"
+    base = [{"name": "lint", "status": "completed", "conclusion": "startup_failure"}]
+    (tmp_path / "results" / "ci-base.json").write_text(json.dumps(base))
     assert facts.gate(tmp_path) == f"NEEDS-USER: {b} a required approving review"
     assert facts.report(tmp_path).startswith("⚠️ Done except")
 
@@ -261,11 +265,11 @@ def test_a_chat_that_continues_a_stopped_lane_takes_it_over(tmp_path, monkeypatc
 
 def test_brief_puts_the_header_in_front(tmp_path):
     (tmp_path / "now.md").write_text("## Instructions\n- merge it if no regressions\n\n## Step\n9 review\n")
-    (tmp_path / "brief-review.md").write_text("Review this change.\n")
-    first = facts.brief(str(tmp_path), "/wt", "review")
+    (tmp_path / "brief-review-1.md").write_text("Review this change.\n")
+    first = facts.brief(str(tmp_path), "/wt", "review", 1)
     assert first.startswith("Direct request") and "Work only in /wt." in first and "<" + "instructions>" not in first
     assert "- merge it if no regressions" in first and "## Step" not in first
     assert f"{tmp_path}/review-reply.md" in first and first.endswith("read them.\n\nReview this change.\n")
-    again = facts.brief(str(tmp_path), "/wt", "review", resume=True)
+    again = facts.brief(str(tmp_path), "/wt", "review", 1, resume=True)
     assert again.startswith("Every reply resends") and "Work only in" not in again
-    assert facts.brief(str(tmp_path), "/wt", "review", card=True).startswith("Card from a delivery run.")
+    assert facts.brief(str(tmp_path), "/wt", "review", 1, card=True).startswith("Card from a delivery run.")

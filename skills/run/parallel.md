@@ -47,7 +47,7 @@ thing in the chat. `DONE` writes the summary.
 Post them as they are, one line each, and end the turn on the wait line; nothing else runs.
 
 **A message from the user.** Steering for one lane (it names its issue or number) is appended to that lane's
-`inbox.md`, for every lane to every `inbox.md` and to the queued lanes' `brief.md`; add it to the batch's
+`inbox.md` (`printf '%s\n' '<the message>' >> <file>`, never a rewrite of a file this chat has not read), for every lane to every `inbox.md` and to the queued lanes' `brief.md`; add it to the batch's
 `now.md` too. A question about progress is answered from `lanes <batch dir>`. The user taking a lane over (to
 continue or restart it in its own chat): write `user` to `<lane dir>/taken` first, then stop the lane with your
 process tool's kill and any role step it left running (`pkill -f <its run dir>/logs/`).
@@ -84,7 +84,7 @@ these differences.
   in the report's `⚠️ Done except` line, with `approve it by taking this lane over in its chat`. Never the
   needs-your-approval line in a lane: a "continue" runs one-shot again and cannot ask.
 - **Only this issue.** Never touch another lane's branch, worktree or pull request. Before a merge, update this
-  branch onto the base as it is then (`steps/report.md`, Merge): another lane may have merged first.
+  branch onto the base as it is then (`steps/publish.md`, Merge): another lane may have merged first.
 - **Taken over.** When `active` says this chat took the lane over (its launcher had stopped and the user
   continued it here), this is a chat like any other from then on: run and wait on role steps as `roles.md`, Run
   says. The dispatcher leaves the lane to this chat and posts the run's `report.md` (`steps/report.md`, Report).

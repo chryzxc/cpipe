@@ -10,7 +10,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py report <run dir> [--check]
   python3 cpipe.py active <run dir> [--done]
   python3 cpipe.py chat
-  python3 cpipe.py brief <run dir> <worktree> <role> [--resume] [--card]
+  python3 cpipe.py brief <run dir> <worktree> <role> <round> [--resume] [--card]
   python3 cpipe.py lanes <batch dir> [--at-once <n>] [--report <lane>]
   python3 cpipe.py step <lane dir>
 """
@@ -192,6 +192,14 @@ def track(run_dir, action, args):
     return result
 
 
+CI_FAILED = {"fail", "failure", "cancel", "cancelled", "timed_out", "startup_failure", "action_required"}
+
+
+def _ci_bucket(ci):
+    """`gh pr checks` gives a bucket; the check-runs API a conclusion, or a status while it runs."""
+    return (ci.get("bucket") or ci.get("conclusion") or ci.get("state") or ci.get("status") or "").lower()
+
+
 def gate(run_dir):
     """FIX before WAIT before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
     fix, wait, user = [], [], []
@@ -214,9 +222,11 @@ def gate(run_dir):
         fix += [f"{check}: new failure {n}" for n in c["new"]]
         fix += [f"{check}: run {n} alone on the delivery (results {check}.head-alone.json)" for n in c["rerun-head"]]
         fix += [f"{check}: run {n} on the base (results {check}.base-alone.json)" for n in c["rerun-base"]]
+    # A job that fails the same way on the base commit is the base's, as with any check
+    base_failed = {ci.get("name") for ci in _load(d / "ci-base.json") or [] if _ci_bucket(ci) in CI_FAILED}
     for ci in _load(d / "ci.json") or []:
-        bucket = ci.get("bucket") or ci.get("state", "").lower()
-        if bucket in ("fail", "failure", "cancel", "cancelled"):
+        bucket = _ci_bucket(ci)
+        if bucket in CI_FAILED and ci.get("name") not in base_failed:
             fix.append(f"CI {ci.get('name')}: {bucket}")
         elif bucket in ("pending", "in_progress", "queued"):
             wait.append(f"CI {ci.get('name')}")
@@ -335,8 +345,8 @@ def chat():
     return " ".join(flags)
 
 
-def brief(run_dir, worktree, role, resume=False, card=False):
-    """A role's query: header.md's lines, filled in, then <run dir>/brief-<role>.md as the run wrote it."""
+def brief(run_dir, worktree, role, round_, resume=False, card=False):
+    """A role's query: header.md's lines, filled in, then <run dir>/brief-<role>-<round>.md as the run wrote it."""
     skill = Path(__file__).resolve().parent.parent
     parts = dict(re.findall(r"(?ms)^## (\w+)\n(.*?)(?=^## |\Z)", (skill / "header.md").read_text()))
     try:
@@ -347,7 +357,10 @@ def brief(run_dir, worktree, role, resume=False, card=False):
     for key, value in (("<worktree>", worktree), ("<run dir>", run_dir), ("<role>", role),
                        ("<skill dir>", str(skill)), ("<instructions>", told and told.group(1).strip() or "none")):
         head = head.replace(key, value)
-    return head + "\n" + (Path(run_dir) / f"brief-{role}.md").read_text()
+    path = Path(run_dir) / f"brief-{role}-{round_}.md"
+    if not path.exists():  # a run that started before briefs had their round in the name
+        path = path.with_name(f"brief-{role}.md")
+    return head + "\n" + path.read_text()
 
 
 REPORT_LINE = re.compile(r"^(?:✅ Done|⚠️? Done except|✅ Approved|⚠️? Changes needed)", re.M)
@@ -466,7 +479,7 @@ def main(argv):
     elif cmd == "chat":
         print(chat())
     elif cmd == "brief":
-        print(brief(*args[:3], "--resume" in args, "--card" in args), end="")
+        print(brief(*args[:4], "--resume" in args, "--card" in args), end="")
     elif cmd == "step":
         print(_now_step(Path(args[0])))
     elif cmd == "lanes":

@@ -14,7 +14,8 @@ START = ("Load the skill cpipe:run with skill_view (without skill_view, read {sk
          "Hermes root: {root}. Run it unattended to the report: this is my last message, so never stop to ask or wait.\n\n")
 
 # A continue reuses the skill already in the chat: reloading it on every continue resends ~10k tokens per reply.
-CONTINUE = ("Continue the cpipe run in this chat (cpipe:run, Continue). Load the skill cpipe:run with skill_view only "
+CONTINUE = ("Continue the cpipe run in this chat: load skill_view(name='cpipe:run', file_path='continue.md') and "
+            "follow it. Load the skill cpipe:run itself with skill_view only "
             "when its text is no longer in this chat (without skill_view, read {skill} with your file tool). The "
             "Hermes root: {root}. Run it unattended to the report: this is my last message, so never stop to ask or "
             "wait.\n\n")
