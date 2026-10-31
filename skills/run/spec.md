@@ -111,7 +111,8 @@ in its place (`roles.md`) does it.
 2. **Hand it over.** Brief the plan profile (`roles.md`, Handing a step to a role): explore (`steps/plan.md`,
    step 2), then work out with the user what to build, using its own skills, step by step until the idea is
    complete: as many questions and rounds as it takes, no limit from cpipe. It runs in a session of its own, where
-   no one sees a clarify or question tool: every message for the user is its final reply, and the brief says so. When the user agrees, it writes `spec.md` in this file's format, reconciled with the code, with
+   no one sees a clarify or question tool: every message for the user is its final reply, and the brief says so.
+   When the user agrees, it writes `spec.md` in this file's format, reconciled with the code, with
    `Status: agreed`. It writes no plan and no code.
 3. **Carry it.** End the turn with the planner's message word for word, after one line:
    `❓ 4/11 Spec · <planner> asks`. The user's reply is for the planner: resume its session with the reply word
