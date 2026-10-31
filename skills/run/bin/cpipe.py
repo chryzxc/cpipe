@@ -13,6 +13,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py brief <run dir> <worktree> <role> <round> [--resume] [--card]
   python3 cpipe.py lanes <batch dir> [--at-once <n>] [--report <lane>]
   python3 cpipe.py step <lane dir>
+  python3 cpipe.py cost <run dir> <worktree>
 """
 
 import json
@@ -353,7 +354,7 @@ def report(run_dir):
     parts += ["## Proof", *checks, "<Tests, QA, Review and Steps lines>", "", "## Where to look", "| Where | Why |", "",
               "Risk: <blast radius> · Rollback: <how> · Confidence: <what it rests on; the weak spot>", "",
               "## Approach", "| Choice | Why | Instead of |", "", "## Run graph", "<the flow chart>", "",
-              "Cost: <minutes> · <tokens> (<cached share>) · <who did each step, on which model>", "Details: <one line>"]
+              "Cost: <minutes> · <tokens per profile and model, from `cost`>", "Details: <one line>"]
     return "\n".join(parts)
 
 
@@ -387,6 +388,46 @@ def check_report(run_dir):
 def hermes_root():
     home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
     return home.parent.parent if home.parent.name == "profiles" else home
+
+
+def _tokens(n):
+    return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k"
+
+
+def cost(run_dir, worktree):
+    """Tokens of this run, per profile and model: every session of every profile's store that worked in the
+    worktree since the run dir was made, and this chat's session (its whole count). Read-only."""
+    st = Path(run_dir).stat()
+    since = getattr(st, "st_birthtime", st.st_ctime)
+    tree, sid = str(Path(worktree).resolve()), os.environ.get("HERMES_SESSION_ID", "")
+    rows = {}
+    root = hermes_root()
+    for store in [root / "state.db", *sorted(root.glob("profiles/*/state.db"))]:
+        try:
+            db = sqlite3.connect(f"file:{store}?mode=ro", uri=True, timeout=1)
+            try:
+                found = db.execute(
+                    "SELECT id, profile_name, model, input_tokens, output_tokens, cache_read_tokens, cwd, started_at "
+                    "FROM sessions WHERE (cwd = ? OR cwd LIKE ?) AND started_at >= ? OR id = ?",
+                    (tree, tree + "/%", since, sid)).fetchall()
+            finally:
+                db.close()
+        except sqlite3.Error:
+            continue
+        for ident, profile, model, inp, out, cached, *_ in found:
+            who = "this chat" if ident == sid else (profile or store.parent.name)
+            r = rows.setdefault((who, model or "?"), [0, 0, 0])
+            for i, n in enumerate((inp, out, cached)):
+                r[i] += n or 0
+    if not rows:
+        return "no sessions found: leave the tokens out"
+    total = [sum(r[i] for r in rows.values()) for i in range(3)]
+
+    def line(who, r):  # Hermes keeps uncached input and cache reads apart: the prompt is both
+        prompt = r[0] + r[2]
+        return f"{who} {_tokens(prompt + r[1])} ({r[2] * 100 // prompt if prompt else 0}% cached)"
+    return "\n".join([line("total", total), *(line(f"{w} {m}", r) for (w, m), r in
+                                               sorted(rows.items(), key=lambda kv: -sum(kv[1])))])
 
 
 def active(run_dir, done=False):
@@ -643,6 +684,8 @@ def main(argv):
         print(chat())
     elif cmd == "brief":
         print(brief(*args[:4], "--resume" in args, "--card" in args), end="")
+    elif cmd == "cost":
+        print(cost(args[0], args[1]))
     elif cmd == "step":
         print(_now_step(Path(args[0])))
     elif cmd == "lanes":

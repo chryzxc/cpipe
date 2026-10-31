@@ -79,7 +79,7 @@ Risk: <blast radius> · Rollback: <how> · Confidence: <what it rests on; the we
 ## Run graph
 <the flow chart>
 
-Cost: <minutes> · <tokens> (<cached share>) · <who did each step, on which model>
+Cost: <minutes> · <tokens per profile and model, from `cost`>
 Details: <one line>
 ```
 
@@ -163,13 +163,11 @@ only one sensible way.
 **Run graph**: what happened in the whole run, drawn (Run graph below): a structured view when the chat offers
 one, else the flow chart.
 
-**Cost**: one line, so the user sees what the delivery spent: the minutes from the run log's first to last row;
-the tokens of every session that worked in this delivery's worktree since the run started, with the cached share,
-read-only from each profile's session store (`<Hermes root>/state.db` and `<Hermes root>/profiles/*/state.db`,
-table `sessions`: `input_tokens`, `output_tokens`, `cache_read_tokens` where `cwd` is in the worktree and
-`started_at` is after the run began); who did each step and on which model, from the same rows' `profile_name`
-and `model` (`plan archon gpt-6.1-sol · build forge gpt-6.1-terra · review sentry claude-opus-5-5 · QA this
-chat gpt-6.1-sol`). A number or model that cannot be read is left out, never guessed.
+**Cost**: one line, so the user sees what the delivery spent: the minutes from the run log's first to last row,
+then what `cost <run dir> <worktree>` prints (`cpipe:run`, Facts), as it prints it: the total tokens with the
+cached share, then each profile and model with its own, which also says who did each step on which model
+(`Cost: 42 min · total 3.1M (91% cached) · build forge gpt-6.1-terra 1.9M (93% cached) · review sentry …`).
+When it finds no sessions, the tokens are left out, never guessed.
 
 **Details**: one line: the branch, the commit SHA and subject, the pull request link, `git diff --stat` in a few
 words, the user skills used, the learnings written, and `run-graph.html`.

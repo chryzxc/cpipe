@@ -350,3 +350,27 @@ def test_a_spec_question_waits_only_when_nothing_else_is_left(tmp_path, monkeypa
         "1 issue 1 · ❓ waiting on your answer in its chat · R1: may admins edit too? · recommended: yes", "DONE"]
     facts.track(run, "set", [q, "done", "answered: admins too"])
     assert facts.gate(run).startswith("PASS")
+
+
+def test_cost_counts_tokens_per_profile_and_model(tmp_path, monkeypatch):
+    import sqlite3
+    root, tree, run = tmp_path / "h", tmp_path / "wt", tmp_path / "run"
+    (root / "profiles" / "forge").mkdir(parents=True)
+    tree.mkdir()
+    run.mkdir()
+    for store, rows in ((root / "state.db", [("chat", "", "sol", 100, 10, 900, "/elsewhere", 0)]),
+                        (root / "profiles" / "forge" / "state.db",
+                         [("b1", "forge", "terra", 1000, 100, 9000, str(tree), 9e9),
+                          ("b2", "forge", "terra", 0, 0, 0, str(tree / "sub"), 9e9),
+                          ("old", "forge", "terra", 5, 5, 5, str(tree), 0)])):
+        db = sqlite3.connect(store)
+        db.execute("CREATE TABLE sessions (id, profile_name, model, input_tokens, output_tokens, "
+                   "cache_read_tokens, cwd, started_at)")
+        db.executemany("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?)", rows)
+        db.commit()
+        db.close()
+    monkeypatch.setenv("HERMES_HOME", str(root))
+    monkeypatch.setenv("HERMES_SESSION_ID", "chat")
+    out = facts.cost(run, tree).splitlines()
+    assert out[0] == "total 11k (90% cached)"
+    assert out[1] == "forge terra 10k (90% cached)" and out[2] == "this chat sol 1k (90% cached)"

@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.20.0
+version: 4.21.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -355,6 +355,8 @@ and prints data and a verdict, and you act on what it prints:
 - `report <run dir>`: the report's skeleton with its facts filled in; `report <run dir> --check`: `PASS` when
   `<run dir>/report.md` keeps those facts and has every section and cell written, else `FIX` with what is wrong
   (`steps/report.md`, Report).
+- `cost <run dir> <worktree>`: the run's tokens, total and per profile and model, with the cached share, read-only
+  from every profile's session store (`steps/report.md`, Cost).
 - `active <run dir>` once the run log exists, `active <run dir> --done` after the report: registers this chat's run,
   so the run's rules, the user's instructions and the open items stay pinned in this chat's system prompt
   whatever a compaction drops.
