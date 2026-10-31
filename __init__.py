@@ -40,7 +40,7 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 | `/cpipe <task>` | start a run |
 | `--parallel` | several issues, each in its own background session, reporting here |
 | `--kanban` | role steps go to your profiles as cards on your Hermes kanban board |
-| `--spec` | first builds the spec with you, asking until nothing is open, then delivers it |
+| `--spec` | your planner bot builds the spec with you, asking until nothing is open, then delivers it |
 | `--budget <tier>` | how hard your profiles reason: unlimited, large, medium or small |
 | `/cpipe --continue` | pick up a run that stopped, at its first unfinished step (or just: continue) |
 | `/cpipe --restart [<step>]` | redo the run from that step (default: explore) on its own roles |
@@ -67,7 +67,7 @@ answer is asked as ❓ while the work goes on. Nothing is pushed unless you aske
 Quiet with no ⏳? `/cpipe --continue`"""
 
 LANES = "\n- **Lanes:** each issue in its own background session, up to 4 at once, each reporting here"
-SPEC = "\n- **Spec:** asks you until the spec is complete, then builds from it"
+SPEC = "\n- **Spec:** your plan profile asks you until the spec is complete, then the run builds from it"
 BOARD = "\n- **Board:** role steps run as cards on your Hermes kanban board"
 
 RESUMED = """**cpipe** · resuming

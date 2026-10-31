@@ -10,6 +10,7 @@ def test_flags_in_any_order():
     assert cpipe._flags("--budget small --kanban fix it") == ({"--kanban"}, "small", "fix it", None)
     assert cpipe._flags("--parallel fix #1 and #2") == ({"--parallel"}, None, "fix #1 and #2", None)
     assert cpipe._flags("fix --budget small") == (set(), None, "fix --budget small", None)
+    assert cpipe._flags("--spec --budget small fix it") == ({"--spec"}, "small", "fix it", None)
     assert cpipe._flags("--budget huge fix it")[3]
 
 

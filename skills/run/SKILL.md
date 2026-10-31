@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.16.0
+version: 4.17.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -55,8 +55,8 @@ question the run puts to the user is a spec question, where the user's words and
 settles it (`skill_view(name='cpipe:run', file_path='spec.md')`): posted as a `❓` line while the run keeps
 working on its recommended answer, and waited on only when nothing else is left. Never call a tool that waits for
 the user (a clarify or question tool, a command that needs the user's approval): it halts the run until they
-answer; only a `--spec` run's spec step asks with one, before any code. Use another way, or skip that part and
-report it. Write commands that need no approval: read and edit files with your file tools
+answer; only a `--spec` run's spec rounds ask with one, before any code (`spec.md`, --spec). Use another way,
+or skip that part and report it. Write commands that need no approval: read and edit files with your file tools
 (read, search, patch, write), and run one program with its arguments, never `execute_code`, inline code
 (`python -c`, `node -e`), `sh -c`, heredocs or `if`/`;` chains; a script you need goes in a file you then run.
 A command blocked because no one can be asked (a one-shot or scheduled session: "runs without a user present")

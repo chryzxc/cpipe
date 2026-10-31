@@ -50,17 +50,24 @@ def _for_user(evidence):
 ASKS = re.compile(r"^answer:\s*([RC]\d+)\b", re.I)
 NOT_ASK = ("{} is not a spec question: a question names the spec line it settles (`answer: R2: …`, the line in "
            "spec.md); any other choice is the run's")
-SPEC_LINE = re.compile(r"^\s*-\s*\**([RCNA]\d+)\**\s*:(.*)$")
-UNSOURCED = "spec {} has no source in the user's words (` · from: \"<their exact words>\"`); a reading of yours is an A line"
+SPEC_LINE = re.compile(r"^\s*-\s*\**([RCDNI]\d+)\**\s*:(.*)$")
+TRACED = "RCD"  # the lines the delivery proves: requirements, constraints and the agreed design
+UNTRACED = "spec {} has no checklist item: `track add plan \"{}: <the line>\"`, closed with its proof"
+UNSOURCED = "spec {} has no source in the user's words (` · from: \"<their exact words>\"`); a reading of yours is an I line"
 
 
 def _spec(run_dir):
-    """spec.md's lines by id: R requirements, C constraints, N non-goals, A assumptions."""
+    """spec.md's lines by id: R requirements, C constraints, D the agreed design, N non-goals, I inferences, the run's own readings."""
     try:
         text = (Path(run_dir) / "spec.md").read_text()
     except OSError:
         return {}
     return {m.group(1).upper(): m.group(2).strip() for m in map(SPEC_LINE.match, text.splitlines()) if m}
+
+
+def _traced(items, ident):
+    """The checklist items that prove a spec line: their text starts with its id."""
+    return [i for i in items if re.match(rf"\**{ident}\b", i["text"])]
 
 
 def _asks(run_dir, evidence):
@@ -279,6 +286,7 @@ def gate(run_dir, sid=None):
             user.append(f"{i['id']} {i['evidence']}")
     fix += [UNSAID.format(line) for line in unsaid(run_dir, sid)]
     fix += [UNSOURCED.format(ident) for ident in unsourced(run_dir, sid)]
+    fix += [UNTRACED.format(ident, ident) for ident in _spec(run_dir) if ident[0] in TRACED and not _traced(items, ident)]
     d = Path(run_dir) / "results"
     checks = sorted({p.name.rsplit(".", 2)[0] for p in [*d.glob("*.base.json"), *d.glob("*.head.json")]})
     if not checks:
@@ -323,6 +331,10 @@ def report(run_dir):
         mark = "✅" if not (c["new"] or c["rerun-head"] or c["rerun-base"]) else "⚠️"
         checks.append(f"{mark} {check}: {len(head['passed'])} pass, {len(c['baseline'])} baseline, "
                       f"{len(c['new'])} new, {len(c['flaky'])} flaky, {len(c['fixed'])} fixed")
+    for ident in (k for k in _spec(run_dir) if k[0] in TRACED):  # each spec line with what proves it
+        for i in _traced(items, ident):
+            mark = "✅" if i["status"] == "done" else "⚠️"
+            checks.append(f"{mark} {i['text']} · {i['evidence'] or 'open'}")
     attention = [f"| {i['text']} | {i['evidence']} | <recommended> |" for i in items if i["status"] in ("user", "skip")]
     parts = [status, "", "<Summary>", "", "## Test it", "App: <URL or command, worktree>",
              "| # | What to check | How | Expected |", "", "## Before and after",

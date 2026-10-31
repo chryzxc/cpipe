@@ -1,8 +1,9 @@
 # cpipe: the spec
 
 What the user asked for, line by line, checked against the code, and the questions where the two disagree. Every
-run writes it in plan step 4 (`steps/plan.md`); a `--spec` run builds it with the user before any code. It lives
-in `<run dir>/spec.md`, and the plan's acceptance rules and constraints are built from it.
+run writes it in plan step 4 (`steps/plan.md`), from the request and any planning the user did before the run
+(Planned before the run), or with the user first on the plan profile with `--spec`. It lives in
+`<run dir>/spec.md`; the plan is built from it and the delivery proves it line by line.
 
 ## Format
 
@@ -12,8 +13,9 @@ Goal: <one sentence, in the user's words>
 
 - R1: <a requirement: what must happen> · from: "<the user's exact words>"
 - C1: <a constraint: a limit the change keeps> · from: "<the user's exact words>"
+- D1: <a design decision the user agreed to> · from: <the plan file, section, or "<their words agreeing>">
 - N1: <a non-goal: what the change leaves alone> · from: "<the user's exact words>"
-- A1: <an assumption: the run's own reading> · why: <one line: the code, history or request that settles it>
+- I1: <an inference: the run's own reading> · why: <one line: the code, history or request that settles it>
 
 ## Reconcile
 | Spec | Finding | Kind | Settled by |
@@ -23,9 +25,9 @@ Goal: <one sentence, in the user's words>
 ```
 
 An R or C line quotes what the user wrote, copied word for word from the chat; `gate` checks the quote and
-turns a line without one into work. A limit or a guarantee the user did not write is the run's reading: an A
+turns a line without one into work. A limit or a guarantee the user did not write is the run's reading: an I
 line, which gives way when it stands in the goal's way (`cpipe:run`, Limits). The plan's acceptance rules
-(`A1`… in `plan.md`) each name the R they prove, and every R has one.
+(`A1`… in `plan.md`) each name the R they prove, and every R has one (Proven line by line).
 
 ## Reconcile
 
@@ -40,7 +42,7 @@ and line:
 
 Most rows are settled without the user: by the code (the code wins over the request's picture of today), by
 another of the user's lines, by the project's history, or by the most likely and reversible reading. Each of
-those becomes an A line and its row names it. A row becomes a question only when its answers lead to behavior the
+those becomes an I line and its row names it. A row becomes a question only when its answers lead to behavior the
 user would notice and nothing they wrote or the code says which. Never a question about the scope, which fix,
 how big the change may be or how hard to try: those are the run's (the user's standing answer in the run
 message). What only the user may do (credentials, destructive actions, what leaves this machine) is a `user`
@@ -71,22 +73,51 @@ the turn with one line per open question,
 and no report and no next step. The answer starts the next turn: close it, finish what it changes, run `gate`
 again and go on. A `FIX` or `WAIT` is never ended on a question line: that turn is still the loop's.
 
+## Planned before the run
+
+The user may plan in the chat before starting cpipe: talking it through, or the host's plan mode writing a plan
+file (Hermes: under the workspace's `.hermes/plans/`). Read that first. It is the spec's source, not the
+builder's plan:
+
+- **The user's answers and decisions** in that conversation become R, C and N lines, quoted word for word.
+- **A plan file or design the user agreed to** becomes D lines, one per decision it makes about how the change
+  works (where it lives, the data it keeps, the flow, what each role sees), each
+  `· from: <the plan file, section>` or `· from: "<the user's words agreeing>"`. A D line binds like the user's
+  words: the planner builds on it, and where the code contradicts it, that is a Reconcile row and a question.
+- **A question that conversation already answered** is never asked again.
+
+The planner still runs (`steps/plan.md`, step 5, on the plan profile): a spec says what to build and how it
+works, often not completely, and the plan fills in what the builder needs, from the code, the standard approach
+and the steps. Where the plan adds a decision of its own it is an I line; where it would change an R, C or D line
+it is a question.
+
+## Proven line by line
+
+Every R, C and D line is a checklist item whose text starts with its id: `track <run dir> add plan "R1: <the
+line>"`. `gate` stays at `FIX` while a line has no item. The plan's acceptance rules and tests name the lines
+they prove (`Covers: R1, A2`, `A2` an acceptance rule of the plan), QA checks each one the way the user would,
+and the item closes with that proof (`track set <id> done "<the test or QA step and its result>"`). `report`
+lists each line with its proof under Proof. An answer that changes a line reopens its item: the proof is redone for the new line.
+
 ## --spec
 
-With `--spec` at the start of the task, plan step 4 builds the spec with the user before any code is written,
-and keeps asking until nothing in it is open:
+With `--spec` at the start of the task, the spec is built with the user before any code, by the plan profile: its
+bot and model do the thinking, whatever model this chat runs on. This chat only carries the questions and
+answers. Without a plan profile, the profile that plans in its place (`roles.md`) does it.
 
-1. Explore as usual (`steps/plan.md`, step 2). Use the profile's own planning or brainstorming skills for the
-   questioning when it has them (`skills_list`); the spec keeps this file's format whatever they write.
-2. Write `spec.md` and reconcile it.
-3. Ask one round with the clarify tool, the batch it takes at most five questions, each with up to four
-   choices, the recommended one first. Here, and only here, the run waits for the user: no code depends on the
-   answers yet.
-4. Write each answer into the spec as the user's words, reconcile again and ask the next round. A round that
-   times out ends the turn with its questions as `❓` lines; the user's reply continues the spec.
-5. The spec is complete when every R has an acceptance rule, no Reconcile row is unsettled and no question is
-   open. Then ask once more: "Build from this spec?" with the spec's lines in the question. Anything other than a
-   yes is one more round.
+1. **Set up and explore** as any run (`steps/setup.md`, `steps/plan.md` step 2), explore on the plan profile.
+2. **Spec round.** Hand the plan profile a brief (`roles.md`, Handing a step to a role) that asks for `spec.md`
+   in this file's format, reconciled with the code, and its open questions: at most five, each with up to four
+   choices, the recommended one first, each naming the line it settles. It uses its own planning or
+   brainstorming skills for the questioning when it has them. It writes no plan and no code.
+3. **Ask.** Put its questions to the user with the clarify tool, one round. Here, and only here, the run waits
+   for the user: no code depends on the answers yet. A round that times out ends the turn with its questions as
+   `❓ 4/11 Spec · <question> · recommended: <answer>` lines; the user's reply continues the round.
+4. **Next round.** Resume the plan profile's session with the answers in the user's words: it writes them into
+   the spec, reconciles again and returns the next questions. Loop from 3.
+5. **Complete** when the plan profile returns no question, every R has a line it can be proven by, and no
+   Reconcile row is unsettled. Then ask once with the clarify tool: "Build from this spec?" with the spec's lines
+   in the question; anything but a yes is one more round.
 
-Then the run goes on from plan step 5 as any run, unattended, building from the spec. A question that comes up
-later is asked as in Asking mid-run.
+Then the run goes on unattended from plan step 5, the plan written in the same plan profile session, and builds
+and proves the spec line by line. A question later in the run is asked as in Asking mid-run.
