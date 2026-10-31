@@ -9,16 +9,21 @@ from pathlib import Path
 
 SKILL = Path(__file__).parent / "skills" / "run" / "SKILL.md"
 
+# The user's standing answer to "may I go beyond the named fix?": a model asks it however the skill words its rules.
+SCOPE = ("Whatever the goal needs inside the worktree is authorized, a larger change or another design than the fix "
+         "the task names included: never ask me for scope. Only credentials, destructive actions, what leaves this "
+         "machine beyond what I asked for, and the approvals Hermes asks are mine.")
 START = ("Load the skill cpipe:run with skill_view (without skill_view, read {skill} with your file tool) and follow "
          "it to deliver this task: its files decide how the work is done, whichever profile this chat is. The "
-         "Hermes root: {root}. Run it unattended to the report: this is my last message, so never stop to ask or wait.\n\n")
+         "Hermes root: {root}. Run it unattended to the report: this is my last message, so never stop to ask or "
+         "wait. " + SCOPE + "\n\n")
 
 # A continue reuses the skill already in the chat: reloading it on every continue resends ~10k tokens per reply.
 CONTINUE = ("Continue the cpipe run in this chat: load skill_view(name='cpipe:run', file_path='continue.md') and "
-            "follow it. Load the skill cpipe:run itself with skill_view only "
-            "when its text is no longer in this chat (without skill_view, read {skill} with your file tool). The "
+            "follow it. Load the skill cpipe:run itself with skill_view again unless this chat has its version "
+            "{version} (without skill_view, read {skill} with your file tool). The "
             "Hermes root: {root}. Run it unattended to the report: this is my last message, so never stop to ask or "
-            "wait.\n\n")
+            "wait. " + SCOPE + "{verdict}\n\n")
 MARKS = (START[:30], CONTINUE[:30])  # how the chat's run messages start
 
 # Budget tier -> reasoning effort of every profile run (passed as `hermes chat --reasoning`).
@@ -228,6 +233,28 @@ def _waiting(session_id):
     return bool(gather_background_processes(owner_task_id=session_id or None))
 
 
+def _gate(run, session_id):
+    """`cpipe.py gate` on the run: the facts decide what is left, not the chat's last reply."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cpipe_facts", SKILL.parent / "bin" / "cpipe.py")
+    facts = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(facts)
+    return facts.gate(run, str(session_id or "") or None)
+
+
+def _version():
+    return re.search(r"(?m)^version: (\S+)", SKILL.read_text()).group(1)
+
+
+def _verdict(session_id):
+    """The run's gate for a continue message, so the turn starts from the facts."""
+    try:
+        run = _run_dir({"session_id": session_id})
+        return f" The run's gate now: {_short(_gate(run, session_id), 1500)}" if run and run.is_dir() else ""
+    except Exception:  # no run yet, or no facts: the continue reads them itself
+        return ""
+
+
 def _unfinished(session_id="", final_response="", **_):
     """pre_verify: the chat is about to end its turn. While `cpipe.py gate` says FIX, only a wait or pause line
     (⏳) with work running may end it; anything else (a question, a "not ready" summary, a wait on nothing)
@@ -238,11 +265,7 @@ def _unfinished(session_id="", final_response="", **_):
             return None
         if _text(final_response).lstrip().startswith("⏳"):
             return None if _waiting(session_id) else {"action": "continue", "message": IDLE_WAIT}
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("cpipe_facts", SKILL.parent / "bin" / "cpipe.py")
-        facts = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(facts)
-        verdict = facts.gate(run, str(session_id or "") or None)
+        verdict = _gate(run, session_id)
         if not verdict.startswith("FIX"):
             return None
         return {"action": "continue", "message": UNFINISHED.format(verdict=_short(verdict, 1500))}
@@ -401,7 +424,10 @@ def _start(ctx, raw):
     try:
         first, _, rest = brief.partition(" ")
         resume = first.lower().rstrip(".!") in ("continue", "resume", "--continue", "--restart")
-        if ctx.inject_message((CONTINUE if resume else START).format(skill=SKILL, root=_root()) + task, role="user",
+        sid = get_session_env("HERMES_SESSION_ID") or ""
+        text = (CONTINUE.format(skill=SKILL, root=_root(), version=_version(), verdict=_verdict(sid)) if resume
+                else START.format(skill=SKILL, root=_root()))
+        if ctx.inject_message(text + task, role="user",
                               session_key=key):
             if first.lower() == "feedback":
                 return FEEDBACK

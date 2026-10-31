@@ -251,7 +251,9 @@ changes the approach, and an attempt that failed is never repeated. What the use
 fix or scope never is. A checklist item is skipped only when it does not exist in the change or the machine cannot
 run it, and never when it is one of your instructions. The run cannot end a turn on a question while its gate
 still has work, nor on a wait while nothing it started is running: through Hermes' `pre_verify` hook, the gate's
-verdict goes back to the chat, which keeps working.
+verdict goes back to the chat, which keeps working. A continue carries the gate's verdict and the skill's version,
+so the chat starts from the facts on the current rules, and every run message carries your standing answer on
+scope: whatever the goal needs inside the worktree is authorized.
 
 | Loop | Bound |
 |---|---|

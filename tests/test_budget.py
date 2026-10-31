@@ -81,7 +81,7 @@ def test_mid_run_message_gets_the_steering_reminder():
     assert cpipe._steering("change the PR title", [start, step, report, msg]) is None
     assert cpipe._steering("/cpipe continue", [start, step]) is None
     assert cpipe._steering("hello", [msg]) is None
-    resumed = {"role": "user", "content": cpipe.CONTINUE.format(skill="s", root="r") + "continue"}
+    resumed = {"role": "user", "content": cpipe.CONTINUE.format(skill="s", root="r", version="1", verdict="") + "continue"}
     assert cpipe._steering("merge it", [resumed, msg])
     assert cpipe._steering(resumed["content"], [start, step]) is None
 
@@ -96,9 +96,10 @@ def test_continue_reuses_the_loaded_skill():
     sys.modules["gateway.session_context"] = types.SimpleNamespace(get_session_env=lambda _: None)
     ctx = Ctx()
     assert cpipe._start(ctx, "continue merge it").startswith("**cpipe** · resuming")
-    assert ctx.text.startswith("Continue the cpipe run") and "only when its text is no longer" in ctx.text
+    assert ctx.text.startswith("Continue the cpipe run") and f"has its version {cpipe._version()}" in ctx.text
+    assert cpipe.SCOPE in ctx.text  # the user's answer to "may I go beyond the named fix?" travels with the run
     cpipe._start(ctx, "fix the date filter")
-    assert ctx.text.startswith("Load the skill cpipe:run")
+    assert ctx.text.startswith("Load the skill cpipe:run") and cpipe.SCOPE in ctx.text
     assert "Lanes" in cpipe._start(ctx, "--parallel fix #1 and #2") and ctx.text.endswith("--parallel fix #1 and #2")
 
 
@@ -166,6 +167,7 @@ def test_a_turn_cannot_end_on_a_question_while_the_gate_has_work(tmp_path, monke
     (tmp_path / "cpipe" / "active" / "s1.json").write_text(json.dumps({"run_dir": str(run)}))
     ask = "⚠️ Needs your decision: authorize a broader approach or accept the risk?"
     nudge = cpipe._unfinished(session_id="s1", final_response=ask)
+    assert "verify-1 race tests pass" in cpipe._verdict("s1")  # a continue starts from the gate, not the last reply
     assert nudge["action"] == "continue" and "verify-1 race tests pass" in nudge["message"]
     wait = "⏳ 6/11 Build · waiting on x · done by 1:00 · resumes on its own"
     import types, sys
