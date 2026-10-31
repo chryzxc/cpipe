@@ -132,7 +132,8 @@ def compare(run_dir, check):
     if head is None:
         out["rerun-head"] = ["*"]
         return out
-    alone = {tree: [r for p in sorted(d.glob(f"{check}.{tree}-alone*.json")) if (r := _load(p))]
+    # Only records `results` wrote: a reporter's raw output saved next to them matches the glob too
+    alone = {tree: [r for p in sorted(d.glob(f"{check}.{tree}-alone*.json")) if "kind" in (r := _load(p) or {})]
              for tree in ("base", "head")}
     base_bad = _bad(base) | {n for r in alone["base"] for n in _bad(r)}
     base_ok = set(base["passed"]) if base else set()

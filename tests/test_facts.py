@@ -99,6 +99,7 @@ def test_a_new_name_is_rerun_alone_then_decided(tmp_path):
     c = facts.compare(tmp_path, "unit")
     assert c["rerun-head"] == ["a", "b", "c"] and facts.gate(tmp_path).startswith("FIX")
     put(tmp_path, "unit.head-alone.json", passed=["a"], failed=["b", "c"])
+    (tmp_path / "results" / "unit.head-alone.raw.json").write_text('{"numFailedTests": 2}')  # the reporter's own
     c = facts.compare(tmp_path, "unit")
     assert c["flaky"] == ["a"] and c["new"] == ["b"] and c["rerun-base"] == ["c"]
     put(tmp_path, "unit.base-alone.json", failed=["c"])
