@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.13.0
+version: 4.14.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -315,7 +315,8 @@ The plan has its own file beside it, `plan.md`, so a builder reads the plan and 
 `now.md`, rewritten as the run moves: at most 25 lines, plus the instructions. Its first section is
 `## Instructions`: the user's instructions word for word, each marked met or not yet. Then `## ` sections for the
 current step and its next action; the processes running (process id, log or reply file); the roles line; the rules
-taken from user skills; and the open items.
+taken from user skills; and the open items. Every reply that ends a turn (a wait, a pause, the report) first
+writes its line in `now.md`'s current step: that write is what lets the run's gate check the turn's end.
 Rewrite it in the same reply as each step's first tool call and whenever something starts or finishes in the
 background. It is what you read to resume, instead of the whole log.
 
@@ -406,9 +407,13 @@ that already failed is never repeated.
   Fixes for a failing check or a compile error, a resolved conflict, the cleanup and an update onto a moved base
   start no review or QA round: the last verify is their proof (`steps/review.md`).
 - A reply that offers less than the goal (part of it, a gap left open and disclosed, "not feasible within
-  the constraint") is not a result: brief that role again for the fix within the constraint, or change the
-  approach, and loop again. Only the user ends a goal short.
-- No progress for three rounds in a row: step back to the goal, change the approach, and loop again.
+  the constraint") is not a result, and neither is no progress for three rounds in a row. Step back to the
+  user's words in `now.md`: every constraint, test and Done when in the way names the instruction it serves,
+  and one that none carries is the run's own (a limit you inferred, a test stricter than the instruction
+  asks). It gives way: drop it or rewrite the test to what the instruction says, and log why. Then re-plan
+  (`steps/plan.md`, step 5, on the plan profile) from those words, the obstacle and every approach tried,
+  taking the simplest design that meets them, and loop again. A brief asks for the goal, never offers a way
+  out ("otherwise explain the obstacle"). Only the user ends a goal short.
 - Each round closes more than it opens. A round whose fix led to new findings, twice in a row, or a fix that
   breaks working behavior: go back to the last green tree and take the narrower approach (`steps/review.md`,
   When fixes fight). Looping is for the goal, not for every finding a reviewer can raise beside it.

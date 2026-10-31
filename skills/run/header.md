@@ -20,8 +20,10 @@ execute_code or inline -c/-e code; a script you need goes in a file you run. A c
 approval is done that way instead, never run again as it was, and never ends your step.
 A failure that also happens without this change is the baseline: note it and keep going. Never stop for a
 decision: choose within the request's scope and say what you chose. A constraint that rules out a fix never
-shrinks the goal: give the fix that meets it within the constraint. Never offer part of the goal, or a gap left
-open and disclosed, as the result.
+shrinks the goal: give the fix that meets it within the constraint. A constraint binds only when the user's
+instructions below carry it; one they do not is the run's guess, and the goal wins over it: meet the goal and
+say which guess you set aside. Take the simplest change that meets the instructions, not a stronger guarantee
+than they ask for. Never offer part of the goal, or a gap left open and disclosed, as the result.
 The user's instructions for this work, word for word; they settle the questions they answer:
 <instructions>
 Report findings with their evidence and the fix you suggest, never a verdict such as hold, blocked or not

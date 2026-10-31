@@ -226,6 +226,10 @@ worktree and branch you created (nothing is committed on them) and the base work
 - Nothing outside the worktree changes in these steps; exploring is read-only.
 - The plan is the builder's instructions: exact enough to follow step by step without re-reading the code.
 - Every acceptance criterion must be checkable by a test, a command or a QA step.
+- Every constraint and acceptance criterion names the instruction it serves, in the user's words. The plan
+  adds no guarantee they did not ask for: a test proves what the instruction says, never a stronger property,
+  and the design is the simplest one that meets them. A limit no instruction carries is an assumption, never
+  a constraint.
 - Every new test must name the break it catches (Tests above); no test is added for coverage alone.
 - Never ask the user anything; every open question ends as a recorded assumption.
 
