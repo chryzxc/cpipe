@@ -105,6 +105,9 @@ def test_a_new_name_is_rerun_alone_then_decided(tmp_path):
     put(tmp_path, "unit.base-alone.json", failed=["c"])
     c = facts.compare(tmp_path, "unit")
     assert c["baseline"] == ["c"] and c["new"] == ["b"] and "new failure b" in facts.gate(tmp_path)
+    put(tmp_path, "unit.head.json", failed=["c", "d"])  # d: a test the delivery added, absent on the base
+    put(tmp_path, "unit.head-alone.json", failed=["c", "d"])
+    assert facts.compare(tmp_path, "unit")["new"] == ["d"]
 
 
 def test_static_errors_compare_by_id_without_reruns(tmp_path):
@@ -124,7 +127,9 @@ def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
     facts.track(tmp_path, "set", [a, "done", "41", "pass"])
     put(tmp_path, "unit.base.json", passed=["a"])
     put(tmp_path, "unit.head.json", passed=["a"])
-    facts.track(tmp_path, "set", [b, "user", "a required approving review"])
+    with pytest.raises(SystemExit, match="loop's work"):  # a choice of fix or scope is never the user's
+        facts.track(tmp_path, "set", [b, "user", "the smallest-fix scope rules out the transaction fix"])
+    facts.track(tmp_path, "set", [b, "user", "external: a required approving review"])
     (tmp_path / "results" / "ci.json").write_text(json.dumps([{"name": "test", "bucket": "pending"}]))
     assert facts.gate(tmp_path) == "WAIT: CI test"
     ci = [{"name": "test", "bucket": "pass"}, {"name": "quality", "bucket": "skipping"}, {"name": "lint", "bucket": "fail"}]
@@ -132,7 +137,7 @@ def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
     assert facts.gate(tmp_path) == "FIX: CI lint: fail"
     base = [{"name": "lint", "status": "completed", "conclusion": "startup_failure"}]
     (tmp_path / "results" / "ci-base.json").write_text(json.dumps(base))
-    assert facts.gate(tmp_path) == f"NEEDS-USER: {b} a required approving review"
+    assert facts.gate(tmp_path) == f"NEEDS-USER: {b} external: a required approving review"
     assert facts.report(tmp_path).startswith("⚠️ Done except")
 
 

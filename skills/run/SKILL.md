@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.11.0
+version: 4.12.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -335,7 +335,9 @@ and prints data and a verdict, and you act on what it prints:
   `track.json`. When a step starts, add its Done when items, one per condition; at the report also each merge
   condition and each instruction in `now.md`. An item closes only with its evidence (a result, a file, a count):
   `done` when met, `skip` with the reason it does not apply or this machine cannot run it, `user` for what only
-  the user may do. Unclear, "not established" or "inconclusive" stays open and is work for the loop.
+  the user may do, its evidence starting with its kind: `credentials:`, `destructive:`, `external:` (push, pull
+  request, merge, deploy, messages) or `approval:` (one Hermes asked the user, refused or timed out). `track` and
+  `gate` refuse any other: which fix, the scope or how the code behaves is the run's to decide. Unclear, "not established" or "inconclusive" stays open and is work for the loop.
 - `gate <run dir>`: the run's verdict. `FIX: …` is the loop's next work; `WAIT: …` ends the turn on a wait line;
   `NEEDS-USER: …` is what only the user may do; `PASS` means every condition holds: merge when asked, then report.
 - `report <run dir>`: the report's skeleton with its facts filled in; `report <run dir> --check`: `PASS` when
@@ -416,6 +418,7 @@ that already failed is never repeated.
   exceptions are the base worktree set up adds for the baseline and removing cpipe's own merged worktrees there
   (`steps/setup.md`).
 - Change only what the plan's scope names. If the scope must grow, say so in one line and note it in the run log.
+  A scope or "smallest fix" bounds what changes beside the goal, never the goal: what the goal needs is in scope.
 - Format and lint-fix only the lines the change touches. Never reformat files or the repository, even when the
   formatter's baseline is red, unless the task asks for it.
 

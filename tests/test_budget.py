@@ -149,3 +149,25 @@ def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):
     monkeypatch.setenv("CPIPE_STEP", "build")  # a step session: its own rules, never the coordinator's report
     step = cpipe._pinned({"session_id": ""})
     assert "one step of a cpipe run" in step and "Root cause first" in step and "cpipe.py report" not in step
+
+
+def test_a_turn_cannot_end_on_a_question_while_the_gate_has_work(tmp_path, monkeypatch):
+    """'Needs your decision' with the goal's tests still failing went back to the loop, not to the user."""
+    import json
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("CPIPE_RUN", raising=False)
+    monkeypatch.delenv("CPIPE_STEP", raising=False)
+    monkeypatch.delenv("CPIPE_LANE", raising=False)
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "track.json").write_text(json.dumps([{"id": "verify-1", "text": "race tests pass", "status": "open",
+                                                 "evidence": ""}]))
+    (tmp_path / "cpipe" / "active").mkdir(parents=True)
+    (tmp_path / "cpipe" / "active" / "s1.json").write_text(json.dumps({"run_dir": str(run)}))
+    ask = "⚠️ Needs your decision: authorize a broader approach or accept the risk?"
+    nudge = cpipe._unfinished(session_id="s1", final_response=ask)
+    assert nudge["action"] == "continue" and "verify-1 race tests pass" in nudge["message"]
+    assert cpipe._unfinished(session_id="s1", final_response="⏳ 6/11 Build · waiting on x · done by 1:00 · resumes on its own") is None
+    assert cpipe._unfinished(session_id="other", final_response=ask) is None  # no run in that chat
+    monkeypatch.setenv("CPIPE_STEP", "build")  # a role's own session ends on its reply
+    assert cpipe._unfinished(session_id="s1", final_response=ask) is None

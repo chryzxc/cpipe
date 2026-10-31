@@ -5,7 +5,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
 
   python3 cpipe.py results <out.json> <junit|jest|tsc|eslint|lines> <file>... [--root <dir>]
   python3 cpipe.py compare <run dir> <check>
-  python3 cpipe.py track <run dir> add <step> <text> | set <id> <open|done|skip|user> [<evidence>] | open [<step>]
+  python3 cpipe.py track <run dir> add <step> <text> | set <id> <open|done|skip|user> [<evidence>, for user `<kind>: …`] | open [<step>]
   python3 cpipe.py gate <run dir>
   python3 cpipe.py report <run dir> [--check]
   python3 cpipe.py active <run dir> [--done]
@@ -24,6 +24,14 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 STATUSES = ("open", "done", "skip", "user")
+# What only the user may do (SKILL.md, Unattended): how the code should behave, or which fix, is never one
+USER_KINDS = ("credentials", "destructive", "external", "approval")
+NOT_USER = ("{} is the loop's work, not the user's: `user` is only for " + ", ".join(USER_KINDS) +
+            " (evidence `<kind>: …`); a choice between fixes or scope is decided by the run")
+
+
+def _for_user(evidence):
+    return evidence.split(":", 1)[0].strip().lower() in USER_KINDS
 LINE_COL = re.compile(r"[:(]\d+(?:[:,]\d+)?\)?(?=[:\s]|$)")
 
 
@@ -138,6 +146,8 @@ def compare(run_dir, check):
     base_bad = _bad(base) | {n for r in alone["base"] for n in _bad(r)}
     base_ok = set(base["passed"]) if base else set()
     base_ok |= {n for r in alone["base"] for n in r["passed"]}
+    # Run on the base and still not there: the delivery added it, so it can only be new
+    base_seen = {n for r in [base, *alone["base"]] if r for k in ("passed", "failed", "skipped", "errors") for n in r[k]}
     head_alone_ok = {n for r in alone["head"] for n in r["passed"]}
     head_alone_bad = {n for r in alone["head"] for n in _bad(r)}
     out["fixed"] = sorted(_bad(base) & set(head["passed"]))
@@ -149,7 +159,7 @@ def compare(run_dir, check):
             out["flaky"].append(name)
         elif not static and name not in head_alone_bad:
             out["rerun-head"].append(name)
-        elif name in base_ok or (static and base is not None):
+        elif name in base_ok or (static and base is not None) or (alone["base"] and name not in base_seen):
             out["new"].append(name)
         else:
             out["rerun-base"].append(name)
@@ -180,6 +190,8 @@ def track(run_dir, action, args):
             raise SystemExit(f"status is one of {', '.join(STATUSES)}")
         if status != "open" and not evidence:
             raise SystemExit(f"{ident}: {status} needs its evidence (a result, a file, a count) or its reason")
+        if status == "user" and not _for_user(evidence):
+            raise SystemExit(NOT_USER.format(ident))
         match = [i for i in items if i["id"] == ident]
         if not match:
             raise SystemExit(f"no item {ident}")
@@ -201,7 +213,7 @@ def _ci_bucket(ci):
     return (ci.get("bucket") or ci.get("conclusion") or ci.get("state") or ci.get("status") or "").lower()
 
 
-def gate(run_dir):
+def gate(run_dir, sid=None):
     """FIX before WAIT before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
     fix, wait, user = [], [], []
     items = _items(run_dir)
@@ -211,9 +223,11 @@ def gate(run_dir):
     for i in items:
         if i["status"] == "open" or (i["status"] != "user" and not i["evidence"]):
             fix.append(f"{i['id']} {i['text']}")
+        elif i["status"] == "user" and not _for_user(i["evidence"]):
+            fix.append(f"{NOT_USER.format(i['id'])}: {i['text']}")
         elif i["status"] == "user":
             user.append(f"{i['id']} {i['evidence']}")
-    fix += [UNSAID.format(line) for line in unsaid(run_dir)]
+    fix += [UNSAID.format(line) for line in unsaid(run_dir, sid)]
     d = Path(run_dir) / "results"
     checks = sorted({p.name.rsplit(".", 2)[0] for p in [*d.glob("*.base.json"), *d.glob("*.head.json")]})
     if not checks:
@@ -322,9 +336,9 @@ def active(run_dir, done=False):
     return out
 
 
-def unsaid(run_dir):
+def unsaid(run_dir, sid=None):
     """Lines under now.md's Instructions the user never wrote in this chat: a reading passed off as their words."""
-    sid = os.environ.get("HERMES_SESSION_ID", "")
+    sid = sid or os.environ.get("HERMES_SESSION_ID", "")
     db_path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "state.db"
     try:
         told = re.search(r"(?ms)^## Instructions\n(.*?)(?=^## |\Z)", (Path(run_dir) / "now.md").read_text())

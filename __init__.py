@@ -86,6 +86,7 @@ def register(ctx):
                              args_hint="[--parallel] [--kanban] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings", argument_mode="text")
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
+        ctx.register_hook("pre_verify", _unfinished)
     if hasattr(ctx, "register_system_prompt_section"):
         ctx.register_system_prompt_section("cpipe.run", _pinned, max_chars=PINNED_MAX)
 
@@ -205,6 +206,30 @@ def _steering(user_message=None, conversation_history=None, **_):
     if not message or message.startswith((*MARKS, "/cpipe")):
         return None
     return {"context": STEERING} if _running(conversation_history) else None
+
+
+UNFINISHED = ("[cpipe] The run's gate still has work, so this turn cannot end here: {verdict}\n"
+              "A turn ends only on a ⏳ wait line or the report; a choice between fixes is never the user's while the "
+              "gate has work (cpipe:run, Limits). Do the next item now, and finish the goal.")
+
+
+def _unfinished(session_id="", final_response="", **_):
+    """pre_verify: the chat is about to end its turn. While `cpipe.py gate` says FIX, only a wait or pause line
+    (⏳) may end it; anything else (a question, a "not ready" summary) gets the gate's own verdict back."""
+    try:
+        run = None if os.environ.get("CPIPE_STEP") else _run_dir({"session_id": session_id})
+        if not run or not run.is_dir() or _text(final_response).lstrip().startswith("⏳"):
+            return None
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cpipe_facts", SKILL.parent / "bin" / "cpipe.py")
+        facts = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(facts)
+        verdict = facts.gate(run, str(session_id or "") or None)
+        if not verdict.startswith("FIX"):
+            return None
+        return {"action": "continue", "message": UNFINISHED.format(verdict=_short(verdict, 1500))}
+    except Exception:  # a hook never breaks a session
+        return None
 
 
 def _home():

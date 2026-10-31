@@ -86,7 +86,8 @@ request's CI runs it. Run each check only where it proves something:
   alone, on the delivery, into `results/<check>.head-alone.json`. `rerun-base`: run only those files on the
   base, with the same command and its time limit, in the base worktree set up added (`now.md`; when it is gone,
   add it again the way `steps/setup.md` step 8 does), into `results/<check>.base-alone.json`. Then compare
-  again. **Flaky** (it passed alone) is not a regression, whether or not its cause is known, so it never holds a
+  again. The base runs its own files only: never copy the delivery's tests onto it. A test this run wrote fails
+  on the base by design (it is the RED), so it is never baseline: it passes on the delivery or the loop goes on. **Flaky** (it passed alone) is not a regression, whether or not its cause is known, so it never holds a
   commit, a pull request or a merge; do not build tools to chase its cause. A failure seen while two suites or
   builds ran side by side in one worktree says nothing about the code: the run alone decides. No copies or
   archives of the tree, no further comparisons.
