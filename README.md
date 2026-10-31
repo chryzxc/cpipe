@@ -691,7 +691,7 @@ so it reads the same way every time. It is short, one line per row, and complete
   rounds as arrows back, and retries, interruptions and stalls in red. The run folder also gets `run-graph.html`,
   which shows the flow and a timeline per role in any browser. A chat app that renders structured views (graphs,
   workflows) gets the run graph as one of those instead of a chart's source.
-- **Cost:** minutes, tokens with the cached share, and who did each step.
+- **Cost:** minutes, tokens with the cached share, and who did each step on which model.
 - **Details:** one line: branch, commit, pull request, files, skills, learnings.
 
 What went as planned is a count, not a row, so the report reads in about a minute. It never asks you to fix,

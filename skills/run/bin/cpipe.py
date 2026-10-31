@@ -353,7 +353,7 @@ def report(run_dir):
     parts += ["## Proof", *checks, "<Tests, QA, Review and Steps lines>", "", "## Where to look", "| Where | Why |", "",
               "Risk: <blast radius> · Rollback: <how> · Confidence: <what it rests on; the weak spot>", "",
               "## Approach", "| Choice | Why | Instead of |", "", "## Run graph", "<the flow chart>", "",
-              "Cost: <minutes> · <tokens> (<cached share>) · <who did each step>", "Details: <one line>"]
+              "Cost: <minutes> · <tokens> (<cached share>) · <who did each step, on which model>", "Details: <one line>"]
     return "\n".join(parts)
 
 
