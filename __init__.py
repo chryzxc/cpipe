@@ -40,7 +40,7 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 | `/cpipe <task>` | start a run |
 | `--parallel` | several issues, each in its own background session, reporting here |
 | `--kanban` | role steps go to your profiles as cards on your Hermes kanban board |
-| `--spec` | your planner bot builds the spec with you, asking until nothing is open, then delivers it |
+| `--spec` | first work out the spec with your plan profile's bot and skills, then it delivers on its own |
 | `--budget <tier>` | how hard your profiles reason: unlimited, large, medium or small |
 | `/cpipe --continue` | pick up a run that stopped, at its first unfinished step (or just: continue) |
 | `/cpipe --restart [<step>]` | redo the run from that step (default: explore) on its own roles |
@@ -67,7 +67,7 @@ answer is asked as ❓ while the work goes on. Nothing is pushed unless you aske
 Quiet with no ⏳? `/cpipe --continue`"""
 
 LANES = "\n- **Lanes:** each issue in its own background session, up to 4 at once, each reporting here"
-SPEC = "\n- **Spec:** your plan profile asks you until the spec is complete, then the run builds from it"
+SPEC = "\n- **Spec:** first worked out with your plan profile, here in this chat; then the run builds on its own"
 BOARD = "\n- **Board:** role steps run as cards on your Hermes kanban board"
 
 RESUMED = """**cpipe** · resuming
@@ -179,7 +179,8 @@ def _pinned(info):
 STEERING = ("[cpipe] A cpipe run is going in this chat and this message arrived mid-run: it is steering, not a new "
             "task (cpipe:run, A message from the user mid-run). Do what it asks as part of the run, answer it in one "
             "line in the same reply as the run's next tool call, and continue the run. Never end the turn on the "
-            "answer. An answer to a ❓ question goes into spec.md and closes its item (cpipe:run, spec.md).")
+            "answer. An answer to a ❓ question goes into spec.md and closes its item; while spec.md says drafting, the "
+            "message is the user's reply to the planner: pass it on word for word (cpipe:run, spec.md).")
 # The run's own lines (skills/run/SKILL.md, Status lines) and the report's status lines (steps/report.md).
 STEP_LINE = re.compile(r"^(?:[✅⏳❓⚠❌—]\ufe0f? )?\d{1,2}/11 |^Resuming at \d{1,2}/11 ", re.M)
 REPORT_LINE = re.compile(r"^(?:✅ Done|⚠\ufe0f? Done except|✅ Approved|⚠\ufe0f? Changes needed)", re.M)

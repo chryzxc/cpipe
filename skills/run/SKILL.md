@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.17.0
+version: 4.18.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -55,8 +55,9 @@ question the run puts to the user is a spec question, where the user's words and
 settles it (`skill_view(name='cpipe:run', file_path='spec.md')`): posted as a `❓` line while the run keeps
 working on its recommended answer, and waited on only when nothing else is left. Never call a tool that waits for
 the user (a clarify or question tool, a command that needs the user's approval): it halts the run until they
-answer; only a `--spec` run's spec rounds ask with one, before any code (`spec.md`, --spec). Use another way,
-or skip that part and report it. Write commands that need no approval: read and edit files with your file tools
+answer. Use another way, or skip that part and report it. With `--spec`, the plan profile works out the spec
+with the user first, its own way (`spec.md`, --spec).
+Write commands that need no approval: read and edit files with your file tools
 (read, search, patch, write), and run one program with its arguments, never `execute_code`, inline code
 (`python -c`, `node -e`), `sh -c`, heredocs or `if`/`;` chains; a script you need goes in a file you then run.
 A command blocked because no one can be asked (a one-shot or scheduled session: "runs without a user present")
@@ -348,6 +349,7 @@ and prints data and a verdict, and you act on what it prints:
   spec question `answer: <R or C id of spec.md>: <question>` (`spec.md`). `track` and
   `gate` refuse any other: which fix, the scope or how the code behaves is the run's to decide. Unclear, "not established" or "inconclusive" stays open and is work for the loop.
 - `gate <run dir>`: the run's verdict. `FIX: …` is the loop's next work; `WAIT: …` ends the turn on a wait line;
+  `SPEC: …` the spec is still drafted with the user (`spec.md`, --spec);
   `ASK: …` is only the user's answers left: end the turn on the `❓` waiting lines (`spec.md`);
   `NEEDS-USER: …` is what only the user may do; `PASS` means every condition holds: merge when asked, then report.
 - `report <run dir>`: the report's skeleton with its facts filled in; `report <run dir> --check`: `PASS` when

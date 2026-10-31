@@ -62,8 +62,8 @@ missing, it works around the obstacle, records what it could not verify, and kee
   and keeps building on its recommended answer; it waits for you only when nothing else is left, and never
   reports around an open question. Plan first however you like (your host's plan mode, or a conversation) and
   then start cpipe: that plan becomes the spec, the planner turns it into the builder's steps, and each spec
-  line is proven and listed with its proof in the report. `--spec` builds the spec with you on your plan
-  profile's bot and model, asking round after round until nothing is open, then delivers it.
+  line is proven and listed with its proof in the report. `--spec` lets your plan profile work out the
+  spec with you first, on its own bot, model and skills, in the same chat; then the run delivers it on its own.
 - **Your instructions are the contract.** Every instruction you give, in the task or later, is kept word for word
   in the run's state, settles the questions it answers and wins over cpipe's defaults. The run is done when each
   one is met (a merge when there are no regressions included), not when the steps have run once. Each line is
@@ -133,7 +133,7 @@ In any Hermes chat, inside or near the repository:
 | `/cpipe <task>` | Delivers the task unattended and reports back in the same chat |
 | `/cpipe --parallel <issues>` | Each issue delivered in its own background session, up to four at once, each reporting back here |
 | `/cpipe --kanban <task>` | The same, with the role steps handed to your profiles as cards on your kanban board |
-| `/cpipe --spec <task>` | Your plan profile builds the spec with you, asking until nothing is open, then delivers it |
+| `/cpipe --spec <task>` | Your plan profile works out the spec with you first, its own way; then the run delivers it unattended |
 | `/cpipe --budget <tier> <task>` | The same, with your profiles reasoning at that budget for this run (Budget, below) |
 | `/cpipe budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
 | `/cpipe --continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |

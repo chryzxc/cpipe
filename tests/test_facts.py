@@ -320,6 +320,8 @@ def test_a_spec_question_waits_only_when_nothing_else_is_left(tmp_path, monkeypa
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))  # no state.db: only the quote's presence is checked
     run = tmp_path / "run"
     run.mkdir()
+    (run / "spec.md").write_text("# Spec\nStatus: drafting\n")
+    assert facts.gate(run).startswith("SPEC")  # --spec: the turn may end on the planner's message
     closed(run)
     put(run, "unit.base.json", passed=["a"])
     put(run, "unit.head.json", passed=["a"])

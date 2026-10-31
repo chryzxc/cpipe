@@ -101,23 +101,21 @@ lists each line with its proof under Proof. An answer that changes a line reopen
 
 ## --spec
 
-With `--spec` at the start of the task, the spec is built with the user before any code, by the plan profile: its
-bot and model do the thinking, whatever model this chat runs on. This chat only carries the questions and
-answers. Without a plan profile, the profile that plans in its place (`roles.md`) does it.
+With `--spec` at the start of the task, the plan profile works out the spec with the user before any code: its
+bot, model and skills, whatever this chat runs on. How it asks is its own setup (its brainstorming or planning
+skills); cpipe only carries the conversation and takes the result. Without a plan profile, the profile that plans
+in its place (`roles.md`) does it.
 
-1. **Set up and explore** as any run (`steps/setup.md`, `steps/plan.md` step 2), explore on the plan profile.
-2. **Spec round.** Hand the plan profile a brief (`roles.md`, Handing a step to a role) that asks for `spec.md`
-   in this file's format, reconciled with the code, and its open questions: at most five, each with up to four
-   choices, the recommended one first, each naming the line it settles. It uses its own planning or
-   brainstorming skills for the questioning when it has them. It writes no plan and no code.
-3. **Ask.** Put its questions to the user with the clarify tool, one round. Here, and only here, the run waits
-   for the user: no code depends on the answers yet. A round that times out ends the turn with its questions as
-   `❓ 4/11 Spec · <question> · recommended: <answer>` lines; the user's reply continues the round.
-4. **Next round.** Resume the plan profile's session with the answers in the user's words: it writes them into
-   the spec, reconciles again and returns the next questions. Loop from 3.
-5. **Complete** when the plan profile returns no question, every R has a line it can be proven by, and no
-   Reconcile row is unsettled. Then ask once with the clarify tool: "Build from this spec?" with the spec's lines
-   in the question; anything but a yes is one more round.
-
-Then the run goes on unattended from plan step 5, the plan written in the same plan profile session, and builds
-and proves the spec line by line. A question later in the run is asked as in Asking mid-run.
+1. **Set up** as any run (`steps/setup.md`), and write `spec.md` with the line `Status: drafting` under its
+   title. While it says so, `gate` says `SPEC` and the turn may end on the planner's message.
+2. **Hand it over.** Brief the plan profile (`roles.md`, Handing a step to a role): explore (`steps/plan.md`,
+   step 2), then work out with the user what to build, using its own skills, step by step until the idea is
+   complete: as many questions and rounds as it takes, no limit from cpipe. It runs in a session of its own, where
+   no one sees a clarify or question tool: every message for the user is its final reply, and the brief says so. When the user agrees, it writes `spec.md` in this file's format, reconciled with the code, with
+   `Status: agreed`. It writes no plan and no code.
+3. **Carry it.** End the turn with the planner's message word for word, after one line:
+   `❓ 4/11 Spec · <planner> asks`. The user's reply is for the planner: resume its session with the reply word
+   for word, add nothing of your own, and carry its next message the same way.
+4. **Agreed.** When `spec.md` says `Status: agreed`, the run goes on unattended from plan step 5, the plan
+   written in the same plan profile session, and builds and proves the spec line by line. A question later in
+   the run is asked as in Asking mid-run.

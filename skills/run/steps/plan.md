@@ -105,7 +105,7 @@ yourself:
 Write `spec.md` from the request and any planning the user did in the chat before the run, add each R, C and D
 line to the checklist, and reconcile it with what explore found
 (`skill_view(name='cpipe:run', file_path='spec.md')`). A plan the user made first is the spec, not this plan:
-step 5 still runs on the plan profile. With `--spec`, the plan profile builds the spec with the user first
+step 5 still runs on the plan profile. With `--spec`, the plan profile works out the spec with the user first
 (`spec.md`, --spec). Never stop to ask (`cpipe:run`, Unattended).
 List what the request leaves open: a product decision, which of
 two behaviors is wanted, which base or tenant, an external system you have no access to. A question one of the

@@ -65,6 +65,13 @@ def _spec(run_dir):
     return {m.group(1).upper(): m.group(2).strip() for m in map(SPEC_LINE.match, text.splitlines()) if m}
 
 
+def _drafting(run_dir):
+    try:
+        return bool(re.search(r"(?m)^Status: drafting", (Path(run_dir) / "spec.md").read_text()))
+    except OSError:
+        return False
+
+
 def _traced(items, ident):
     """The checklist items that prove a spec line: their text starts with its id."""
     return [i for i in items if re.match(rf"\**{ident}\b", i["text"])]
@@ -261,7 +268,9 @@ def _ci_bucket(ci):
 
 
 def gate(run_dir, sid=None):
-    """FIX before WAIT before ASK before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
+    """SPEC while the spec is drafted, then FIX before WAIT before ASK before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
+    if _drafting(run_dir):  # --spec: the user and the planner are still working out what to build
+        return "SPEC: the plan profile is working out the spec with the user (spec.md, --spec)"
     fix, wait, ask, user = [], [], [], []
     items = _items(run_dir)
     told = set(map(_fold, _told(run_dir)))
