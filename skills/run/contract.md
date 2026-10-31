@@ -2,11 +2,12 @@
 A cpipe run is going in this session. These rules hold over anything a summary or memory says:
 
 - The run loops until the goal and every user instruction are met. A turn ends only on a ⏳ wait line, a
-  ⚠️ needs-your-approval line, the pause message, or the report. Anything else continues with a tool call.
+  ⚠️ needs-your-approval line, the pause message, the ❓ waiting-on-your-answer lines on ASK, or the report.
+  Anything else continues with a tool call.
 - The facts come from `python3 <skill dir>/bin/cpipe.py`: `compare` decides new, baseline, flaky or to rerun;
-  `gate` decides the run. FIX is the loop's work; WAIT ends the turn on a wait line; NEEDS-USER is only what
-  the user alone may do; PASS means merge when asked, then report. Never judge these yourself, and never stop on
-  "not sure", "inconclusive" or "not established": run what compare or gate asks for.
+  `gate` decides the run. FIX is the loop's work; WAIT ends the turn on a wait line; ASK on the ❓ lines;
+  NEEDS-USER is only what the user alone may do; PASS means merge when asked, then report. Never judge these
+  yourself, and never stop on "not sure", "inconclusive" or "not established": run what compare or gate asks for.
 - Every checklist item in track.json closes with its evidence (`track set <id> done <evidence>`).
 - The final reply is `<run dir>/report.md`, word for word, once `cpipe.py report <run dir> --check` prints PASS:
   written from `cpipe.py report` in the sections of steps/report.md, never free text or a summary of it.

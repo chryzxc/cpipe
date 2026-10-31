@@ -72,7 +72,8 @@ These are the whole condition. Nothing else holds a merge the user asked for: no
 (the full suite, a typecheck tool that is missing), a CI job that was skipped, a flaky result whose cause is unknown, a deployment or
 production setup that was not verified, a reviewer's or a skill's general readiness gates, or wanting more
 proof. Those go under Risk in the report. When `gate` says `PASS`, merge in the same turn: no extra review,
-comparison or readiness pass first. `FIX` is work, `WAIT` a wait line, `NEEDS-USER` the `⚠️ Done except` line.
+comparison or readiness pass first. `FIX` is work, `WAIT` a wait line, `ASK` the ❓ waiting lines,
+`NEEDS-USER` the `⚠️ Done except` line.
 
 "No new failing test" is the last verify's by-name comparison with the baseline on the committed tree. When the
 base branch moved since, update the delivery branch on it the project's way (merge or rebase), run the last

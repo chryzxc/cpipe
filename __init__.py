@@ -15,15 +15,15 @@ SCOPE = ("Whatever the goal needs inside the worktree is authorized, a larger ch
          "machine beyond what I asked for, and the approvals Hermes asks are mine.")
 START = ("Load the skill cpipe:run with skill_view (without skill_view, read {skill} with your file tool) and follow "
          "it to deliver this task: its files decide how the work is done, whichever profile this chat is. The "
-         "Hermes root: {root}. Run it unattended to the report: this is my last message, so never stop to ask or "
-         "wait. " + SCOPE + "\n\n")
+         "Hermes root: {root}. Run it to the report without stopping: ask me only spec questions (cpipe:run, spec.md), "
+         "keep working while they are open, and wait on them only when nothing else is left. " + SCOPE + "\n\n")
 
 # A continue reuses the skill already in the chat: reloading it on every continue resends ~10k tokens per reply.
 CONTINUE = ("Continue the cpipe run in this chat: load skill_view(name='cpipe:run', file_path='continue.md') and "
             "follow it. Load the skill cpipe:run itself with skill_view again unless this chat has its version "
             "{version} (without skill_view, read {skill} with your file tool). The "
-            "Hermes root: {root}. Run it unattended to the report: this is my last message, so never stop to ask or "
-            "wait. " + SCOPE + "{verdict}\n\n")
+            "Hermes root: {root}. Run it to the report without stopping: ask me only spec questions (cpipe:run, spec.md), "
+            "keep working while they are open, and wait on them only when nothing else is left. " + SCOPE + "{verdict}\n\n")
 MARKS = (START[:30], CONTINUE[:30])  # how the chat's run messages start
 
 # Budget tier -> reasoning effort of every profile run (passed as `hermes chat --reasoning`).
@@ -40,6 +40,7 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 | `/cpipe <task>` | start a run |
 | `--parallel` | several issues, each in its own background session, reporting here |
 | `--kanban` | role steps go to your profiles as cards on your Hermes kanban board |
+| `--spec` | first builds the spec with you, asking until nothing is open, then delivers it |
 | `--budget <tier>` | how hard your profiles reason: unlimited, large, medium or small |
 | `/cpipe --continue` | pick up a run that stopped, at its first unfinished step (or just: continue) |
 | `/cpipe --restart [<step>]` | redo the run from that step (default: explore) on its own roles |
@@ -58,14 +59,15 @@ STARTED = """**cpipe** · {task}
 - **Budget:** {budget}
 - **Learned:** {learned}{extra}
 
-Runs on its own and reports here. Open questions are decided and listed in the report;
-nothing is pushed unless you asked.
+Runs on its own and reports here. Open questions are decided and listed in the report; one only you can
+answer is asked as ❓ while the work goes on. Nothing is pushed unless you asked.
 
-✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled
+✅ done · ⏳ waiting, resumes on its own · ❓ your answer needed · ⚠️ problem, handled
 
 Quiet with no ⏳? `/cpipe --continue`"""
 
 LANES = "\n- **Lanes:** each issue in its own background session, up to 4 at once, each reporting here"
+SPEC = "\n- **Spec:** asks you until the spec is complete, then builds from it"
 BOARD = "\n- **Board:** role steps run as cards on your Hermes kanban board"
 
 RESUMED = """**cpipe** · resuming
@@ -88,7 +90,7 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--parallel] [--kanban] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings", argument_mode="text")
+                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings", argument_mode="text")
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
         ctx.register_hook("pre_verify", _unfinished)
@@ -177,9 +179,9 @@ def _pinned(info):
 STEERING = ("[cpipe] A cpipe run is going in this chat and this message arrived mid-run: it is steering, not a new "
             "task (cpipe:run, A message from the user mid-run). Do what it asks as part of the run, answer it in one "
             "line in the same reply as the run's next tool call, and continue the run. Never end the turn on the "
-            "answer.")
+            "answer. An answer to a ❓ question goes into spec.md and closes its item (cpipe:run, spec.md).")
 # The run's own lines (skills/run/SKILL.md, Status lines) and the report's status lines (steps/report.md).
-STEP_LINE = re.compile(r"^(?:[✅⏳⚠❌—]\ufe0f? )?\d{1,2}/11 |^Resuming at \d{1,2}/11 ", re.M)
+STEP_LINE = re.compile(r"^(?:[✅⏳❓⚠❌—]\ufe0f? )?\d{1,2}/11 |^Resuming at \d{1,2}/11 ", re.M)
 REPORT_LINE = re.compile(r"^(?:✅ Done|⚠\ufe0f? Done except|✅ Approved|⚠\ufe0f? Changes needed)", re.M)
 
 
@@ -214,7 +216,7 @@ def _steering(user_message=None, conversation_history=None, **_):
 
 
 UNFINISHED = ("[cpipe] The run's gate still has work, so this turn cannot end here: {verdict}\n"
-              "A turn ends only on a ⏳ wait line or the report; a choice between fixes is never the user's while the "
+              "A turn ends only on a ⏳ wait line or the report; a ❓ question goes with the next tool call; a choice between fixes is never the user's while the "
               "gate has work (cpipe:run, Limits). Do the next item now, and finish the goal.")
 
 
@@ -257,7 +259,7 @@ def _verdict(session_id):
 
 def _unfinished(session_id="", final_response="", **_):
     """pre_verify: the chat is about to end its turn. While `cpipe.py gate` says FIX, only a wait or pause line
-    (⏳) with work running may end it; anything else (a question, a "not ready" summary, a wait on nothing)
+    (⏳) with work running may end it (ASK, only the user's answers left, ends on its ❓ lines); anything else (a question, a "not ready" summary, a wait on nothing)
     gets the gate's own verdict back."""
     try:
         run = None if os.environ.get("CPIPE_STEP") else _run_dir({"session_id": session_id})
@@ -385,9 +387,9 @@ def _learnings():
 
 
 def _flags(task):
-    """Leading --parallel, --kanban and --budget <tier>, in any order; returns (flags, budget, rest, error)."""
+    """Leading --parallel, --kanban, --spec and --budget <tier>, in any order; returns (flags, budget, rest, error)."""
     flags, budget, words = set(), None, task.split()
-    while words and words[0] in ("--parallel", "--kanban", "--budget"):
+    while words and words[0] in ("--parallel", "--kanban", "--spec", "--budget"):
         flag = words.pop(0)
         if flag != "--budget":
             flags.add(flag)
@@ -403,7 +405,7 @@ def _short(text, n=100):
 
 
 # Text input often turns a typed "--" into a dash: "—restart" is still the flag.
-DASHED = re.compile(r"(?<!\S)[—–](?=(parallel|kanban|budget|continue|restart)\b)")
+DASHED = re.compile(r"(?<!\S)[—–](?=(parallel|kanban|spec|budget|continue|restart)\b)")
 
 
 def _start(ctx, raw):
@@ -437,7 +439,8 @@ def _start(ctx, raw):
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
             return STARTED.format(task=_short(brief), flow=FLOW, team=_team(),
                                   budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned(),
-                                  extra=(LANES if "--parallel" in flags else "") + (BOARD if kanban else ""))
+                                  extra=(LANES if "--parallel" in flags else "") + (SPEC if "--spec" in flags else "")
+                                  + (BOARD if kanban else ""))
         reason = "the chat did not accept the message"
     except Exception as exc:
         reason = str(exc) or type(exc).__name__

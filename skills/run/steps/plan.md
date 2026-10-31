@@ -102,11 +102,15 @@ yourself:
 
 ## 4. Decide the open questions
 
-Never ask the user (`cpipe:run`, Unattended). List what the request leaves open: a product decision, which of
+Write `spec.md` and reconcile it with what explore found (`skill_view(name='cpipe:run', file_path='spec.md')`);
+with `--spec`, build it with the user there before going on. Never stop to ask (`cpipe:run`, Unattended).
+List what the request leaves open: a product decision, which of
 two behaviors is wanted, which base or tenant, an external system you have no access to. A question one of the
 user's instructions answers is not open: apply the instruction. Settle each of the others from the
 request, the code, the project's history and the conversation: pick the most likely answer, and of two equally
-likely ones the more reversible. Each becomes an assumption in the plan with a one-line reason. Something only
+likely ones the more reversible. Each becomes an assumption in the plan with a one-line reason. One whose answers
+change what the user would see, with nothing to settle it, is also asked as a spec question while the run builds
+on its recommended answer (`spec.md`, Asking mid-run). Something only
 the user may do (credentials, destructive actions, an unasked push) is left out of the scope and goes in the
 report.
 
@@ -231,9 +235,11 @@ worktree and branch you created (nothing is committed on them) and the base work
   and the design is the simplest one that meets them. A limit no instruction carries is an assumption, never
   a constraint.
 - Every new test must name the break it catches (Tests above); no test is added for coverage alone.
-- Never ask the user anything; every open question ends as a recorded assumption.
+- Never stop to ask: every open question ends as a recorded assumption, and only a spec question is put to the
+  user, without waiting (`spec.md`).
 
 ## Done when
 
-The flow map and the premortem are recorded, and the plan with its must-not-change list, risks, assumptions and
+The flow map and the premortem are recorded, `spec.md` is reconciled, and the plan with its must-not-change
+list, risks, assumptions and
 steps passes the plan gate and is in `plan.md`.

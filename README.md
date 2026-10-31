@@ -55,8 +55,13 @@ missing, it works around the obstacle, records what it could not verify, and kee
 
 ## Highlights
 
-- **Unattended, end to end.** The task is the last message you send. No plan approval, no clarifying questions:
-  open questions are decided and listed with their reasons in the report.
+- **Unattended, end to end.** The task is the last message you send. No plan approval, no stops to ask: open
+  questions are decided and listed with their reasons in the report.
+- **Spec questions that never block.** Each run writes `spec.md`: every requirement and constraint quoting your
+  words, checked against the code. Where the two disagree and nothing settles it, the run posts a `❓` question
+  and keeps building on its recommended answer; it waits for you only when nothing else is left, and never
+  reports around an open question. `--spec` builds the spec with you first, asking round after round until
+  nothing is open, then delivers it.
 - **Your instructions are the contract.** Every instruction you give, in the task or later, is kept word for word
   in the run's state, settles the questions it answers and wins over cpipe's defaults. The run is done when each
   one is met (a merge when there are no regressions included), not when the steps have run once. Each line is
@@ -126,6 +131,7 @@ In any Hermes chat, inside or near the repository:
 | `/cpipe <task>` | Delivers the task unattended and reports back in the same chat |
 | `/cpipe --parallel <issues>` | Each issue delivered in its own background session, up to four at once, each reporting back here |
 | `/cpipe --kanban <task>` | The same, with the role steps handed to your profiles as cards on your kanban board |
+| `/cpipe --spec <task>` | Builds the spec with you first, asking until nothing in it is open, then delivers it |
 | `/cpipe --budget <tier> <task>` | The same, with your profiles reasoning at that budget for this run (Budget, below) |
 | `/cpipe budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
 | `/cpipe --continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
@@ -792,6 +798,7 @@ cpipe/
     ├── SKILL.md          the flow, unattended rules, run log, limits, guard rails
     ├── roles.md          handing steps to profiles
     ├── kanban.md         --kanban: role steps as cards on the board
+    ├── spec.md           the spec, reconciling it with the code, ❓ questions, --spec
     ├── continue.md       continue and restart of a run
     ├── learning.md       where learnings live, how they are read, written and retired
     ├── contract.md       the rules pinned in the system prompt while a run is going

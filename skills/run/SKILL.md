@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.15.0
+version: 4.16.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -50,10 +50,13 @@ something this machine cannot do; until then the run loops (Limits).
 
 ## Unattended: the task is the last message
 
-The user sends the task and waits for the report. Never ask a question and never wait for an answer: no plan
-approval, no clarifying questions, no "should I". Never call a tool that waits for the user (a clarify or
-question tool, a command that needs the user's approval): it halts the run until they answer. Use another way,
-or skip that part and report it. Write commands that need no approval: read and edit files with your file tools
+The user sends the task and waits for the report. Never stop to ask: no plan approval, no "should I". The one
+question the run puts to the user is a spec question, where the user's words and the code disagree and nothing
+settles it (`skill_view(name='cpipe:run', file_path='spec.md')`): posted as a `❓` line while the run keeps
+working on its recommended answer, and waited on only when nothing else is left. Never call a tool that waits for
+the user (a clarify or question tool, a command that needs the user's approval): it halts the run until they
+answer; only a `--spec` run's spec step asks with one, before any code. Use another way, or skip that part and
+report it. Write commands that need no approval: read and edit files with your file tools
 (read, search, patch, write), and run one program with its arguments, never `execute_code`, inline code
 (`python -c`, `node -e`), `sh -c`, heredocs or `if`/`;` chains; a script you need goes in a file you then run.
 A command blocked because no one can be asked (a one-shot or scheduled session: "runs without a user present")
@@ -66,7 +69,8 @@ Every choice is yours:
 
 - **Open questions** (which base, which of two behaviors, a product detail, how old data or another role should
   be treated): decide from the user's instructions first, then the request, the code, the project's history and
-  the conversation. Pick the most likely and reversible answer, record it as an assumption, and keep going.
+  the conversation. Pick the most likely and reversible answer, record it as an assumption, and keep going. One
+  that changes what the user would see, with nothing to settle it, is also a spec question (`spec.md`).
 - **Things only the user may do**, unless the user asked for them: credentials or secrets, anything destructive,
   and anything that leaves this machine (push, pull request, merge, deploy, messages). Never do them. Skip that
   part, finish everything else, and name it in the report's `⚠️ Done except` status line. How the code should
@@ -100,7 +104,8 @@ until it finishes, end the turn with exactly this line, the time being when its 
 `⏳ 8/11 QA · waiting on sentinel's checks · done by 12:29 · resumes on its own`. Never a line of your own:
 without the time and the resume note a wait looks like a stop. Its
 notification starts the next turn. With nothing running, a reply without a tool call stops the run silently, so
-end a turn only on such a wait, a needed approval (above), the pause message or the report. A wait line with
+end a turn only on such a wait, a needed approval (above), the pause message, the `❓` waiting-on-your-answer
+lines when `gate` says `ASK` (`spec.md`), or the report. A wait line with
 nothing of this chat's running comes back to you as unfinished. Progress updates go in
 the same reply as your next tool call. Without completion notifications, wait on that one process id with your
 process tool. Whatever you wait on ends on its own: every install, check and profile runs under a time limit
@@ -339,9 +344,11 @@ and prints data and a verdict, and you act on what it prints:
   `done` when met, `skip` only as `n/a: <why it does not exist in this change>` or `machine: <what this machine
   cannot run>` and never for a user's instruction, `user` for what only the user may do, its evidence starting
   with its kind: `credentials:`, `destructive:`, `external:` (push, pull
-  request, merge, deploy, messages) or `approval:` (one Hermes asked the user, refused or timed out). `track` and
+  request, merge, deploy, messages) or `approval:` (one Hermes asked the user, refused or timed out), or a
+  spec question `answer: <R or C id of spec.md>: <question>` (`spec.md`). `track` and
   `gate` refuse any other: which fix, the scope or how the code behaves is the run's to decide. Unclear, "not established" or "inconclusive" stays open and is work for the loop.
 - `gate <run dir>`: the run's verdict. `FIX: …` is the loop's next work; `WAIT: …` ends the turn on a wait line;
+  `ASK: …` is only the user's answers left: end the turn on the `❓` waiting lines (`spec.md`);
   `NEEDS-USER: …` is what only the user may do; `PASS` means every condition holds: merge when asked, then report.
 - `report <run dir>`: the report's skeleton with its facts filled in; `report <run dir> --check`: `PASS` when
   `<run dir>/report.md` keeps those facts and has every section and cell written, else `FIX` with what is wrong

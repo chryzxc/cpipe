@@ -5,7 +5,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
 
   python3 cpipe.py results <out.json> <junit|jest|tsc|eslint|lines> <file>... [--root <dir>]
   python3 cpipe.py compare <run dir> <check>
-  python3 cpipe.py track <run dir> add <step> <text> | set <id> <open|done|skip|user> [<evidence>, for user `<kind>: …`] | open [<step>]
+  python3 cpipe.py track <run dir> add <step> <text> | set <id> <open|done|skip|user> [<evidence>, for user `<kind>: …`, a question `answer: R2: …`] | open [<step>]
   python3 cpipe.py gate <run dir>
   python3 cpipe.py report <run dir> [--check]
   python3 cpipe.py active <run dir> [--done]
@@ -25,7 +25,7 @@ from pathlib import Path
 
 STATUSES = ("open", "done", "skip", "user")
 # What only the user may do (SKILL.md, Unattended): how the code should behave, or which fix, is never one
-USER_KINDS = ("credentials", "destructive", "external", "approval")
+USER_KINDS = ("credentials", "destructive", "external", "approval", "answer")
 NOT_USER = ("{} is the loop's work, not the user's: `user` is only for " + ", ".join(USER_KINDS) +
             " (evidence `<kind>: …`); a choice between fixes or scope is decided by the run")
 
@@ -44,6 +44,28 @@ def _kind(evidence, kinds):
 
 def _for_user(evidence):
     return _kind(evidence, USER_KINDS)
+
+
+# A question for the user names the spec line it settles (spec.md, Questions): `answer: R2: <question>`
+ASKS = re.compile(r"^answer:\s*([RC]\d+)\b", re.I)
+NOT_ASK = ("{} is not a spec question: a question names the spec line it settles (`answer: R2: …`, the line in "
+           "spec.md); any other choice is the run's")
+SPEC_LINE = re.compile(r"^\s*-\s*\**([RCNA]\d+)\**\s*:(.*)$")
+UNSOURCED = "spec {} has no source in the user's words (` · from: \"<their exact words>\"`); a reading of yours is an A line"
+
+
+def _spec(run_dir):
+    """spec.md's lines by id: R requirements, C constraints, N non-goals, A assumptions."""
+    try:
+        text = (Path(run_dir) / "spec.md").read_text()
+    except OSError:
+        return {}
+    return {m.group(1).upper(): m.group(2).strip() for m in map(SPEC_LINE.match, text.splitlines()) if m}
+
+
+def _asks(run_dir, evidence):
+    m = ASKS.match(evidence.strip())
+    return bool(m) and m.group(1).upper() in _spec(run_dir)
 LINE_COL = re.compile(r"[:(]\d+(?:[:,]\d+)?\)?(?=[:\s]|$)")
 
 
@@ -204,6 +226,8 @@ def track(run_dir, action, args):
             raise SystemExit(f"{ident}: {status} needs its evidence (a result, a file, a count) or its reason")
         if status == "user" and not _for_user(evidence):
             raise SystemExit(NOT_USER.format(ident))
+        if status == "user" and _kind(evidence, ("answer",)) and not _asks(run_dir, evidence):
+            raise SystemExit(NOT_ASK.format(ident))
         if status == "skip" and not _kind(evidence, SKIP_KINDS):
             raise SystemExit(NOT_SKIP.format(ident))
         match = [i for i in items if i["id"] == ident]
@@ -230,8 +254,8 @@ def _ci_bucket(ci):
 
 
 def gate(run_dir, sid=None):
-    """FIX before WAIT before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
-    fix, wait, user = [], [], []
+    """FIX before WAIT before ASK before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
+    fix, wait, ask, user = [], [], [], []
     items = _items(run_dir)
     told = set(map(_fold, _told(run_dir)))
     if not items:  # a run from before track.json, or one that lost it: nothing is proven yet
@@ -246,9 +270,15 @@ def gate(run_dir, sid=None):
             fix.append(f"{NOT_SKIP.format(i['id'])}: {i['text']}")
         elif i["status"] == "skip" and _fold(i["text"]) in told:
             fix.append(f"{NOT_SKIP_TOLD.format(i['id'])}: {i['text']}")
+        elif i["status"] == "user" and _kind(i["evidence"], ("answer",)):
+            if _asks(run_dir, i["evidence"]):
+                ask.append(i["evidence"].split(":", 1)[1].strip())
+            else:
+                fix.append(NOT_ASK.format(i["id"]))
         elif i["status"] == "user":
             user.append(f"{i['id']} {i['evidence']}")
     fix += [UNSAID.format(line) for line in unsaid(run_dir, sid)]
+    fix += [UNSOURCED.format(ident) for ident in unsourced(run_dir, sid)]
     d = Path(run_dir) / "results"
     checks = sorted({p.name.rsplit(".", 2)[0] for p in [*d.glob("*.base.json"), *d.glob("*.head.json")]})
     if not checks:
@@ -271,6 +301,8 @@ def gate(run_dir, sid=None):
         return "FIX: " + " | ".join(fix)
     if wait:
         return "WAIT: " + ", ".join(wait)
+    if ask:  # every other item is done: the run waits for the user's answer, never reports around it
+        return "ASK: " + " | ".join(ask)
     if user:
         return "NEEDS-USER: " + " | ".join(user)
     return "PASS: every item done with evidence, no new failure, CI green"
@@ -282,6 +314,7 @@ def report(run_dir):
     items = _items(run_dir)
     status = ("✅ Done: <goal>" if verdict.startswith("PASS")
               else "⚠️ Done except " + verdict.split(": ", 1)[1] + ": <goal>" if verdict.startswith("NEEDS-USER")
+              else f"not ready to report, the run waits on your answer: {verdict[5:]}" if verdict.startswith("ASK")
               else f"not ready to report, the loop has work: {verdict}")
     checks = []
     for p in sorted((Path(run_dir) / "results").glob("*.head.json")):
@@ -374,11 +407,31 @@ def _told(run_dir):
 
 def unsaid(run_dir, sid=None):
     """Lines under now.md's Instructions the user never wrote in this chat: a reading passed off as their words."""
-    sid = sid or os.environ.get("HERMES_SESSION_ID", "")
-    db_path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "state.db"
     told = _told(run_dir)
-    if not (sid and told and db_path.is_file()):  # outside a Hermes chat there is nothing to check against
+    said = _said(sid or os.environ.get("HERMES_SESSION_ID", "")) if told else None
+    return [line for line in told if _fold(line) not in said] if said is not None else []
+
+
+def unsourced(run_dir, sid=None):
+    """R and C lines of spec.md whose `from: "…"` is missing or not the user's words: a limit the run made up."""
+    spec = {k: v for k, v in _spec(run_dir).items() if k[0] in "RC"}
+    if not spec:
         return []
+    said = _said(sid or os.environ.get("HERMES_SESSION_ID", ""))
+    out = []
+    for ident, line in spec.items():
+        quote = re.search(r'from:\s*"([^"]+)"', line)
+        if not quote or (said is not None and _fold(quote.group(1)) not in said):
+            out.append(ident)
+    return out
+
+
+def _said(sid):
+    """Everything the user wrote in this chat and the chats it was compacted from, whitespace folded; None
+    outside a Hermes chat (nothing to check against)."""
+    db_path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "state.db"
+    if not (sid and db_path.is_file()):
+        return None
     said, seen = [], set()
     db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
@@ -390,8 +443,7 @@ def unsaid(run_dir, sid=None):
             sid = row and row[0]
     finally:
         db.close()
-    said = _fold(" ".join(said))
-    return [line for line in told if _fold(line) not in said]
+    return _fold(" ".join(said))
 
 
 UNSAID = "instruction not in the user's words: {} (write only what they wrote; your reading goes in the run log)"
@@ -495,6 +547,15 @@ def _now_step(lane):
     return found.group(1).strip() if found else "running"
 
 
+def _asking(lane, sid):
+    """The lane's open questions when its gate says ASK: it waits for the user, never resumed around them."""
+    try:
+        verdict = gate((lane / "run").read_text().strip(), sid)
+    except (OSError, SystemExit, KeyError, ValueError):
+        return ""
+    return verdict[5:] if verdict.startswith("ASK: ") else ""
+
+
 def lanes(batch, at_once=4, report_of=None):
     """Each lane of a --parallel batch with its state, then what to do: START, RESUME, WAIT or DONE."""
     batch = Path(batch)
@@ -502,6 +563,7 @@ def lanes(batch, at_once=4, report_of=None):
     for lane in sorted((p for p in batch.iterdir() if (p / "brief.md").exists()), key=lambda p: (len(p.name), p.name)):
         issue = (lane / "brief.md").read_text().splitlines()[0].lstrip("# ").strip()
         seg, ran, code = _segment(lane)
+        sid = re.findall(r"^session_id: (\S+)", seg or "", re.M)
         if seg is None:
             state = "queued"
             queued.append(lane.name)
@@ -510,11 +572,12 @@ def lanes(batch, at_once=4, report_of=None):
             running += 1
         elif _lane_report(lane, seg):
             state = "reported · " + _lane_report(lane, seg).splitlines()[0]
+        elif sid and _asking(lane, sid[-1]):
+            state = "❓ waiting on your answer in its chat · " + _asking(lane, sid[-1])
         elif (lane / "taken").exists():
             state = f"taken over in its chat · {_now_step(lane)}"
             running += 1
         else:
-            sid = re.findall(r"^session_id: (\S+)", seg, re.M)
             how = f"exit {code} after {ran // 60} min" if ran is not None else "its process is gone"
             state = f"stopped · {how}" + (f" · session {sid[-1]}" if sid else " · never started")
             wait = f" -w {QUICK * 2}" if ran is not None and ran < QUICK else ""

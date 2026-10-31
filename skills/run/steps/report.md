@@ -7,7 +7,8 @@ this file finishes the run and writes the report.
 
 The report comes after the work is finished, not when the steps have run once. Before writing it, add every
 instruction in `now.md` and each merge condition that applies to `track.json` and run `gate`: only `PASS` or
-`NEEDS-USER` lets the report be written. Check that every step in the report's Proof below would be ✅ or — and the
+`NEEDS-USER` lets the report be written; `ASK` waits for the user's answers first (`spec.md`). Check that every
+step in the report's Proof below would be ✅ or — and the
 goal is met. For any other step, go back and loop until it is (`cpipe:run`, Limits): fix every **act** finding and
 QA failure, retry a check another way, wait for CI, merge when asked. A step stays open only when the run truly
 cannot close it: something only the user may do, or a check that needs what this machine does not have. A question

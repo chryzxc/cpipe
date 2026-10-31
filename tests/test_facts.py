@@ -314,3 +314,34 @@ def test_brief_puts_the_header_in_front(tmp_path):
     again = facts.brief(str(tmp_path), "/wt", "review", 1, resume=True)
     assert again.startswith("Every reply resends") and "Work only in" not in again
     assert facts.brief(str(tmp_path), "/wt", "review", 1, card=True).startswith("Card from a delivery run.")
+
+
+def test_a_spec_question_waits_only_when_nothing_else_is_left(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))  # no state.db: only the quote's presence is checked
+    run = tmp_path / "run"
+    run.mkdir()
+    closed(run)
+    put(run, "unit.base.json", passed=["a"])
+    put(run, "unit.head.json", passed=["a"])
+    (run / "spec.md").write_text('# Spec\n- R1: deny strangers · from: "only owners may edit"\n- C1: no migrations\n')
+    assert facts.gate(run) == "FIX: spec C1 has no source in the user's words (` · from: \"<their exact words>\"`); " \
+                              "a reading of yours is an A line"
+    (run / "spec.md").write_text('# Spec\n- R1: deny strangers · from: "only owners may edit"\n- A1: no migrations\n')
+    q = facts.track(run, "add", ["build", "may", "admins", "edit?"])
+    with pytest.raises(SystemExit, match="not a spec question"):  # a scope question names no spec line
+        facts.track(run, "set", [q, "user", "answer: may I widen the scope?"])
+    facts.track(run, "set", [q, "user", "answer: R1: may admins edit too? · recommended: yes"])
+    assert facts.gate(run) == "ASK: R1: may admins edit too? · recommended: yes"
+    assert "waits on your answer" in facts.report(run)
+    open_ = facts.track(run, "add", ["qa", "screens", "checked"])
+    assert facts.gate(run).startswith("FIX")  # work left: the run keeps going while the question is open
+    facts.track(run, "set", [open_, "done", "1", "pass"])
+    lane = tmp_path / "lanes" / "1"
+    lane.mkdir(parents=True)
+    (lane / "brief.md").write_text("# issue 1\n")
+    (lane / "run").write_text(str(run))
+    (lane / "log.txt").write_text("lane started 100\nsession_id: s1\nexit 0 3000\n")
+    assert facts.lanes(lane.parent).splitlines() == [
+        "1 issue 1 · ❓ waiting on your answer in its chat · R1: may admins edit too? · recommended: yes", "DONE"]
+    facts.track(run, "set", [q, "done", "answered: admins too"])
+    assert facts.gate(run).startswith("PASS")
