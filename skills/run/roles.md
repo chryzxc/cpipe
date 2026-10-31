@@ -152,9 +152,9 @@ pages to learn the command line.
    for that role resumes it: a fix
    round, a correction, a conflict, a QA re-run, the delta review, and the next delivery of the run. With
    deliveries in parallel, each lane has its own sessions.
-   `sh <skill dir>/bin/step.sh <run dir> <worktree> <role> <round> <first run budget> <limit> <who> --resume <session id> [--reasoning <effort>]`
-   A resumed session keeps the `--run-budget` it started with and refuses another value: pass the first run's
-   value again, and hold the follow-up to its own budget with the limit (that budget plus 300).
+   `sh <skill dir>/bin/step.sh <run dir> <worktree> <role> <round> <run budget> <limit> <who> --resume <session id> [--reasoning <effort>]`
+   A resumed session keeps the run budget it started with (the script leaves the flag off), so the limit (the
+   follow-up's budget plus 300) is what holds it to its own budget.
    A new session reads the code again from nothing, tens of replies; start one only when the resume fails, the next
    delivery is in another repository, or the session ended at its turns or budget with work left: a session that
    long is past its best, so the next one starts fresh from a handoff (the role part, then what its reply says it

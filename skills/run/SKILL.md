@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.10.1
+version: 4.10.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -32,7 +32,9 @@ what you could not verify in the run log, and continue with the next step.
 
 Every instruction the user gives about this work, in the task or in any later message, holds until the user
 changes it. A later instruction replaces an earlier one it contradicts ("merge it" after "do not push" asks for
-the push and the pull request a merge needs): act on it, never ask which one holds. That covers how to work (in parallel, which base, draft pull
+the push and the pull request a merge needs): act on it, never ask which one holds. An answer that rules out
+one fix ("keep what is current" to a fix that needs a new setup) narrows how, never what: find the fix that holds
+within it (`steps/design.md`), and leave the gap open only when the user says so. That covers how to work (in parallel, which base, draft pull
 requests), what the change must respect (keep the client's behavior, follow an existing rule) and how to finish (push, open a pull request, merge when a
 condition holds). Write each one word for word in the run log and under `Instructions:` in `now.md` the moment it
 arrives. Check every plan, decision, fix and report against them. Where an instruction differs from a default
