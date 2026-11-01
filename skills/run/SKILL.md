@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.21.0
+version: 4.22.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -47,6 +47,15 @@ way the instruction says, for example a change that rejects what the user said m
 for a decision, a policy or an approval the user already gave. The run is finished when every instruction is
 met. An instruction stays unmet only for a reason the report names: something only the user may do, or
 something this machine cannot do; until then the run loops (Limits).
+
+**The user's rules.** The user can keep standing rules for every cpipe run, and only cpipe, in
+`<Hermes root>/cpipe/rules.md` (`/cpipe rules add <rule>`), one `- ` line each. They are pinned in every session of
+the run, a role's too. Each is an instruction the user gave for this run, held like the ones above: it can change
+how the run works (`commit and push after each commit`: commit each verified build round, using the commit step
+in `steps/publish.md`, and push it), and a push, pull request or merge it asks for is asked for. This task's own
+instructions win where they differ. They are not copied into `now.md` (only this chat's words go there); the report
+checks them like the instructions. A role's session does none of the run's own work (commit, push, merge): the run
+does it after the role replies.
 
 ## Unattended: the task is the last message
 

@@ -145,6 +145,7 @@ In any Hermes chat, inside or near the repository:
 | `/cpipe --restart [<step>]` | Redoes the run from that step (Explore by default) on its own roles, in the same chat |
 | `/cpipe feedback <what you found>` | A problem you found after the report: reproduced, recorded as a miss and a learning, fixed as a follow-up |
 | `/cpipe learnings` | What cpipe has learned from your runs, and the problems that reached you per step |
+| `/cpipe rules [add <rule>\|remove <n>]` | Your own standing rules for every cpipe run, and only cpipe: `commit and push after each commit` |
 | `/cpipe:run <task>` | The skill itself, for chats where the command is not available |
 
 Ask for anything that leaves your machine in the task or a later message: `… and open a draft pull request`,
@@ -168,6 +169,7 @@ single report at the end:
 > | everything else | this chat's model |
 >
 > - **Budget:** each profile's own setting · `/cpipe budget <tier>` sets one
+> - **Your rules:** 1 standing rule · `/cpipe rules`
 > - **Learned:** 4 rules from past runs, added to this one · `/cpipe learnings`
 >
 > Runs on its own and reports here. Open questions are decided and listed in the report;
@@ -485,6 +487,15 @@ workaround, every finding and what became of it. Beside it are the plan (`plan.m
   run did not create gets one `ignored:` line; it is never taken as the task.
 - The log also marks the worktree as cpipe's: each new run removes cpipe worktrees whose pull request is merged
   and that hold no uncommitted work. Other worktrees are never touched.
+
+### Your rules
+
+Standing rules for every cpipe run, and only cpipe, kept apart from your Hermes memory and skills:
+`/cpipe rules add commit and push after each commit`. They live in `~/.hermes/cpipe/rules.md`, one `- ` line each,
+and are pinned in every session of a run, a role's too, so a compaction never drops them. Each one counts as your
+instruction for the run, so it can change how the run works and gives the permission a push asks for; the
+task's own instructions win where they differ, and the report checks each rule like an instruction.
+`/cpipe rules` lists them and `/cpipe rules remove <n>` drops one.
 
 ### Learning loop
 

@@ -32,7 +32,8 @@ and the learning is retired with `conflicts with core`. So updating cpipe never 
 run after an update (a learning's version older than this skill's) checks each older learning against the current
 step file once: one the file now covers is retired with `now in core`, one that conflicts is retired with `conflicts
 with core`, the rest get the new version. The order, highest first: the user's instructions for this task, the
-user's Hermes setup (`cpipe:run`, The user's own skills come first), cpipe's guard rails and step rules, then the
+user's rules (`cpipe:run`, The user's rules), the user's Hermes setup (`cpipe:run`, The user's own skills come
+first), cpipe's guard rails and step rules, then the
 learnings (profile, then step and general, then the project's), adding detail on top.
 
 **Reading.** Explore reads all of them once, after the version check: each learning that fits this change goes

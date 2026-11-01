@@ -224,3 +224,20 @@ def test_the_watcher_queues_the_next_turn_until_the_run_is_done(tmp_path, monkey
     verdict["v"] = "PASS: every item done"
     assert "write the report" in turn("All done!")
     assert turn("✅ Done · fix it") is None
+
+
+def test_rules_are_the_users_own_and_pinned_in_every_run_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    assert "none yet" in cpipe._rules_cmd("")
+    cpipe._rules_cmd("add commit and  push after each commit")
+    cpipe._rules_cmd("add keep commits small")
+    assert "1. commit and push after each commit" in cpipe._rules_cmd("")
+    assert "Use `/cpipe rules`" in cpipe._rules_cmd("remove 9")
+    cpipe._rules_cmd("remove 2")
+    assert cpipe._rules() == ["- commit and push after each commit"]
+    run = tmp_path / "run"
+    run.mkdir()
+    monkeypatch.setenv("CPIPE_RUN", str(run))
+    for step in ("", "1"):
+        monkeypatch.setenv("CPIPE_STEP", step)
+        assert "- commit and push after each commit" in cpipe._pinned({})

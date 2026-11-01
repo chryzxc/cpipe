@@ -47,6 +47,7 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 | `/cpipe feedback <text>` | a problem you found after the report: recorded, reproduced and fixed |
 | `/cpipe budget [<tier>\\|off]` | show or save the default budget in cpipe.yaml |
 | `/cpipe learnings` | what cpipe has learned from your runs |
+| `/cpipe rules [add <rule>\\|remove <n>]` | your own standing rules for every run, cpipe only |
 
 Example: `/cpipe --budget small fix the date filter on the orders page and open a draft pull request`"""
 
@@ -57,6 +58,7 @@ STARTED = """**cpipe** · {task}
 {team}
 
 - **Budget:** {budget}
+- **Your rules:** {rules}
 - **Learned:** {learned}{extra}
 
 Runs on its own and reports here. Open questions are decided and listed in the report; one only you can
@@ -90,7 +92,7 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings", argument_mode="text")
+                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings | rules [add <rule> | remove <n>]", argument_mode="text")
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
         ctx.register_hook("pre_verify", _unfinished)
@@ -160,6 +162,9 @@ def _pinned(info):
         sections = dict(re.findall(r"(?ms)^## (\w+)\n(.*?)(?=^## |\Z)", text))
         own = sections["Step" if os.environ.get("CPIPE_STEP") else "Run"].strip()
         parts = [own + "\n" + sections["Both"].strip(), f"Run folder: {run}"]
+        rules = _rules()
+        if rules:
+            parts.append(RULES_PINNED + "\n" + "\n".join(rules))
         told = _instructions(run / "now.md")
         if told:
             parts.append(told)
@@ -469,6 +474,53 @@ def _learnings():
                      "have seen (`/cpipe feedback <what you found>`).")
 
 
+RULES_PINNED = ("The user's own rules for every cpipe run (cpipe/rules.md): their standing instructions, held like "
+                "now.md's; this task's instructions win where they differ (cpipe:run, The user's rules).")
+
+
+def _rules_path():
+    return _root() / "cpipe" / "rules.md"
+
+
+def _rules():
+    """The user's standing rules for every run: the `- ` lines of <Hermes root>/cpipe/rules.md."""
+    try:
+        return [l for l in _rules_path().read_text().splitlines() if l.startswith("- ")]
+    except OSError:
+        return []
+
+
+def _rules_line():
+    n = len(_rules())
+    if not n:
+        return "none · `/cpipe rules add <rule>` sets one"
+    return f"{n} standing rule{'s' * (n != 1)} · `/cpipe rules`"
+
+
+def _rules_cmd(arg):
+    """`/cpipe rules`, `rules add <rule>`, `rules remove <n>`: the user's rules file, nothing else."""
+    verb, _, text = arg.partition(" ")
+    rules, path = _rules(), _rules_path()
+    if verb.lower() == "add" and text.strip():
+        rules.append("- " + " ".join(text.split()))
+    elif verb.lower() == "remove" and text.strip().isdigit() and 1 <= int(text) <= len(rules):
+        rules.pop(int(text) - 1)
+    elif verb:
+        return "Use `/cpipe rules`, `/cpipe rules add <rule>` or `/cpipe rules remove <n>`."
+    if verb:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("".join(f"{r}\n" for r in rules))
+        except OSError as exc:
+            return f"cpipe could not write {path}: {exc}"
+    if not rules:
+        return ("**cpipe rules** · none yet\n\nYour own rules for every cpipe run, and only cpipe: "
+                "`/cpipe rules add commit and push after each commit`.")
+    return ("**cpipe rules** · every run follows these like your instructions; a task's own instructions win\n\n"
+            + "\n".join(f"{i}. {r[2:]}" for i, r in enumerate(rules, 1))
+            + f"\n\n`/cpipe rules add <rule>` · `/cpipe rules remove <n>` · or edit {path}")
+
+
 def _flags(task):
     """Leading --parallel, --kanban, --spec and --budget <tier>, in any order; returns (flags, budget, rest, error)."""
     flags, budget, words = set(), None, task.split()
@@ -496,6 +548,8 @@ def _start(ctx, raw):
     first, _, rest = task.partition(" ")
     if first.lower() == "learnings" and not rest.strip():
         return _learnings()
+    if first.lower() == "rules" and (not rest.strip() or rest.split()[0].lower() in ("add", "remove")):
+        return _rules_cmd(rest.strip())
     if first.lower() == "budget" and (not rest.strip() or rest.strip().lower() in (*BUDGETS, "off")):
         return _budget(rest.strip().lower())
     flags, budget, brief, error = _flags(task)
@@ -522,6 +576,7 @@ def _start(ctx, raw):
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
             return STARTED.format(task=_short(brief), flow=FLOW, team=_team(),
                                   budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned(),
+                                  rules=_rules_line(),
                                   extra=(LANES if "--parallel" in flags else "") + (SPEC if "--spec" in flags else "")
                                   + (BOARD if kanban else ""))
         reason = "the chat did not accept the message"
