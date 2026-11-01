@@ -226,38 +226,35 @@ def test_the_watcher_queues_the_next_turn_until_the_run_is_done(tmp_path, monkey
     assert turn("✅ Done · fix it") is None
 
 
-def test_rules_are_the_users_own_and_pinned_in_every_run_session(tmp_path, monkeypatch):
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    assert "none ·" in cpipe._rules_cmd("")
-    cpipe._rules_cmd("add commit and  push after each commit")
-    cpipe._rules_cmd("add keep commits small")
-    assert "1. commit and push after each commit" in cpipe._rules_cmd("")
-    assert "Use `/cpipe rules" in cpipe._rules_cmd("remove 9")
-    cpipe._rules_cmd("remove 2")
-    assert cpipe._rules() == ["- commit and push after each commit (everywhere)"]
-    run = tmp_path / "run"
-    run.mkdir()
-    monkeypatch.setenv("CPIPE_RUN", str(run))
-    for step in ("", "1"):
-        monkeypatch.setenv("CPIPE_STEP", step)
-        assert "- commit and push after each commit" in cpipe._pinned({})
+
+class _Chat:
+    def __init__(self):
+        self.sent = []
+
+    def inject_message(self, text, role, session_key):
+        self.sent.append(text)
+        return True
 
 
-def test_rules_have_profile_and_project_scopes_like_cpipe_yaml(tmp_path, monkeypatch):
-    import subprocess
+def test_rules_are_shown_edited_in_words_and_pinned_by_scope(tmp_path, monkeypatch):
     root, repo = tmp_path / "hermes", tmp_path / "repo"
     monkeypatch.setenv("HERMES_HOME", str(root / "profiles" / "forge"))
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    cpipe._rules_cmd("add keep commits small")
-    cpipe._rules_cmd("--profile add run the linter")
-    cpipe._rules_cmd(f"--project {repo} add commit and push after each commit")
-    assert "needs the path of a git repository" in cpipe._rules_cmd(f"--project {tmp_path} add x")
-    assert (repo / ".git" / "cpipe" / "rules.md").exists()
+    chat = _Chat()
+    assert "none ·" in cpipe._start(chat, "--rules")
+    assert "updating them" in cpipe._start(chat, "—rules commit and push after each commit, only in this project")
+    assert "cpipe/rules.md" in chat.sent[0] and chat.sent[0].endswith("only in this project")
+    (root / "cpipe").mkdir(parents=True)
+    (root / "cpipe" / "rules.md").write_text("- keep commits small\n")
+    (root / "profiles" / "forge" / "cpipe").mkdir(parents=True)
+    (root / "profiles" / "forge" / "cpipe" / "rules.md").write_text("- run the linter\n")
+    (repo / ".git" / "cpipe").mkdir(parents=True)
+    (repo / ".git" / "cpipe" / "rules.md").write_text("- commit and push after each commit\n")
+    assert "1. keep commits small" in cpipe._start(chat, "--rules")
     run = repo / ".git" / "worktrees" / "fix" / "cpipe"
     run.mkdir(parents=True)
     monkeypatch.setenv("CPIPE_RUN", str(run))
-    pinned = cpipe._pinned({})
-    assert pinned.index("keep commits small (everywhere)") < pinned.index("run the linter (this profile)") \
-        < pinned.index("commit and push after each commit (this project)")
-    listed = cpipe._rules_cmd(f"--project {repo}")
-    assert "**this project**\n1. commit and push after each commit" in listed
+    for step in ("", "1"):
+        monkeypatch.setenv("CPIPE_STEP", step)
+        pinned = cpipe._pinned({})
+        assert pinned.index("keep commits small (everywhere)") < pinned.index("run the linter (this profile)") \
+            < pinned.index("commit and push after each commit (this project)")

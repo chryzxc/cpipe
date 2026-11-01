@@ -47,7 +47,7 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 | `/cpipe feedback <text>` | a problem you found after the report: recorded, reproduced and fixed |
 | `/cpipe budget [<tier>\\|off]` | show or save the default budget in cpipe.yaml |
 | `/cpipe learnings` | what cpipe has learned from your runs |
-| `/cpipe rules [--profile\\|--project <path>] [add <rule>\\|remove <n>]` | your own rules for cpipe runs: everywhere, one profile or one repository |
+| `/cpipe --rules [<what to change>]` | show your own rules for cpipe runs, or change them in words |
 
 Example: `/cpipe --budget small fix the date filter on the orders page and open a draft pull request`"""
 
@@ -92,7 +92,7 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings | rules [--profile | --project <path>] [add <rule> | remove <n>]", argument_mode="text")
+                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings | --rules [<what to change>]", argument_mode="text")
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
         ctx.register_hook("pre_verify", _unfinished)
@@ -477,18 +477,6 @@ def _learnings():
 RULES_PINNED = ("The user's own rules for cpipe runs: their standing instructions, held like now.md's. Where two "
                 "differ, the project's win over the profile's, the profile's over everywhere's, and this task's "
                 "instructions over all of them (cpipe:run, The user's rules).")
-RULES_VERBS = ("add", "remove", "--profile", "--project")
-
-
-def _project_git(path):
-    """The git folder a repository's worktrees share (its project lessons and rules live there), or None."""
-    import subprocess
-    try:
-        out = subprocess.run(["git", "-C", str(path), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                             capture_output=True, text=True, timeout=5)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return Path(out.stdout.strip()) if out.returncode == 0 and out.stdout.strip() else None
 
 
 def _run_git(run):
@@ -523,46 +511,35 @@ def _rules(project=None):
 def _rules_line():
     n = len(_rules())
     if not n:
-        return "none · `/cpipe rules add <rule>` sets one"
-    return f"{n} standing rule{'s' * (n != 1)}, plus any for this project · `/cpipe rules`"
+        return "none · `/cpipe --rules <a rule>` sets one"
+    return f"{n} standing rule{'s' * (n != 1)}, plus any for this project · `/cpipe --rules`"
 
 
-RULES_USE = ("Use `/cpipe rules [--profile | --project <repo path>] [add <rule> | remove <n>]`: everywhere by "
-             "default, or only this profile's or that repository's runs.")
+# `/cpipe --rules <what to change>`: the chat's model edits the files; which one comes from the user's words.
+RULES_EDIT = ("Edit my cpipe rules as I ask below, then show the rules files you changed. Do not start a run. "
+              "They are cpipe's own standing rules, one `- ` line each in my words, at three levels like cpipe.yaml: "
+              "{root} for every run, {profile} for one profile's sessions, and `$(git -C <repo> rev-parse "
+              "--path-format=absolute --git-common-dir)/cpipe/rules.md` for one repository's runs (never committed). "
+              "Pick the level from my words: a repository or project I name, or this chat's when I say this project; "
+              "a profile I name; else every run. Merge a rule into one that says the same thing rather than adding a "
+              "near-duplicate.\n\n")
 
 
-def _rules_cmd(arg):
-    """`/cpipe rules [--profile | --project <path>] [add <rule> | remove <n>]`: the user's rules files only."""
-    words, project = arg.split(), None
-    scope = "everywhere"
-    if words and words[0] == "--profile":
-        words, scope = words[1:], "this profile"
-        if _home() == _root():
-            return "This chat runs on the default profile: its rules are the everywhere ones. " + RULES_USE
-    elif words and words[0] == "--project":
-        project = _project_git(Path(words[1]).expanduser()) if len(words) > 1 else None
-        if not project:
-            return "`--project` needs the path of a git repository. " + RULES_USE
-        words, scope = words[2:], "this project"
-    verb, text = (words[0].lower(), " ".join(words[1:])) if words else ("", "")
-    path = dict(_rule_files(project))[scope]
-    rules = _read_rules(path)
-    if verb == "add" and text:
-        rules.append("- " + text)
-    elif verb == "remove" and text.isdigit() and 1 <= int(text) <= len(rules):
-        rules.pop(int(text) - 1)
-    elif verb:
-        return RULES_USE
-    if verb:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("".join(f"{r}\n" for r in rules))
-        except OSError as exc:
-            return f"cpipe could not write {path}: {exc}"
-        return f"**cpipe rules** · {scope}\n\n" + _list(rules, path)
-    out = [f"**{s}**\n" + _list(_read_rules(p), p) for s, p in _rule_files(project)]
+def _rules_cmd(ctx, arg):
+    """`/cpipe --rules`: show the rules; `/cpipe --rules <what to change>`: the chat's model edits them."""
+    if arg:
+        from gateway.session_context import get_session_env
+        key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
+        text = RULES_EDIT.format(root=_root() / "cpipe" / "rules.md",
+                                 profile=_root() / "profiles" / "<name>" / "cpipe" / "rules.md")
+        if ctx.inject_message(text + arg, role="user", session_key=key):
+            return "**cpipe rules** · updating them as you asked"
+        return "cpipe could not pass that on in this chat: edit the rules files directly.\n\n" + _rules_cmd(ctx, "")
+    out = [f"**{s}**\n" + _list(_read_rules(p), p) for s, p in _rule_files()]
     return ("**cpipe rules** · your own rules for cpipe runs only, followed like your instructions; the most "
-            "specific wins, and a task's own instructions win over all\n\n" + "\n\n".join(out) + "\n\n" + RULES_USE)
+            "specific wins, and a task's own instructions win over all\n\n" + "\n\n".join(out)
+            + "\n\nA repository's own rules are in its `.git/cpipe/rules.md`. Change any of them in words: "
+            "`/cpipe --rules commit and push after each commit, only in this project`")
 
 
 def _list(rules, path):
@@ -590,7 +567,7 @@ def _short(text, n=100):
 
 
 # Text input often turns a typed "--" into a dash: "—restart" is still the flag.
-DASHED = re.compile(r"(?<!\S)[—–](?=(parallel|kanban|spec|budget|continue|restart)\b)")
+DASHED = re.compile(r"(?<!\S)[—–](?=(parallel|kanban|spec|budget|continue|restart|rules)\b)")
 
 
 def _start(ctx, raw):
@@ -598,8 +575,8 @@ def _start(ctx, raw):
     first, _, rest = task.partition(" ")
     if first.lower() == "learnings" and not rest.strip():
         return _learnings()
-    if first.lower() == "rules" and (not rest.strip() or rest.split()[0].lower() in RULES_VERBS):
-        return _rules_cmd(rest.strip())
+    if first.lower() == "--rules":
+        return _rules_cmd(ctx, rest.strip())
     if first.lower() == "budget" and (not rest.strip() or rest.strip().lower() in (*BUDGETS, "off")):
         return _budget(rest.strip().lower())
     flags, budget, brief, error = _flags(task)

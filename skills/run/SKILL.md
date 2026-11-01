@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.23.0
+version: 4.24.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -50,14 +50,14 @@ something this machine cannot do; until then the run loops (Limits).
 
 **The user's rules.** The user can keep standing rules for cpipe runs, and only cpipe, one `- ` line each, like
 `cpipe.yaml`: `<Hermes root>/cpipe/rules.md` for every run, `$HERMES_HOME/cpipe/rules.md` for a profile's own
-sessions, and `$(git rev-parse --git-common-dir)/cpipe/rules.md` for one repository's runs (`/cpipe rules`). They
-are pinned in every session of the run, a role's too, each tagged with its scope. Where two differ, the more
-specific wins: the project's, then the profile's, then everywhere's. Each is an instruction the user gave for this
-run, held like the ones above: it can change how the run works (`commit and push after each commit`: commit each
-verified build round, using the commit step in `steps/publish.md`, and push it), and a push, pull request or merge
-it asks for is asked for. This task's own instructions win where they differ. They are not copied into `now.md`
-(only this chat's words go there); the report checks them like the instructions. A role's session does none of the
-run's own work (commit, push, merge): the run does it after the role replies.
+sessions, and `$(git rev-parse --git-common-dir)/cpipe/rules.md` for one repository's runs (`/cpipe --rules`, edited
+in words). They are pinned in every session of the run, a role's too, each tagged with its scope. Where two differ,
+the more specific wins: the project's, then the profile's, then everywhere's. Each is an instruction the user gave
+for this run, held like the ones above: it can change how the run works (`commit and push after each commit`: commit
+each verified build round, using the commit step in `steps/publish.md`, and push it), and a push, pull request or
+merge it asks for is asked for. This task's own instructions win where they differ. They are not copied into
+`now.md` (only this chat's words go there); the report checks them like the instructions. A role's session does none
+of the run's own work (commit, push, merge): the run does it after the role replies.
 
 ## Unattended: the task is the last message
 
