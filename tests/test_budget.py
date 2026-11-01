@@ -138,7 +138,7 @@ def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):
         {"id": "verify-1", "text": "related tests pass", "status": "open"},
         {"id": "verify-2", "text": "build", "status": "done"}]))
     (tmp_path / "cpipe" / "active").mkdir(parents=True)
-    (tmp_path / "cpipe" / "active" / "root.json").write_text(json.dumps({"run_dir": str(run)}))
+    (tmp_path / "cpipe" / "active" / "root.json").write_text(cpipe.json.dumps({"run_dir": str(run)}))
     text = cpipe._pinned({"session_id": "child"})  # compacted twice over: still the run's rules
     assert "loops until the goal" in text and "Root cause first" in text and "merge it if no regressions" in text and "## Step" not in text
     assert "verify-1 related tests pass" in text and "verify-2" not in text and "<skill dir>" not in text
@@ -165,7 +165,7 @@ def test_a_turn_cannot_end_on_a_question_while_the_gate_has_work(tmp_path, monke
     (run / "track.json").write_text(json.dumps([{"id": "verify-1", "text": "race tests pass", "status": "open",
                                                  "evidence": ""}]))
     (tmp_path / "cpipe" / "active").mkdir(parents=True)
-    (tmp_path / "cpipe" / "active" / "s1.json").write_text(json.dumps({"run_dir": str(run)}))
+    (tmp_path / "cpipe" / "active" / "s1.json").write_text(cpipe.json.dumps({"run_dir": str(run)}))
     ask = "⚠️ Needs your decision: authorize a broader approach or accept the risk?"
     nudge = cpipe._unfinished(session_id="s1", final_response=ask)
     assert "verify-1 race tests pass" in cpipe._verdict("s1")  # a continue starts from the gate, not the last reply
@@ -258,3 +258,27 @@ def test_rules_are_shown_edited_in_words_and_pinned_by_scope(tmp_path, monkeypat
         pinned = cpipe._pinned({})
         assert pinned.index("keep commits small (everywhere)") < pinned.index("run the linter (this profile)") \
             < pinned.index("commit and push after each commit (this project)")
+
+
+def test_a_run_that_skips_registration_is_still_pinned_and_watched(tmp_path, monkeypatch):
+    import sys, types
+    sys.modules.setdefault("gateway", types.ModuleType("gateway"))
+    sys.modules["gateway.session_context"] = types.SimpleNamespace(
+        get_session_env=lambda name: "chat1" if name == "HERMES_SESSION_ID" else None)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("CPIPE_RUN", raising=False)
+    monkeypatch.delenv("CPIPE_STEP", raising=False)
+    monkeypatch.delenv("CPIPE_LANE", raising=False)
+    monkeypatch.setattr(cpipe, "_waiting", lambda _: False)
+    chat = _Chat()
+    cpipe._start(chat, "fix the clock audit")
+    assert "cpipe.py active <run dir>" in cpipe._pinned({"session_id": "chat1"})
+    assert cpipe._pinned({"session_id": "other"}) == ""
+    history = [{"role": "user", "content": chat.sent[0]}]
+    cpipe._watch(chat, session_id="chat1", user_message="x", assistant_response="Both changes are merged.",
+                 conversation_history=history)
+    assert "no run folder is registered" in chat.sent[-1]
+    run = tmp_path / "run"
+    run.mkdir()
+    (tmp_path / "cpipe" / "active" / "chat1.json").write_text(cpipe.json.dumps({"run_dir": str(run)}))
+    assert "Run folder: " in cpipe._pinned({"session_id": "chat1"})

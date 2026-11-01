@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.24.0
+version: 4.25.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -370,7 +370,8 @@ and prints data and a verdict, and you act on what it prints:
   from every profile's session store (`steps/report.md`, Cost).
 - `active <run dir>` once the run log exists, `active <run dir> --done` after the report: registers this chat's run,
   so the run's rules, the user's instructions and the open items stay pinned in this chat's system prompt
-  whatever a compaction drops.
+  whatever a compaction drops, and `gate` and the watcher check the run. `/cpipe` marks the chat's run as started;
+  until `active` registers its folder, every turn is told to set it up and register it, and nothing else counts.
 - `lanes <batch dir> [--at-once <n>] [--report <lane>]`: each lane of a `--parallel` batch as queued, running,
   reported or stopped, then what to do: `START`, `RESUME`, `WAIT` or `DONE` (`parallel.md`).
 

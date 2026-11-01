@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from pathlib import Path
 
 SKILL = Path(__file__).parent / "skills" / "run" / "SKILL.md"
@@ -102,6 +103,9 @@ def register(ctx):
 
 
 PINNED_MAX = 4000
+PENDING_FOR = 86400  # ponytail: a run never registered stops being nudged after a day
+UNREGISTERED = ("FIX: no run folder is registered for this chat, so nothing checks the run: set it up "
+                "(steps/setup.md) and register it, `python3 {skill}/bin/cpipe.py active <run dir>`, then go on.")
 
 
 def _lineage(session_id, hops=50):
@@ -142,6 +146,17 @@ def _run_dir(info):
     return None
 
 
+def _pending(session_id):
+    """True when /cpipe started a run in this chat and setup has not registered its run dir yet (_start)."""
+    for sid in _lineage(str(session_id or "")):
+        try:
+            data = json.loads((_root() / "cpipe" / "active" / f"{sid}.json").read_text())
+        except (OSError, ValueError):
+            continue
+        return "run_dir" not in data and time.time() - data.get("pending", 0) < PENDING_FOR
+    return False
+
+
 def _instructions(now):
     """now.md's `## Instructions` section: the user's words, which win over every default."""
     try:
@@ -156,12 +171,16 @@ def _pinned(info):
     """The run's rules and open items, in the system prompt so a compaction cannot drop them (no flow control)."""
     try:
         run = _run_dir(info)
-        if not run or not run.is_dir():
+        pending = (not run or not run.is_dir()) and _pending(info.get("session_id"))
+        if not pending and (not run or not run.is_dir()):
             return ""
         text = (SKILL.parent / "contract.md").read_text().replace("<skill dir>", str(SKILL.parent))
         sections = dict(re.findall(r"(?ms)^## (\w+)\n(.*?)(?=^## |\Z)", text))
         own = sections["Step" if os.environ.get("CPIPE_STEP") else "Run"].strip()
-        parts = [own + "\n" + sections["Both"].strip(), f"Run folder: {run}"]
+        parts = [own + "\n" + sections["Both"].strip()]
+        if pending:
+            return "\n\n".join(parts + [UNREGISTERED.format(skill=SKILL.parent)])
+        parts.append(f"Run folder: {run}")
         rules = _rules(_run_git(run))
         if rules:
             parts.append(RULES_PINNED + "\n" + "\n".join(rules))
@@ -315,15 +334,15 @@ def _nudge(reply, verdict):
     return "wait" if "⏳" in reply else "fix"
 
 
-def _progress(run, verdict, ask):
+def _progress(run, verdict, ask, seen=None):
     """How many nudges in a row found the run as it is now (gate and checklist unchanged), this one included."""
     import hashlib
     try:
-        track = (run / "track.md").read_text()
+        track = (run / "track.md").read_text() if run else ""
     except OSError:
         track = ""
     mark = hashlib.sha1(f"{verdict}\n{track}\n{ask}".encode()).hexdigest()
-    seen = run / "watch.txt"
+    seen = seen or run / "watch.txt"
     try:
         last, n = seen.read_text().split()
         n = int(n) + 1 if last == mark else 1
@@ -346,13 +365,17 @@ def _watch(ctx, session_id="", user_message="", assistant_response="", conversat
         if not _running(conversation_history):
             return
         run = _run_dir({"session_id": session_id})
-        if not run or not run.is_dir() or _waiting(session_id):
+        if not run or not run.is_dir():
+            run = None
+            if not _pending(session_id):
+                return
+        if _waiting(session_id):
             return
-        verdict = _gate(run, session_id)
+        verdict = _gate(run, session_id) if run else UNREGISTERED.format(skill=SKILL.parent)
         ask = _nudge(_text(assistant_response), verdict)
         if not ask:
             return
-        n = _progress(run, verdict, ask)
+        n = _progress(run, verdict, ask, None if run else _root() / "cpipe" / "active" / f"{session_id}.watch")
         if n > GIVE_UP:
             return
         hint = ASKS["stuck"].format(n=n) if n >= STUCK_AT else ASKS[ask]
@@ -562,6 +585,18 @@ def _flags(task):
     return flags, budget, " ".join(words), None
 
 
+def _register_pending(sid):
+    """The run is this chat's from its first message: until setup registers its run dir (`cpipe.py active`), the
+    pinned rules and the watcher hold it to that, so a run that skips it is never left unchecked."""
+    path = _root() / "cpipe" / "active" / f"{sid}.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"pending": int(time.time())}) + "\n")
+        path.with_suffix(".watch").unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _short(text, n=100):
     return text if len(text) <= n else text[:n - 1] + "…"
 
@@ -595,6 +630,8 @@ def _start(ctx, raw):
                 else START.format(skill=SKILL, root=_root()))
         if ctx.inject_message(text + task, role="user",
                               session_key=key):
+            if not resume and first.lower() != "feedback" and "--parallel" not in flags and sid:
+                _register_pending(sid)
             if first.lower() == "feedback":
                 return FEEDBACK
             if first.lower() == "--restart":
