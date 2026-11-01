@@ -47,7 +47,7 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 | `/cpipe feedback <text>` | a problem you found after the report: recorded, reproduced and fixed |
 | `/cpipe budget [<tier>\\|off]` | show or save the default budget in cpipe.yaml |
 | `/cpipe learnings` | what cpipe has learned from your runs |
-| `/cpipe rules [add <rule>\\|remove <n>]` | your own standing rules for every run, cpipe only |
+| `/cpipe rules [--profile\\|--project <path>] [add <rule>\\|remove <n>]` | your own rules for cpipe runs: everywhere, one profile or one repository |
 
 Example: `/cpipe --budget small fix the date filter on the orders page and open a draft pull request`"""
 
@@ -92,7 +92,7 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings | rules [add <rule> | remove <n>]", argument_mode="text")
+                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings | rules [--profile | --project <path>] [add <rule> | remove <n>]", argument_mode="text")
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
         ctx.register_hook("pre_verify", _unfinished)
@@ -162,7 +162,7 @@ def _pinned(info):
         sections = dict(re.findall(r"(?ms)^## (\w+)\n(.*?)(?=^## |\Z)", text))
         own = sections["Step" if os.environ.get("CPIPE_STEP") else "Run"].strip()
         parts = [own + "\n" + sections["Both"].strip(), f"Run folder: {run}"]
-        rules = _rules()
+        rules = _rules(_run_git(run))
         if rules:
             parts.append(RULES_PINNED + "\n" + "\n".join(rules))
         told = _instructions(run / "now.md")
@@ -474,51 +474,101 @@ def _learnings():
                      "have seen (`/cpipe feedback <what you found>`).")
 
 
-RULES_PINNED = ("The user's own rules for every cpipe run (cpipe/rules.md): their standing instructions, held like "
-                "now.md's; this task's instructions win where they differ (cpipe:run, The user's rules).")
+RULES_PINNED = ("The user's own rules for cpipe runs: their standing instructions, held like now.md's. Where two "
+                "differ, the project's win over the profile's, the profile's over everywhere's, and this task's "
+                "instructions over all of them (cpipe:run, The user's rules).")
+RULES_VERBS = ("add", "remove", "--profile", "--project")
 
 
-def _rules_path():
-    return _root() / "cpipe" / "rules.md"
-
-
-def _rules():
-    """The user's standing rules for every run: the `- ` lines of <Hermes root>/cpipe/rules.md."""
+def _project_git(path):
+    """The git folder a repository's worktrees share (its project lessons and rules live there), or None."""
+    import subprocess
     try:
-        return [l for l in _rules_path().read_text().splitlines() if l.startswith("- ")]
+        out = subprocess.run(["git", "-C", str(path), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                             capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return Path(out.stdout.strip()) if out.returncode == 0 and out.stdout.strip() else None
+
+
+def _run_git(run):
+    """The shared git folder of a run dir (<git dir>/cpipe; a worktree's git dir is <common>/worktrees/<name>)."""
+    git = Path(run).parent
+    return git.parent.parent if git.parent.name == "worktrees" else git
+
+
+def _rule_files(project=None):
+    """(scope, rules.md) from the widest to the most specific, like cpipe.yaml: the Hermes root, this profile's own
+    folder, then the project's shared git folder."""
+    files = [("everywhere", _root() / "cpipe" / "rules.md")]
+    if _home() != _root():
+        files.append(("this profile", _home() / "cpipe" / "rules.md"))
+    if project:
+        files.append(("this project", Path(project) / "cpipe" / "rules.md"))
+    return files
+
+
+def _read_rules(path):
+    try:
+        return [l for l in path.read_text().splitlines() if l.startswith("- ")]
     except OSError:
         return []
+
+
+def _rules(project=None):
+    """The user's rules for a run, each `- ` line tagged with its scope, widest first."""
+    return [f"{l} ({scope})" for scope, path in _rule_files(project) for l in _read_rules(path)]
 
 
 def _rules_line():
     n = len(_rules())
     if not n:
         return "none · `/cpipe rules add <rule>` sets one"
-    return f"{n} standing rule{'s' * (n != 1)} · `/cpipe rules`"
+    return f"{n} standing rule{'s' * (n != 1)}, plus any for this project · `/cpipe rules`"
+
+
+RULES_USE = ("Use `/cpipe rules [--profile | --project <repo path>] [add <rule> | remove <n>]`: everywhere by "
+             "default, or only this profile's or that repository's runs.")
 
 
 def _rules_cmd(arg):
-    """`/cpipe rules`, `rules add <rule>`, `rules remove <n>`: the user's rules file, nothing else."""
-    verb, _, text = arg.partition(" ")
-    rules, path = _rules(), _rules_path()
-    if verb.lower() == "add" and text.strip():
-        rules.append("- " + " ".join(text.split()))
-    elif verb.lower() == "remove" and text.strip().isdigit() and 1 <= int(text) <= len(rules):
+    """`/cpipe rules [--profile | --project <path>] [add <rule> | remove <n>]`: the user's rules files only."""
+    words, project = arg.split(), None
+    scope = "everywhere"
+    if words and words[0] == "--profile":
+        words, scope = words[1:], "this profile"
+        if _home() == _root():
+            return "This chat runs on the default profile: its rules are the everywhere ones. " + RULES_USE
+    elif words and words[0] == "--project":
+        project = _project_git(Path(words[1]).expanduser()) if len(words) > 1 else None
+        if not project:
+            return "`--project` needs the path of a git repository. " + RULES_USE
+        words, scope = words[2:], "this project"
+    verb, text = (words[0].lower(), " ".join(words[1:])) if words else ("", "")
+    path = dict(_rule_files(project))[scope]
+    rules = _read_rules(path)
+    if verb == "add" and text:
+        rules.append("- " + text)
+    elif verb == "remove" and text.isdigit() and 1 <= int(text) <= len(rules):
         rules.pop(int(text) - 1)
     elif verb:
-        return "Use `/cpipe rules`, `/cpipe rules add <rule>` or `/cpipe rules remove <n>`."
+        return RULES_USE
     if verb:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("".join(f"{r}\n" for r in rules))
         except OSError as exc:
             return f"cpipe could not write {path}: {exc}"
+        return f"**cpipe rules** · {scope}\n\n" + _list(rules, path)
+    out = [f"**{s}**\n" + _list(_read_rules(p), p) for s, p in _rule_files(project)]
+    return ("**cpipe rules** · your own rules for cpipe runs only, followed like your instructions; the most "
+            "specific wins, and a task's own instructions win over all\n\n" + "\n\n".join(out) + "\n\n" + RULES_USE)
+
+
+def _list(rules, path):
     if not rules:
-        return ("**cpipe rules** · none yet\n\nYour own rules for every cpipe run, and only cpipe: "
-                "`/cpipe rules add commit and push after each commit`.")
-    return ("**cpipe rules** · every run follows these like your instructions; a task's own instructions win\n\n"
-            + "\n".join(f"{i}. {r[2:]}" for i, r in enumerate(rules, 1))
-            + f"\n\n`/cpipe rules add <rule>` · `/cpipe rules remove <n>` · or edit {path}")
+        return f"none · {path}"
+    return "\n".join(f"{i}. {r[2:]}" for i, r in enumerate(rules, 1)) + f"\n{path}"
 
 
 def _flags(task):
@@ -548,7 +598,7 @@ def _start(ctx, raw):
     first, _, rest = task.partition(" ")
     if first.lower() == "learnings" and not rest.strip():
         return _learnings()
-    if first.lower() == "rules" and (not rest.strip() or rest.split()[0].lower() in ("add", "remove")):
+    if first.lower() == "rules" and (not rest.strip() or rest.split()[0].lower() in RULES_VERBS):
         return _rules_cmd(rest.strip())
     if first.lower() == "budget" and (not rest.strip() or rest.strip().lower() in (*BUDGETS, "off")):
         return _budget(rest.strip().lower())

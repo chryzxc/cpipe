@@ -145,7 +145,7 @@ In any Hermes chat, inside or near the repository:
 | `/cpipe --restart [<step>]` | Redoes the run from that step (Explore by default) on its own roles, in the same chat |
 | `/cpipe feedback <what you found>` | A problem you found after the report: reproduced, recorded as a miss and a learning, fixed as a follow-up |
 | `/cpipe learnings` | What cpipe has learned from your runs, and the problems that reached you per step |
-| `/cpipe rules [add <rule>\|remove <n>]` | Your own standing rules for every cpipe run, and only cpipe: `commit and push after each commit` |
+| `/cpipe rules [--profile\|--project <repo>] [add <rule>\|remove <n>]` | Your own rules for cpipe runs only, for every run, one profile or one repository (Your rules, below) |
 | `/cpipe:run <task>` | The skill itself, for chats where the command is not available |
 
 Ask for anything that leaves your machine in the task or a later message: `… and open a draft pull request`,
@@ -490,12 +490,20 @@ workaround, every finding and what became of it. Beside it are the plan (`plan.m
 
 ### Your rules
 
-Standing rules for every cpipe run, and only cpipe, kept apart from your Hermes memory and skills:
-`/cpipe rules add commit and push after each commit`. They live in `~/.hermes/cpipe/rules.md`, one `- ` line each,
-and are pinned in every session of a run, a role's too, so a compaction never drops them. Each one counts as your
+Standing rules for cpipe runs, and only cpipe, kept apart from your Hermes memory and skills, at three levels like
+`cpipe.yaml`, one `- ` line each:
+
+| Applies to | File | Command |
+|---|---|---|
+| every run | `~/.hermes/cpipe/rules.md` | `/cpipe rules add <rule>` |
+| one profile's sessions | `~/.hermes/profiles/<name>/cpipe/rules.md` | `/cpipe rules --profile add <rule>` |
+| one repository's runs | `<repo>/.git/cpipe/rules.md`, shared by its worktrees, never committed | `/cpipe rules --project <repo> add <rule>` |
+
+They are pinned in every session of a run, a role's too, so a compaction never drops them, and the more specific
+wins where two differ: the project's, then the profile's, then everywhere's. Each one counts as your
 instruction for the run, so it can change how the run works and gives the permission a push asks for; the
 task's own instructions win where they differ, and the report checks each rule like an instruction.
-`/cpipe rules` lists them and `/cpipe rules remove <n>` drops one.
+`/cpipe rules` lists them (with `--project <repo>`, that repository's too), and `remove <n>` drops one.
 
 ### Learning loop
 

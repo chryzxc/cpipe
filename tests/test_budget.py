@@ -228,16 +228,36 @@ def test_the_watcher_queues_the_next_turn_until_the_run_is_done(tmp_path, monkey
 
 def test_rules_are_the_users_own_and_pinned_in_every_run_session(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    assert "none yet" in cpipe._rules_cmd("")
+    assert "none ·" in cpipe._rules_cmd("")
     cpipe._rules_cmd("add commit and  push after each commit")
     cpipe._rules_cmd("add keep commits small")
     assert "1. commit and push after each commit" in cpipe._rules_cmd("")
-    assert "Use `/cpipe rules`" in cpipe._rules_cmd("remove 9")
+    assert "Use `/cpipe rules" in cpipe._rules_cmd("remove 9")
     cpipe._rules_cmd("remove 2")
-    assert cpipe._rules() == ["- commit and push after each commit"]
+    assert cpipe._rules() == ["- commit and push after each commit (everywhere)"]
     run = tmp_path / "run"
     run.mkdir()
     monkeypatch.setenv("CPIPE_RUN", str(run))
     for step in ("", "1"):
         monkeypatch.setenv("CPIPE_STEP", step)
         assert "- commit and push after each commit" in cpipe._pinned({})
+
+
+def test_rules_have_profile_and_project_scopes_like_cpipe_yaml(tmp_path, monkeypatch):
+    import subprocess
+    root, repo = tmp_path / "hermes", tmp_path / "repo"
+    monkeypatch.setenv("HERMES_HOME", str(root / "profiles" / "forge"))
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    cpipe._rules_cmd("add keep commits small")
+    cpipe._rules_cmd("--profile add run the linter")
+    cpipe._rules_cmd(f"--project {repo} add commit and push after each commit")
+    assert "needs the path of a git repository" in cpipe._rules_cmd(f"--project {tmp_path} add x")
+    assert (repo / ".git" / "cpipe" / "rules.md").exists()
+    run = repo / ".git" / "worktrees" / "fix" / "cpipe"
+    run.mkdir(parents=True)
+    monkeypatch.setenv("CPIPE_RUN", str(run))
+    pinned = cpipe._pinned({})
+    assert pinned.index("keep commits small (everywhere)") < pinned.index("run the linter (this profile)") \
+        < pinned.index("commit and push after each commit (this project)")
+    listed = cpipe._rules_cmd(f"--project {repo}")
+    assert "**this project**\n1. commit and push after each commit" in listed
