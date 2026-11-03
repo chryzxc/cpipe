@@ -376,5 +376,6 @@ def test_cost_counts_tokens_per_profile_and_model(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(root))
     monkeypatch.setenv("HERMES_SESSION_ID", "chat")
     out = facts.cost(run, tree).splitlines()
-    assert out[0] == "total 11k (90% cached)"
-    assert out[1] == "forge terra 10k (90% cached)" and out[2] == "this chat sol 1k (90% cached)"
+    assert out[:2] == ["| Who | Model | Tokens | Cached |", "|---|---|---|---|"]
+    assert out[2:] == ["| forge | terra | 10k | 90% |", "| this chat | sol | 1k | 90% |",
+                       "| **Total** |  | 11k | 90% |"]

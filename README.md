@@ -711,7 +711,7 @@ so it reads the same way every time. It is short, one line per row, and complete
   rounds as arrows back, and retries, interruptions and stalls in red. The run folder also gets `run-graph.html`,
   which shows the flow and a timeline per role in any browser. A chat app that renders structured views (graphs,
   workflows) gets the run graph as one of those instead of a chart's source.
-- **Cost:** minutes, then tokens with the cached share: the total and each profile and model.
+- **Cost:** minutes, then a table of tokens with the cached share: each profile and model, and the total.
 - **Details:** one line: branch, commit, pull request, files, skills, learnings.
 
 What went as planned is a count, not a row, so the report reads in about a minute. It never asks you to fix,
@@ -753,7 +753,14 @@ Risk: 2 routes, 1 import job · Rollback: revert the commit · Confidence: tests
 | Choice                   | Why                      | Instead of                               |
 | Fix in `updateInvoice()` | every edit path calls it | a fix per caller: bulk edit stays broken |
 
-Cost: 34 min · 1.1M tokens (71% cached) · plan planner · build builder · review reviewer · QA this chat
+## Cost
+Time: 34 min
+| Who               | Model  | Tokens | Cached |
+| build builder     | sonnet | 0.7M   | 74%    |
+| review reviewer   | opus   | 0.2M   | 65%    |
+| plan, QA this chat | opus  | 0.2M   | 66%    |
+| **Total**         |        | 1.1M   | 71%    |
+
 Details: fix/invoice-discount · a1b2c3d fix(invoices): keep the discount on edit · 3 files +41 −9
 ```
 

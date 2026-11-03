@@ -359,11 +359,12 @@ def report(run_dir):
     parts += ["## Proof", *checks, "<Tests, QA, Review and Steps lines>", "", "## Where to look", "| Where | Why |", "",
               "Risk: <blast radius> · Rollback: <how> · Confidence: <what it rests on; the weak spot>", "",
               "## Approach", "| Choice | Why | Instead of |", "", "## Run graph", "<the flow chart>", "",
-              "Cost: <minutes> · <tokens per profile and model, from `cost`>", "Details: <one line>"]
+              "## Cost", "Time: <minutes> min", "<the table `cost` prints, each Who with its steps>", "",
+              "Details: <one line>"]
     return "\n".join(parts)
 
 
-REPORT_PARTS = ("## Test it", "## Proof", "## Run graph", "Risk: ", "Cost: ", "Details: ")
+REPORT_PARTS = ("## Test it", "## Proof", "## Run graph", "Risk: ", "## Cost", "Details: ")
 
 
 def check_report(run_dir):
@@ -400,7 +401,7 @@ def _tokens(n):
 
 
 def cost(run_dir, worktree):
-    """Tokens of this run, per profile and model: every session of every profile's store that worked in the
+    """Tokens of this run as a table per profile and model: every session of every profile's store that worked in the
     worktree since the run dir was made, and this chat's session (its whole count). Read-only."""
     st = Path(run_dir).stat()
     since = getattr(st, "st_birthtime", st.st_ctime)
@@ -428,11 +429,12 @@ def cost(run_dir, worktree):
         return "no sessions found: leave the tokens out"
     total = [sum(r[i] for r in rows.values()) for i in range(3)]
 
-    def line(who, r):  # Hermes keeps uncached input and cache reads apart: the prompt is both
+    def row(who, model, r):  # Hermes keeps uncached input and cache reads apart: the prompt is both
         prompt = r[0] + r[2]
-        return f"{who} {_tokens(prompt + r[1])} ({r[2] * 100 // prompt if prompt else 0}% cached)"
-    return "\n".join([line("total", total), *(line(f"{w} {m}", r) for (w, m), r in
-                                               sorted(rows.items(), key=lambda kv: -sum(kv[1])))])
+        return f"| {who} | {model} | {_tokens(prompt + r[1])} | {r[2] * 100 // prompt if prompt else 0}% |"
+    return "\n".join(["| Who | Model | Tokens | Cached |", "|---|---|---|---|",
+                      *(row(w, m, r) for (w, m), r in sorted(rows.items(), key=lambda kv: -sum(kv[1]))),
+                      row("**Total**", "", total)])
 
 
 def active(run_dir, done=False):

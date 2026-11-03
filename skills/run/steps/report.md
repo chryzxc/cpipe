@@ -80,7 +80,10 @@ Risk: <blast radius> · Rollback: <how> · Confidence: <what it rests on; the we
 ## Run graph
 <the flow chart>
 
-Cost: <minutes> · <tokens per profile and model, from `cost`>
+## Cost
+Time: <minutes> min
+<the table `cost` prints, each Who with its steps>
+
 Details: <one line>
 ```
 
@@ -164,10 +167,16 @@ only one sensible way.
 **Run graph**: what happened in the whole run, drawn (Run graph below): a structured view when the chat offers
 one, else the flow chart.
 
-**Cost**: one line, so the user sees what the delivery spent: the minutes from the run log's first to last row,
-then what `cost <run dir> <worktree>` prints (`cpipe:run`, Facts), as it prints it: the total tokens with the
-cached share, then each profile and model with its own, which also says who did each step on which model
-(`Cost: 42 min · total 3.1M (91% cached) · build forge gpt-6.1-terra 1.9M (93% cached) · review sentry …`).
+**Cost**: what the delivery spent, as a table: `Time:` the minutes from the run log's first to last row, then
+the table `cost <run dir> <worktree>` prints (`cpipe:run`, Facts), with each Who given its steps in front of the
+profile (`build forge`, `review sentry`), so it also says who did each step on which model:
+
+| Who | Model | Tokens | Cached |
+|---|---|---|---|
+| build forge | gpt-6.1-terra | 1.9M | 93% |
+| this chat | gpt-6.1-sol | 0.8M | 88% |
+| **Total** |  | 3.1M | 91% |
+
 When it finds no sessions, the tokens are left out, never guessed.
 
 **Details**: one line: the branch, the commit SHA and subject, the pull request link, `git diff --stat` in a few
