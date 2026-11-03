@@ -71,6 +71,7 @@ def put(run, name, **kw):
 
 
 def closed(run):
+    Path(run, "spec.md").write_text("# Spec\n")
     facts.track(run, "set", [facts.track(run, "add", ["verify", "related", "tests", "pass"]), "done", "41 pass"])
 
 
@@ -127,8 +128,10 @@ def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
     facts.track(tmp_path, "set", [a, "done", "41", "pass"])
     put(tmp_path, "unit.base.json", passed=["a"])
     put(tmp_path, "unit.head.json", passed=["a"])
-    with pytest.raises(SystemExit, match="loop's work"):  # a choice of fix or scope is never the user's
+    with pytest.raises(SystemExit, match="loop's work.*spec question"):  # fix or scope is never the user's
         facts.track(tmp_path, "set", [b, "user", "the smallest-fix scope rules out the transaction fix"])
+    assert "no spec.md" in facts.gate(tmp_path)  # without one, a clash of the user's lines cannot be asked
+    (tmp_path / "spec.md").write_text("# Spec\n")
     facts.track(tmp_path, "set", [b, "user", "external: a required approving review"])
     c = facts.track(tmp_path, "add", ["design", "screens", "match"])
     with pytest.raises(SystemExit, match="cannot be skipped"):  # "too big" or "out of scope" is the loop's work
@@ -238,6 +241,7 @@ def test_a_whole_loop_through_the_command_line(tmp_path):
 
     run, res = tmp_path / "run", tmp_path / "run" / "results"
     res.mkdir(parents=True)
+    (run / "spec.md").write_text("# Spec\n")
     item = cli("track", run, "add", "report", "merge it if there are no regressions").split()[-1]
     cli("results", res / "unit.base.json", "junit", junit("base.xml", {"old"}))
     cli("results", res / "unit.head.json", "junit", junit("head.xml", {"old", "new"}))

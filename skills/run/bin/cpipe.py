@@ -28,7 +28,9 @@ STATUSES = ("open", "done", "skip", "user")
 # What only the user may do (SKILL.md, Unattended): how the code should behave, or which fix, is never one
 USER_KINDS = ("credentials", "destructive", "external", "approval", "answer")
 NOT_USER = ("{} is the loop's work, not the user's: `user` is only for " + ", ".join(USER_KINDS) +
-            " (evidence `<kind>: …`); a choice between fixes or scope is decided by the run")
+            " (evidence `<kind>: …`); a choice between fixes or scope is decided by the run, but two of the "
+            "user's own lines that cannot both hold are theirs to settle: ask it as a spec question "
+            "(`answer: R2: …`, spec.md, Reconcile) and work on the rest")
 
 
 # What `skip` may mean: the item does not exist in this change, or this machine cannot run it; never "too big" or
@@ -275,6 +277,9 @@ def gate(run_dir, sid=None):
     fix, wait, ask, user = [], [], [], []
     items = _items(run_dir)
     told = set(map(_fold, _told(run_dir)))
+    if items and not (Path(run_dir) / "spec.md").exists():  # a run from before spec.md: nothing can be asked
+        fix.append("no spec.md: write it from the user's words (spec.md, Format), so a conflict between their "
+                   "lines can be asked instead of looped on")
     if not items:  # a run from before track.json, or one that lost it: nothing is proven yet
         fix.append("no checklist: add each step's Done when, the user's instructions and the merge conditions "
                    "with track add, closing each with its evidence")

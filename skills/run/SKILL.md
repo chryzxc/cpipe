@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.25.0
+version: 4.26.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -437,6 +437,12 @@ that already failed is never repeated.
   (`steps/plan.md`, step 5, on the plan profile) from those words, the obstacle and every approach tried,
   taking the simplest design that meets them, and loop again. A brief asks for the goal, never offers a way
   out ("otherwise explain the obstacle"). Only the user ends a goal short.
+- When what is in the way is the user's own words, two of their lines that cannot both hold (a smallest fix
+  with no new setup, against a guarantee only a new setup gives), no re-plan can meet both: that is a spec
+  question (`spec.md`, Reconcile, Conflict), asked once with the recommended answer. Ask it the first time a
+  re-plan hits that obstacle, keep working on everything else, and wait on it only when nothing else is left
+  (`gate` says ASK). A behavior the base branch has too is not a regression of this change: closing it is the
+  goal only when an instruction asks for it.
 - Each round closes more than it opens. A round whose fix led to new findings, twice in a row, or a fix that
   breaks working behavior: go back to the last green tree and take the narrower approach (`steps/review.md`,
   When fixes fight). Looping is for the goal, not for every finding a reviewer can raise beside it.
