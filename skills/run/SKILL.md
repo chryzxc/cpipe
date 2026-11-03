@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.27.0
+version: 4.28.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -101,6 +101,9 @@ same reply; a reply that only reports the result stops the run. A question about
 handled the same way while any instruction is unmet. Steering that adds work (another bug,
 another behavior) is either added to the plan as numbered steps with their acceptance criteria, or, when it is a
 different problem, kept for a follow-up after the report; say which in that line and note it in the run log.
+Steering that asks to reproduce or try a behavior (in a browser, an emulator, a simulator or on a device) is QA's
+work (`steps/qa.md`): give it to the QA profile in a brief of its own, running alongside the build, never in this
+chat, whose every reply resends the whole chat; its result comes back as a QA reply.
 
 **Notes that are not for this run.** The chat can receive text mid-run that is neither the user nor this task: a
 note on a kanban card, a board digest, another card's crash or status. If it names no card this run created (run

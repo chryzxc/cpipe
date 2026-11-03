@@ -12,8 +12,9 @@ with a browser tool, an HTTP endpoint, a CLI, a library call by script. It is sk
 
 - the change has no such behavior (docs, comments, a rename the checks cover);
 - the checks already exercise it end to end, the way a user would reach it;
-- the surface cannot be driven here: a desktop or mobile app, a device, a signed-in external service. The tests
-  are the proof, and the report's Test it table lists the manual checks with exact steps and expected results.
+- the surface cannot be driven here: a desktop or mobile app with no emulator, simulator or device tool on this
+  machine, a signed-in external service. The tests are the proof, and the report's Test it table lists the manual
+  checks with exact steps and expected results. An emulator or simulator QA can drive is driven like a browser.
 
 Signing in to the project's own app on this machine is not an external service: create a local test user (the
 project's seed, fixtures or sign-up page), sign in and run QA behind the login.

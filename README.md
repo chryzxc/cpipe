@@ -341,6 +341,10 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   not a guess.
 - **A thin chat.** The chat resends its whole history with every reply, so with a build profile it never reads
   the project's code; anything that needs the code is a follow-up for the builder.
+- **Reproductions go to QA.** A request mid-run to reproduce or try a behavior (a browser, an emulator, a device)
+  is a QA brief that runs alongside the build, never work in the chat.
+- **Few writes per round.** The builder writes a new file whole and sends one change's edits in one reply, since
+  each reply resends its whole session.
 - **Roles where they pay.** A profile starts cold and reads the code again, so one profile explores (a plan
   profile, else the builder, and an explore profile only without either), design gets a profile only for a new or
   changed screen, QA only where its profile can use the change, a second reviewer only for security-sensitive

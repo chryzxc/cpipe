@@ -67,6 +67,10 @@ is never improvised silently: record the correction (what was wrong, what instea
    together in one reply. Test output goes to a file beside the run log (`logs/build-<test>.txt`, never in the
    worktree), and the same command prints only what you need from it, so no reply goes to reading the file:
    `<test> > <log> 2>&1; echo "exit $?"; grep -E '<the runner's summary and failure lines>' <log> | tail -40`.
+9. **Write in few calls.** Every reply resends the whole session, so a round of one small edit per reply costs
+   many times the same edits sent together. A new file, test file included, is written whole in one call; several
+   tests or hunks for one file go in one edit (a multi-hunk patch when the file tool takes one); the edits of
+   one change go in one reply with their test command (One change at a time).
 
 **A fix round** (a failing check, a review finding, a QA failure, a conflict) gets the same rules. Check each item
 against the code first. A real one is fixed at its root cause (below), with a failing test first when it is about
