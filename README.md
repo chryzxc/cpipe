@@ -143,6 +143,7 @@ In any Hermes chat, inside or near the repository:
 | `/cpipe budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
 | `/cpipe --continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
 | `/cpipe --restart [<step>]` | Redoes the run from that step (Explore by default) on its own roles, in the same chat |
+| `/cpipe stop` | Ends the run in this chat now: its background steps stop and your next messages are plain chat work. Saying "stop" or "don't use cpipe" does the same |
 | `/cpipe feedback <what you found>` | A problem you found after the report: reproduced, recorded as a miss and a learning, fixed as a follow-up |
 | `/cpipe learnings` | What cpipe has learned from your runs, and the problems that reached you per step |
 | `/cpipe --rules [<what to change>]` | Shows your own rules for cpipe runs, or changes them in words: every run, one profile or one repository (Your rules, below) |
@@ -446,7 +447,9 @@ proof gathered. Things only you may do (credentials, anything destructive or irr
 machine you did not ask for) are skipped and named in the report's status line.
 
 A message mid-run is steering, not a stop: it gets a one-line answer, and new work either joins the plan as
-numbered steps or waits for a follow-up after the report.
+numbered steps or waits for a follow-up after the report. The one exception ends the run: `/cpipe stop`, or a
+message that says to stop the run or not to use cpipe. The run is closed at once, its background steps are killed,
+and the message is done as plain chat work.
 
 ### Independent review
 

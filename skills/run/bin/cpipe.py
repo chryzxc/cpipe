@@ -448,7 +448,10 @@ def active(run_dir, done=False):
         raise SystemExit("no HERMES_SESSION_ID in this shell: the pinned rules come from CPIPE_RUN instead")
     path = hermes_root() / "cpipe" / "active" / f"{sid}.json"
     if done:
-        path.unlink(missing_ok=True)
+        # The plugin finds a run through the chats this one was compacted from, so each of their records goes.
+        for each in _lineage(sid):
+            for suffix in (".json", ".watch"):
+                path.with_name(each + suffix).unlink(missing_ok=True)
         return f"run closed for {sid}"
     path.parent.mkdir(parents=True, exist_ok=True)
     run = str(Path(run_dir).resolve())
@@ -505,18 +508,36 @@ def _said(sid):
     db_path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "state.db"
     if not (sid and db_path.is_file()):
         return None
-    said, seen = [], set()
+    said = []
     db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        while sid and sid not in seen:  # this chat and the chats it was compacted from
-            seen.add(sid)
+        for each in _lineage(sid, db):
             said += [str(c) for (c,) in db.execute(
-                "SELECT content FROM messages WHERE session_id = ? AND role = 'user' AND content IS NOT NULL", (sid,))]
-            row = db.execute("SELECT parent_session_id FROM sessions WHERE id = ?", (sid,)).fetchone()
-            sid = row and row[0]
+                "SELECT content FROM messages WHERE session_id = ? AND role = 'user' AND content IS NOT NULL", (each,))]
     finally:
         db.close()
     return _fold(" ".join(said))
+
+
+def _lineage(sid, db=None):
+    """This chat and the chats it was compacted from (a compaction continues the chat under a new id)."""
+    ids = []
+    try:
+        own = db is None
+        if own:
+            path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "state.db"
+            db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            while sid and sid not in ids:
+                ids.append(sid)
+                row = db.execute("SELECT parent_session_id FROM sessions WHERE id = ?", (sid,)).fetchone()
+                sid = row and row[0]
+        finally:
+            if own:
+                db.close()
+    except sqlite3.Error:
+        pass
+    return ids or [sid]
 
 
 UNSAID = "instruction not in the user's words: {} (write only what they wrote; your reading goes in the run log)"

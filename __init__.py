@@ -46,6 +46,7 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 | `/cpipe --continue` | pick up a run that stopped, at its first unfinished step (or just: continue) |
 | `/cpipe --restart [<step>]` | redo the run from that step (default: explore) on its own roles |
 | `/cpipe feedback <text>` | a problem you found after the report: recorded, reproduced and fixed |
+| `/cpipe stop` | end the run in this chat now: its steps stop, and your next messages are plain chat work |
 | `/cpipe budget [<tier>\\|off]` | show or save the default budget in cpipe.yaml |
 | `/cpipe learnings` | what cpipe has learned from your runs |
 | `/cpipe --rules [<what to change>]` | show your own rules for cpipe runs, or change them in words |
@@ -80,6 +81,17 @@ RESTARTED = """**cpipe** · restarting from **{step}**
 
 Redone on the run's own roles, in new sessions. Code it replaces is saved beside the run log first."""
 
+STOPPED = """**cpipe** · run stopped
+
+Its background steps are stopped and nothing resumes it. Your next messages are plain chat work; `/cpipe --continue`
+picks the run up again."""
+NOT_RUNNING = "**cpipe** · no run is going in this chat"
+# Sent to the chat so the model stops what the run started; the registration is already gone (_stop).
+STOP = ("[cpipe] The user ended the cpipe run in this chat with /cpipe stop, and it is closed. Kill the background "
+        "processes it started (its step, tick and limit commands) with your process tool, add a `stopped by the "
+        "user` row to its run log, and reply in one line. Do not continue, resume or report the run: later "
+        "messages are the user's own work (cpipe:run, The user ends the run).")
+
 FEEDBACK = """**cpipe** · recording your findings
 
 Each one is reproduced, counted against the step that should have caught it, turned into a learning
@@ -93,7 +105,7 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | learnings | --rules [<what to change>]", argument_mode="text")
+                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | stop | learnings | --rules [<what to change>]", argument_mode="text")
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
         ctx.register_hook("pre_verify", _unfinished)
@@ -205,7 +217,9 @@ STEERING = ("[cpipe] A cpipe run is going in this chat and this message arrived 
             "task (cpipe:run, A message from the user mid-run). Do what it asks as part of the run, answer it in one "
             "line in the same reply as the run's next tool call, and continue the run. Never end the turn on the "
             "answer. An answer to a ❓ question goes into spec.md and closes its item; while spec.md says drafting, the "
-            "message is the user's reply to the planner: pass it on word for word (cpipe:run, spec.md).")
+            "message is the user's reply to the planner: pass it on word for word (cpipe:run, spec.md). A message that "
+            "tells you to stop or cancel the run, or not to use cpipe, is not steering: it ends the run now "
+            "(cpipe:run, The user ends the run).")
 # The run's own lines (skills/run/SKILL.md, Status lines) and the report's status lines (steps/report.md).
 STEP_LINE = re.compile(r"^(?:[✅⏳❓⚠❌—]\ufe0f? )?\d{1,2}/11 |^Resuming at \d{1,2}/11 ", re.M)
 REPORT_LINE = re.compile(r"^(?:✅ Done|⚠\ufe0f? Done except|✅ Approved|⚠\ufe0f? Changes needed)", re.M)
@@ -599,6 +613,22 @@ def _register_pending(sid):
         pass
 
 
+def _stop(ctx):
+    """/cpipe stop: close this chat's run (and its compacted parents' records) at once, so the steering, pinned rules
+    and gate let go before the model even answers; then tell the model to stop what the run started."""
+    from gateway.session_context import get_session_env
+    sid = get_session_env("HERMES_SESSION_ID") or ""
+    active = _root() / "cpipe" / "active"
+    records = [active / f"{each}{suffix}" for each in _lineage(sid) for suffix in (".json", ".watch")]
+    if not any(path.exists() for path in records):
+        return NOT_RUNNING
+    for path in records:
+        path.unlink(missing_ok=True)
+    key = get_session_env("HERMES_SESSION_KEY") or sid or None
+    ctx.inject_message(STOP, role="user", session_key=key)
+    return STOPPED
+
+
 def _short(text, n=100):
     return text if len(text) <= n else text[:n - 1] + "…"
 
@@ -614,6 +644,8 @@ def _start(ctx, raw):
         return _learnings()
     if first.lower() == "--rules":
         return _rules_cmd(ctx, rest.strip())
+    if first.lower() == "stop" and not rest.strip():
+        return _stop(ctx)
     if first.lower() == "budget" and (not rest.strip() or rest.strip().lower() in (*BUDGETS, "off")):
         return _budget(rest.strip().lower())
     flags, budget, brief, error = _flags(task)

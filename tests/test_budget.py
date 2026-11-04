@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("cpipe_plugin", Path(__file__).parents[1] / "__init__.py")
@@ -287,3 +288,29 @@ def test_a_run_that_skips_registration_is_still_pinned_and_watched(tmp_path, mon
     run.mkdir()
     (tmp_path / "cpipe" / "active" / "chat1.json").write_text(cpipe.json.dumps({"run_dir": str(run)}))
     assert "Run folder: " in cpipe._pinned({"session_id": "chat1"})
+
+
+def test_stop_ends_the_run_at_once(tmp_path, monkeypatch):
+    class Ctx:
+        text = None
+        def inject_message(self, text, **_):
+            self.text = text
+            return True
+    import sys, types
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("CPIPE_RUN", raising=False)
+    sys.modules.setdefault("gateway", types.ModuleType("gateway"))
+    sys.modules["gateway.session_context"] = types.SimpleNamespace(
+        get_session_env=lambda name: "s1" if name == "HERMES_SESSION_ID" else None)
+    active = tmp_path / "cpipe" / "active"
+    active.mkdir(parents=True)
+    (active / "s1.json").write_text(json.dumps({"run_dir": str(tmp_path)}) + "\n")
+    (active / "s1.watch").write_text("1\n")
+    ctx = Ctx()
+    assert cpipe._start(ctx, "stop").startswith("**cpipe** · run stopped")
+    assert not list(active.iterdir()) and ctx.text == cpipe.STOP
+    start = {"role": "user", "content": cpipe.START.format(skill="s", root="r") + "fix it"}
+    assert cpipe._steering("now the modal", [start], session_id="s1") is None  # closed: plain work again
+    ctx.text = None
+    assert cpipe._start(ctx, "stop") == cpipe.NOT_RUNNING and ctx.text is None
+    assert "not to use cpipe" in cpipe.STEERING  # a plain "don't use cpipe" ends the run too

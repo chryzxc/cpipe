@@ -189,6 +189,18 @@ def test_active_registers_this_chat(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "cpipe/active/s1.json").read_text())["run_dir"] == str((tmp_path / "run").resolve())
     facts.active(tmp_path / "run", done=True)
     assert not (tmp_path / "cpipe/active/s1.json").exists()
+    # A compaction continued the chat as s2: closing it also drops s1's record, which the plugin still follows.
+    home = tmp_path / "profiles" / "p"
+    home.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(home / "state.db")
+    db.executescript("CREATE TABLE sessions (id TEXT, parent_session_id TEXT);"
+                     "INSERT INTO sessions VALUES ('s2', 's1'), ('s1', NULL);")
+    db.commit()
+    db.close()
+    facts.active(tmp_path / "run")
+    monkeypatch.setenv("HERMES_SESSION_ID", "s2")
+    facts.active(tmp_path / "run", done=True)
+    assert not (tmp_path / "cpipe/active/s1.json").exists()
 
 
 def test_chat_flags_follow_this_chats_profile_model_and_switched_provider(tmp_path, monkeypatch):
