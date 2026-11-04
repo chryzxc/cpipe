@@ -233,12 +233,14 @@ def _running(history):
     return False
 
 
-def _steering(user_message=None, conversation_history=None, **_):
-    """Context for a user message that arrives while a run is going (no flow control: the skill decides)."""
+def _steering(user_message=None, conversation_history=None, session_id="", **_):
+    """Context for a user message that arrives while a run is going (no flow control: the skill decides). A run
+    is going only while it is registered: its report closes it, and later messages are the user's own work."""
     message = _text(user_message).lstrip()
-    if not message or message.startswith((*MARKS, "/cpipe", "[cpipe")):
+    if not message or message.startswith((*MARKS, "/cpipe", "[cpipe")) or not _running(conversation_history):
         return None
-    return {"context": STEERING} if _running(conversation_history) else None
+    run = _run_dir({"session_id": session_id})
+    return {"context": STEERING} if (run and run.is_dir()) or _pending(session_id) else None
 
 
 UNFINISHED = ("[cpipe] The run's gate still has work, so this turn cannot end here: {verdict}\n"

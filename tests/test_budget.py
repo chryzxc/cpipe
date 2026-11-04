@@ -72,7 +72,8 @@ def test_start_message_counts_learned_rules(tmp_path, monkeypatch):
     assert cpipe._learned().startswith("2 rules from past runs")
 
 
-def test_mid_run_message_gets_the_steering_reminder():
+def test_mid_run_message_gets_the_steering_reminder(tmp_path, monkeypatch):
+    monkeypatch.setenv("CPIPE_RUN", str(tmp_path))
     start = {"role": "user", "content": cpipe.START.format(skill="s", root="r") + "fix it"}
     step = {"role": "assistant", "content": "✅ 6/11 Build · 29 min · 4 files"}
     report = {"role": "assistant", "content": "✅ Done: fix it\n\nSummary"}
@@ -85,6 +86,10 @@ def test_mid_run_message_gets_the_steering_reminder():
     resumed = {"role": "user", "content": cpipe.CONTINUE.format(skill="s", root="r", version="1", verdict="") + "continue"}
     assert cpipe._steering("merge it", [resumed, msg])
     assert cpipe._steering(resumed["content"], [start, step]) is None
+    # A closed run (its report passed, unregistered) steers nothing, even when the chat's report line was off.
+    monkeypatch.delenv("CPIPE_RUN")
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    assert cpipe._steering("make the history a modal", [start, step, msg], session_id="s1") is None
 
 
 def test_continue_reuses_the_loaded_skill():

@@ -388,7 +388,11 @@ def check_report(run_dir):
     problems += [f"unwritten cell {cell}" for cell in sorted(set(re.findall(r"<[^<>\n]+>", skeleton))) if cell in text]
     if problems:
         return "FIX: " + "; ".join(problems)
-    return f"PASS: post {path} word for word as the final reply"
+    # The run ends with its report: close it for this chat, so a later message is the user's own work.
+    closed = "; the run is closed for this chat" if os.environ.get("HERMES_SESSION_ID") else ""
+    if closed:
+        active(run_dir, done=True)
+    return f"PASS: post {path} word for word as the final reply{closed}"
 
 
 def hermes_root():

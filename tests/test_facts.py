@@ -153,7 +153,8 @@ def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
     assert facts.report(tmp_path).startswith("⚠️ Done except")
 
 
-def test_the_report_waits_for_the_loop(tmp_path):
+def test_the_report_waits_for_the_loop(tmp_path, monkeypatch):
+    monkeypatch.delenv("HERMES_SESSION_ID", raising=False)
     closed(tmp_path)
     put(tmp_path, "unit.base.json", passed=["a"])
     put(tmp_path, "unit.head.json", failed=["a"])
@@ -173,6 +174,12 @@ def test_the_report_waits_for_the_loop(tmp_path):
     assert facts.check_report(tmp_path).startswith("PASS")
     (tmp_path / "report.md").write_text(filled.replace("✅ Done: x", "✅ Approved: x"))
     assert facts.check_report(tmp_path).startswith("PASS")
+    # A passing report closes the chat's run, so later messages are ordinary work, not the run's.
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    facts.active(tmp_path)
+    assert facts.check_report(tmp_path).endswith("the run is closed for this chat")
+    assert not (tmp_path / "home/cpipe/active/s1.json").exists()
 
 
 def test_active_registers_this_chat(tmp_path, monkeypatch):

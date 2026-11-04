@@ -252,8 +252,8 @@ step.
   review alongside a QA re-run of the items that failed; that is the last round.
 - **Pass-through.** A node that does not apply is passed with a one-line reason, never silently.
 - **Re-entry.** The run log is the graph's state. **continue**, a completion notification or a restart re-enters
-  at the first unfinished step or unmet instruction; a message after the report re-enters at the plan for the
-  follow-up only.
+  at the first unfinished step or unmet instruction. The report closes the run: a plain message after it is
+  ordinary chat work, and only `/cpipe` re-enters, at the plan for the follow-up only.
 - **One graph per delivery.** Several issues run as several graphs, one after another (at most two in parallel
   when you ask), sharing the role sessions.
 
@@ -362,8 +362,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   sleeps or lists processes. A wait past 10 minutes gets a progress tick: every 10 minutes one line on what
   changed (the diff's size, the last test run), read from the run's own files.
 - **Deltas and resumed sessions.** The delta review and every follow-up see only the diff since the last one, and a
-  QA re-run covers only the items that failed. Each role has one session per run: fix rounds, corrections,
-  conflicts, the delta review and the next delivery resume it instead of starting cold, so most of what it resends
+  QA re-run covers only the items that failed. Each role has one session per worktree: fix rounds, corrections,
+  conflicts, the delta review, the next delivery and a later `/cpipe` in the same worktree resume it instead of
+  starting cold, so most of what it resends
   is a prefix the provider has cached. Every follow-up repeats the header's working rules, so a session resumed
   after an update or a compaction works by the current ones. Profile briefs load only their step's file and skip
   the project's general guides.
@@ -607,7 +608,7 @@ claim to verify. One builder session builds and makes every fix for the whole ru
 project's code. Each step session has the run's rules pinned in its system prompt too, and one that reaches its turn
 or time limit with work left hands off to a fresh session instead of growing further. The builder explores and plans
 too, unless a plan profile does: then planning runs on the plan profile's model, in its own session, and the builder
-works from its plan. Each role keeps one session per run.
+works from its plan. Each role keeps one session per worktree.
 
 Whichever profile's chat runs `/cpipe`, the flow is cpipe's: that chat's persona and standing rules set its tone,
 not the steps, the roles or the bar for done. A chat without a skill tool reads cpipe's files from the plugin's

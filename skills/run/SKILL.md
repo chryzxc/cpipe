@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.30.0
+version: 4.31.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -372,10 +372,11 @@ and prints data and a verdict, and you act on what it prints:
   (`steps/report.md`, Report).
 - `cost <run dir> <worktree>`: the run's tokens, total and per profile and model, with the cached share, read-only
   from every profile's session store (`steps/report.md`, Cost).
-- `active <run dir>` once the run log exists, `active <run dir> --done` after the report: registers this chat's run,
-  so the run's rules, the user's instructions and the open items stay pinned in this chat's system prompt
-  whatever a compaction drops, and `gate` and the watcher check the run. `/cpipe` marks the chat's run as started;
-  until `active` registers its folder, every turn is told to set it up and register it, and nothing else counts.
+- `active <run dir>` once the run log exists (`report <run dir> --check` closes it when it passes): registers
+  this chat's run, so the run's rules, the user's instructions and the open items stay pinned in this chat's system
+  prompt whatever a compaction drops, and `gate` and the watcher check the run. `/cpipe` marks the chat's run as
+  started; until `active` registers its folder, every turn is told to set it up and register it, and nothing else
+  counts.
 - `lanes <batch dir> [--at-once <n>] [--report <lane>]`: each lane of a `--parallel` batch as queued, running,
   reported or stopped, then what to do: `START`, `RESUME`, `WAIT` or `DONE` (`parallel.md`).
 
@@ -401,14 +402,17 @@ at the report, never before.
 
 ## After the report
 
-A message after the report about the same work (a correction, a missed case, more context) is a follow-up, not a
-new task: reuse the worktree and the run log (or, if it was removed after its merge, a new worktree from the
-base), record the miss and its learning (`learning.md`, Feedback), update the plan, then run build, verify, QA and a
-delta review on the follow-up only, and report again. Reproduce what the user describes before answering. If it
-can mean two things, check both and answer with what you found; do not ask which one they meant. A different task
-starts a new run. "Fix it" after a report that said something could not be fixed reopens the loop: never answer
-again that it cannot be done with nothing changed. Take an approach not tried yet, at least the one in
-`steps/review.md` (When fixes fight), and loop until the goal is met.
+The report ends the run. A plain message after it, even about the same work, is the user's own request, not the
+run's: do it directly in the worktree the way the chat would without cpipe (the change, its narrow test, the commits
+and pushes the user asked for), with no run steps, roles, briefs or reviews. Only `/cpipe` reopens the run (a
+follow-up with `/cpipe <what to change>`, or `/cpipe feedback <what they found>`). For a `/cpipe` follow-up, reuse
+the worktree and the run log (or, if it was removed after its merge, a new worktree from the base), record the miss
+and its learning (`learning.md`, Feedback), update the plan, then run build, verify, QA and a delta review on the
+follow-up only, and report again. Reproduce what the user describes before answering. If it can mean two things,
+check both and answer with what you found; do not ask which one they meant. A different task starts a new run. "Fix
+it" after a report that said something could not be fixed reopens the loop: never answer again that it cannot be
+done with nothing changed. Take an approach not tried yet, at least the one in `steps/review.md` (When fixes fight),
+and loop until the goal is met.
 
 ## Continue
 
@@ -482,7 +486,8 @@ that already failed is never repeated.
 - With a build profile, this chat never reads the project's code, and reads `plan.md` only by the sections it
   needs: the planner or the builder explores it once per run (`roles.md`, How the work is split). Without one,
   read once, in explore; after it, read code only as the diff and the lines a finding or a failure names.
-- One session per role per run: every follow-up and the next delivery resume it (`roles.md`, Follow-ups).
+- One session per role per worktree: every follow-up, the next delivery and a later run there resume it (`roles.md`,
+  Follow-ups).
 - Code is handed back only when it builds: the builder runs the build or typecheck and the narrow tests before
   it replies (`steps/build.md`).
 - Review and QA rounds are capped (Limits); the checks, not another round, prove fixes for checks, compile

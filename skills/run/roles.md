@@ -55,8 +55,8 @@ reads the code again. So the code is explored once, each role keeps one session,
   the report needs: find them by heading (`grep -n '^\(#\|- \*\*\)' plan.md`) and read those line ranges, never
   the whole plan. A step a profile does needs no step file and none of your skills in this chat: the profile
   loads its own. Anything that needs the code is a follow-up for the builder.
-- **One session per role per run.** Every later piece of work for a role resumes its session, the next
-  delivery's included (Follow-ups).
+- **One session per role per worktree.** Every later piece of work for a role resumes its session, the next
+  delivery's and a later run's in the same worktree included (Follow-ups).
 - **Only where it pays.** Design only for a new or changed screen (`steps/design.md`), QA only where its profile
   can use the change (`steps/qa.md`), security only for the areas `steps/review.md` names. Mechanical work is
   never handed over: formatting, a commit, a commit message or pull request body, a rerun of a check, a rebase
@@ -148,10 +148,12 @@ pages to learn the command line.
    points there. Never search the profile's session history or transcripts for it: when neither holds a result,
    the role failed.
 
-3. **Follow-ups.** Each role has one session per run (the plan review has its own). Every later piece of work
-   for that role resumes it: a fix
-   round, a correction, a conflict, a QA re-run, the delta review, and the next delivery of the run. With
-   deliveries in parallel, each lane has its own sessions.
+3. **Follow-ups.** Each role has one session per worktree (the plan review has its own). Every later piece of
+   work for that role resumes it: a fix round, a correction, a conflict, a QA re-run, the delta review, the next
+   delivery of the run, and a later run in the same worktree (a `/cpipe` follow-up, or a new task on the same
+   branch). A later run finds the ids in the earlier run's log (its `## Roles` or the `session_id:` its role logs
+   end with), writes them in its own run log, and gives the resumed session its new run dir in the brief, which
+   holds only the new request and what changed since. With deliveries in parallel, each lane has its own sessions.
    `sh <skill dir>/bin/step.sh <run dir> <worktree> <role> <round> <run budget> <limit> <who> --resume <session id> [--reasoning <effort>]`
    A resumed session keeps the run budget it started with (the script leaves the flag off), so the limit (the
    follow-up's budget plus 300) is what holds it to its own budget.
