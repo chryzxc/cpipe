@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.29.0
+version: 4.30.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -123,8 +123,9 @@ end a turn only on such a wait, a needed approval (above), the pause message, th
 lines when `gate` says `ASK` (`spec.md`), or the report. A wait line with
 nothing of this chat's running comes back to you as unfinished. Progress updates go in
 the same reply as your next tool call. Without completion notifications, wait on that one process id with your
-process tool. Whatever you wait on ends on its own: every install, check and profile runs under a time limit
-(`steps/setup.md`, Time limit), so a hang still ends it and its notification still comes.
+process tool. Whatever you wait on ends on its own: every install, build, test and profile, yours too when you build
+yourself, runs under `limit.pl` (`steps/setup.md`, Time limit), so a hang still ends it, its notification still
+comes and it never slows the user's machine.
 
 **Progress while waiting.** A wait that can last past 10 minutes (a profile, the build) gets a tick beside it:
 `sh <skill dir>/bin/tick.sh <run dir> <worktree>` in the background with a completion notification

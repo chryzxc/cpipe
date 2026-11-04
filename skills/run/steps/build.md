@@ -34,11 +34,12 @@ is never improvised silently: record the correction (what was wrong, what instea
    and only those results count; do not run them here as well.
 5. **It builds before it leaves.** Before the round ends, run the fastest command that compiles the change: the
    project's typecheck, or for a compiled language its compiler's build (such as `swift build`, `cargo check`,
-   `go build ./...` or `tsc --noEmit`), the plan's narrow tests, and the three searches and the size check of the
-   completion gate (`steps/verify.md`), and fix what they report. Compare the typecheck's errors with the baseline
-   by id (`steps/verify.md`, Run the checks): a red baseline never excuses a new error. The reply gives each command
-   with its exit code and summary line, not "it passes". Code that does not build or fails the gate never leaves a
-   round: found in verify, it costs a whole extra round.
+   `go build ./...` or `tsc --noEmit`); a project with neither (plain JavaScript) has the lint of the changed files,
+   which parses them, never its production bundle (item 4). Then the plan's narrow tests, and the three searches and
+   the size check of the completion gate (`steps/verify.md`), and fix what they report. Compare the typecheck's
+   errors with the baseline by id (`steps/verify.md`, Run the checks): a red baseline never excuses a new error. The
+   reply gives each command with its exit code and summary line, not "it passes". Code that does not build or fails
+   the gate never leaves a round: found in verify, it costs a whole extra round.
 6. **Clean before it leaves.** Read your own diff (`git diff` plus new files) once as a stranger would and
    remove:
    - dead code, debug output, commented-out code;
