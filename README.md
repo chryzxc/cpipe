@@ -335,8 +335,9 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   was already red is never chased.
 - **Nothing hangs the run.** Every background job (installs, checks, profiles) runs under a time limit that also
   stops everything it started, so a hung test still ends and its notification still wakes the run.
-- **The machine stays usable.** Background jobs run at low priority, and installs, test runs and builds take
-  turns across every run on the machine, so two lanes never load every core at once.
+- **The machine stays usable.** Background jobs run at low priority (on macOS also clamped to utility QoS, so the
+  apps you use always win the fast cores), and installs, test runs and builds take turns across every run on the
+  machine, so two lanes never load every core at once.
 - **Proven cause.** A bug is reproduced with a failing test during explore, so the plan is built on the cause,
   not a guess.
 - **A thin chat.** The chat resends its whole history with every reply, so with a build profile it never reads
