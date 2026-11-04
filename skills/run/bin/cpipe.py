@@ -7,6 +7,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py compare <run dir> <check>
   python3 cpipe.py track <run dir> add <step> <text> | set <id> <open|done|skip|user> [<evidence>, for user `<kind>: …`, a question `answer: R2: …`] | open [<step>]
   python3 cpipe.py gate <run dir>
+  python3 cpipe.py ci <run dir> <pull request> [--every <seconds>]
   python3 cpipe.py report <run dir> [--check]
   python3 cpipe.py active <run dir> [--done]
   python3 cpipe.py chat
@@ -20,7 +21,9 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -270,6 +273,38 @@ def _ci_bucket(ci):
     return (ci.get("bucket") or ci.get("conclusion") or ci.get("state") or ci.get("status") or "").lower()
 
 
+CI_RUNNING = ("pending", "in_progress", "queued")
+CI_TRIES = 10  # ponytail: consecutive failed reads before the wait says so; a GitHub blip (401, 502) passes well within
+
+
+def ci(run_dir, pr, every=30, tries=CI_TRIES, run=subprocess.run, sleep=time.sleep):
+    """Waits for the pull request's CI, saving results/ci.json on every read. `gh pr checks --watch` ends on the
+    first failed request (a passing 401 or 502 from GitHub), so this reads again instead, and gives up only after
+    `tries` failed reads in a row."""
+    out, failed, err = Path(run_dir) / "results" / "ci.json", 0, ""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    while True:
+        r = run(["gh", "pr", "checks", str(pr), "--json", "name,bucket"], capture_output=True, text=True)
+        try:
+            checks = json.loads(r.stdout)
+        except ValueError:
+            checks, err = None, (r.stderr or r.stdout).strip()
+        if checks is None:
+            failed += 1
+            if failed < tries:
+                sleep(every)
+                continue
+            if "no checks reported" not in err:  # none yet right after a push, or none at all once the tries pass
+                return 1, f"CI unreadable after {tries} tries, last: {err[-300:]}"
+            checks = []
+        failed = 0
+        out.write_text(json.dumps(checks, indent=1) + "\n")
+        running = [c["name"] for c in checks if _ci_bucket(c) in CI_RUNNING]
+        if not running:
+            return 0, "CI done: " + (", ".join(f"{c['name']} {_ci_bucket(c)}" for c in checks) or "no checks")
+        sleep(every)
+
+
 def gate(run_dir, sid=None):
     """SPEC while the spec is drafted, then FIX before WAIT before ASK before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
     if _drafting(run_dir):  # --spec: the user and the planner are still working out what to build
@@ -318,7 +353,7 @@ def gate(run_dir, sid=None):
         bucket = _ci_bucket(ci)
         if bucket in CI_FAILED and ci.get("name") not in base_failed:
             fix.append(f"CI {ci.get('name')}: {bucket}")
-        elif bucket in ("pending", "in_progress", "queued"):
+        elif bucket in CI_RUNNING:
             wait.append(f"CI {ci.get('name')}")
     if fix:
         return "FIX: " + " | ".join(fix)
@@ -708,6 +743,10 @@ def main(argv):
         print(track(args[0], args[1], args[2:]))
     elif cmd == "gate":
         print(gate(args[0]))
+    elif cmd == "ci":
+        code, line = ci(args[0], args[1], int(dict(zip(args[2::2], args[3::2])).get("--every", 30)))
+        print(line)
+        raise SystemExit(code)
     elif cmd == "report":
         print(check_report(args[0]) if "--check" in args else report(args[0]))
     elif cmd == "active":

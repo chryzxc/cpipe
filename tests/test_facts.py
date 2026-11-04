@@ -398,3 +398,21 @@ def test_cost_counts_tokens_per_profile_and_model(tmp_path, monkeypatch):
     assert out[:2] == ["| Who | Model | Tokens | Cached |", "|---|---|---|---|"]
     assert out[2:] == ["| forge | terra | 10k | 90% |", "| this chat | sol | 1k | 90% |",
                        "| **Total** |  | 11k | 90% |"]
+
+
+def test_ci_reads_through_passing_errors(tmp_path):
+    import types
+    replies = iter([
+        ("", "HTTP 401: Requires authentication (https://api.github.com/graphql)"),
+        ('[{"name": "label", "bucket": "pass"}, {"name": "Security", "bucket": "pending"}]', ""),
+        ("", "HTTP 502: Bad Gateway"),
+        ('[{"name": "label", "bucket": "pass"}, {"name": "Security", "bucket": "pass"}]', ""),
+    ])
+    run = lambda *a, **k: types.SimpleNamespace(**dict(zip(("stdout", "stderr"), next(replies))))
+    code, line = facts.ci(tmp_path, 5690, run=run, sleep=lambda s: None)
+    assert code == 0 and line == "CI done: label pass, Security pass"
+    assert "pass" in (tmp_path / "results" / "ci.json").read_text()
+    down = lambda *a, **k: types.SimpleNamespace(stdout="", stderr="HTTP 401: Requires authentication")
+    assert facts.ci(tmp_path, 1, tries=3, run=down, sleep=lambda s: None)[0] == 1
+    none = lambda *a, **k: types.SimpleNamespace(stdout="", stderr="no checks reported on the 'x' branch")
+    assert facts.ci(tmp_path, 1, tries=3, run=none, sleep=lambda s: None) == (0, "CI done: no checks")

@@ -35,11 +35,15 @@ For a visible change, put QA's before and after screenshots in the pull request 
 pull-request skill says to attach images. When they cannot be attached (not signed in, no access, no way to
 upload), the pull request still goes out without them, and Needs attention says so with the screenshot files.
 
-After the push, wait for the pull request's CI checks: `gh pr checks --watch` in the background with a completion
-notification, up to 30 minutes, and end the turn while it runs. A failure the change caused is fixed like any
-failing check: fix, verify, commit, push, wait again. Save the checks to `results/ci.json`
-(`gh pr checks --json name,bucket`) and the base
-commit's to `results/ci-base.json`
+After the push, wait for the pull request's CI checks in the background with a completion notification, up to 30
+minutes, and end the turn while it runs:
+`perl <skill dir>/bin/limit.pl 1800 python3 <skill dir>/bin/cpipe.py ci <run dir> <number>`, run in the worktree. It
+saves the checks to `results/ci.json` on every read and reads through GitHub's passing errors (an HTTP 401 or 502),
+so never use `gh pr checks --watch`, which ends on the first one. When it ends with checks still running (the 30
+minutes passed) or unreadable, and a merge was asked for, start it again: a wait never ends the run, and a status
+read in between proves nothing new. A failure the change caused is fixed like any failing check: fix, verify,
+commit, push, wait again. Save the base
+commit's checks to `results/ci-base.json`
 (`gh api repos/<owner>/<repo>/commits/<base sha>/check-runs --jq '[.check_runs[]|{name,conclusion,status}]'`):
 `gate` counts a job that fails on both as the base's. A skipped job (`skipping`) is the workflow's own choice, not
 a failure. A job that fails before any of its steps runs (billing, no runner) fails on the base too, so it is the

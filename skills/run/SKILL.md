@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.33.0
+version: 4.33.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -375,6 +375,8 @@ and prints data and a verdict, and you act on what it prints:
   `SPEC: …` the spec is still drafted with the user (`spec.md`, --spec);
   `ASK: …` is only the user's answers left: end the turn on the `❓` waiting lines (`spec.md`);
   `NEEDS-USER: …` is what only the user may do; `PASS` means every condition holds: merge when asked, then report.
+- `ci <run dir> <pull request>`: waits for the pull request's CI, saving `results/ci.json` on every read and
+  reading through GitHub's passing errors; a `WAIT: CI …` turn ends only with it running (`steps/publish.md`).
 - `report <run dir>`: the report's skeleton with its facts filled in; `report <run dir> --check`: `PASS` when
   `<run dir>/report.md` keeps those facts and has every section and cell written, else `FIX` with what is wrong
   (`steps/report.md`, Report).
