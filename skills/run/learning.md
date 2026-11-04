@@ -53,11 +53,11 @@ retired with `unused`. At the report, append the run's line to `history.jsonl`.
 **Confidence.** The report's Confidence line adds the measured record when `history.jsonl` has at least 5 runs of
 this kind: `Past: QA missed 1 of 20 UI changes you checked`, counting `found_by: user` misses per step.
 
-**Feedback.** When the user reports problems after the report (`/cpipe feedback <what they found>`), find the run
+**Feedback.** When the user reports problems after the report (`/cpipe-feedback <what they found>`), find the run
 (this chat's, else the newest run log of the worktree or branch it names), reproduce each first. One that is real
 and inside the task's scope is a miss: record it with `found_by: user` and the step that should have caught it,
 write or sharpen the learning, then fix it as a follow-up (`cpipe:run`, After the report). A new request or a change
 of mind is not a miss.
 
-**Showing them.** `/cpipe learnings`: list each file's learnings, the retired ones, and per step the misses that
+**Showing them.** `/cpipe-learnings`: list each file's learnings, the retired ones, and per step the misses that
 reached the user in the last 20 runs of each kind. Do not start a run.

@@ -67,8 +67,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
   and keeps building on its recommended answer; it waits for you only when nothing else is left, and never
   reports around an open question. Plan first however you like (your host's plan mode, or a conversation) and
   then start cpipe: that plan becomes the spec, the planner turns it into the builder's steps, and each spec
-  line is proven and listed with its proof in the report. `--spec` lets your plan profile work out the
-  spec with you first, on its own bot, model and skills, in the same chat; then the run delivers it on its own.
+  line is proven and listed with its proof in the report. `/cpipe-spec` lets your plan profile work out the
+  spec with you first, on its own bot, model and skills, in the same chat, its questions put to you as choices to
+  pick; then the run delivers it on its own.
 - **Your instructions are the contract.** Every instruction you give, in the task or later, is kept word for word
   in the run's state, settles the questions it answers and wins over cpipe's defaults. The run is done when each
   one is met (a merge when there are no regressions included), not when the steps have run once. Each line is
@@ -111,7 +112,7 @@ missing, it works around the obstacle, records what it could not verify, and kee
 - [Hermes Agent](https://hermes-agent.nousresearch.com) with plugin support (developed against 0.22).
 - `git`. The [GitHub CLI](https://cli.github.com) (`gh`) for pull requests and for tidying up merged worktrees.
 - The project's own toolchain (its package manager, test runner and build), as its CI uses it.
-- Optional: Hermes profiles for the roles, and a running kanban dispatcher for `--kanban`.
+- Optional: Hermes profiles for the roles, and a running kanban dispatcher for `/cpipe-kanban`.
 
 cpipe has no Python dependencies and needs no configuration.
 
@@ -136,17 +137,16 @@ In any Hermes chat, inside or near the repository:
 | Command | Does |
 |---|---|
 | `/cpipe <task>` | Delivers the task unattended and reports back in the same chat |
-| `/cpipe --parallel <issues>` | Each issue delivered in its own background session, up to four at once, each reporting back here |
-| `/cpipe --kanban <task>` | The same, with the role steps handed to your profiles as cards on your kanban board |
-| `/cpipe --spec <task>` | Your plan profile works out the spec with you first, its own way; then the run delivers it unattended |
-| `/cpipe --budget <tier> <task>` | The same, with your profiles reasoning at that budget for this run (Budget, below) |
-| `/cpipe budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
-| `/cpipe --continue` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
-| `/cpipe --restart [<step>]` | Redoes the run from that step (Explore by default) on its own roles, in the same chat |
-| `/cpipe stop` | Ends the run in this chat now: its background steps stop and your next messages are plain chat work. Saying "stop" or "don't use cpipe" does the same |
-| `/cpipe feedback <what you found>` | A problem you found after the report: reproduced, recorded as a miss and a learning, fixed as a follow-up |
-| `/cpipe learnings` | What cpipe has learned from your runs, and the problems that reached you per step |
-| `/cpipe --rules [<what to change>]` | Shows your own rules for cpipe runs, or changes them in words: every run, one profile or one repository (Your rules, below) |
+| `/cpipe-parallel <issues>` | Each issue delivered in its own background session, up to four at once, each reporting back here |
+| `/cpipe-kanban <task>` | The same, with the role steps handed to your profiles as cards on your kanban board |
+| `/cpipe-spec <task>` | Your plan profile works out the spec with you first, its questions shown as choices to pick; then the run delivers it unattended |
+| `/cpipe-budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
+| `/cpipe-continue [<note>]` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
+| `/cpipe-restart [<step>]` | Redoes the run from that step (Explore by default) on its own roles, in the same chat |
+| `/cpipe-stop` | Ends the run in this chat now: its background steps stop and your next messages are plain chat work. Saying "stop" or "don't use cpipe" does the same |
+| `/cpipe-feedback <what you found>` | A problem you found after the report: reproduced, recorded as a miss and a learning, fixed as a follow-up |
+| `/cpipe-learnings` | What cpipe has learned from your runs, and the problems that reached you per step |
+| `/cpipe-rules [<what to change>]` | Shows your own rules for cpipe runs, or changes them in words: every run, one profile or one repository (Your rules, below) |
 | `/cpipe:run <task>` | The skill itself, for chats where the command is not available |
 
 Ask for anything that leaves your machine in the task or a later message: `… and open a draft pull request`,
@@ -169,16 +169,16 @@ single report at the end:
 > | review | sentry |
 > | everything else | this chat's model |
 >
-> - **Budget:** each profile's own setting · `/cpipe budget <tier>` sets one
-> - **Your rules:** 1 standing rule · `/cpipe --rules`
-> - **Learned:** 4 rules from past runs, added to this one · `/cpipe learnings`
+> - **Budget:** each profile's own setting · `/cpipe-budget <tier>` sets one
+> - **Your rules:** 1 standing rule · `/cpipe-rules`
+> - **Learned:** 4 rules from past runs, added to this one · `/cpipe-learnings`
 >
 > Runs on its own and reports here. Open questions are decided and listed in the report;
 > nothing is pushed unless you asked.
 >
 > ✅ done · ⏳ waiting, resumes on its own · ⚠️ problem, handled
 >
-> Quiet with no ⏳? `/cpipe --continue`
+> Quiet with no ⏳? `/cpipe-continue`
 
 ```
 1/11 Set up · this chat · worktree, dependencies, baseline
@@ -447,7 +447,7 @@ proof gathered. Things only you may do (credentials, anything destructive or irr
 machine you did not ask for) are skipped and named in the report's status line.
 
 A message mid-run is steering, not a stop: it gets a one-line answer, and new work either joins the plan as
-numbered steps or waits for a follow-up after the report. The one exception ends the run: `/cpipe stop`, or a
+numbered steps or waits for a follow-up after the report. The one exception ends the run: `/cpipe-stop`, or a
 message that says to stop the run or not to use cpipe. The run is closed at once, its background steps are killed,
 and the message is done as plain chat work.
 
@@ -512,8 +512,8 @@ They are pinned in every session of a run, a role's too, so a compaction never d
 wins where two differ: the project's, then the profile's, then everywhere's. Each one counts as your
 instruction for the run, so it can change how the run works and gives the permission a push asks for; the
 task's own instructions win where they differ, and the report checks each rule like an instruction.
-`/cpipe --rules` lists them; `/cpipe --rules <what to change>` changes them in words, and the chat picks the level
-from what you say: `/cpipe --rules commit and push after each commit, only in this project`.
+`/cpipe-rules` lists them; `/cpipe-rules <what to change>` changes them in words, and the chat picks the level
+from what you say: `/cpipe-rules commit and push after each commit, only in this project`.
 
 ### Learning loop
 
@@ -522,7 +522,7 @@ cpipe is self-learning: each install gets better at its user's work.
 - **Misses are recorded.** When review, QA or you catch something a run should have seen, the run logs a miss
   (the kind of change, the area, who found it, the step that should have caught it) in `history.jsonl`, and
   writes a one-line learning for that step: something to check, where to look, a state to cover. A problem you
-  find after the report (`/cpipe feedback <what you found>`, or just say it) is reproduced first; only a real
+  find after the report (`/cpipe-feedback <what you found>`, or just say it) is reproduced first; only a real
   one inside the task's scope counts, and it is fixed as a follow-up.
 - **Learnings are per step, per user.** They live in `~/.hermes/cpipe/learnings/` (`plan`, `design`, `build`,
   `qa`, `review`, and `general` for how you work in any project), with optional per-profile files for what is
@@ -641,21 +641,21 @@ The budget sets how hard your profiles reason, as the reasoning effort of every 
 | `medium` | high |
 | `small` | medium |
 
-Save a default with `/cpipe budget <tier>` (it writes `budget: <tier>` in `cpipe.yaml`), clear it with
-`/cpipe budget off`, or set it for one run with `/cpipe --budget <tier> <task>`. Without a budget, each profile
+Save a default with `/cpipe-budget <tier>` (it writes `budget: <tier>` in `cpipe.yaml`) and clear it with
+`/cpipe-budget off`. Without a budget, each profile
 reasons at its own setting. The budget only applies to the profile runs cpipe starts: your chat keeps its own
 reasoning setting, no Hermes setting changes, and kanban cards take no reasoning setting.
 
 ### On the kanban board
 
-With `/cpipe --kanban <task>`, each handed-over step becomes a card assigned to its profile and run by the board's
+With `/cpipe-kanban <task>`, each handed-over step becomes a card assigned to its profile and run by the board's
 dispatcher, so the work shows on the board. A card that ends blocked, times out, or is not picked up within 10
 minutes counts as a failed role. The run only ever touches cards it created.
 
 ### In parallel
 
 Without a flag, the issues of one task are delivered in the chat, one after another, so the role sessions carry
-over and two issues that belong together can share a delivery. With `/cpipe --parallel <issues>`, each issue gets
+over and two issues that belong together can share a delivery. With `/cpipe-parallel <issues>`, each issue gets
 a lane: a session of its own in the background, started in the issue's repository, so Hermes files it under that
 repository's project and lists it with your chats (role sessions stay hidden). The chat only starts
 lanes, posts a line each time a lane's step changes (at most every five minutes, nothing when none did), posts each
@@ -678,7 +678,7 @@ lane's report as it arrives, and writes a summary once every lane has reported.
   way instead of retried. An action that needs you in itself is named in the lane's report, and you approve it by
   taking the lane over in its chat, where Hermes can ask.
 - `cpipe.py lanes <batch dir>` reads each lane's state from its files, so a lost notification loses nothing:
-  `/cpipe --continue` picks every lane up again.
+  `/cpipe-continue` picks every lane up again.
 - Heavy jobs (installs, large test runs, builds) from all lanes take turns on the machine.
 
 ### Your own skills
@@ -779,7 +779,7 @@ Details: fix/invoice-discount · a1b2c3d fix(invoices): keep the discount on edi
 
 | Path | Holds | Committed |
 |---|---|---|
-| `~/.hermes/cpipe.yaml` | The roles and the default budget, written by you or `/cpipe budget` | — |
+| `~/.hermes/cpipe.yaml` | The roles and the default budget, written by you or `/cpipe-budget` | — |
 | `<repo>-worktrees/<branch>/` | The delivery worktree, beside the repository (or where the project's instructions say) | The delivery commit only |
 | `$TMPDIR/…/base/` | A worktree of the base commit for the baseline, removed at the report | — |
 | `<git-dir>/cpipe/run.md` | The run log: rounds, workarounds, findings | Never |
@@ -889,7 +889,7 @@ In a new worktree and branch beside your repository, created from the base. Your
 Merged cpipe worktrees are removed by later runs; the branches stay.
 
 **The run went quiet. What now?**
-Send `/cpipe --continue`. It reads `now.md` and the run log and picks up at the first unfinished step without redoing finished
+Send `/cpipe-continue`. It reads `now.md` and the run log and picks up at the first unfinished step without redoing finished
 ones, using the results of profiles and checks that kept running in the meantime.
 
 **Can I steer it mid-run?**

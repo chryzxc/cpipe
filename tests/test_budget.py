@@ -314,3 +314,25 @@ def test_stop_ends_the_run_at_once(tmp_path, monkeypatch):
     ctx.text = None
     assert cpipe._start(ctx, "stop") == cpipe.NOT_RUNNING and ctx.text is None
     assert "not to use cpipe" in cpipe.STEERING  # a plain "don't use cpipe" ends the run too
+
+
+def test_each_mode_is_its_own_command():
+    class Ctx:
+        commands = {}
+        def register_skill(self, *_): pass
+        def register_command(self, name, handler, **_):
+            self.commands[name] = handler
+        def inject_message(self, text, **_):
+            self.text = text
+            return True
+    import sys, types
+    sys.modules.setdefault("gateway", types.ModuleType("gateway"))
+    sys.modules["gateway.session_context"] = types.SimpleNamespace(get_session_env=lambda _: None)
+    ctx = Ctx()
+    cpipe.register(ctx)
+    assert {f"cpipe-{name}" for name in cpipe.COMMANDS} | {"cpipe"} == set(ctx.commands)
+    assert "Spec" in ctx.commands["cpipe-spec"]("fix it") and ctx.text.endswith("--spec fix it")
+    assert "Lanes" in ctx.commands["cpipe-parallel"]("fix #1 and #2")
+    assert ctx.commands["cpipe-continue"]().startswith("**cpipe** · resuming")
+    assert ctx.commands["cpipe-stop"]() == cpipe.NOT_RUNNING
+    assert ctx.commands["cpipe-spec"]() == cpipe.USAGE

@@ -60,7 +60,8 @@ A question never stops the work:
    `❓ <n>/11 <Step> · R2: <the question> · going with <recommended> until you answer`.
 3. Keep working on the recommended answer. Work that a different answer would undo goes last.
 
-Never call a clarify or question tool mid-run: it halts the whole run until the user answers.
+Never call a clarify or question tool mid-run: it halts the whole run until the user answers. Drafting the spec
+with `--spec` is the one exception: nothing runs until the user answers there.
 
 **The answer** arrives as a message mid-run, steering like any other (`cpipe:run`, Unattended). Rewrite the line
 it settles with their words as its `from:`, mark the question `answered: <their words>`, close the item
@@ -112,11 +113,18 @@ in its place (`roles.md`) does it.
    step 2), then work out with the user what to build, using its own skills, step by step until the idea is
    complete: as many questions and rounds as it takes, no limit from cpipe. It runs in a session of its own, where
    no one sees a clarify or question tool: every message for the user is its final reply, and the brief says so.
-   When the user agrees, it writes `spec.md` in this file's format, reconciled with the code, with
-   `Status: agreed`. It writes no plan and no code.
-3. **Carry it.** End the turn with the planner's message word for word, after one line:
-   `❓ 4/11 Spec · <planner> asks`. The user's reply is for the planner: resume its session with the reply word
-   for word, add nothing of your own, and carry its next message the same way.
+   The brief also asks it to end each reply with its questions for this round, at most five, one per line as
+   `Q: <question> | <choice> | <choice> …` (its recommended choice first, at most four choices, none for an
+   open question), and to read the answers that come back as `Q: <question> → <answer>` lines. When the user
+   agrees, it writes `spec.md` in this file's format, reconciled with the code, with `Status: agreed`. It writes
+   no plan and no code.
+3. **Carry it.** Post one line, `❓ 4/11 Spec · <planner> asks`, then the planner's message word for word without
+   its `Q:` lines. Put those questions to the user in one clarify tool call, so the choices show as options to
+   pick: each `Q:` line one question, its choices in order, none for an open one. Resume the planner's session
+   with the answers as `Q: <question> → <answer>` lines, word for word ("skipped" for a skipped one), add nothing
+   of your own, and carry its next message the same way. When the planner asked nothing in `Q:` form, the call
+   is not submitted, or this chat has no clarify tool, end the turn on the planner's message instead: the user's
+   reply is for the planner, resumed the same way.
 4. **Agreed.** When `spec.md` says `Status: agreed`, the run goes on unattended from plan step 5, the plan
    written in the same plan profile session, and builds and proves the spec line by line. A question later in
    the run is asked as in Asking mid-run.

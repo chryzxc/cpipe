@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.32.0
+version: 4.33.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -50,7 +50,7 @@ something this machine cannot do; until then the run loops (Limits).
 
 **The user's rules.** The user can keep standing rules for cpipe runs, and only cpipe, one `- ` line each, like
 `cpipe.yaml`: `<Hermes root>/cpipe/rules.md` for every run, `$HERMES_HOME/cpipe/rules.md` for a profile's own
-sessions, and `$(git rev-parse --git-common-dir)/cpipe/rules.md` for one repository's runs (`/cpipe --rules`, edited
+sessions, and `$(git rev-parse --git-common-dir)/cpipe/rules.md` for one repository's runs (`/cpipe-rules`, edited
 in words). They are pinned in every session of the run, a role's too, each tagged with its scope. Where two differ,
 the more specific wins: the project's, then the profile's, then everywhere's. Each is an instruction the user gave
 for this run, held like the ones above: it can change how the run works (`commit and push after each commit`: commit
@@ -67,7 +67,7 @@ settles it (`skill_view(name='cpipe:run', file_path='spec.md')`): posted as a `â
 working on its recommended answer, and waited on only when nothing else is left. Never call a tool that waits for
 the user (a clarify or question tool, a command that needs the user's approval): it halts the run until they
 answer. Use another way, or skip that part and report it. With `--spec`, the plan profile works out the spec
-with the user first, its own way (`spec.md`, --spec).
+with the user first, its own way, its questions put to the user with the clarify tool (`spec.md`, --spec).
 Write commands that need no approval: read and edit files with your file tools
 (read, search, patch, write), and run one program with its arguments, never `execute_code`, inline code
 (`python -c`, `node -e`), `sh -c`, heredocs or `if`/`;` chains; a script you need goes in a file you then run.
@@ -106,11 +106,11 @@ QA profile in a brief of its own, running alongside the build, never in this cha
 whole chat; its result comes back as a QA reply.
 
 **The user ends the run.** One message is not steering: one that tells you to stop or cancel the run, or not to
-use cpipe ("don't use cpipe", "do it without cpipe"), or `/cpipe stop`. It ends the run now, whatever step it is
+use cpipe ("don't use cpipe", "do it without cpipe"), or `/cpipe-stop`. It ends the run now, whatever step it is
 at and whatever the gate says: close it (`active <run dir> --done`, Facts), kill the background processes the run
 started (its step, tick and limit commands) and add `stopped by the user` to the run log. Then do what the message
 asks directly, as After the report says, with no run steps, roles, briefs, reviews or report. A notification from
-the stopped run is ignored, and a later plain "continue" continues the user's own work; only `/cpipe --continue`
+the stopped run is ignored, and a later plain "continue" continues the user's own work; only `/cpipe-continue`
 reopens the run.
 
 **Notes that are not for this run.** The chat can receive text mid-run that is neither the user nor this task: a
@@ -414,7 +414,7 @@ at the report, never before.
 The report ends the run. A plain message after it, even about the same work, is the user's own request, not the
 run's: do it directly in the worktree the way the chat would without cpipe (the change, its narrow test, the commits
 and pushes the user asked for), with no run steps, roles, briefs or reviews. Only `/cpipe` reopens the run (a
-follow-up with `/cpipe <what to change>`, or `/cpipe feedback <what they found>`). For a `/cpipe` follow-up, reuse
+follow-up with `/cpipe <what to change>`, or `/cpipe-feedback <what they found>`). For a `/cpipe` follow-up, reuse
 the worktree and the run log (or, if it was removed after its merge, a new worktree from the base), record the miss
 and its learning (`learning.md`, Feedback), update the plan, then run build, verify, QA and a delta review on the
 follow-up only, and report again. Reproduce what the user describes before answering. If it can mean two things,

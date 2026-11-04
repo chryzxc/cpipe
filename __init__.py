@@ -39,19 +39,18 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 | Command | What it does |
 |---|---|
 | `/cpipe <task>` | start a run |
-| `--parallel` | several issues, each in its own background session, reporting here |
-| `--kanban` | role steps go to your profiles as cards on your Hermes kanban board |
-| `--spec` | first work out the spec with your plan profile's bot and skills, then it delivers on its own |
-| `--budget <tier>` | how hard your profiles reason: unlimited, large, medium or small |
-| `/cpipe --continue` | pick up a run that stopped, at its first unfinished step (or just: continue) |
-| `/cpipe --restart [<step>]` | redo the run from that step (default: explore) on its own roles |
-| `/cpipe feedback <text>` | a problem you found after the report: recorded, reproduced and fixed |
-| `/cpipe stop` | end the run in this chat now: its steps stop, and your next messages are plain chat work |
-| `/cpipe budget [<tier>\\|off]` | show or save the default budget in cpipe.yaml |
-| `/cpipe learnings` | what cpipe has learned from your runs |
-| `/cpipe --rules [<what to change>]` | show your own rules for cpipe runs, or change them in words |
+| `/cpipe-spec <task>` | first work out the spec with you (choices to pick from), then it delivers on its own |
+| `/cpipe-parallel <issues>` | several issues, each in its own background session, reporting here |
+| `/cpipe-kanban <task>` | role steps go to your profiles as cards on your Hermes kanban board |
+| `/cpipe-continue [<note>]` | pick up a run that stopped, at its first unfinished step (or just: continue) |
+| `/cpipe-restart [<step>]` | redo the run from that step (default: explore) on its own roles |
+| `/cpipe-feedback <text>` | a problem you found after the report: recorded, reproduced and fixed |
+| `/cpipe-stop` | end the run in this chat now: its steps stop, and your next messages are plain chat work |
+| `/cpipe-budget [<tier>\\|off]` | how hard your profiles reason (unlimited, large, medium, small): show or save it |
+| `/cpipe-learnings` | what cpipe has learned from your runs |
+| `/cpipe-rules [<what to change>]` | show your own rules for cpipe runs, or change them in words |
 
-Example: `/cpipe --budget small fix the date filter on the orders page and open a draft pull request`"""
+Example: `/cpipe-spec fix the date filter on the orders page and open a draft pull request`"""
 
 STARTED = """**cpipe** · {task}
 
@@ -68,7 +67,7 @@ answer is asked as ❓ while the work goes on. Nothing is pushed unless you aske
 
 ✅ done · ⏳ waiting, resumes on its own · ❓ your answer needed · ⚠️ problem, handled
 
-Quiet with no ⏳? `/cpipe --continue`"""
+Quiet with no ⏳? `/cpipe-continue`"""
 
 LANES = "\n- **Lanes:** each issue in its own background session, up to 4 at once, each reporting here"
 SPEC = "\n- **Spec:** first worked out with your plan profile, here in this chat; then the run builds on its own"
@@ -83,11 +82,11 @@ Redone on the run's own roles, in new sessions. Code it replaces is saved beside
 
 STOPPED = """**cpipe** · run stopped
 
-Its background steps are stopped and nothing resumes it. Your next messages are plain chat work; `/cpipe --continue`
+Its background steps are stopped and nothing resumes it. Your next messages are plain chat work; `/cpipe-continue`
 picks the run up again."""
 NOT_RUNNING = "**cpipe** · no run is going in this chat"
 # Sent to the chat so the model stops what the run started; the registration is already gone (_stop).
-STOP = ("[cpipe] The user ended the cpipe run in this chat with /cpipe stop, and it is closed. Kill the background "
+STOP = ("[cpipe] The user ended the cpipe run in this chat with /cpipe-stop, and it is closed. Kill the background "
         "processes it started (its step, tick and limit commands) with your process tool, add a `stopped by the "
         "user` row to its run log, and reply in one line. Do not continue, resume or report the run: later "
         "messages are the user's own work (cpipe:run, The user ends the run).")
@@ -97,6 +96,20 @@ FEEDBACK = """**cpipe** · recording your findings
 Each one is reproduced, counted against the step that should have caught it, turned into a learning
 and fixed as a follow-up."""
 
+# Each mode is its own command, so the composer lists it; it reaches _start as the word the skill reads.
+COMMANDS = {
+    "spec": ("--spec", "<task>", "Work out the spec with you first, then deliver it unattended"),
+    "parallel": ("--parallel", "<issues>", "Deliver several issues at once, each in its own background session"),
+    "kanban": ("--kanban", "<task>", "Deliver a task with role steps as cards on your kanban board"),
+    "continue": ("--continue", "[<note>]", "Pick up this chat's stopped cpipe run at its first unfinished step"),
+    "restart": ("--restart", "[<step>]", "Redo this chat's cpipe run from a step (default: explore)"),
+    "feedback": ("feedback", "<what you found>", "Report a problem found after a cpipe run: reproduced and fixed"),
+    "stop": ("stop", "", "End the cpipe run in this chat now"),
+    "budget": ("budget", "[unlimited|large|medium|small|off]", "Show or save how hard cpipe's profiles reason"),
+    "learnings": ("learnings", "", "What cpipe has learned from your runs"),
+    "rules": ("--rules", "[<what to change>]", "Show your rules for cpipe runs, or change them in words"),
+}
+
 STEPS = ("general", "plan", "design", "build", "qa", "review")
 
 
@@ -105,13 +118,20 @@ def register(ctx):
     if hasattr(ctx, "register_command") and hasattr(ctx, "inject_message"):
         ctx.register_command("cpipe", lambda raw="": _start(ctx, raw),
                              description="Deliver a coding task unattended: plan, tests, build, review, report",
-                             args_hint="[--parallel] [--kanban] [--spec] [--budget <tier>] <task> | budget [<tier>] | --continue | --restart [<step>] | feedback <text> | stop | learnings | --rules [<what to change>]", argument_mode="text")
+                             args_hint="<task>", argument_mode="text")
+        for name, (word, hint, description) in COMMANDS.items():
+            ctx.register_command(f"cpipe-{name}", _mode(ctx, word),
+                                 description=description, args_hint=hint, argument_mode="text" if hint else None)
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_llm_call", _steering)
         ctx.register_hook("pre_verify", _unfinished)
         ctx.register_hook("post_llm_call", lambda **kw: _watch(ctx, **kw))
     if hasattr(ctx, "register_system_prompt_section"):
         ctx.register_system_prompt_section("cpipe.run", _pinned, max_chars=PINNED_MAX)
+
+
+def _mode(ctx, word):
+    return lambda raw="": _start(ctx, f"{word} {raw}".strip())
 
 
 PINNED_MAX = 4000
@@ -449,14 +469,14 @@ def _budget_line(tier, kanban):
     if kanban:
         return "not applied on the board (cards take no reasoning setting)"
     if not tier:
-        return "each profile's own setting · `/cpipe budget <tier>` sets one"
+        return "each profile's own setting · `/cpipe-budget <tier>` sets one"
     return f"{tier} · every profile reasons at {BUDGETS[tier]}"
 
 
 def _budget(arg):
     tiers = ", ".join(BUDGETS)
     if not arg:
-        return f"**cpipe budget** · {_budget_line(_saved_budget(), False)}\n\nSet it: `/cpipe budget <{tiers}|off>`"
+        return f"**cpipe budget** · {_budget_line(_saved_budget(), False)}\n\nSet it: `/cpipe-budget <{tiers}|off>`"
     path = _config()
     try:
         text = path.read_text()
@@ -484,7 +504,7 @@ def _learned():
     n = sum(len(_learned_lines(name)) for name in STEPS)
     if not n:
         return "nothing yet; every miss becomes a rule for the next run"
-    return f"{n} rule{'s' * (n != 1)} from past runs, added to this one · `/cpipe learnings`"
+    return f"{n} rule{'s' * (n != 1)} from past runs, added to this one · `/cpipe-learnings`"
 
 
 def _learnings():
@@ -510,7 +530,7 @@ def _learnings():
         out.append(f"Last {len(runs)} runs, problems you found after the report: "
                    + (", ".join(f"{s} {n}" for s, n in misses.items()) or "none"))
     return ("**cpipe learnings**\n\n" + "\n".join(out).strip()) if out else ( "cpipe has no learnings yet. They are written when review, QA or you catch something a run should "
-                     "have seen (`/cpipe feedback <what you found>`).")
+                     "have seen (`/cpipe-feedback <what you found>`).")
 
 
 RULES_PINNED = ("The user's own rules for cpipe runs: their standing instructions, held like now.md's. Where two "
@@ -550,11 +570,11 @@ def _rules(project=None):
 def _rules_line():
     n = len(_rules())
     if not n:
-        return "none · `/cpipe --rules <a rule>` sets one"
-    return f"{n} standing rule{'s' * (n != 1)}, plus any for this project · `/cpipe --rules`"
+        return "none · `/cpipe-rules <a rule>` sets one"
+    return f"{n} standing rule{'s' * (n != 1)}, plus any for this project · `/cpipe-rules`"
 
 
-# `/cpipe --rules <what to change>`: the chat's model edits the files; which one comes from the user's words.
+# `/cpipe-rules <what to change>`: the chat's model edits the files; which one comes from the user's words.
 RULES_EDIT = ("Edit my cpipe rules as I ask below, then show the rules files you changed. Do not start a run. "
               "They are cpipe's own standing rules, one `- ` line each in my words, at three levels like cpipe.yaml: "
               "{root} for every run, {profile} for one profile's sessions, and `$(git -C <repo> rev-parse "
@@ -565,7 +585,7 @@ RULES_EDIT = ("Edit my cpipe rules as I ask below, then show the rules files you
 
 
 def _rules_cmd(ctx, arg):
-    """`/cpipe --rules`: show the rules; `/cpipe --rules <what to change>`: the chat's model edits them."""
+    """`/cpipe-rules`: show the rules; `/cpipe-rules <what to change>`: the chat's model edits them."""
     if arg:
         from gateway.session_context import get_session_env
         key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
@@ -578,7 +598,7 @@ def _rules_cmd(ctx, arg):
     return ("**cpipe rules** · your own rules for cpipe runs only, followed like your instructions; the most "
             "specific wins, and a task's own instructions win over all\n\n" + "\n\n".join(out)
             + "\n\nA repository's own rules are in its `.git/cpipe/rules.md`. Change any of them in words: "
-            "`/cpipe --rules commit and push after each commit, only in this project`")
+            "`/cpipe-rules commit and push after each commit, only in this project`")
 
 
 def _list(rules, path):
@@ -614,7 +634,7 @@ def _register_pending(sid):
 
 
 def _stop(ctx):
-    """/cpipe stop: close this chat's run (and its compacted parents' records) at once, so the steering, pinned rules
+    """/cpipe-stop: close this chat's run (and its compacted parents' records) at once, so the steering, pinned rules
     and gate let go before the model even answers; then tell the model to stop what the run started."""
     from gateway.session_context import get_session_env
     sid = get_session_env("HERMES_SESSION_ID") or ""
