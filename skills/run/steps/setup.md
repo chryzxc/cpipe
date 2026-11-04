@@ -105,8 +105,8 @@ a profile, in the background or not, in this chat or in a role's session, runs u
 `perl <skill dir>/bin/limit.pl [-h] <seconds> <command>`: at the limit it stops the command and everything it
 started, and exits 124. It also runs it at low priority (nice 10, and on macOS the utility QoS clamp), so the user's
 own work on the machine stays responsive. A heavy job (an install, a large test run, a build) passes `-h`: it first
-waits its turn, so heavy jobs from every run and lane on the machine go one at a time, and its time limit starts once
-its turn comes.
+waits its turn, so heavy jobs from every run and lane on the machine go one at a time, and its time limit starts
+once its turn comes.
 
 A command with shell syntax of its own goes in as `sh -c '<command>'`. Limits: an install 15 minutes; a baseline
 check its CI time limit, else 20 minutes; a check in verify twice its time on the base, at least 5 minutes; a
