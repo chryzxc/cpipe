@@ -69,7 +69,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
   then start cpipe: that plan becomes the spec, the planner turns it into the builder's steps, and each spec
   line is proven and listed with its proof in the report. `/cpipe-spec` lets your plan profile work out the
   spec with you first, on its own bot, model and skills, in the same chat, its questions put to you as choices to
-  pick; then the run delivers it on its own.
+  pick, after it shows you the related features it found and where the change would go; then the run delivers it
+  on its own. A change people see is placed where the same kind of thing already shows, in its format, or where
+  your screenshot shows, and that placement is a spec line the run proves on the screen.
 - **Your instructions are the contract.** Every instruction you give, in the task or later, is kept word for word
   in the run's state, settles the questions it answers and wins over cpipe's defaults. The run is done when each
   one is met (a merge when there are no regressions included), not when the steps have run once. Each line is

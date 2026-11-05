@@ -18,7 +18,10 @@ yourself:
 2. **Code.** If you have a code index or code-navigation tool, locate the code with it first. Read the code the
    task touches and the helpers you could reuse. Find the closest existing code that does the same kind of thing
    (a sibling route, component, job or test) and note how it handles errors, logging, data access, validation
-   and naming: the build follows it. Skip code that is not on a path below.
+   and naming: the build follows it. For a change people see, find where the same kind of thing is shown today
+   (the list it joins, the form, the report, the related features) and its format: fields, labels, layout,
+   components. Each image the user sent shows the place and the look. The change goes there, in that format
+   (`spec.md`, Where it shows). Skip code that is not on a path below.
 3. **Flow map.** Trace every path through the code you will change, end to end, so nothing breaks out of sight:
    - **Entrances:** everything that reaches it: routes and endpoints, pages and UI actions, jobs, event and queue
      handlers, CLI commands, other modules and packages. Search for every usage across the whole repository, not

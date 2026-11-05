@@ -16,7 +16,8 @@ chore), write `Design: not needed (<reason>)` in the run log and go to step 4.
 ## Steps
 
 1. **Start from what exists.** Find the closest existing screen, component, command or endpoint, and the
-   project's design system, shared components, copy style and API conventions. Reuse them.
+   project's design system, shared components, copy style and API conventions. Reuse them. The new part goes where
+   the spec's Where it shows line puts it, in that thing's format (`spec.md`), never in a section of its own.
 2. **Every state.** For each surface the task touches: default, loading, empty, error, success, disabled, and
    permission-denied where it applies. Say what the user sees in each.
 3. **Flow.** The steps a user takes, where they start and end, what happens on cancel, retry and refresh.

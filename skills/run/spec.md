@@ -29,6 +29,14 @@ turns a line without one into work. A limit or a guarantee the user did not writ
 line, which gives way when it stands in the goal's way (`cpipe:run`, Limits). The plan's acceptance rules
 (`A1`… in `plan.md`) each name the R they prove, and every R has one (Proven line by line).
 
+**Where it shows.** A change people see (a screen, a list, a report, a document, a message) has a line that names
+where it appears and in what existing form: one more of an existing thing (a row in the existing list, a field in
+the existing form, an entry like its siblings), in that thing's format. An image the user sent shows the place:
+the line quotes the words that point to it (`· from: "<their words>" and their image`) and names what the image
+shows. With no image and no words about it, it is an I line: the closest existing feature of the same kind, by
+file and line. A new section, panel, page, component or layout beside the existing one breaks that line: it needs
+words of the user's or a D line, and otherwise it is a Two readings row.
+
 ## Reconcile
 
 Read each R, C and N against what explore found and record every mismatch as a row, its finding cited by file
@@ -98,7 +106,8 @@ Every R, C and D line is a checklist item whose text starts with its id: `track 
 line>"`. `gate` stays at `FIX` while a line has no item. The plan's acceptance rules and tests name the lines
 they prove (`Covers: R1, A2`, `A2` an acceptance rule of the plan), QA checks each one the way the user would,
 and the item closes with that proof (`track set <id> done "<the test or QA step and its result>"`). `report`
-lists each line with its proof under Proof. An answer that changes a line reopens its item: the proof is redone for the new line.
+lists each line with its proof under Proof. An answer that changes a line reopens its item: the proof is redone
+for the new line. The Where it shows line is proven on the screen, against the user's image when they sent one.
 
 ## --spec
 
@@ -116,8 +125,11 @@ in its place (`roles.md`) does it.
    The brief also asks it to end each reply with its questions for this round, at most five, one per line as
    `Q: <question> | <choice> | <choice> …` (its recommended choice first, at most four choices, none for an
    open question), and to read the answers that come back as `Q: <question> → <answer>` lines. When the user
-   agrees, it writes `spec.md` in this file's format, reconciled with the code, with `Status: agreed`. It writes
-   no plan and no code.
+   agrees, it writes `spec.md` in this file's format, reconciled with the code, with `Status: agreed`, each
+   agreed design choice a D line, where it shows included (Where it shows). It writes no plan and no code.
+   Its first message starts from what explore found, before any question, so the user can correct the picture
+   first: the existing features this change joins or resembles, how they work and look today and where the new
+   part would go among them, by file and line, and for a screen what it shows now.
 3. **Carry it.** Post one line, `❓ 4/11 Spec · <planner> asks`, then the planner's message word for word without
    its `Q:` lines. Put those questions to the user in one clarify tool call, so the choices show as options to
    pick: each `Q:` line one question, its choices in order, none for an open one. Resume the planner's session
