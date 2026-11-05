@@ -118,6 +118,19 @@ def test_static_errors_compare_by_id_without_reruns(tmp_path):
     assert c["baseline"] == ["a.ts:TS1:x"] and c["new"] == ["b.ts:TS2:y"]
 
 
+def test_a_new_file_with_the_bases_own_setup_errors_is_baseline(tmp_path):
+    put(tmp_path, "types.base.json", kind="static", errors=[
+        "old.test.js:TS2304:Cannot find name 'expect'.",
+        "views/__tests__/old.spec.js:TS2307:Cannot find module '../Old.vue' or its corresponding type declarations."])
+    put(tmp_path, "types.head.json", kind="static", errors=[
+        "new.test.js:TS2304:Cannot find name 'expect'.",
+        "views/__tests__/new.spec.js:TS2307:Cannot find module '../a/New.vue' or its corresponding type declarations.",
+        "new.test.js:TS2339:Property 'typo' does not exist on type 'User'."])
+    c = facts.compare(tmp_path, "types")
+    assert c["new"] == ["new.test.js:TS2339:Property 'typo' does not exist on type 'User'."]
+    assert len(c["baseline"]) == 2
+
+
 def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
     a = facts.track(tmp_path, "add", ["verify", "related", "tests", "pass"])
     b = facts.track(tmp_path, "add", ["report", "merge", "approved"])

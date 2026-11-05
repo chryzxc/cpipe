@@ -186,6 +186,12 @@ def _bad(r):
     return set(r["failed"]) | set(r["errors"]) if r else set()
 
 
+def _error_kind(name):
+    """A static error without its file, and with relative import paths reduced to their extension."""
+    rest = name.split(":", 1)[1] if ":" in name else name
+    return re.sub(r"'\.{1,2}/[^']*?(\.\w+)?'", lambda m: f"'*{m[1] or ''}'", rest)
+
+
 def compare(run_dir, check):
     """Every failing name on the delivery is new, baseline, flaky or still to run alone: never undecided."""
     d = Path(run_dir) / "results"
@@ -206,8 +212,11 @@ def compare(run_dir, check):
     head_alone_bad = {n for r in alone["head"] for n in _bad(r)}
     out["fixed"] = sorted(_bad(base) & set(head["passed"]))
     static = head.get("kind") == "static"
+    # A static error the base has word for word in another file is the project's setup (test globals, untyped
+    # imports), not this change: a new file gets the same error every old one has
+    base_kinds = {_error_kind(n) for n in base_bad} if static else set()
     for name in sorted(_bad(head)):
-        if name in base_bad:
+        if name in base_bad or (static and _error_kind(name) in base_kinds):
             out["baseline"].append(name)
         elif not static and name in head_alone_ok:
             out["flaky"].append(name)

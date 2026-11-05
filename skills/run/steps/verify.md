@@ -28,7 +28,10 @@ name and its failure lines from the log, never the log to read.
 
 Formatters and linters fix only the lines the change touches. A red formatting or lint baseline stays the
 baseline: never reformat files or the repository to clear it unless the task asks. A red lint or typecheck
-baseline hides nothing: its new errors are found by id like any failure, and each one is yours.
+baseline hides nothing: its new errors are found by id like any failure, and each one is yours. An error the
+base has word for word in other files (test-runner globals, untyped imports) is the project's setup, so `compare`
+counts it as baseline in a new file too. A new error is fixed in the change's own lines only, never by changing
+the project's config, dependencies or type setup, or files the change did not touch.
 
 ## Fast checks
 
