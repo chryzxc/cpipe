@@ -66,7 +66,8 @@ question the run puts to the user is a spec question, where the user's words and
 settles it (`skill_view(name='cpipe:run', file_path='spec.md')`): posted as a `❓` line while the run keeps
 working on its recommended answer, and waited on only when nothing else is left. Never call a tool that waits for
 the user (a clarify or question tool, a command that needs the user's approval): it halts the run until they
-answer. Use another way, or skip that part and report it. With `--spec`, the plan profile works out the spec
+answer. Use another way, or skip that part and report it: the board offer after the report is the one clarify
+call outside `--spec` (`steps/report.md`, Board offer). With `--spec`, the plan profile works out the spec
 with the user first, its own way, its questions put to the user with the clarify tool (`spec.md`, --spec).
 Write commands that need no approval: read and edit files with your file tools
 (read, search, patch, write), and run one program with its arguments, never `execute_code`, inline code

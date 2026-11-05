@@ -42,6 +42,7 @@ each `FIX` is a fix to the file, and the check runs again until it prints `PASS`
 word for word: never a summary of it, a merge note or a reply in your own shape, which the user cannot read the
 same way every time. With several deliveries, one status line per delivery first, then each delivery's file under
 a heading naming its issue. Its `PASS` closes the run for this chat (`cpipe:run`, After the report).
+When Needs attention has work for later, the report goes out with the board offer (Board offer below) instead.
 
 Short, and still complete: the user reads it in a minute and knows what changed, what was proven and what is
 left for them. What needs the user comes first; what went as planned is a count, not a row. Plain words,
@@ -218,6 +219,31 @@ In the report, show the same flow as `graph.part`, never a shorter one:
   exactly as that chat describes it. Never paste `run-graph.html` into a view that
   runs offline: its diagrams load a remote script.
 - **Otherwise** the flow in a ` ```mermaid ` block.
+
+## Board offer
+
+Needs attention rows that are work for a later delivery (an out-of-scope problem, a **consider** or **noted**
+finding worth doing, an open finding in code this change does not touch, a baseline failure, a follow-up
+delivery) are offered as cards on the user's task board, so they are not lost in the chat. Not offered: what only
+the user can do (a sign-in, a setting, a profile's provider) and limits with nothing to change.
+
+Only when this chat has a clarify tool and the user's board (`hermes kanban`), and is the user's own chat: never in
+a lane (its launcher reports), or a one-shot or scheduled session (no one answers). Otherwise the report is the
+final reply, as above.
+
+1. **Split.** One card per piece of work that can be done and shipped alone: different files, a different cause
+   or a different owner are separate cards, never one card holding two. Several rows about one fix are one card.
+2. **Ask.** The report, word for word, is the text of the message that makes the clarify call, so the user reads
+   it above the questions. One question per card, at most five per call (a second call for the rest), each
+   standing alone: `Add to the board: <what, a few words> (<why it matters>)?` with the choices `Yes` and `No`.
+   The run is over, so waiting on the user here holds nothing up (`cpipe:run`, Unattended).
+3. **Add.** For each `Yes`, write the card's body to `<run dir>/todo-<n>.md`: what is wrong or missing, why it
+   matters, the recommendation, the `file:line` places, the repository and base, and where it came from (the
+   branch and pull request). Then
+   `hermes kanban create "<what>" --body-file <run dir>/todo-<n>.md --created-by cpipe --idempotency-key <branch>-todo-<n> --json`,
+   with no assignee: nothing picks the card up until the user assigns it or starts a delivery from it. Write
+   each card id in the run log. A `No`, a timeout or no answer adds nothing.
+4. **Reply.** The final reply is one line: `On the board: <id> <what>, …`, or `Nothing added to the board.`
 
 ## Rules
 

@@ -723,6 +723,9 @@ so it reads the same way every time. It is short, one line per row, and complete
 - **Cost:** minutes, then a table of tokens with the cached share: each profile and model, and the total.
 - **Details:** one line: branch, commit, pull request, files, skills, learnings.
 
+When Needs attention holds work for later, the report ends with a yes-or-no question for each separate piece of
+it: each yes adds its own unassigned card to your kanban board, so nothing runs it until you assign it. Only in your own chat, never in a lane or a scheduled run.
+
 What went as planned is a count, not a row, so the report reads in about a minute. It never asks you to fix,
 install, run, review or verify anything the run could have done itself.
 
