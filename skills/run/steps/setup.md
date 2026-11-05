@@ -46,7 +46,9 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    about dependencies. Copy local env files (`.env`) from the user's checkout only if the checks need them, and
    never print their contents. The install itself runs in step 8.
 5. **Run log.** Start it and `now.md` (`cpipe:run`, Run log) with the task, the user's instructions word for word
-   (from the task and from the conversation about this work), the base, the worktree and the roles line. Then
+   (from the task and from the conversation about this work), the base, the worktree and the roles line. A run
+   in a worktree an earlier run delivered (its `cpipe/` run dir is there) carries that run's instructions and
+   spec lines into `now.md` too, word for word: they are still the user's, and its goal is still the goal. Then
    register the run (`cpipe:run`, Facts: `active <run dir>`) and add this step's Done when to `track.json`.
 6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A repository can
    have dozens of worktrees and branches, so never list them into the chat; this prints only the candidates:

@@ -480,6 +480,12 @@ nothing is filtered silently:
 
 A security finding is never dismissed without evidence, and an open one leads the report.
 
+A finding is not a requirement: what the goal needs comes from your words and the spec. A reviewer's "should"
+(bounded work everywhere, fairness under any load, volumes the project does not have) is fixed only for a concrete
+case the project really has; otherwise it is **consider** and offered as follow-up work. A fix never grows into a
+new subsystem you did not ask for, and a later `/cpipe` in the same worktree carries the earlier run's
+instructions and spec, so a review before merge checks the change against them instead of growing it.
+
 ### Durable state and recovery
 
 Each run keeps an append-only **run log** at `<git-dir>/cpipe/run.md` in its worktree: one row per round, every

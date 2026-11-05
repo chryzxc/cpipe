@@ -125,6 +125,15 @@ in a task about reads). The goal is met when the change does what it says and br
 neighbourhood is a follow-up delivery, listed in the report. A delta review sorts its new findings the same way:
 one is **act** only when the fix round caused it or the goal still is not met.
 
+**A finding is not a requirement.** What the goal needs comes from the user's words and the spec, never from a
+reviewer's "should": bounded work on every loop, fairness under any arrival pattern, exactly-once delivery,
+resistance to volumes or writers the project does not have. Such a finding is **act** only with a concrete case
+the project really has (its data, its writers, a load the code serves today), and its fix is proven on that case.
+Without one it is **consider**, a follow-up delivery for the report. A test written for a finding proves that
+case; it never becomes an acceptance line, and a later round that fails on a stricter version of it is not the
+goal unmet. A fix that needs a new subsystem the user did not ask for (a queue, a scheduler, a lease or
+repair framework) is never the narrow fix: take the smallest change that closes the concrete case, or list it.
+
 A path, behavior row or risk the reviewer found that the plan missed is added to the plan with its check; a
 regression on it is **act**, even if the code sits outside the scope's files. Write a learning for it (`learning.md`
 beside `cpipe:run`).
@@ -187,14 +196,17 @@ review: their tests and the checks are their proof.
 ## Rules
 
 - The reviewer reads; it never edits the code. The builder (or you, without a build profile) makes every fix.
-- Brief the reviewer with facts (goal, acceptance, diff, check states), not your reasoning or your verdict.
+- Brief the reviewer with facts (goal, acceptance, diff, check states), not your reasoning or your verdict. A
+  delta brief is the diff and the earlier findings to confirm; it never adds topics of its own (scale, fairness,
+  hostile load, data growth) for the reviewer to look for.
 - Never dismiss a finding without evidence in the run log, and never dismiss a security finding by judgment
   alone.
 - Never widen the goal to satisfy a reviewer: a problem the goal does not cover is **consider**. A regression
   the change caused, and a finding that the goal is not met yet, are never out of scope.
 - An **act** finding is never left for the user to fix or to ask for again: no report goes out while one is
   open and the run can still fix it.
-- Two review rounds at most (one full review, one delta review), plus the security delta above.
+- Two review rounds at most (one full review, one delta review), plus the security delta above: one, never a
+  chain. Its findings are fixed and proven by their tests, or listed, with no further review.
 - Every review gap is closed by the run, never handed to the user.
 
 ## Done when

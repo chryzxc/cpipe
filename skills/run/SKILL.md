@@ -465,6 +465,9 @@ that already failed is never repeated.
   re-plan hits that obstacle, keep working on everything else, and wait on it only when nothing else is left
   (`gate` says ASK). A behavior the base branch has too is not a regression of this change: closing it is the
   goal only when an instruction asks for it.
+- A gap a builder or re-plan discloses counts as the goal unmet only when it traces to the user's words; one that
+  traces to a finding's own "should" is **consider** (`steps/review.md`, A finding is not a requirement). A
+  re-plan never grows the design past what the user asked: no new subsystem the goal did not name.
 - Each round closes more than it opens. A round whose fix led to new findings, twice in a row, or a fix that
   breaks working behavior: go back to the last green tree and take the narrower approach (`steps/review.md`,
   When fixes fight). Looping is for the goal, not for every finding a reviewer can raise beside it.
