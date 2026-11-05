@@ -80,7 +80,7 @@ comparison or readiness pass first. `FIX` is work, `WAIT` a wait line, `ASK` the
 `NEEDS-USER` the `⚠️ Done except` line.
 
 "No new failing test" is the last verify's by-name comparison with the baseline on the committed tree. When the
-base branch moved since, update the delivery branch on it the project's way (merge or rebase), run the last
+base branch moved since, update the delivery branch on it (Updating a pushed branch, below), run the last
 verify once more on that tree, and compare by name again. A conflict goes to that delivery's builder as a
 follow-up (without a build profile, you resolve it), keeping what both sides meant; that verify is its proof,
 with no review. Several deliveries merge one after another, each
@@ -94,8 +94,10 @@ merges used (`gh pr merge --squash`, `--merge` or `--rebase`). Then confirm on t
 condition that fails is work, not a stop: fix it, verify, and check again, round after round (`cpipe:run`,
 Limits), then merge. A report that says "not merged" while every condition above holds is a mistake: merge.
 
-Updating a pushed branch: merge the base into it unless the project rebases; after a rebase, push with
-`--force-with-lease`, and only to this delivery's own branch, never one someone else pushed to. A merge the
+Updating a pushed branch: merge the fetched base (`git merge origin/<base>`) into it, as the hosting service's
+update button does; only a branch never pushed is rebased. Never rebase a pushed branch and then merge its old
+history back to avoid a force push: every commit is then in it twice, and the pull request shows another merged
+pull request's changes as its own. A merge the
 repository's rules refuse until a person acts (a required approving review, a code owner) is never forced:
 no `--admin` or other bypass. Turn on auto-merge when the repository allows it (`gh pr merge --auto` with the
 method), and report `⚠️ Done except` that approval.
