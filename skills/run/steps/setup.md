@@ -19,6 +19,11 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    backlog or report is not an issue: no title fits it anywhere, and it rules out no candidate; the plan or report
    it came from often names the repository or base. Fetch the base so it is current, and from here on the base is
    the fetched remote branch (`origin/<base>`), never a local branch of that name, which can be days behind it.
+   **This chat's project.** Once the repository is known, and this chat (not a lane: its launcher already files
+   it) is not yet in the project that holds it: when you have a tool that moves this chat into one of the user's
+   projects (named workspaces), list them and switch this chat into the one whose folder holds the repository,
+   so the delivery shows under it. Only an existing project: never create one, and with none that holds the
+   repository, or no such tool, go on as you are. Paths stay absolute, so nothing else changes.
 2. **Branch name.** cpipe sets no naming rules of its own. Name the branch by what the user's agent setup
    already says (your memory, user profile, persona and skills), then the project's instructions, then the
    pattern of its recent branches (`git branch -r --sort=-committerdate | head -20`). The branch is pushed, so the
