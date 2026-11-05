@@ -164,9 +164,9 @@ single report at the end:
 >
 > | Step | Runs on |
 > |---|---|
-> | plan | @archon |
-> | build | @forge |
-> | review | @sentry |
+> | plan | @planner |
+> | build | @builder |
+> | review | @reviewer |
 > | everything else | this chat's model |
 >
 > - **Budget:** each profile's own setting · `/cpipe-budget <tier>` sets one
@@ -183,14 +183,14 @@ single report at the end:
 ```
 1/11 Set up · this chat · worktree, dependencies, baseline
 ✅ 1/11 Set up · 3 min · fix/invoice-discount, baseline: 412 tests pass
-2/11 Explore · @archon · callers of updateInvoice(), the invoice API and its consumers
+2/11 Explore · @planner · callers of updateInvoice(), the invoice API and its consumers
 — 3/11 Design · skipped: no screen changes
 ✅ 5/11 Plan · 11 min · 4 build steps, 1 assumption, 2 learnings applied
-6/11 Build · @forge · tests first, then the change
-⏳ 6/11 Build · waiting on @forge · done by 14:40 · resumes on its own
+6/11 Build · @builder · tests first, then the change
+⏳ 6/11 Build · waiting on @builder · done by 14:40 · resumes on its own
 ✅ 6/11 Build · 14 min · 2 files, 3 new tests RED → GREEN
 ✅ 7/11 Verify · 6 min · lint, types, 415 tests, build pass
-⚠️ 9/11 Review · @sentry failed to start (provider error) · running it in this chat
+⚠️ 9/11 Review · @reviewer failed to start (provider error) · running it in this chat
 ✅ 8/11 QA · 9 min · 5 scenarios pass, screenshots before and after
 ✅ 9/11 Review · 12 min · 1 finding fixed
 ✅ 10/11 Clean · 4 min · last verify passes

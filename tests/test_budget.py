@@ -245,15 +245,15 @@ class _Chat:
 
 def test_rules_are_shown_edited_in_words_and_pinned_by_scope(tmp_path, monkeypatch):
     root, repo = tmp_path / "hermes", tmp_path / "repo"
-    monkeypatch.setenv("HERMES_HOME", str(root / "profiles" / "forge"))
+    monkeypatch.setenv("HERMES_HOME", str(root / "profiles" / "builder"))
     chat = _Chat()
     assert "none ·" in cpipe._start(chat, "--rules")
     assert "updating them" in cpipe._start(chat, "—rules commit and push after each commit, only in this project")
     assert "cpipe/rules.md" in chat.sent[0] and chat.sent[0].endswith("only in this project")
     (root / "cpipe").mkdir(parents=True)
     (root / "cpipe" / "rules.md").write_text("- keep commits small\n")
-    (root / "profiles" / "forge" / "cpipe").mkdir(parents=True)
-    (root / "profiles" / "forge" / "cpipe" / "rules.md").write_text("- run the linter\n")
+    (root / "profiles" / "builder" / "cpipe").mkdir(parents=True)
+    (root / "profiles" / "builder" / "cpipe" / "rules.md").write_text("- run the linter\n")
     (repo / ".git" / "cpipe").mkdir(parents=True)
     (repo / ".git" / "cpipe" / "rules.md").write_text("- commit and push after each commit\n")
     assert "1. keep commits small" in cpipe._start(chat, "--rules")

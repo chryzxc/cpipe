@@ -124,7 +124,7 @@ to the lines that changed. Pairs QA could not judge come first. Omit for a chang
 - a role whose profile failed, or a tool or service that blocked a step (each `Problem:` line in the run log,
   `roles.md`, When a role fails), so the user knows
   who did not do their part: **What** names the role, its profile and the exact error in a few words
-  (`Review: @sentry, provider startup failed twice`); **Why it matters** what it cost (`review done in this chat,
+  (`Review: @reviewer, provider startup failed twice`); **Why it matters** what it cost (`review done in this chat,
   not independent`); **Recommended** what clears it next time (the provider, the profile's config);
 - every step that ran without a sign-in or credential it needed (QA behind a login, screenshots for the pull
   request, a live service), every run it happens: **What** names the service and what was missing
@@ -169,11 +169,11 @@ one, else the flow chart.
 
 **Cost**: what the delivery spent, as a table: `Time:` the minutes from the run log's first to last row, then
 the table `cost <run dir> <worktree>` prints (`cpipe:run`, Facts), with each Who given its steps in front of the
-profile (`build @forge`, `review @sentry`), so it also says who did each step on which model:
+profile (`build @builder`, `review @reviewer`), so it also says who did each step on which model:
 
 | Who | Model | Tokens | Cached |
 |---|---|---|---|
-| build @forge | gpt-6.1-terra | 1.9M | 93% |
+| build @builder | gpt-6.1-terra | 1.9M | 93% |
 | this chat | gpt-6.1-sol | 0.8M | 88% |
 | **Total** |  | 3.1M | 91% |
 
