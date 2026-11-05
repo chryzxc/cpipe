@@ -16,8 +16,11 @@ with a browser tool, an HTTP endpoint, a CLI, a library call by script. It is sk
   machine, a signed-in external service. The tests are the proof, and the report's Test it table lists the manual
   checks with exact steps and expected results. An emulator or simulator QA can drive is driven like a browser.
 
-Signing in to the project's own app on this machine is not an external service: create a local test user (the
-project's seed, fixtures or sign-up page), sign in and run QA behind the login.
+Signing in to the project's own app on this machine is not an external service: use the test login the user's
+instructions name for the project (read it from the environment, never print it), else create a local test user
+(the project's seed, fixtures or sign-up page), then sign in and run QA behind the login. For a change a user
+sees, a stand-in (a DOM shim such as jsdom, a mocked API, a component harness) is never a pass: it proves the code,
+not the screen. When the real app cannot be started or signed in to, that item is **not run here** with the reason.
 
 ## Steps
 
@@ -64,11 +67,11 @@ output, the request and response, a screenshot path.
   point (`steps/build.md`, Root cause). If the plan did not foresee it, write a learning (`learning.md` beside
   `cpipe:run`). Verify, then QA the failed items again alongside the delta review; that re-run is the last QA round,
   and a failure in it is fixed and proven by its test the same way, without another re-run.
-- **not run here:** the surface needs something this machine does not have (a login, a device, a live
-  service). Use the closest stand-in (a test double, a seeded user, a direct call), then list what is left in
-  the report's Test it table, with exact steps and the expected result. Never stop for it. When the reason is
-  a missing sign-in or credential (no test account, an expired session, a key not set), record which service and
-  what is missing, so the report names it every time.
+- **not run here:** the surface needs something this machine does not have (a login, a device, a live service). Use
+  the closest stand-in (a test double, a seeded user, a direct call) as evidence, never as a pass for what a user
+  sees, then list what is left in the report's Test it table, with exact steps and the expected result. Never stop
+  for it. When the reason is a missing sign-in or credential (no test account, an expired session, a key not set),
+  record which service and what is missing, so the report names it every time.
 
 ## Rules
 
