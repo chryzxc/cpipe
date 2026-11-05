@@ -36,7 +36,8 @@ def test_one_profile_explores(tmp_path, monkeypatch):
     (tmp_path / "cpipe.yaml").write_text("roles:\n  review: d\n  build: c\n  explore: a\n")
     assert cpipe._roles() == [("build", "c"), ("review", "d"), rest]
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  review: d\n")
-    assert cpipe._team().splitlines()[2:] == ["| explore | a |", "| review | d |", "| everything else | this chat's model |"]
+    assert cpipe._team().splitlines()[2:] == ["| explore | @a |", "| review | @d |",
+                                              "| everything else | this chat's model |"]
 
 
 def test_every_profile_shares_the_roots_file(tmp_path, monkeypatch):

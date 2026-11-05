@@ -124,7 +124,7 @@ to the lines that changed. Pairs QA could not judge come first. Omit for a chang
 - a role whose profile failed, or a tool or service that blocked a step (each `Problem:` line in the run log,
   `roles.md`, When a role fails), so the user knows
   who did not do their part: **What** names the role, its profile and the exact error in a few words
-  (`Review: sentry, provider startup failed twice`); **Why it matters** what it cost (`review done in this chat,
+  (`Review: @sentry, provider startup failed twice`); **Why it matters** what it cost (`review done in this chat,
   not independent`); **Recommended** what clears it next time (the provider, the profile's config);
 - every step that ran without a sign-in or credential it needed (QA behind a login, screenshots for the pull
   request, a live service), every run it happens: **What** names the service and what was missing
@@ -169,11 +169,11 @@ one, else the flow chart.
 
 **Cost**: what the delivery spent, as a table: `Time:` the minutes from the run log's first to last row, then
 the table `cost <run dir> <worktree>` prints (`cpipe:run`, Facts), with each Who given its steps in front of the
-profile (`build forge`, `review sentry`), so it also says who did each step on which model:
+profile (`build @forge`, `review @sentry`), so it also says who did each step on which model:
 
 | Who | Model | Tokens | Cached |
 |---|---|---|---|
-| build forge | gpt-6.1-terra | 1.9M | 93% |
+| build @forge | gpt-6.1-terra | 1.9M | 93% |
 | this chat | gpt-6.1-sol | 0.8M | 88% |
 | **Total** |  | 3.1M | 91% |
 
@@ -192,7 +192,7 @@ Draw the run from the run log's times and the times of the files in `logs/`; a t
 never guessed. Two Mermaid diagrams:
 
 - **Flow** (`flowchart LR`): one node per step and per round (`Build 2`, `Delta review`), labelled with the step,
-  the role and its profile, the minutes and the result in a few words. Arrows in the order things happened; work
+  the role and its @profile, the minutes and the result in a few words. Arrows in the order things happened; work
   that ran in parallel branches from the same node, and a fix round is an arrow back. Retries, interruptions, a
   wait for the user and any gap over 10 minutes are dashed arrows labelled with the cause, into a node of class
   `bad`; verified results are class `ok`. At most 25 nodes: fold repeated rounds into one. Colors that read in

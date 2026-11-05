@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.34.1
+version: 4.35.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -124,7 +124,7 @@ costs a full reply each time you look: never poll, sleep, list processes or call
 When a profile or check this run started is running with a completion notification and nothing in the run can move
 until it finishes, end the turn with exactly this line, the time being when its time limit ends:
 `⏳ <n>/11 <Step> · waiting on <who or what> · done by <clock time> · resumes on its own`, such as
-`⏳ 8/11 QA · waiting on sentinel's checks · done by 12:29 · resumes on its own`. Never a line of your own:
+`⏳ 8/11 QA · waiting on @sentinel's checks · done by 12:29 · resumes on its own`. Never a line of your own:
 without the time and the resume note a wait looks like a stop. Its
 notification starts the next turn. With nothing running, a reply without a tool call ends the turn on nothing, so
 end a turn only on such a wait, a needed approval (above), the pause message, the `❓` waiting-on-your-answer
@@ -206,17 +206,19 @@ Track the steps with your todo tool if you have one, one step active at a time.
 
 **Status lines.** The user follows the run from these lines alone, so each one says what happens, who does it
 and what came out, in the same shape: `[icon] <n>/11 <Step> · <parts>`, the step name as in the table below (a
-fix round is `6/11 Build · fix round 2`, a merge is `11/11 Report`), plain words, no file paths or tool names:
-- starts, with your next tool call, no icon: `6/11 Build · forge · tests first, then the change` (who: the profile,
-  `this chat's model` for a role session without one, or `this chat`);
+fix round is `6/11 Build · fix round 2`, a merge is `11/11 Report`), plain words, no file paths or tool names.
+A profile (a bot) is always written with its `@`, `@forge`, never the bare name, in every line, question and report
+table you show the user, since the chat links an `@name` to its bot:
+- starts, with your next tool call, no icon: `6/11 Build · @forge · tests first, then the change` (who: the
+  profile, `this chat's model` for a role session without one, or `this chat`);
 - ends: `✅ 6/11 Build · 29 min · 4 files, 3 new tests RED → GREEN`, `✅ 9/11 Review · 12 min · 2 findings to fix`;
 - does not apply: `— 3/11 Design · skipped: no screen changes`;
-- a problem the run handles (a profile failed, a check would not run, a limit reached): `⚠️ 9/11 Review · sentry
+- a problem the run handles (a profile failed, a check would not run, a limit reached): `⚠️ 9/11 Review · @sentry
   failed to start (provider error) · running it in this chat`;
 - results that arrive while other work runs (a reviewer's findings, a check's result): their own step's line,
-  `✅ 9/11 Review · cypher · 3 findings to fix`, `⚠️ 7/11 Verify · related tests timed out · retrying narrower`;
+  `✅ 9/11 Review · @cypher · 3 findings to fix`, `⚠️ 7/11 Verify · related tests timed out · retrying narrower`;
 - several things running at once: one ⏳ line for the step that ends last, naming the others
-  (`⏳ 9/11 Review · waiting on sentry, cypher and the server tests · done by 21:49 · resumes on its own`);
+  (`⏳ 9/11 Review · waiting on @sentry, @cypher and the server tests · done by 21:49 · resumes on its own`);
 - a wait and its progress: the ⏳ lines below.
 
 Every line you post while the run is going, after a compaction too, is one of these: never free text such as

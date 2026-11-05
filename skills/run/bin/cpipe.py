@@ -460,7 +460,7 @@ def cost(run_dir, worktree):
         except sqlite3.Error:
             continue
         for ident, profile, model, inp, out, cached, *_ in found:
-            who = "this chat" if ident == sid else (profile or store.parent.name)
+            who = "this chat" if ident == sid else "@" + (profile or store.parent.name)
             r = rows.setdefault((who, model or "?"), [0, 0, 0])
             for i, n in enumerate((inp, out, cached)):
                 r[i] += n or 0

@@ -24,7 +24,7 @@ Every key is optional. A missing or empty `build`, `qa` or `review` runs on this
 missing `plan`, `design`, `security` or `explore` is done as the flow says without it. Read the file once in step 1,
 write the roles in the run log, and tell the user in one line who does each step:
 
-`Roles: plan → <profile> (explores too), build → <profile>, review → this chat's model (own session), …`
+`Roles: plan → @<profile> (explores too), build → @<profile>, review → this chat's model (own session), …`
 
 Without a roles file: `Roles: no cpipe.yaml, build, QA and review on this chat's model, each in its own session`.
 This is a notice, not a question: keep going. When the task came from `/cpipe`, its start message already showed the
@@ -196,9 +196,9 @@ more with a shorter role part (the header is the launcher's), then run it on thi
 above), and only when that fails too, do the step yourself in this chat. If it timed out, do not retry: go to the
 next of these right away. Only its log ending in `exit 124` is a timeout; a tool call that Hermes cut off while
 waiting on the step is not, the step still runs: wait on it again.
-Tell the user in one ⚠️ status line (`⚠️ 2/11 Explore · archon failed (provider error) ·
-forge plans it`), the moment it happens, before the next brief. In the run log, write one line for it, kept through
-every compaction: `Problem: <step> · <role> <profile> · <each attempt's first error line and exit code> · done by
+Tell the user in one ⚠️ status line (`⚠️ 2/11 Explore · @archon failed (provider error) ·
+@forge plans it`), the moment it happens, before the next brief. In the run log, write one line for it, kept through
+every compaction: `Problem: <step> · <role> @<profile> · <each attempt's first error line and exit code> · done by
 <who instead>`. The report's Needs attention has a row for every `Problem:` line. A failed plan profile's steps go
 to the build profile when there is one: its first brief explores and plans as it does without a plan profile, and
 this chat still never reads the code. A role failing is never a reason to stop the run.

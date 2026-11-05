@@ -454,7 +454,8 @@ def _roles():
 
 
 def _team():
-    return "\n".join(["| Step | Runs on |", "|---|---|", *(f"| {s} | {p} |" for s, p in _roles())])
+    rows = (f"| {s} | {p if ' ' in p else '@' + p} |" for s, p in _roles())  # a profile shows as its @bot
+    return "\n".join(["| Step | Runs on |", "|---|---|", *rows])
 
 
 def _saved_budget():
