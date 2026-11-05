@@ -36,7 +36,11 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    `<type>/<short-slug>` with the type of the change (`fix`, `feat`, `refactor`, `chore`) and a slug that
    describes the change. Pull request tooling often reads the type from the branch name, so it must match the
    change: if explore finds a different kind, rename the branch with `git branch -m` before anything is pushed.
-3. **Worktree.** A new branch and worktree from the base, beside the repository:
+3. **Worktree.** A task on an existing pull request or branch (review it, fix it, continue it) works on that
+   branch itself, never a new one: the worktree that already has it checked out, else
+   `git worktree add <path> <branch>` tracking `origin/<branch>`, and its commits are pushed as a fast-forward.
+   Its base is the pull request's base branch as fetched now; skip step 2. Otherwise, a new branch and worktree
+   from the base, beside the repository:
    `git worktree add -b <branch> <repo>-worktrees/<branch with / replaced by -> <base>`. Follow the project's own
    worktree convention instead if its instructions name one. If the name exists, name it again by the same rules;
    never reuse or reset someone else's branch.

@@ -162,7 +162,9 @@ When both the review and QA are back, the **act** findings and the QA failures a
 build profile, one builder follow-up), then `steps/verify.md`, then the delta review alongside a QA re-run of the
 failed items. The delta review resumes the first reviewer's session (`roles.md`, Follow-ups) with the diff since
 the first review (`git diff <the first review's tree id>`, never the whole diff again) and the earlier findings
-to confirm as resolved. Nothing to act on means no delta review.
+to confirm as resolved. When the base was merged in since, that diff holds the base's changes too: limit it to
+this change's files (`git diff <tree id> -- $(git diff --name-only origin/<base>...HEAD)`) and say the base was
+merged in, so the reviewer reviews no other pull request's work. Nothing to act on means no delta review.
 
 Brief every **act** finding as a fix at its cause (`steps/build.md`, Root cause), never as "fix it if it fits the
 scope" or "investigate": the builder is not the one who decides it is out of scope. A builder that answers it cannot
@@ -173,7 +175,9 @@ data, access or credentials it does not have. Then it leads the report with what
 
 **When fixes fight.** A fix that breaks today's behavior, with no change found that keeps both after one more
 approach: the working behavior wins, unless that fix is the goal itself. Restore the files of the last verify
-that passed (its tree id: `git restore --source=<tree id> --worktree -- .`, and remove files added since), keep
+that passed (its tree id: `git restore --source=<tree id> --worktree -- .`, and remove files added since; when
+the base was merged in after that tree, restore only the fix round's own hunks, never the files the base merge
+brought, which would revert merged work), keep
 the rest of the goal, and list the finding as **consider** with the change it needs (a migration, another
 database setup, a shared lock across writers). The same when fixes chain: two delta findings in a row caused by
 the previous fix mean the approach is too big; go back to the last green tree and take the narrower one. Before

@@ -5,8 +5,8 @@ Review a change that already exists (a pull request, a branch, a commit) when no
 **Proof required:** the change verified on its own head commit, QA on the real surface, an independent review,
 and a verdict backed by them.
 
-1. **Set up on the head.** Check out the exact head commit in a worktree (an existing one for this change, or a
-   new one). Record the commit; the verdict is for that commit only.
+1. **Set up on the head.** Work on the change's own branch at its head commit (`steps/setup.md`, Worktree),
+   never on a new branch with its commits replayed. Record the commit; the verdict is for that commit only.
 2. **Explore and baseline** as usual: the flow map of what the change touches and the checks on its base, so a
    failure is attributed to the change only when the base passes.
 3. **Verify, QA and review** the change as it is. Design, decide and plan cover only what the review needs.
