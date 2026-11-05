@@ -16,6 +16,7 @@ Goal: <one sentence, in the user's words>
 - D1: <a design decision the user agreed to> · from: <the plan file, section, or "<their words agreeing>">
 - N1: <a non-goal: what the change leaves alone> · from: "<the user's exact words>"
 - I1: <an inference: the run's own reading> · why: <one line: the code, history or request that settles it>
+- L1: <what this change outputs or does> · like: <the existing feature of its kind, file:line> · matches: <what>
 
 ## Reconcile
 | Spec | Finding | Kind | Settled by |
@@ -36,6 +37,25 @@ the line quotes the words that point to it (`· from: "<their words>" and their 
 shows. With no image and no words about it, it is an I line: the closest existing feature of the same kind, by
 file and line. A new section, panel, page, component or layout beside the existing one breaks that line: it needs
 words of the user's or a D line, and otherwise it is a Two readings row.
+
+## Like
+
+What the user asks for is rarely all they expect: a new reminder is expected to read like the project's other
+reminders, a new date to be in the zone its other dates are in, a new endpoint to fail like its siblings. Explore
+finds the existing feature of the same kind for each thing the change outputs or does (a message, email or
+notification, a date or time shown or sent, a page, a report, an export, an endpoint, a job) and reads how it
+does it. Each becomes an L line that names it by file and line and what the change matches, read from its code:
+
+- **Content:** every field it shows or sends (names, titles, people, places, amounts, links), its template,
+  layout or component, its subject or heading, its wording.
+- **Whose context:** whose time zone, locale, currency and units it uses and where it reads them (the record,
+  its owner, the organization, the recipient), its fallback when that is missing, and its date and time format.
+- **Behavior:** its errors and empty states, who receives or sees it, when and how often.
+
+`gate` stays at `FIX` while a spec with an R line has no L line. Where nothing of the kind exists, the line is
+`- L1: none · why: <what was searched>`. An L line is proven like an R: a test or a QA step shows the change's
+output beside the existing one's, field by field, with data in a time zone and locale other than UTC and the
+machine's own. A difference the user did not ask for is a defect, not a style choice.
 
 ## Reconcile
 
@@ -102,7 +122,7 @@ it is a question.
 
 ## Proven line by line
 
-Every R, C and D line is a checklist item whose text starts with its id: `track <run dir> add plan "R1: <the
+Every R, C, D and L line is a checklist item whose text starts with its id: `track <run dir> add plan "R1: <the
 line>"`. `gate` stays at `FIX` while a line has no item. The plan's acceptance rules and tests name the lines
 they prove (`Covers: R1, A2`, `A2` an acceptance rule of the plan), QA checks each one the way the user would,
 and the item closes with that proof (`track set <id> done "<the test or QA step and its result>"`). `report`

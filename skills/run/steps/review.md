@@ -27,6 +27,7 @@ on this tree: do not run the suite or the build again.
 Goal: <the plan's goal, one sentence>
 User's instructions: <each one from now.md, word for word; they settle the questions they answer>
 Acceptance: <the plan's acceptance criteria>
+Like: <each L line of spec.md>
 Repository: <worktree path>   Diff: git diff <base>...HEAD (`--stat` first, then each file's diff once)
 Checks run: <each check with its state from the run log>
 Plan: <run dir>/plan.md (its flow map, behavior table with the After column, must-not-change list and
@@ -45,6 +46,12 @@ Review against:
   diff adds or moves whose conditions differ from the side that held it before: a role, an ownership case, a
   state, a flag or a data shape that was allowed there and is not now. For each line the diff removes or
   tightens, find why it was there (`git blame` on the base) and who relied on it.
+- Like the rest: find on your own the existing feature of the same kind for each thing the diff outputs or does
+  (a message, email or notification, a date or time, a page, a report, an endpoint, a job), then check the L
+  lines. Compare the two field by field: every field the existing one shows or sends that this one lacks; whose
+  time zone, locale and units each uses and its fallback when missing (a UTC or server-zone fallback where the
+  project uses the record's, owner's or organization's is an **act**); its template, format, subject and
+  wording. Each difference the user did not ask for is a finding.
 - Proof: does each new test fail when the code it covers breaks, assert the real behavior, and reach the code
   the way the user does (from the screen, route or job, in the user's order, not internal calls)? Is every
   acceptance rule and every sequence in the plan's premortem (retry, cancel and reopen, another record) tested?

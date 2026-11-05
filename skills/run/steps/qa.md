@@ -45,16 +45,22 @@ tree.
    guessed pass. Save the shots in `<run dir>/qa/` as `<n>-<page>-before.png` and `<n>-<page>-after.png`. For a
    change users see as text (an endpoint's response, a command's output, an email or message), save the before
    and after the same way as `.txt`, trimmed to what changed. The report shows these pairs (Before and after).
-4. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,
+4. **Hold it beside its kind.** For each L line (`spec.md`, Like), produce the existing feature's output and
+   this change's with the same record, in a time zone and locale other than UTC and the machine's: the message
+   or email as sent (its rendered body and subject, from the project's mail preview, outbox, log or test
+   transport), the page, the response. Compare them field by field and save both in `<run dir>/qa/` as
+   `<n>-like-existing.*` and `<n>-like-change.*`. A field the existing one has and this one lacks, or a time in
+   another zone than the existing one's, is a fail unless the user asked for it.
+5. **Try to break it.** Bad, empty and long input, double submit, refresh mid-flow, a slow or failed dependency,
    a user without permission.
-5. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task named,
+6. **Walk the flow map.** Use each entrance and consumer in the plan's flow map, not only the one the task named,
    and each row of the behavior table you can reach, as that actor and with that data: a changed row gives its
    After result, every other row today's result. Check each must-not-change item and each risk whose check is a QA
    step. Where behavior differs by role, tenant, locale or state, repeat it for each (a seeded or test user per
    role). Then the related tests: use verify's result for this tree (`steps/verify.md`, Fast checks); run them
    yourself only when verify has none, and never the full suite. Compare
    its failures with the baseline: only new failures count.
-6. **Clean up** what you started: remove temporary data, and stop the servers unless the report will hand the
+7. **Clean up** what you started: remove temporary data, and stop the servers unless the report will hand the
    running app to the user (`steps/report.md`, Running app).
 
 ## Results

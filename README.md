@@ -62,6 +62,11 @@ missing, it works around the obstacle, records what it could not verify, and kee
   next step), it queues the next turn with the gate's facts and asks the run to check its last reply against the
   goal and the spec. When several nudges in a row change nothing, it tells the run to change approach. It never
   nudges a turn you stopped, a ❓ question waiting on you, or a finished report.
+- **Like the rest of the project.** For each thing a change outputs or does (a message or email, a date or time,
+  a page, an endpoint, a job), explore finds the existing feature of the same kind and the spec names it in an
+  L line: the fields it carries, its template, whose time zone and locale it uses. `gate` stays at FIX until the
+  spec has one, and each is proven by a test and a QA step that show both outputs side by side, field by field,
+  in a non-UTC zone. The review checks the same on its own.
 - **Spec questions that never block.** Each run writes `spec.md`: every requirement and constraint quoting your
   words, checked against the code. Where the two disagree and nothing settles it, the run posts a `❓` question
   and keeps building on its recommended answer; it waits for you only when nothing else is left, and never

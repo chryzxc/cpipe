@@ -367,6 +367,12 @@ def test_a_spec_question_waits_only_when_nothing_else_is_left(tmp_path, monkeypa
     assert facts.gate(run).startswith("FIX: spec R1 has no checklist item")  # every spec line is proven
     r1 = facts.track(run, "add", ["plan", "R1: deny strangers"])
     facts.track(run, "set", [r1, "done", "test_stranger_cannot_edit passes"])
+    assert facts.gate(run).startswith("FIX: spec has no L line")  # a requirement names what it is like
+    (run / "spec.md").write_text('# Spec\n- R1: deny strangers · from: "only owners may edit"\n'
+                                 '- L1: the edit guard · like: api/notes.py:40 · matches: 403 and its message\n')
+    assert facts.gate(run).startswith("FIX: spec L1 has no checklist item")  # and proves it
+    l1 = facts.track(run, "add", ["plan", "L1: the edit guard"])
+    facts.track(run, "set", [l1, "done", "test_stranger_gets_notes_403 passes"])
     assert "✅ R1: deny strangers · test_stranger_cannot_edit passes" in facts.report(run)
     q = facts.track(run, "add", ["build", "may", "admins", "edit?"])
     with pytest.raises(SystemExit, match="not a spec question"):  # a scope question names no spec line

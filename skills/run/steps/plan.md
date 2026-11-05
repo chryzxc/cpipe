@@ -21,7 +21,9 @@ yourself:
    and naming: the build follows it. For a change people see, find where the same kind of thing is shown today
    (the list it joins, the form, the report, the related features) and its format: fields, labels, layout,
    components. Each image the user sent shows the place and the look. The change goes there, in that format
-   (`spec.md`, Where it shows). Skip code that is not on a path below.
+   (`spec.md`, Where it shows). For each thing the change outputs or does, read the existing feature of the same
+   kind end to end: every field its message or page carries, its template, whose time zone and locale it uses and
+   its fallback. Each is an L line (`spec.md`, Like). Skip code that is not on a path below.
 3. **Flow map.** Trace every path through the code you will change, end to end, so nothing breaks out of sight:
    - **Entrances:** everything that reaches it: routes and endpoints, pages and UI actions, jobs, event and queue
      handlers, CLI commands, other modules and packages. Search for every usage across the whole repository, not
@@ -105,7 +107,7 @@ yourself:
 
 ## 4. Decide the open questions
 
-Write `spec.md` from the request and any planning the user did in the chat before the run, add each R, C and D
+Write `spec.md` from the request and any planning the user did in the chat before the run, add each R, C, D and L
 line to the checklist, and reconcile it with what explore found
 (`skill_view(name='cpipe:run', file_path='spec.md')`). A plan the user made first is the spec, not this plan:
 step 5 still runs on the plan profile. With `--spec`, the plan profile works out the spec with the user first
@@ -218,6 +220,8 @@ Before building, check the plan item by item and fix every no. It is your own ch
 - Every idea in Approach names its source (a path in this codebase, or the installed version's docs or types),
   and no step is on the not-standard list of `steps/build.md`, Standard approach.
 - Every acceptance rule has the `When … <result>` form and is covered by a test that starts at an entrance.
+- Every L line has an acceptance rule per field and context it matches (each field in the output, the time in
+  the zone the existing feature uses), and its test runs with data in a zone other than UTC and the machine's.
 - The plan is at most 12,000 characters and has only the sections above. Over it, cut prose, quoted code and
   repeats, and merge steps that change one function, until it fits.
 

@@ -56,9 +56,12 @@ def _for_user(evidence):
 ASKS = re.compile(r"^answer:\s*([RC]\d+)\b", re.I)
 NOT_ASK = ("{} is not a spec question: a question names the spec line it settles (`answer: R2: …`, the line in "
            "spec.md); any other choice is the run's")
-SPEC_LINE = re.compile(r"^\s*-\s*\**([RCDNI]\d+)\**\s*:(.*)$")
-TRACED = "RCD"  # the lines the delivery proves: requirements, constraints and the agreed design
+SPEC_LINE = re.compile(r"^\s*-\s*\**([RCDNIL]\d+)\**\s*:(.*)$")
+TRACED = "RCDL"  # the lines the delivery proves: requirements, constraints, the agreed design, what it is like
 UNTRACED = "spec {} has no checklist item: `track add plan \"{}: <the line>\"`, closed with its proof"
+UNLIKE = ("spec has no L line: name the existing feature of the same kind this change is like and what it matches "
+          "(`- L1: <output> · like: <file:line> · matches: <fields, format, template, whose time zone>`), or "
+          "`- L1: none · why: <nothing of its kind exists>` (spec.md, Like)")
 UNSOURCED = "spec {} has no source in the user's words (` · from: \"<their exact words>\"`); a reading of yours is an I line"
 
 
@@ -345,7 +348,10 @@ def gate(run_dir, sid=None):
             user.append(f"{i['id']} {i['evidence']}")
     fix += [UNSAID.format(line) for line in unsaid(run_dir, sid)]
     fix += [UNSOURCED.format(ident) for ident in unsourced(run_dir, sid)]
-    fix += [UNTRACED.format(ident, ident) for ident in _spec(run_dir) if ident[0] in TRACED and not _traced(items, ident)]
+    spec = _spec(run_dir)
+    fix += [UNTRACED.format(ident, ident) for ident in spec if ident[0] in TRACED and not _traced(items, ident)]
+    if any(k[0] == "R" for k in spec) and not any(k[0] == "L" for k in spec):
+        fix.append(UNLIKE)
     d = Path(run_dir) / "results"
     checks = sorted({p.name.rsplit(".", 2)[0] for p in [*d.glob("*.base.json"), *d.glob("*.head.json")]})
     if not checks:
