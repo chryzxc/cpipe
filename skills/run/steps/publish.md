@@ -97,7 +97,11 @@ Limits), then merge. A report that says "not merged" while every condition above
 Updating a pushed branch: merge the fetched base (`git merge origin/<base>`) into it, as the hosting service's
 update button does; only a branch never pushed is rebased. Never rebase a pushed branch and then merge its old
 history back to avoid a force push: every commit is then in it twice, and the pull request shows another merged
-pull request's changes as its own. A merge the
+pull request's changes as its own. A pull request's change is `git diff origin/<base>...HEAD`, never one
+against the base commit the hosting service last stored (it can lag behind). Files changed by work already
+merged into the base are never restored to an older base to shrink the diff: merging the pull request then
+reverts that work. A branch that holds its commits twice gets its one clean history back (the rebased copy),
+pushed with `--force-with-lease` to this delivery's own branch. A merge the
 repository's rules refuse until a person acts (a required approving review, a code owner) is never forced:
 no `--admin` or other bypass. Turn on auto-merge when the repository allows it (`gh pr merge --auto` with the
 method), and report `⚠️ Done except` that approval.
