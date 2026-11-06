@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.40.4
+version: 4.40.5
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -104,7 +104,12 @@ to the plan as numbered steps with their acceptance criteria, or, when it is a d
 follow-up after the report; say which in that line and note it in the run log. Steering that asks to reproduce or
 try a behavior (in a browser, an emulator, a simulator or on a device) is QA's work (`steps/qa.md`): give it to the
 QA profile in a brief of its own, running alongside the build, never in this chat, whose every reply resends the
-whole chat; its result comes back as a QA reply.
+whole chat; its result comes back as a QA reply. Steering that sets up the user's own local testing (start or
+restart the app, a test login, a temporary local-only edit such as skipping a password check) is not a change to
+deliver: do it yourself in this chat at once, the way the user said and no bigger, never through a role and never
+wrapped in setup they did not ask for (another database, a bootstrap script, network blocks). Keep a temporary edit
+out of every commit: note its file and line in `now.md`, name it in each later build brief as never to be staged,
+check `git diff --cached` before each commit, and revert it once the user and QA are done with it.
 
 **The user ends the run.** One message is not steering: one that tells you to stop or cancel the run, or not to
 use cpipe ("don't use cpipe", "do it without cpipe"), or `/cpipe-stop`. It ends the run now, whatever step it is
