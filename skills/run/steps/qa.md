@@ -31,6 +31,12 @@ Use the project's own dev server, test runner and tools. Write your own harness 
 reach, and keep it small. Evidence is the command or action and what you saw; no hash manifests or copies of the
 tree.
 
+0. **Find how the user runs it.** Before starting anything, look up the user's own way to run this project
+   locally and sign in to it, which beats the project's defaults: their skill for it, found among all skills in
+   this Hermes install the way `cpipe:run` (The user's own skills come first) shows, with words such as local
+   server, dev server, worktree, run the app, login; and their memory or notes on this project (a saved login
+   that fills only on one address, a name the app must run under). A tool the brief names that is not a command
+   here is looked up as a skill first. Follow what they say, and note in the run log which ones you used.
 1. **Use it on the real surface.** Start the app, CLI or service from the worktree the way the project does (its
    scripts, its dev-server setup), and start it again if it stops, and use the change as a user would: the page in
    a browser, the endpoint with a real request, the command with real arguments. First confirm it runs this tree's
