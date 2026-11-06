@@ -109,6 +109,9 @@ def test_continue_reuses_the_loaded_skill():
     cpipe._start(ctx, "fix the date filter")
     assert ctx.text.startswith("Load the skill cpipe:run") and cpipe.SCOPE in ctx.text
     assert "Lanes" in cpipe._start(ctx, "--parallel fix #1 and #2") and ctx.text.endswith("--parallel fix #1 and #2")
+    cpipe._start(ctx, "--spec add passkeys for clients")  # the spec is talked through, not run unattended
+    assert ctx.text.startswith(cpipe.MARKS[0]) and "without stopping: ask me only" not in ctx.text
+    assert "nothing is designed, planned or built until I agree" in ctx.text
 
 
 def test_a_dash_typed_for_two_hyphens_is_still_the_flag():

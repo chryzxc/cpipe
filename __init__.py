@@ -18,6 +18,14 @@ START = ("Load the skill cpipe:run with skill_view (without skill_view, read {sk
          "it to deliver this task: its files decide how the work is done, whichever profile this chat is. The "
          "Hermes root: {root}. Run it to the report without stopping: ask me only spec questions (cpipe:run, spec.md), "
          "keep working while they are open, and wait on them only when nothing else is left. " + SCOPE + "\n\n")
+# --spec: the spec is worked out with the user first, so the unattended wording above must not reach the planner.
+SPEC_START = START.replace(
+    "Run it to the report without stopping: ask me only spec questions (cpipe:run, spec.md), keep working while "
+    "they are open, and wait on them only when nothing else is left.",
+    "Work out the spec with me first (cpipe:run, spec.md, --spec): nothing is designed, planned or built until I "
+    "agree to it, and every reply of the planner comes to me, questions or not. Once I agree, run it to the report "
+    "without stopping.")
+assert SPEC_START != START
 
 # A continue reuses the skill already in the chat: reloading it on every continue resends ~10k tokens per reply.
 CONTINUE = ("Continue the cpipe run in this chat: load skill_view(name='cpipe:run', file_path='continue.md') and "
@@ -682,7 +690,7 @@ def _start(ctx, raw):
         resume = first.lower().rstrip(".!") in ("continue", "resume", "--continue", "--restart")
         sid = get_session_env("HERMES_SESSION_ID") or ""
         text = (CONTINUE.format(skill=SKILL, root=_root(), version=_version(), verdict=_verdict(sid)) if resume
-                else START.format(skill=SKILL, root=_root()))
+                else (SPEC_START if "--spec" in flags else START).format(skill=SKILL, root=_root()))
         if ctx.inject_message(text + task, role="user",
                               session_key=key):
             if not resume and first.lower() != "feedback" and "--parallel" not in flags and sid:

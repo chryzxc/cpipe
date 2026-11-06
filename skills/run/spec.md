@@ -138,7 +138,9 @@ in its place (`roles.md`) does it.
 
 1. **Set up** as any run (`steps/setup.md`), and write `spec.md` with the line `Status: drafting` under its
    title. While it says so, `gate` says `SPEC` and the turn may end on the planner's message.
-2. **Hand it over.** Brief the plan profile (`roles.md`, Handing a step to a role): explore (`steps/plan.md`,
+2. **Hand it over.** Brief the plan profile (`roles.md`, Handing a step to a role). The brief says this is the
+   spec conversation with the user, and leaves out the run's unattended wording (keep working, go with a
+   recommendation, ask only when needed): those are for after the spec is agreed. Explore (`steps/plan.md`,
    step 2), then work out with the user what to build, using its own skills, step by step until the idea is
    complete: as many questions and rounds as it takes, no limit from cpipe. It runs in a session of its own, where
    no one sees a clarify or question tool: every message for the user is its final reply, and the brief says so.
@@ -156,7 +158,9 @@ in its place (`roles.md`) does it.
    with the answers as `Q: <question> → <answer>` lines, word for word ("skipped" for a skipped one), add nothing
    of your own, and carry its next message the same way. When the planner asked nothing in `Q:` form, the call
    is not submitted, or this chat has no clarify tool, end the turn on the planner's message instead: the user's
-   reply is for the planner, resumed the same way.
+   reply is for the planner, resumed the same way. While `spec.md` says drafting, nothing else starts: no design,
+   plan or build brief, and no ⏳ wait on one. A planner that wrote its recommendations and asked nothing has
+   still not agreed anything with the user: carry its message, and the user agrees or corrects it.
 4. **Agreed.** When `spec.md` says `Status: agreed`, the run goes on unattended from plan step 5, the plan
    written in the same plan profile session, and builds and proves the spec line by line. A question later in
    the run is asked as in Asking mid-run.
