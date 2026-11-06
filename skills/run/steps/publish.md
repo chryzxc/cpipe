@@ -45,9 +45,12 @@ read in between proves nothing new. A failure the change caused is fixed like an
 commit, push, wait again. Save the base
 commit's checks to `results/ci-base.json`
 (`gh api repos/<owner>/<repo>/commits/<base sha>/check-runs --jq '[.check_runs[]|{name,conclusion,status}]'`):
-`gate` counts a job that fails on both as the base's. A skipped job (`skipping`) is the workflow's own choice, not
-a failure. A job that fails before any of its steps runs (billing, no runner) fails on the base too, so it is the
-base's. Neither holds a merge; both go under Risk. Checks still running after the wait are ⏳ in the report.
+`gate` counts a job that fails on both as the base's. A skipped job (`skipping`) is the workflow's own choice
+(its condition runs it on another event or branch, such as a deploy after the merge), so it is neither a failure
+nor a risk: the report's CI line names it once as skipped by the workflow, never with ⚠️, and it is no row in
+Needs attention or Risk. A job that fails before any of its steps runs (billing, no runner) fails on the base too,
+so it is the base's; it holds no merge and goes under Risk. Checks still running after the wait are ⏳ in the
+report.
 
 ## Early draft (when asked)
 
@@ -75,7 +78,8 @@ each delivery once these hold, each one an item in `track.json` (`cpipe:run`, Fa
 These are the whole condition. Nothing else holds a merge the user asked for: not a check that was not run here
 (the full suite, a typecheck tool that is missing), a CI job that was skipped, a flaky result whose cause is unknown, a deployment or
 production setup that was not verified, a reviewer's or a skill's general readiness gates, or wanting more
-proof. Those go under Risk in the report. When `gate` says `PASS`, merge in the same turn: no extra review,
+proof. Those go under Risk in the report, apart from a job the workflow skipped (Pull request). When `gate`
+says `PASS`, merge in the same turn: no extra review,
 comparison or readiness pass first. `FIX` is work, `WAIT` a wait line, `ASK` the ❓ waiting lines,
 `NEEDS-USER` the `⚠️ Done except` line.
 
