@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.40.1
+version: 4.40.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -112,7 +112,8 @@ at and whatever the gate says: close it (`active <run dir> --done`, Facts), kill
 started (its step, tick and limit commands) and add `stopped by the user` to the run log. Then do what the message
 asks directly, as After the report says, with no run steps, roles, briefs, reviews or report. A notification from
 the stopped run is ignored, and a later plain "continue" continues the user's own work; only `/cpipe-continue`
-reopens the run.
+reopens the run: its message starts "Continue the cpipe run in this chat", and you follow it, whatever the user
+typed after it.
 
 **Notes that are not for this run.** The chat can receive text mid-run that is neither the user nor this task: a
 note on a kanban card, a board digest, another card's crash or status. If it names no card this run created (run
