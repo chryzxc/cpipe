@@ -21,6 +21,9 @@ instructions name for the project (read it from the environment, never print it)
 (the project's seed, fixtures or sign-up page), then sign in and run QA behind the login. For a change a user
 sees, a stand-in (a DOM shim such as jsdom, a mocked API, a component harness) is never a pass: it proves the code,
 not the screen. When the real app cannot be started or signed in to, that item is **not run here** with the reason.
+A brief never narrows QA to stand-ins: a limit the user set on data (no shared database, no messages sent) is kept
+in how the app runs (a local or seeded database, the senders off or pointed at a local catcher), and the screen is
+still used. An app the report starts for the user (`steps/report.md`, Test it) is one QA can start.
 
 ## Steps
 

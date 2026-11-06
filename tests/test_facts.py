@@ -435,3 +435,32 @@ def test_ci_reads_through_passing_errors(tmp_path):
     assert facts.ci(tmp_path, 1, tries=3, run=down, sleep=lambda s: None)[0] == 1
     none = lambda *a, **k: types.SimpleNamespace(stdout="", stderr="no checks reported on the 'x' branch")
     assert facts.ci(tmp_path, 1, tries=3, run=none, sleep=lambda s: None) == (0, "CI done: no checks")
+
+
+def test_port_lists_source_lines_the_port_lost(tmp_path):
+    import subprocess
+    git = lambda *a: subprocess.run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True, text=True)
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t"), git("config", "user.name", "t")
+    page = tmp_path / "page.vue"
+    page.write_text("<form>\n</form>\n")
+    git("add", "."), git("commit", "-qm", "base")
+    base = git("rev-parse", "HEAD").stdout.strip()
+    page.write_text('<form>\n  <check label="Email" />\n  <tip text="Sent to your email." />\n  }\n</form>\n')
+    (tmp_path / "page.test.js").write_text("expect(tip).toBeVisible()\n")
+    git("add", "."), git("commit", "-qm", "source")
+    source = git("rev-parse", "HEAD").stdout.strip()
+    git("checkout", "-q", "-b", "port", base)
+    page.write_text('<form>\n    <check label="Email" />\n</form>\n')
+    out = facts.port(source, base, root=str(tmp_path)).splitlines()
+    assert out[:2] == ["page.vue: 1 source lines not in this change", '  + <tip text="Sent to your email." />']
+    assert out[2].startswith("page.test.js:") and out[-1].startswith("FIX: 2 source lines")
+    page.write_text('<form>\n<check label="Email" /><tip text="Sent to your email." />\n</form>\n')
+    (tmp_path / "page.test.js").write_text("expect(tip).toBeVisible()\n")
+    assert facts.port(source, base, root=str(tmp_path)) == "PASS"
+
+
+def test_skill_version_matches_plugin():
+    root = Path(__file__).parents[1]
+    v = lambda p: re.search(r"^version: (\S+)$", (root / p).read_text(), re.M).group(1)
+    assert v("skills/run/SKILL.md") == v("plugin.yaml")

@@ -151,7 +151,8 @@ added lines that look like a credential; the third, added escape hatches: a sile
   run log. Whether the tests assert something real is the review's to judge (`steps/review.md`, Proof).
 - **File size:** every file the change adds or grows is within the budget (below).
 - **Proof by undo:** every new test of an acceptance rule fails with the fix taken out (below).
-- **Port:** every row of the inventory is ported or has its reason (`playbooks/port.md`).
+- **Port:** every row of the inventory is ported or has its reason, and every line of the last `logs/port.txt`
+  has its row (`playbooks/port.md`).
 
 Fix what fails the gate (with a build profile, as one follow-up), then verify again.
 

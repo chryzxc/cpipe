@@ -15,6 +15,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py lanes <batch dir> [--at-once <n>] [--report <lane>]
   python3 cpipe.py step <lane dir>
   python3 cpipe.py cost <run dir> <worktree>
+  python3 cpipe.py port <source commit or from..to> <base> [--repo <source repository>]
 """
 
 import json
@@ -739,6 +740,39 @@ def lanes(batch, at_once=4, report_of=None):
     return "\n".join(out)
 
 
+def _added(diff):
+    """The added lines of a unified diff by file, whitespace folded."""
+    out, f = {}, None
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            f = line[6:] if line.startswith("+++ b/") else None
+        elif f and line.startswith("+"):
+            out.setdefault(f, []).append(" ".join(line[1:].split()))
+    return out
+
+
+def port(source, base, repo=None, root="."):
+    """Source lines the port does not carry: each added line of the source change that no added line of this tree
+    (its diff from the base, untracked files too) contains, the code's files before the tests'. Blank and
+    punctuation-only lines are left out."""
+    git = lambda d, *a: subprocess.run(["git", "-C", d, *a], capture_output=True, text=True, check=True).stdout
+    rng = source.split("..") if ".." in source else [source + "^1", source]
+    src = _added(git(repo or root, "diff", *rng))
+    here = " ".join(sum(_added(git(root, "diff", base)).values(), []))
+    for f in git(root, "ls-files", "--others", "--exclude-standard").splitlines():
+        here += " " + " ".join(Path(root, f).read_text(errors="replace").split())
+    lines, missing = [], 0
+    test = lambda f: bool(re.search(r"(^|/)(tests?|__tests__|spec)/|[._-](test|spec)\.", f))
+    for f, added in sorted(src.items(), key=lambda i: (test(i[0]), i[0])):
+        gone = [a for a in added if len(re.sub(r"\W", "", a)) >= 4 and a not in here]
+        if gone:
+            missing += len(gone)
+            lines += [f"{f}: {len(gone)} source lines not in this change"] + [f"  + {a}" for a in gone]
+    lines.append(f"FIX: {missing} source lines not in this change: port each, or give it its reason in the "
+                 "inventory (ported in another form: where; not applicable: why)" if missing else "PASS")
+    return "\n".join(lines)
+
+
 def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
@@ -774,6 +808,9 @@ def main(argv):
         print(cost(args[0], args[1]))
     elif cmd == "step":
         print(_now_step(Path(args[0])))
+    elif cmd == "port":
+        opt = dict(zip(args[2::2], args[3::2]))
+        print(port(args[0], args[1], opt.get("--repo")))
     elif cmd == "lanes":
         opt = dict(zip(args[1::2], args[2::2]))
         print(lanes(args[0], int(opt.get("--at-once", 4)), opt.get("--report")))

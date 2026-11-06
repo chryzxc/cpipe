@@ -389,7 +389,8 @@ Nothing counts until a command has run on the current tree and its result has be
 - **Facts decided in code.** A small helper (`bin/cpipe.py`, standard library only) reads the runners' own
   machine-readable output and decides what the model must not guess: which failures are new, baseline or flaky
   and what to rerun, whether every checklist item is closed with evidence, and whether the run may report. The
-  model runs what it asks for and never stops on "not sure".
+  model runs what it asks for and never stops on "not sure". A port gets the list of source lines its diff
+  does not contain, so a line lost inside a ported hunk shows.
 - **Baseline by name.** The baseline saves the names of failing tests and lint errors, and verify compares names,
   not counts: one new failing name is a fail even when the total went down.
 - **The standard way.** Every change follows how the codebase already does the same thing, else the documented way

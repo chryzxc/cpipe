@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.35.1
+version: 4.40.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -391,6 +391,9 @@ and prints data and a verdict, and you act on what it prints:
   prompt whatever a compaction drops, and `gate` and the watcher check the run. `/cpipe` marks the chat's run as
   started; until `active` registers its folder, every turn is told to set it up and register it, and nothing else
   counts.
+- `port <source> <base> [--repo <source repository>]`: each line the source change (a commit, or `<from>..<to>`)
+  adds that this tree's diff from the base does not contain, by file, the code's before the tests'
+  (`playbooks/port.md`).
 - `lanes <batch dir> [--at-once <n>] [--report <lane>]`: each lane of a `--parallel` batch as queued, running,
   reported or stopped, then what to do: `START`, `RESUME`, `WAIT` or `DONE` (`parallel.md`).
 
