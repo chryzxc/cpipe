@@ -622,7 +622,7 @@ steps to the same profiles; a profile with a `cpipe.yaml` of its own uses that o
 roles:
   plan: <profile>       # explores, decides and plans, on its own model
   build: <profile>      # builds, makes every fix and cleans its own diff; plans too without a plan profile
-  design: <profile>     # designs a new or changed screen
+  design: <profile>     # the designer: a new or changed screen's look and mockup
   qa: <profile>         # uses the change like a user would, where it can
   review: <profile>     # reviews the change
   security: <profile>   # second reviewer for security-sensitive changes
@@ -637,6 +637,19 @@ project's code. Each step session has the run's rules pinned in its system promp
 or time limit with work left hands off to a fresh session instead of growing further. The builder explores and plans
 too, unless a plan profile does: then planning runs on the plan profile's model, in its own session, and the builder
 works from its plan. Each role keeps one session per worktree.
+
+| Role | Does | Without its profile |
+|---|---|---|
+| plan | Explores the code, settles open questions, writes the plan; turns a mockup's values into acceptance rules | The builder plans |
+| design | The designer: for a new or changed screen, the states, copy and a visual direction, rendered as a mockup from the project's own fonts, tokens and components; after QA, checks QA's screenshots against it once | Whoever plans designs, with no mockup check after QA |
+| build | Writes the tests and the code, porting the mockup instead of choosing a look; makes every fix and cleans its diff | The chat's own profile and model, in a session of its own |
+| qa | Uses the change like a user; compares screenshots with the base and the mockup | The chat's own profile and model, in a session of its own |
+| review | Reads the diff fresh for regressions and quality | The chat's own profile and model, in a session of its own |
+| security | A second review for security-sensitive changes | Review covers it |
+| explore | A read-only map of the code, only when no plan or build profile is set | Not needed |
+
+The designer decides how a screen looks, and the builder follows it. With no design profile, whoever plans decides
+the look before any code is written (the builder too, when it plans), never while building.
 
 Whichever profile's chat runs `/cpipe`, the flow is cpipe's: that chat's persona and standing rules set its tone,
 not the steps, the roles or the bar for done. A chat without a skill tool reads cpipe's files from the plugin's
