@@ -632,7 +632,7 @@ def brief(run_dir, worktree, role, round_, resume=False, card=False):
         told = None
     if bad := unsaid(run_dir):  # a role takes these as settled, so a reading here decides the work
         raise SystemExit(" | ".join(UNSAID.format(line) for line in bad))
-    stance = parts.get(role, "")  # the role's floor for a profile with no persona of its own (header.md)
+    stance = parts["Floor"] + parts[role] if role in parts else ""  # yields to the profile's own (header.md)
     head = parts["Lean"] if resume else parts["Card" if card else "Direct"] + stance + parts["Rules"] + parts["Lean"]
     for key, value in (("<worktree>", worktree), ("<run dir>", run_dir), ("<role>", role),
                        ("<skill dir>", str(skill)), ("<instructions>", told and told.group(1).strip() or "none")):

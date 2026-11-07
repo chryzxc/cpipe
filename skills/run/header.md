@@ -1,9 +1,13 @@
 # The header of every role brief
 
 `cpipe.py brief` puts it in front of `brief-<role>-<round>.md` (`roles.md`, Handing a step to a role): Direct or Card,
-then the role's stance (the section named after the role), Rules and Lean for a new session, Lean alone for a
-resumed one. `<…>` parts are filled in by it. A stance is the floor a profile with no persona of its own works to;
-the profile's own persona and skills add to it.
+then Floor and the role's stance (the section named after the role), Rules and Lean for a new session, Lean
+alone for a resumed one. `<…>` parts are filled in by it. A stance is the floor for a profile whose persona and
+skills say nothing about the role; where they do, they win, so a well-set-up profile works its own way.
+
+## Floor
+How to work this role where your own persona and skills say nothing about it. Where they say how you plan, build,
+design, test or review, follow them over these lines; this brief's procedure and rules still apply.
 
 ## Direct
 Direct request from a delivery run. No task board, no cards: do this work and reply with the result.
