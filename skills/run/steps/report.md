@@ -131,10 +131,12 @@ to the lines that changed. Pairs QA could not judge come first. Omit for a chang
   request, a live service), every run it happens: **What** names the service and what was missing
   (`QA: no signed-in GitHub session`); **Why it matters** what was skipped; **Recommended** the exact command
   or setting that provides it;
-- a gap in the user's setup this run worked around, once per run it applied: a look change with no design
-  profile or no UI design skill of theirs (cpipe's guide was used), a review or security step with no profile of
-  its own. **What** names it (`Setup: no UI design skill`); **Why it matters** what a better setup would add;
-  **Recommended** the profile line for `cpipe.yaml` or the kind of skill to install;
+- a gap in the user's setup this run worked around, once per run it applied, each its own row: a step that ran on
+  cpipe's defaults because no skill of theirs covers it (a look change on cpipe's UI guide, a pull request on
+  cpipe's fallback sections); a role with no profile of its own (review on the builder's model, a look change with
+  no design profile); a capability a step lacked (QA with no browser tool, on a headless script or not run).
+  **What** names it (`Setup: no UI design skill`); **Why it matters** what a better setup would add here;
+  **Recommended** the profile line for `cpipe.yaml`, the kind of skill or the toolset that would close it;
 - an open finding, a baseline failure that stays, an unmet instruction, a step left ⚠️, ⏳ or ❌;
 - **consider** and **noted** findings, out-of-scope problems and known limits, and a follow-up delivery (a
   hotfix's root cause), with what you recommend and why; never only "unresolved".

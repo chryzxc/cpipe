@@ -44,19 +44,21 @@ tree.
 2. **Walk the acceptance criteria** and the design note's states one by one. Record what you did and what you
    saw for each.
 3. **Look at the UI.** When the change touches what a user sees, judge it by eye, not only by its tests. Use the
-   project's own browser test setup when it has one, so the shots repeat; otherwise the browser and image tools
-   you have. Screenshot each changed page and state on the base and on this tree, with the same data, at a
-   desktop and a phone width, and in dark mode when the app has one; also each page the flow map says must not
-   change. Look at each pair against the acceptance criteria and the design note: the intended change is there,
-   and nothing else broke (overlap, cut-off text, spacing, alignment, contrast, an empty, loading or error state
-   that looks wrong). When the design note has a mockup, hold each after shot beside it at the same width: a clear
-   gap in layout, hierarchy, spacing, type or color is a fail, with both shots named; so is a page that looks
-   unfinished (uneven spacing, misaligned edges, browser-default controls the mockup does not have). A visible
-   difference on a page that must not change is a fail. New console errors or failed
-   requests on these pages are fails too. A pair you cannot judge with confidence is **not run here**, never a
-   guessed pass. Save the shots in `<run dir>/qa/` as `<n>-<page>-before.png` and `<n>-<page>-after.png`. For a
-   change users see as text (an endpoint's response, a command's output, an email or message), save the before
-   and after the same way as `.txt`, trimmed to what changed. The report shows these pairs (Before and after).
+   project's own browser test setup when it has one, so the shots repeat; otherwise the browser and image tools you
+   have; with neither, a short script in `<run dir>/qa/` that drives a headless browser the project or this machine
+   already has (the project's end-to-end test dependency, a browser's headless screenshot mode), never one installed
+   for this. Screenshot each changed page and state on the base and on this tree, with the same data, at a desktop
+   and a phone width, and in dark mode when the app has one; also each page the flow map says must not change. Look
+   at each pair against the acceptance criteria and the design note: the intended change is there, and nothing else
+   broke (overlap, cut-off text, spacing, alignment, contrast, an empty, loading or error state that looks wrong).
+   When the design note has a mockup, hold each after shot beside it at the same width: a clear gap in layout,
+   hierarchy, spacing, type or color is a fail, with both shots named; so is a page that looks unfinished (uneven
+   spacing, misaligned edges, browser-default controls the mockup does not have). A visible difference on a page
+   that must not change is a fail. New console errors or failed requests on these pages are fails too. A pair you
+   cannot judge with confidence is **not run here**, never a guessed pass. Save the shots in `<run dir>/qa/` as
+   `<n>-<page>-before.png` and `<n>-<page>-after.png`. For a change users see as text (an endpoint's response, a
+   command's output, an email or message), save the before and after the same way as `.txt`, trimmed to what
+   changed. The report shows these pairs (Before and after).
 4. **Hold it beside its kind.** For each L line (`spec.md`, Like), produce the existing feature's output and
    this change's with the same record, in a time zone and locale other than UTC and the machine's: the message
    or email as sent (its rendered body and subject, from the project's mail preview, outbox, log or test

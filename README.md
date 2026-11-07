@@ -120,9 +120,12 @@ missing, it works around the obstacle, records what it could not verify, and kee
   Hermes setup. The quality of each step follows the profile that does it: its model, its persona (`SOUL.md`) and
   its skills. A designer profile with a UI design skill gives better screens, a reviewer on a strong model finds
   more, a builder that knows your stack writes code that fits. Without profiles, every step runs on the chat's own
-  model and skills. Where your setup has no skill for a step, cpipe's own step files are the default, with a
-  built-in UI design guide for how a screen looks, and the report's Needs attention names each gap the run hit
-  with the profile line or kind of skill that would close it.
+  model and skills.
+- **A floor under a thin setup.** With no skills, personas or profiles of your own, every step still has cpipe's
+  defaults: a full procedure per step (plan, build, review, security, QA, commit, pull request), a stance for each
+  role session (how a senior builder, reviewer, tester or designer works), a built-in UI design guide, and a
+  headless-browser fallback for QA. Your own setup adds to these and wins where it differs. The report's Needs
+  attention names each gap the run hit, with the profile line, kind of skill or toolset that would close it.
 - **Safe by default.** One worktree per delivery, your checkout untouched, no push, pull request, merge or
   message unless you ask for it.
 
@@ -897,7 +900,7 @@ cpipe/
     ├── contract.md       the rules pinned in the system prompt while a run is going
     ├── bin/cpipe.py      facts: check results, comparison, checklist, gate, report skeleton
     ├── parallel.md       --parallel: one background session per issue, reporting to the chat
-    ├── header.md         the working rules in front of every role brief
+    ├── header.md         the working rules and each role's stance in front of every role brief
     ├── bin/step.sh       runs one role session from its brief, under the time limit
     ├── bin/lane.sh       runs one --parallel lane in its own session, under the time limit
     ├── bin/limit.pl      the time limit and low priority of every background job

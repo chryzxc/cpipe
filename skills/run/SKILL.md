@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.42.0
+version: 4.43.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -300,8 +300,9 @@ still decides the flow and the guard rails: a user skill never authorizes a push
 ask for. Take from a user skill how the work is done, not a different flow: skip its parts about task boards, cards
 or handing work to other agents. Note in the run log which user skills you used.
 
-When none of the user's skills covers a step, cpipe's own text is the default: the step's file, and for how a
-screen looks `guides/ui.md` in this skill. Note it in the run log (`Skills: no UI design skill, cpipe's guide`);
+cpipe is the floor under a thin setup: when none of the user's skills covers a step, cpipe's own text is the
+default (the step's file, each role session's stance from `header.md`, and for how a screen looks `guides/ui.md`
+in this skill). Note it in the run log (`Skills: no UI design skill, cpipe's guide`);
 the report names it when the run needed it (`steps/report.md`, Needs attention).
 
 ## Playbooks
