@@ -116,6 +116,11 @@ missing, it works around the obstacle, records what it could not verify, and kee
   are narrowed while building, and results are reused while the tree is unchanged.
 - **Your setup comes first.** Your own skills for commits, pull requests, review or UI design override cpipe's
   defaults; your Hermes profiles can take over any role.
+- **As good as your Hermes agent.** cpipe sets the flow and the bar for done; the work itself is done by your
+  Hermes setup. The quality of each step follows the profile that does it: its model, its persona (`SOUL.md`) and
+  its skills. A designer profile with a UI design skill gives better screens, a reviewer on a strong model finds
+  more, a builder that knows your stack writes code that fits. Without profiles, every step runs on the chat's own
+  model and skills.
 - **Safe by default.** One worktree per delivery, your checkout untouched, no push, pull request, merge or
   message unless you ask for it.
 
