@@ -464,3 +464,16 @@ def test_skill_version_matches_plugin():
     root = Path(__file__).parents[1]
     v = lambda p: re.search(r"^version: (\S+)$", (root / p).read_text(), re.M).group(1)
     assert v("skills/run/SKILL.md") == v("plugin.yaml")
+
+
+def test_an_instruction_off_the_checklist_holds_the_gate(tmp_path, monkeypatch):
+    """'I will sign in, then QA adds screenshots' was never tracked, so the gate said PASS and the report began."""
+    monkeypatch.delenv("HERMES_SESSION_ID", raising=False)
+    closed(tmp_path)
+    put(tmp_path, "unit.base.json", passed=["a"])
+    put(tmp_path, "unit.head.json", passed=["a"])
+    (tmp_path / "now.md").write_text("## Instructions\n- [ ] I will login and QA adds\n  screenshots\n## Current\n")
+    assert "not on the checklist: I will login and QA adds" in facts.gate(tmp_path)
+    i = facts.track(tmp_path, "add", ["instruction", "I", "will", "login", "and", "QA", "adds", "screenshots"])
+    facts.track(tmp_path, "set", [i, "done", "qa/client-account.png"])
+    assert facts.gate(tmp_path).startswith("PASS")

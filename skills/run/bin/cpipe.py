@@ -348,6 +348,8 @@ def gate(run_dir, sid=None):
         elif i["status"] == "user":
             user.append(f"{i['id']} {i['evidence']}")
     fix += [UNSAID.format(line) for line in unsaid(run_dir, sid)]
+    texts = [_fold(i["text"]) for i in items]
+    fix += [UNTRACKED.format(line) for line in told if not any(t.startswith(line) for t in texts)]
     fix += [UNSOURCED.format(ident) for ident in unsourced(run_dir, sid)]
     spec = _spec(run_dir)
     fix += [UNTRACED.format(ident, ident) for ident in spec if ident[0] in TRACED and not _traced(items, ident)]
@@ -591,6 +593,7 @@ def _lineage(sid, db=None):
     return ids or [sid]
 
 
+UNTRACKED = "instruction not on the checklist: {} (track add instruction <its words from now.md>, then close it)"
 UNSAID = "instruction not in the user's words: {} (write only what they wrote; your reading goes in the run log)"
 
 

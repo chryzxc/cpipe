@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.40.5
+version: 4.40.6
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -372,8 +372,9 @@ and prints data and a verdict, and you act on what it prints:
   to do (`rerun-head`: run it alone on the delivery; `rerun-base`: run it on the base). Never undecided: do the
   reruns and compare again.
 - `track <run dir> add <step> <text>`, `set <id> done|skip|user <evidence>`, `open [<step>]`: the checklist in
-  `track.json`. When a step starts, add its Done when items, one per condition; at the report also each merge
-  condition and each instruction in `now.md`. An item closes only with its evidence (a result, a file, a count):
+  `track.json`. When a step starts, add its Done when items, one per condition; each instruction in `now.md`
+  the moment it arrives (step `instruction`, its words; `gate` holds until each is on); at the report each merge
+  condition. An item closes only with its evidence (a result, a file, a count):
   `done` when met, `skip` only as `n/a: <why it does not exist in this change>` or `machine: <what this machine
   cannot run>` and never for a user's instruction, `user` for what only the user may do, its evidence starting
   with its kind: `credentials:`, `destructive:`, `external:` (push, pull
