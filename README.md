@@ -78,8 +78,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
   on its own. A change people see is placed where the same kind of thing already shows, in its format, or where
   your screenshot shows, and that placement is a spec line the run proves on the screen.
 - **Your instructions are the contract.** Every instruction you give, in the task or later, is kept word for word
-  in the run's state, settles the questions it answers and wins over cpipe's defaults. The run is done when each
-  one is met (a merge when there are no regressions included), not when the steps have run once. Each line is
+  in the run's state, joins its checklist the moment it arrives, settles the questions it answers and wins over
+  cpipe's defaults. The gate holds while one is not on the checklist, and the run is done when each one is met
+  (a merge when there are no regressions included), not when the steps have run once. Each line is
   checked against what you wrote in the chat, so the run's own reading of an answer never passes as yours, and an
   answer that rules out one fix narrows how the goal is met, never the goal.
 - **Tests first, proof per kind.** A bug is reproduced with a failing test before the plan is written; a feature
@@ -94,6 +95,8 @@ missing, it works around the obstacle, records what it could not verify, and kee
 - **Independent review.** A reviewer that did not write the code reads the diff and hunts for regressions the
   plan missed; a second reviewer joins for security-sensitive changes.
 - **QA on the real surface.** The change is used the way a user would use it: the page, the endpoint, the CLI.
+  It starts the app and signs in the way your own skills and notes say (a name the app runs under, the address a
+  saved login fills on) before the project's defaults.
   UI changes are screenshotted before and after, at desktop and phone width, and judged by eye, including the
   pages that must not change. Whatever QA could not verify goes to the report's Test it list, never silently
   passed, and a missing sign-in or credential is named every run with the command that provides it. A pull
@@ -352,6 +355,10 @@ The chat's context is the scarcest resource in a long run, so cpipe decides what
   the project's code; anything that needs the code is a follow-up for the builder.
 - **Reproductions go to QA.** A request mid-run to reproduce or try a behavior (a browser, an emulator, a device)
   is a QA brief that runs alongside the build, never work in the chat.
+- **Local test setup is done at once.** A request mid-run to set up your own testing (start the app, a test
+  login, a temporary local-only edit such as skipping a password check) is done in the chat right away, exactly as
+  asked and no bigger, never sent to a role. A temporary edit is named in each build brief, kept out of every
+  commit and reverted when you and QA are done.
 - **Few writes per round.** The builder writes a new file whole and sends one change's edits in one reply, since
   each reply resends its whole session.
 - **Roles where they pay.** A profile starts cold and reads the code again, so one profile explores (a plan
@@ -913,7 +920,8 @@ ones, using the results of profiles and checks that kept running in the meantime
 **Can I steer it mid-run?**
 Yes. A message mid-run is steering: its instructions join the run's contract, it gets a one-line answer, and
 extra work joins the plan or waits for a follow-up after the report. A request such as "change the PR title" is
-done inside the run, and the run continues in the same reply.
+done inside the run, and the run continues in the same reply. Setting up your own testing ("start the app",
+"bypass the password locally") is done right away in the chat, the way you said.
 
 **Several issues in one task?**
 Each issue is its own delivery with its own branch, worktree and commit, run one after another (or at most two
