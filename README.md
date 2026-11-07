@@ -120,7 +120,9 @@ missing, it works around the obstacle, records what it could not verify, and kee
   Hermes setup. The quality of each step follows the profile that does it: its model, its persona (`SOUL.md`) and
   its skills. A designer profile with a UI design skill gives better screens, a reviewer on a strong model finds
   more, a builder that knows your stack writes code that fits. Without profiles, every step runs on the chat's own
-  model and skills.
+  model and skills. Where your setup has no skill for a step, cpipe's own step files are the default, with a
+  built-in UI design guide for how a screen looks, and the report's Needs attention names each gap the run hit
+  with the profile line or kind of skill that would close it.
 - **Safe by default.** One worktree per delivery, your checkout untouched, no push, pull request, merge or
   message unless you ask for it.
 
@@ -901,6 +903,7 @@ cpipe/
     ├── bin/limit.pl      the time limit and low priority of every background job
     ├── bin/tick.sh       the progress tick of a long wait
     ├── run-graph.html    page template that draws the run graph
+    ├── guides/ui.md      how a screen looks, when you have no UI design skill
     ├── steps/            one file per step, loaded when the run reaches it
     │   ├── setup.md      worktree, installs, baseline in a base worktree, time limit, tidy-up
     │   ├── plan.md       explore, decide, plan

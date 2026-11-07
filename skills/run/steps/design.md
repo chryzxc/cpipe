@@ -23,7 +23,8 @@ chore), write `Design: not needed (<reason>)` in the run log and go to step 4.
 3. **Flow.** The steps a user takes, where they start and end, what happens on cancel, retry and refresh.
 4. **Copy.** The exact words of labels, messages and errors, in the product's existing tone.
 5. **Look.** For a new screen or a change to how one looks (a redesign, cleaner, modern, more visual), choose one
-   visual direction with the user's UI design skill (`cpipe:run`, The user's own skills come first): the
+   visual direction with the user's UI design skill (`cpipe:run`, The user's own skills come first), else this
+   skill's `guides/ui.md`: the
    hierarchy and layout, the type scale, spacing, colors as the project's tokens or new ones with values, the one
    element that makes it distinctive, and motion with durations. Keep the design system for a small change; a
    request for a new look is not met by restating the current one. Then render it: a self-contained HTML mockup
