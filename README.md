@@ -94,6 +94,10 @@ missing, it works around the obstacle, records what it could not verify, and kee
   keep working.
 - **Independent review.** A reviewer that did not write the code reads the diff and hunts for regressions the
   plan missed; a second reviewer joins for security-sensitive changes.
+- **A look designed before it is built.** For a new screen or a redesign, design picks one visual direction with
+  your UI design skill and renders it as a mockup from the project's own fonts, tokens and components, with the
+  values to match at each width. The plan makes those values acceptance rules, the builder ports the mockup and
+  screenshots its page against it, QA compares its shots with it, and the design profile checks QA's shots once.
 - **QA on the real surface.** The change is used the way a user would use it: the page, the endpoint, the CLI.
   It starts the app and signs in the way your own skills and notes say (a name the app runs under, the address a
   saved login fills on) before the project's defaults.
@@ -215,7 +219,7 @@ The report that follows is shown in [The report](#the-report).
 flowchart TD
     T(["/cpipe task"]) --> S1["1 · Set up<br/>worktree, dependencies, baseline"]
     S1 --> S2["2 · Explore<br/>flow map, premortem"]
-    S2 --> S3["3 · Design<br/>states, flow, copy"]
+    S2 --> S3["3 · Design<br/>states, flow, copy, mockup"]
     S3 --> S4["4 · Decide<br/>open questions become assumptions"]
     S4 --> S5["5 · Plan<br/>numbered build steps"]
     S5 -->|plan gate| S6["6 · Build<br/>tests first, one change at a time"]
@@ -571,7 +575,7 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 |---|---|---|---|
 | 1 | Set up | Finds the repository and base, creates the worktree, starts the run log, removes merged cpipe worktrees, finds the checks, and starts the installs and the baseline in a base worktree in the background | `steps/setup.md` |
 | 2 | Explore | Reads the project's instructions, learnings and lessons, maps entrances, exits, guards and today's behavior, runs the premortem, reproduces a bug | `steps/plan.md` |
-| 3 | Design | States, flow, copy, accessibility and edge cases of anything user-facing | `steps/design.md` |
+| 3 | Design | States, flow, copy, accessibility and edge cases of anything user-facing; for a look change, a visual direction and a mockup the build and QA are held to | `steps/design.md` |
 | 4 | Decide | Settles open questions as assumptions with a one-line reason each | `steps/plan.md` |
 | 5 | Plan | Goal, scope, behavior change, acceptance, must-not-change, risks, tests, checks, and numbered build steps that pass the plan gate | `steps/plan.md` |
 | 6 | Build | Tests first, then the change, one verified step at a time; it builds and is cleaned before it is handed back | `steps/build.md` |
@@ -642,7 +646,8 @@ skill kept in another profile (one for pull-request content, say) still shapes t
 | Role | Time budget |
 |---|---|
 | plan | 30 minutes |
-| design, explore | 10 minutes |
+| design | 15 minutes, and 10 for its check of QA's shots |
+| explore | 10 minutes |
 | qa, review, security | 15 minutes |
 | build | 60 minutes for a delivery's first brief, 25 for a follow-up |
 

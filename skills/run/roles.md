@@ -105,6 +105,9 @@ pages to learn the command line.
      worktree before `<run dir>/logs/install.done` exists (`steps/plan.md` step 2, Wait for the dependencies).
    - **design:** the request, the worktree and the steps of `steps/design.md`. Ask for the design note in
      `<run dir>/design.md`.
+   - **design check** (`steps/design.md`, Design check): resume the design session with QA's after shots' paths.
+     Ask it, without editing anything, for each difference from its mockup as shot, what is off and the fix as
+     values, at most 10, or `matches`. Budget 600.
    - **qa:** the acceptance criteria (`plan.md`), the design note and its mockup, how to start the app, and
      verify's broader suite result for this tree (start QA once verify has it). Ask it to follow `steps/qa.md`
      without editing the repository and reply with each item's result and evidence, a passed item in one line.
@@ -137,7 +140,7 @@ pages to learn the command line.
    instructions and the open checklist items in the session's system prompt, so they hold through a compaction
    there too (in a profile with the cpipe plugin enabled; elsewhere the brief is the only copy).
    `--reasoning` only when a budget is set (Budget, above), on every run and resume. Run budgets in seconds: a
-   delivery's first build brief 3600, a build follow-up 1500; plan 1800; design and explore 600; review, security
+   delivery's first build brief 3600, a build follow-up 1500; plan 1800; design 900, explore 600; review, security
    and qa 900. These are fixed: never raise one for a slow suite or a large change; a profile at its budget
    replies with what it finished. The limit is the budget plus 300, so a profile that hangs still ends and its
    notification still comes. Write its process id and log in the run log and `now.md`, and once it ends, the

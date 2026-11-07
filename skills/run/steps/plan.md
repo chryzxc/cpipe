@@ -156,7 +156,8 @@ not list.
   plan (`steps/build.md`, Standard approach). The report's Approach table is built from this
   and the assumptions.
 - **Acceptance:** numbered `A1`, `A2`…, each one rule in the form `When <trigger, state or input>, <who or
-  what> <observable result>`, including the design note's states. Each edge the premortem keeps (an empty or
+  what> <observable result>`, including the design note's states and, for a mockup, its listed values at each
+  width as rules QA can measure. Each edge the premortem keeps (an empty or
   wrong response, a failure after the write, a retry, a cancel and reopen) is a rule of its own, never a clause
   of another, so each gets its own test.
 - **Must not change:** numbered `M1`…; for each row of the behavior table that keeps today's result, each

@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.40.7
+version: 4.41.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -261,8 +261,10 @@ file tool from this skill's directory (the start message names its `SKILL.md`). 
 The review only reads the code, so it never waits for the tests: start it in the background as soon as the
 first verify's narrow tests, light checks and completion gate pass, then start the related tests and the build. QA
 runs the change, so it starts once those finish (one heavy job at a time). Nobody edits the worktree while they
-read it: wait for all of them, then fix everything in one round (new failures, findings, QA failures), verify,
-and re-run only the QA items that failed together with the delta review.
+read it: for a look change with a mockup, the design profile checks QA's after shots against it as soon as QA
+replies (`steps/design.md`, Design check). Wait for all of them, then fix everything in one round (new failures,
+findings, QA failures, the design check's fixes), verify, and re-run only the QA items that failed together with
+the delta review.
 
 When the user asks for a draft pull request on the first commit, early or first, it opens right after the first
 verify passes its gate, and later rounds push to it (`steps/publish.md`, Early draft); step 11 finishes it. Asked

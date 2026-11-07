@@ -27,7 +27,9 @@ chore), write `Design: not needed (<reason>)` in the run log and go to step 4.
    hierarchy and layout, the type scale, spacing, colors as the project's tokens or new ones with values, the one
    element that makes it distinctive, and motion with durations. Keep the design system for a small change; a
    request for a new look is not met by restating the current one. Then render it: a self-contained HTML mockup
-   in `<run dir>/design/` with the real copy, and a desktop and a phone screenshot of it you have looked at.
+   in `<run dir>/design/` with the real copy, built from the project's own fonts, tokens and component markup so
+   the builder ports it rather than redraws it, and a desktop and a phone screenshot of it you have looked at.
+   List the values the build must match, per width: sizes, spacing, colors, motion.
 6. **Accessibility.** Labels for inputs, keyboard use and focus order, contrast, meaning not carried by color
    alone.
 7. **Shape.** Narrow and wide screens for UI; fields, types, status codes and errors for an API; flags, output
@@ -40,6 +42,14 @@ A design note: the surfaces, each state, the copy, the edge cases, and for a loo
 and the mockup's paths. A design profile writes it to
 `<run dir>/design.md`; otherwise it goes into the plan. Each item becomes an acceptance criterion in the plan.
 Product questions the code does not settle are decided in step 4 and recorded as assumptions.
+
+## Design check
+
+After QA, for a look change with a mockup and a `design` profile: that profile, resumed in its design session,
+holds QA's after shots beside its mockup at the same widths and replies with what differs, each as the shot, what
+is off, and the fix as values (`gap 24px, not 12px`), or `matches`. Its fixes are act findings for the fix round
+(`steps/review.md`, section 3); the QA re-run of that round checks them against the mockup, and no second design
+check follows. Without a design profile, QA's comparison with the mockup is the check.
 
 ## Rules
 
