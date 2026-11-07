@@ -49,7 +49,10 @@ tree.
    desktop and a phone width, and in dark mode when the app has one; also each page the flow map says must not
    change. Look at each pair against the acceptance criteria and the design note: the intended change is there,
    and nothing else broke (overlap, cut-off text, spacing, alignment, contrast, an empty, loading or error state
-   that looks wrong). A visible difference on a page that must not change is a fail. New console errors or failed
+   that looks wrong). When the design note has a mockup, hold each after shot beside it at the same width: a clear
+   gap in layout, hierarchy, spacing, type or color is a fail, with both shots named; so is a page that looks
+   unfinished (uneven spacing, misaligned edges, browser-default controls the mockup does not have). A visible
+   difference on a page that must not change is a fail. New console errors or failed
    requests on these pages are fails too. A pair you cannot judge with confidence is **not run here**, never a
    guessed pass. Save the shots in `<run dir>/qa/` as `<n>-<page>-before.png` and `<n>-<page>-after.png`. For a
    change users see as text (an endpoint's response, a command's output, an email or message), save the before

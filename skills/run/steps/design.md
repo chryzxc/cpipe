@@ -22,24 +22,32 @@ chore), write `Design: not needed (<reason>)` in the run log and go to step 4.
    permission-denied where it applies. Say what the user sees in each.
 3. **Flow.** The steps a user takes, where they start and end, what happens on cancel, retry and refresh.
 4. **Copy.** The exact words of labels, messages and errors, in the product's existing tone.
-5. **Accessibility.** Labels for inputs, keyboard use and focus order, contrast, meaning not carried by color
+5. **Look.** For a new screen or a change to how one looks (a redesign, cleaner, modern, more visual), choose one
+   visual direction with the user's UI design skill (`cpipe:run`, The user's own skills come first): the
+   hierarchy and layout, the type scale, spacing, colors as the project's tokens or new ones with values, the one
+   element that makes it distinctive, and motion with durations. Keep the design system for a small change; a
+   request for a new look is not met by restating the current one. Then render it: a self-contained HTML mockup
+   in `<run dir>/design/` with the real copy, and a desktop and a phone screenshot of it you have looked at.
+6. **Accessibility.** Labels for inputs, keyboard use and focus order, contrast, meaning not carried by color
    alone.
-6. **Shape.** Narrow and wide screens for UI; fields, types, status codes and errors for an API; flags, output
+7. **Shape.** Narrow and wide screens for UI; fields, types, status codes and errors for an API; flags, output
    and exit codes for a CLI.
-7. **Edge cases.** Long text, many items, no items, slow or failed requests, two people acting at once.
+8. **Edge cases.** Long text, many items, no items, slow or failed requests, two people acting at once.
 
 ## Output
 
-A design note: the surfaces, each state, the copy, the edge cases. A design profile writes it to
+A design note: the surfaces, each state, the copy, the edge cases, and for a look change the direction's values
+and the mockup's paths. A design profile writes it to
 `<run dir>/design.md`; otherwise it goes into the plan. Each item becomes an acceptance criterion in the plan.
 Product questions the code does not settle are decided in step 4 and recorded as assumptions.
 
 ## Rules
 
-- Reuse the existing design system and patterns; a new pattern needs a written reason.
+- Reuse the existing design system and patterns; a new pattern needs a written reason, which a request for a new
+  look is.
 - Never change the behavior of an existing surface the task does not name.
 - Never drop accessibility for looks.
-- No code in this step: it is a note, not an implementation.
+- No change to the repository in this step: the note and the mockup live in the run directory.
 
 ## Done when
 

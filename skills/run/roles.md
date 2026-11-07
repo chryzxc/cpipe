@@ -89,8 +89,10 @@ pages to learn the command line.
      file it writes in the worktree is a bug's reproducing test. Ask for this reply: the kind; the plan's step
      count and its assumptions; the RED output when it reproduced a bug; anything left.
    - **build**, a delivery's first brief: the request, the worktree, the base commit, the check commands from set
-     up, the path `<run dir>/plan.md`, and the design note's path when there is one. After a plan profile, ask it
-     to read the plan and the playbook it names (`playbooks/<kind>.md`), then follow `steps/build.md` step 6,
+     up, the path `<run dir>/plan.md`, and the design note's path when there is one. For a screen change, also the
+     mockup's paths and the user's UI design skill: ask it to load that skill and build to the mockup's values,
+     then screenshot its page at the mockup's widths and fix what differs before it replies. After a plan profile,
+     ask it to read the plan and the playbook it names (`playbooks/<kind>.md`), then follow `steps/build.md` step 6,
      reading only the files and lines the plan names. Without one, ask it to follow `steps/plan.md` steps 2, 4
      and 5 first (explore, decide, plan; set up's checks and baseline are given, so it skips them) and write the
      plan to that path. Step 6 ends with the build or typecheck, the narrow tests and the cleanup of its own
@@ -103,9 +105,9 @@ pages to learn the command line.
      worktree before `<run dir>/logs/install.done` exists (`steps/plan.md` step 2, Wait for the dependencies).
    - **design:** the request, the worktree and the steps of `steps/design.md`. Ask for the design note in
      `<run dir>/design.md`.
-   - **qa:** the acceptance criteria (`plan.md`), the design note, how to start the app, and verify's broader
-     suite result for this tree (start QA once verify has it). Ask it to follow `steps/qa.md` without editing the
-     repository and reply with each item's result and evidence, a passed item in one line.
+   - **qa:** the acceptance criteria (`plan.md`), the design note and its mockup, how to start the app, and
+     verify's broader suite result for this tree (start QA once verify has it). Ask it to follow `steps/qa.md`
+     without editing the repository and reply with each item's result and evidence, a passed item in one line.
    - **review:** the reviewer brief from `steps/review.md`; **security:** its security brief, not the full one.
    - **plan review** (`steps/plan.md`, Second opinion): the review profile in a session of its own, so the code
      review later still reads the diff fresh. The brief gives the request, the worktree and `plan.md`'s path,
