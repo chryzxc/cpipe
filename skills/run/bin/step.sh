@@ -7,9 +7,11 @@ if [ "$1" = hermes ]; then shift  # written out, so the chat's UI shows the hand
 elif [ "$1" = -p ]; then prof=$2; shift 2; set -- -p "$prof" chat "$@"; else set -- chat "$@"; fi
 # A resumed session keeps the run budget it started with and refuses the flag, so only a new one gets it
 case " $* " in *" --resume "*) again=--resume run= ;; *) again= run="--run-budget $budget" ;; esac
+# Only a role with no profile of the user's runs on this chat's model (`cpipe.py chat`, with -m): it gets the stance
+case " $* " in *" -m "*) bare=--bare ;; *) bare= ;; esac
 case $role in build) turns=150 ;; plan) turns=120 ;; *) turns=60 ;; esac
 log="$r/logs/$role-$n.txt" q="$r/logs/query-$role-$n.md"; mkdir -p "$r/logs"
-python3 "$(dirname "$0")/cpipe.py" brief "$r" "$w" "$role" "$n" $again >"$q" 2>"$log" ||
+python3 "$(dirname "$0")/cpipe.py" brief "$r" "$w" "$role" "$n" $again $bare >"$q" 2>"$log" ||
   { echo "exit 2 (no query: see the line above)" >>"$log"; tail -n 30 "$log"; exit 2; }
 CPIPE_RUN="$r" CPIPE_STEP="$role" perl "$(dirname "$0")/limit.pl" "$limit" hermes "$@" -Q \
   --query-file "$q" --in "$w" $run --max-turns "$turns" >"$log" 2>&1

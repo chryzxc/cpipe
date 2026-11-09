@@ -122,9 +122,10 @@ missing, it works around the obstacle, records what it could not verify, and kee
   more, a builder that knows your stack writes code that fits. Without profiles, every step runs on the chat's own
   model and skills.
 - **A floor under a thin setup.** With no skills, personas or profiles of your own, every step still has cpipe's
-  defaults: a full procedure per step (plan, build, review, security, QA, commit, pull request), a stance for each
-  role session (how a senior builder, reviewer, tester or designer works), a built-in UI design guide, and a
-  headless-browser fallback for QA. Your own setup adds to these and wins where it differs. The report's Needs
+  defaults: a full procedure per step (plan, build, review, security, QA, commit, pull request), a stance for a
+  role with no profile of yours (how a senior builder, reviewer, tester or designer works), a built-in UI design
+  guide, and a headless-browser fallback for QA. A role you give a profile works by that profile's persona and
+  skills alone, and your own skills win over cpipe's defaults wherever they cover a step. The report's Needs
   attention names each gap the run hit, with the profile line, kind of skill or toolset that would close it.
 - **Safe by default.** One worktree per delivery, your checkout untouched, no push, pull request, merge or
   message unless you ask for it.
@@ -905,7 +906,7 @@ cpipe/
     ├── contract.md       the rules pinned in the system prompt while a run is going
     ├── bin/cpipe.py      facts: check results, comparison, checklist, gate, report skeleton
     ├── parallel.md       --parallel: one background session per issue, reporting to the chat
-    ├── header.md         the working rules and each role's stance in front of every role brief
+    ├── header.md         the working rules in front of every role brief; a stance for a role with no profile
     ├── bin/step.sh       runs one role session from its brief, under the time limit
     ├── bin/lane.sh       runs one --parallel lane in its own session, under the time limit
     ├── bin/limit.pl      the time limit and low priority of every background job

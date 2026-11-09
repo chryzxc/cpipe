@@ -350,10 +350,12 @@ def test_brief_puts_the_header_in_front(tmp_path):
     again = facts.brief(str(tmp_path), "/wt", "review", 1, resume=True)
     assert again.startswith("Every reply resends") and "Work only in" not in again
     assert facts.brief(str(tmp_path), "/wt", "review", 1, card=True).startswith("Card from a delivery run.")
-    assert "You review code you did not write." in first and "You review code" not in again
-    assert first.index("follow them over these lines") < first.index("You review code")
+    assert "You review code" not in first  # a profile of the user's works by its own setup
+    bare = facts.brief(str(tmp_path), "/wt", "review", 1, bare=True)
+    assert bare.index("follow them over these lines") < bare.index("You review code") < bare.index("Work only in")
+    assert "You review code" not in facts.brief(str(tmp_path), "/wt", "review", 1, resume=True, bare=True)
     (tmp_path / "brief-other-1.md").write_text("x")
-    assert "You review code" not in facts.brief(str(tmp_path), "/wt", "other", 1)  # a role with no stance
+    assert "You review code" not in facts.brief(str(tmp_path), "/wt", "other", 1, bare=True)  # no stance for it
 
 
 def test_a_spec_question_waits_only_when_nothing_else_is_left(tmp_path, monkeypatch):

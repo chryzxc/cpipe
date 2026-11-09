@@ -1,9 +1,9 @@
 # The header of every role brief
 
 `cpipe.py brief` puts it in front of `brief-<role>-<round>.md` (`roles.md`, Handing a step to a role): Direct or Card,
-then Floor and the role's stance (the section named after the role), Rules and Lean for a new session, Lean
-alone for a resumed one. `<…>` parts are filled in by it. A stance is the floor for a profile whose persona and
-skills say nothing about the role; where they do, they win, so a well-set-up profile works its own way.
+then Rules and Lean for a new session, Lean alone for a resumed one. `<…>` parts are filled in by it. A role with
+no profile of the user's (it runs on the chat's own model) also gets Floor and its stance, the section named after
+the role, before Rules; a role the user gave a profile works by that profile's persona and skills alone.
 
 ## Floor
 How to work this role where your own persona and skills say nothing about it. Where they say how you plan, build,

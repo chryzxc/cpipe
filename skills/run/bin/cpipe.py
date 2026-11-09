@@ -622,8 +622,9 @@ def chat():
     return " ".join(flags)
 
 
-def brief(run_dir, worktree, role, round_, resume=False, card=False):
-    """A role's query: header.md's lines, filled in, then <run dir>/brief-<role>-<round>.md as the run wrote it."""
+def brief(run_dir, worktree, role, round_, resume=False, card=False, bare=False):
+    """A role's query: header.md's lines, filled in, then <run dir>/brief-<role>-<round>.md as the run wrote it.
+    bare: the role has no profile of the user's, so it gets cpipe's stance; a profile works by its own setup."""
     skill = Path(__file__).resolve().parent.parent
     parts = dict(re.findall(r"(?ms)^## (\w+)\n(.*?)(?=^## |\Z)", (skill / "header.md").read_text()))
     try:
@@ -632,7 +633,7 @@ def brief(run_dir, worktree, role, round_, resume=False, card=False):
         told = None
     if bad := unsaid(run_dir):  # a role takes these as settled, so a reading here decides the work
         raise SystemExit(" | ".join(UNSAID.format(line) for line in bad))
-    stance = parts["Floor"] + parts[role] if role in parts else ""  # yields to the profile's own (header.md)
+    stance = parts["Floor"] + parts[role] if bare and role in parts else ""
     head = parts["Lean"] if resume else parts["Card" if card else "Direct"] + stance + parts["Rules"] + parts["Lean"]
     for key, value in (("<worktree>", worktree), ("<run dir>", run_dir), ("<role>", role),
                        ("<skill dir>", str(skill)), ("<instructions>", told and told.group(1).strip() or "none")):
@@ -807,7 +808,7 @@ def main(argv):
     elif cmd == "chat":
         print(chat())
     elif cmd == "brief":
-        print(brief(*args[:4], "--resume" in args, "--card" in args), end="")
+        print(brief(*args[:4], "--resume" in args, "--card" in args, "--bare" in args), end="")
     elif cmd == "cost":
         print(cost(args[0], args[1]))
     elif cmd == "step":
