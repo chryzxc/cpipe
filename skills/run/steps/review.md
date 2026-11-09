@@ -225,7 +225,8 @@ review: their tests and the checks are their proof.
 - An **act** finding is never left for the user to fix or to ask for again: no report goes out while one is
   open and the run can still fix it.
 - Two review rounds at most (one full review, one delta review), plus the security delta above: one, never a
-  chain. Its findings are fixed and proven by their tests, or listed, with no further review.
+  chain. Its findings are fixed and proven by their tests, or listed, with no further review. The counts are
+  `step.sh`'s Rounds line (`SKILL.md`, Rounds), never your own tally.
 - Every review gap is closed by the run, never handed to the user.
 
 ## Done when

@@ -346,7 +346,7 @@ def test_brief_puts_the_header_in_front(tmp_path):
     first = facts.brief(str(tmp_path), "/wt", "review", 1)
     assert first.startswith("Direct request") and "Work only in /wt." in first and "<" + "instructions>" not in first
     assert "- merge it if no regressions" in first and "## Step" not in first
-    assert f"{tmp_path}/review-reply.md" in first and first.endswith("read them.\n\nReview this change.\n")
+    assert f"{tmp_path}/review-reply.md" in first and first.endswith("this whole session.\n\nReview this change.\n")
     again = facts.brief(str(tmp_path), "/wt", "review", 1, resume=True)
     assert again.startswith("Every reply resends") and "Work only in" not in again
     assert facts.brief(str(tmp_path), "/wt", "review", 1, card=True).startswith("Card from a delivery run.")
@@ -483,3 +483,19 @@ def test_an_instruction_off_the_checklist_holds_the_gate(tmp_path, monkeypatch):
     i = facts.track(tmp_path, "add", ["instruction", "I", "will", "login", "and", "QA", "adds", "screenshots"])
     facts.track(tmp_path, "set", [i, "done", "qa/client-account.png"])
     assert facts.gate(tmp_path).startswith("PASS")
+
+
+def test_rounds_count_since_the_latest_plan(tmp_path):
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    order = ["plan-1", "build-1", "review-1", "security-1", "build-2", "review-2", "plan-2", "build-3",
+             "review-3", "build-4", "build-5", "build-6", "security-2"]
+    for t, name in enumerate(order):
+        q = logs / f"query-{name}.md"
+        q.write_text("x")
+        os.utime(q, (1000 + t, 1000 + t))
+    line = facts.rounds(tmp_path)
+    assert line.startswith("Rounds since plan 2: build 4 (3 since the last plan or review), review 1, security 1")
+    assert "build at its cap of 3" in line and "review at" not in line
+    (tmp_path / "new" / "logs").mkdir(parents=True)
+    assert facts.rounds(tmp_path / "new").startswith("Rounds since the start: build 0")

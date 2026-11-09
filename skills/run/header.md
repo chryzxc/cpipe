@@ -96,3 +96,6 @@ A test you run to prove one point is the narrowest command that shows it, never 
 Read a diff as `git diff --stat` first, then each file's diff once; never the whole diff again.
 Skip the project's general guides (architecture, standards, design, contributing, repo maps, notes) unless
 your step says to read them.
+Reply once: when every item of this brief is done and checked, or blocked by something this session cannot do
+(name it and what you tried). Never reply with part done and the rest listed as left: each new brief resends
+this whole session.

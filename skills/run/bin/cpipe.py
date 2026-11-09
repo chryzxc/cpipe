@@ -11,7 +11,8 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py report <run dir> [--check]
   python3 cpipe.py active <run dir> [--done]
   python3 cpipe.py chat
-  python3 cpipe.py brief <run dir> <worktree> <role> <round> [--resume] [--card]
+  python3 cpipe.py brief <run dir> <worktree> <role> <round> [--resume] [--card] [--bare]
+  python3 cpipe.py rounds <run dir>
   python3 cpipe.py lanes <batch dir> [--at-once <n>] [--report <lane>]
   python3 cpipe.py step <lane dir>
   python3 cpipe.py cost <run dir> <worktree>
@@ -643,6 +644,29 @@ def brief(run_dir, worktree, role, round_, resume=False, card=False, bare=False)
         path = path.with_name(f"brief-{role}.md")
     return head + "\n" + path.read_text()
 
+ROUND_CAPS = {"build": 3, "review": 2, "security": 3}  # SKILL.md, Rounds: build counts since the last plan or review
+
+
+def rounds(run_dir):
+    """The role rounds since the latest plan round, from logs/query-<role>-<n>.md in launch order."""
+    runs = []
+    for q in (Path(run_dir) / "logs").glob("query-*-*.md"):
+        if m := re.fullmatch(r"query-(\w+)-(\d+)\.md", q.name):
+            runs.append((q.stat().st_mtime, int(m[2]), m[1]))
+    runs.sort()
+    plans = [i for i, (_, _, role) in enumerate(runs) if role == "plan"]
+    since = runs[plans[-1] + 1:] if plans else runs
+    count = {role: sum(r == role for *_, r in since) for role in ("build", "review", "security", "qa")}
+    builds = 0
+    for *_, role in since:
+        builds = 0 if role == "review" else builds + (role == "build")
+    head = f"plan {runs[plans[-1]][1]}" if plans else "the start"
+    line = (f"Rounds since {head}: build {count['build']} ({builds} since the last plan or review), "
+            f"review {count['review']}, security {count['security']}, qa {count['qa']}.")
+    full = [f"{role} at its cap of {cap}" for role, cap in ROUND_CAPS.items()
+            if (builds if role == "build" else count[role]) >= cap]
+    return line + (" At the cap (SKILL.md, Rounds): " + "; ".join(full) + "." if full else "")
+
 
 REPORT_LINE = re.compile(r"^(?:✅ Done|⚠️? Done except|✅ Approved|⚠️? Changes needed)", re.M)
 QUICK = 300  # a lane that stopped this soon after its start waits before it is resumed
@@ -809,6 +833,8 @@ def main(argv):
         print(chat())
     elif cmd == "brief":
         print(brief(*args[:4], "--resume" in args, "--card" in args, "--bare" in args), end="")
+    elif cmd == "rounds":
+        print(rounds(args[0]))
     elif cmd == "cost":
         print(cost(args[0], args[1]))
     elif cmd == "step":

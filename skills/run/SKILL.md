@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.44.1
+version: 4.45.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -363,8 +363,9 @@ The plan has its own file beside it, `plan.md`, so a builder reads the plan and 
 current step and its next action; the processes running (process id, log or reply file); the roles line; the rules
 taken from user skills; and the open items. Every reply that ends a turn (a wait, a pause, the report) first
 writes its line in `now.md`'s current step: that write is what lets the run's gate check the turn's end.
-Rewrite it in the same reply as each step's first tool call and whenever something starts or finishes in the
-background. It is what you read to resume, instead of the whole log.
+Rewrite it once per step, as one patch in the same reply as the step's first tool call, and in the reply that
+ends a turn; a process that starts or finishes in between goes in at the next of those, never in a write of its
+own (each write is a reply that resends this whole chat). It is what you read to resume, instead of the whole log.
 
 ## Facts
 
@@ -492,6 +493,12 @@ that already failed is never repeated.
 - Each round closes more than it opens. A round whose fix led to new findings, twice in a row, or a fix that
   breaks working behavior: go back to the last green tree and take the narrower approach (`steps/review.md`,
   When fixes fight). Looping is for the goal, not for every finding a reviewer can raise beside it.
+- **Rounds.** `step.sh` ends with the run's round counts since the latest plan (`cpipe.py rounds`). A role it
+  names at its cap gets no further round under this plan. Build at 3 (since the last plan or review): the
+  approach is not closing, so re-plan (`steps/plan.md`, step 5) before another build brief, unless all that is
+  left is a failing check or compile error of the last round. Review at 2 and security at 3: their open findings
+  are fixed and proven by their tests, or listed as **consider**, with no further review. A re-plan starts a new
+  count; it never grows the design to answer a finding the user's words do not carry.
 
 ## Guard rails
 
