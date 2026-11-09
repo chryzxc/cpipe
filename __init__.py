@@ -12,7 +12,8 @@ SKILL = Path(__file__).parent / "skills" / "run" / "SKILL.md"
 
 # The user's standing answer to "may I go beyond the named fix?": a model asks it however the skill words its rules.
 SCOPE = ("Whatever the goal needs inside the worktree is authorized, a larger change or another design than the fix "
-         "the task names included: never ask me for scope. Only credentials, destructive actions, what leaves this "
+         "the task names included: never ask me for scope. A limit I wrote myself (only these PRs, only this screen) "
+         "still holds: what lies outside it goes to the report. Only credentials, destructive actions, what leaves this "
          "machine beyond what I asked for, and the approvals Hermes asks are mine.")
 START = ("Load the skill cpipe:run with skill_view (without skill_view, read {skill} with your file tool) and follow "
          "it to deliver this task: its files decide how the work is done, whichever profile this chat is. The "

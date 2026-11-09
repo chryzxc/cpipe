@@ -150,7 +150,9 @@ is the proof: no review or QA round follows it.
 - Never skip, weaken or delete a test, and never add `.only`, `skip` or expected-failure markers.
 - Never hard-code secrets, test credentials or environment-specific paths.
 - No new dependency unless the plan names it.
-- Do not commit in this step; the report step commits (or the early draft, `steps/publish.md`).
+- The builder does not commit; the report step commits. When the user asked for a draft or for incremental
+  commits and pushes, the run commits and pushes each round itself once its verify passes (`steps/publish.md`,
+  Early draft), and a brief never tells the builder that nothing is pushed.
 
 ## Done when
 

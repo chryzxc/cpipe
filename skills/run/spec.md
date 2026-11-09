@@ -73,8 +73,11 @@ another of the user's lines, by the project's history, or by the most likely and
 those becomes an I line and its row names it. A row becomes a question only when its answers lead to behavior the
 user would notice and nothing they wrote or the code says which. Never a question about the scope, which fix,
 how big the change may be or how hard to try: those are the run's (the user's standing answer in the run
-message). What only the user may do (credentials, destructive actions, what leaves this machine) is a `user`
-item of its kind, not a question.
+message). Which things the user named is not scope but their words: a range or list that reads two ways
+("#12 -> #15" as the two ends or every item between, "these PRs" after several were mentioned) is a Two
+readings row, asked as a question when the readings change what is built, never settled by an I line. What
+only the user may do (credentials, destructive actions, what leaves this machine) is a `user` item of its kind,
+not a question.
 
 ## Asking mid-run
 

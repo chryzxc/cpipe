@@ -293,7 +293,7 @@ run it, and never when it is one of your instructions. The run cannot end a turn
 still has work, nor on a wait while nothing it started is running: through Hermes' `pre_verify` hook, the gate's
 verdict goes back to the chat, which keeps working. A continue carries the gate's verdict and the skill's version,
 so the chat starts from the facts on the current rules, and every run message carries your standing answer on
-scope: whatever the goal needs inside the worktree is authorized.
+scope: whatever the goal needs inside the worktree is authorized, and a limit you wrote yourself still holds.
 
 | Loop | Bound |
 |---|---|
@@ -512,6 +512,11 @@ A finding is not a requirement: what the goal needs comes from your words and th
 case the project really has; otherwise it is **consider** and offered as follow-up work. A fix never grows into a
 new subsystem you did not ask for, and a later `/cpipe` in the same worktree carries the earlier run's
 instructions and spec, so a review before merge checks the change against them instead of growing it.
+
+A port, backport or replay of named pull requests or commits measures against its source: a problem the source
+has in the same form is **consider**, and only what the adaptation to the target caused is fixed. A range or list
+that reads two ways (both ends, or every item between) is asked, never guessed. What a builder reports as
+remaining is sorted like a finding before it becomes another round.
 
 ### Durable state and recovery
 

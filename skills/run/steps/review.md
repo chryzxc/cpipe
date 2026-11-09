@@ -132,6 +132,14 @@ in a task about reads). The goal is met when the change does what it says and br
 neighbourhood is a follow-up delivery, listed in the report. A delta review sorts its new findings the same way:
 one is **act** only when the fix round caused it or the goal still is not met.
 
+**A port measures against its source.** When the goal is to carry existing changes over (a port, backport or
+replay of named pull requests or commits onto another branch or codebase), the source diff is the goal: the
+change is done when the target does what the source does, adapted to the target's models, routes and
+permissions. A problem the source has in the same form (the same race, the same unguarded path, a path it never
+touched) is **consider**, even though the code is new on the target; it is **act** only when the adaptation
+caused it (the target's shared model leaks what the source kept apart) or the user asked for it. Every hunk of
+the change names the source hunk it ports or the adaptation that hunk needs; anything else is out of scope.
+
 **A finding is not a requirement.** What the goal needs comes from the user's words and the spec, never from a
 reviewer's "should": bounded work on every loop, fairness under any arrival pattern, exactly-once delivery,
 resistance to volumes or writers the project does not have. Such a finding is **act** only with a concrete case

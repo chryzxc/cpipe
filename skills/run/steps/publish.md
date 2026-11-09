@@ -54,7 +54,8 @@ report.
 
 ## Early draft (when asked)
 
-When the user asks for a draft pull request on the first commit, early or first, do not wait for this step. As
+When the user asks for a draft pull request on the first commit, early or first, or for incremental commits
+pushed as the work goes, do not wait for this step. As
 soon as the first verify passes its completion gate (step 7), commit as above, push, and open the draft with the
 body above, its verification marked in progress. Then QA and the review go on as usual; each later round is a
 new commit pushed to the same branch. Here, the last commit is pushed and the body updated to the final state. A

@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.43.1
+version: 4.44.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -484,7 +484,10 @@ that already failed is never repeated.
   goal only when an instruction asks for it.
 - A gap a builder or re-plan discloses counts as the goal unmet only when it traces to the user's words; one that
   traces to a finding's own "should" is **consider** (`steps/review.md`, A finding is not a requirement). A
-  re-plan never grows the design past what the user asked: no new subsystem the goal did not name.
+  re-plan never grows the design past what the user asked: no new subsystem the goal did not name. The same
+  holds for what a builder reports as remaining: each item is sorted like a review finding before it becomes a
+  brief, and one that traces neither to the user's words nor to the change's own regressions goes to the report,
+  not into another round. A brief never asks to "reconcile other paths" the goal does not name.
 - Each round closes more than it opens. A round whose fix led to new findings, twice in a row, or a fix that
   breaks working behavior: go back to the last green tree and take the narrower approach (`steps/review.md`,
   When fixes fight). Looping is for the goal, not for every finding a reviewer can raise beside it.
