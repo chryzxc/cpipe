@@ -190,6 +190,7 @@ def test_the_report_waits_for_the_loop(tmp_path, monkeypatch):
     # A passing report closes the chat's run, so later messages are ordinary work, not the run's.
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    (tmp_path / "now.md").touch()
     facts.active(tmp_path)
     assert facts.check_report(tmp_path).endswith("the run is closed for this chat")
     assert not (tmp_path / "home/cpipe/active/s1.json").exists()
@@ -198,6 +199,10 @@ def test_the_report_waits_for_the_loop(tmp_path, monkeypatch):
 def test_active_registers_this_chat(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profiles" / "p"))
     monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    with pytest.raises(SystemExit, match="no now.md"):  # a flag or a wrong path registers nothing
+        facts.active(tmp_path / "--help")
+    (tmp_path / "run").mkdir()
+    (tmp_path / "run" / "now.md").touch()
     facts.active(tmp_path / "run")
     assert json.loads((tmp_path / "cpipe/active/s1.json").read_text())["run_dir"] == str((tmp_path / "run").resolve())
     facts.active(tmp_path / "run", done=True)
@@ -255,6 +260,35 @@ def test_an_instruction_the_user_never_wrote_holds_the_gate_and_every_brief(tmp_
     assert "not in the user's words" in facts.gate(run)
     with pytest.raises(SystemExit, match="not in the user's words"):
         facts.brief(str(run), "/w", "plan", 1)
+
+
+def test_a_run_continued_in_a_new_chat_keeps_the_users_words_of_the_first(tmp_path, monkeypatch):
+    """The second chat's gate rejected every instruction and spec quote the user wrote in the first one."""
+    db = sqlite3.connect(tmp_path / "state.db")
+    db.execute("CREATE TABLE sessions (id TEXT, parent_session_id TEXT)")
+    db.execute("CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT)")
+    db.executemany("INSERT INTO sessions VALUES (?, ?)", [("a1", None), ("b1", None)])
+    db.executemany("INSERT INTO messages VALUES (?, ?, ?)", [
+        ("a1", "user", 'Port only #1. Remove item I2 ("no new risks").'), ("b1", "user", "continue")])
+    db.commit()
+    db.close()
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "now.md").write_text(
+        '## Instructions\n- not yet: "Port only #1."\n- met: "Remove item I2 (\\"no new risks\\")."\n'
+        '- not yet: "Run it to the report without stopping: ask me only spec questions (cpipe:run, spec.md), keep '
+        'working while they are open, and wait on them only when nothing else is left."\n## Current\n')
+    (run / "spec.md").write_text('# Spec\n- C1: keep auth · from: "Remove item I2 (\\"no new risks\\")."\n')
+    assert facts._told(run) == ["Port only #1.", 'Remove item I2 ("no new risks").']  # not cpipe's run text
+    monkeypatch.setenv("HERMES_SESSION_ID", "a1")
+    facts.active(run)
+    monkeypatch.setenv("HERMES_SESSION_ID", "b1")
+    assert facts.unsaid(run) == [] and facts.unsourced(run) == []
+    (run / "chats").unlink()  # a run registered before the chats record: its chats' records still count
+    assert facts.unsaid(run) == []
+    (tmp_path / "cpipe" / "active" / "a1.json").unlink()
+    assert facts.unsaid(run) == ["Port only #1.", 'Remove item I2 ("no new risks").']
 
 
 def test_a_whole_loop_through_the_command_line(tmp_path):

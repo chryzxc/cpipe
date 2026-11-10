@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.45.0
+version: 4.45.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -359,7 +359,9 @@ graph is drawn from (`steps/report.md`, Run graph):
 
 The plan has its own file beside it, `plan.md`, so a builder reads the plan and not the whole log. Beside both is
 `now.md`, rewritten as the run moves: at most 25 lines, plus the instructions. Its first section is
-`## Instructions`: the user's instructions word for word, each marked met or not yet. Then `## ` sections for the
+`## Instructions`: the user's instructions word for word, one per line as `- [ ] <their words>` (not yet) or
+`- [x] <their words>` (met); the run text `/cpipe` puts before the task is cpipe's, not theirs. Then `## `
+sections for the
 current step and its next action; the processes running (process id, log or reply file); the roles line; the rules
 taken from user skills; and the open items. Every reply that ends a turn (a wait, a pause, the report) first
 writes its line in `now.md`'s current step: that write is what lets the run's gate check the turn's end.

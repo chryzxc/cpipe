@@ -19,6 +19,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py port <source commit or from..to> <base> [--repo <source repository>]
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -333,6 +334,8 @@ def gate(run_dir, sid=None):
         fix.append("no checklist: add each step's Done when, the user's instructions and the merge conditions "
                    "with track add, closing each with its evidence")
     for i in items:
+        if i.get("step") == "instruction" and _launch_text(i["text"]):  # cpipe's run text, tracked as if the user's
+            continue
         if i["status"] == "open" or (i["status"] != "user" and not i["evidence"]):
             fix.append(f"{i['id']} {i['text']}")
         elif i["status"] == "user" and not _for_user(i["evidence"]):
@@ -507,9 +510,16 @@ def active(run_dir, done=False):
             for suffix in (".json", ".watch"):
                 path.with_name(each + suffix).unlink(missing_ok=True)
         return f"run closed for {sid}"
+    if not (Path(run_dir) / "now.md").is_file():  # a flag or a wrong path would leave the chat without its run
+        raise SystemExit(f"no now.md in {run_dir}: give the run dir (setup.md), nothing was registered")
     path.parent.mkdir(parents=True, exist_ok=True)
     run = str(Path(run_dir).resolve())
     path.write_text(json.dumps({"run_dir": run}) + "\n")
+    # Every chat that ran it, kept after --done: a run continued in a new chat checks the user's words of all of them.
+    chats = Path(run_dir) / "chats"
+    if sid not in (chats.read_text().split() if chats.is_file() else []):
+        with chats.open("a") as f:
+            f.write(sid + "\n")
     out = f"run registered for {sid}"
     for lane in (hermes_root() / "cpipe" / "lanes").glob("*/*/run"):
         if lane.read_text().strip() not in (run_dir, run) or _alive(lane.parent):
@@ -524,21 +534,49 @@ def _fold(text):
     return " ".join(str(text).split())
 
 
+TOLD = re.compile(r'^- (?:\[.?\]|met:|not yet:)\s*(.*)$')  # `- [x] words`, or `- met: "words"` as SKILL.md words it
+
+
 def _told(run_dir):
-    """The lines under now.md's Instructions: the user's instructions, word for word."""
+    """The lines under now.md's Instructions: the user's instructions, word for word, without cpipe's own run
+    text that /cpipe puts before the task (copied there, it is a line only the report could ever meet)."""
     try:
         told = re.search(r"(?ms)^## Instructions\n(.*?)(?=^## |\Z)", (Path(run_dir) / "now.md").read_text())
     except OSError:
         return []
-    lines = [re.sub(r"^- \[.?\]\s*", "", line).strip() for line in told.group(1).splitlines()
-             if line.startswith("- [")] if told else []
-    return [line for line in lines if line]
+    lines = []
+    for line in told.group(1).splitlines() if told else []:
+        if m := TOLD.match(line.strip()):
+            words = m[1].strip()
+            if len(words) > 1 and words[0] == words[-1] == '"':
+                words = words[1:-1].replace('\\"', '"')
+            if words and not _launch_text(words):
+                lines.append(words)
+    return lines
+
+
+def _launch_text(line):
+    """True for a line of cpipe's own run text (__init__.py START, SPEC_START, CONTINUE), not the user's."""
+    global _LAUNCH
+    if _LAUNCH is None:
+        try:
+            spec = importlib.util.spec_from_file_location("cpipe_plugin", Path(__file__).resolve().parents[3] / "__init__.py")
+            plugin = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(plugin)
+            _LAUNCH = _fold(" ".join((plugin.START, plugin.SPEC_START, plugin.CONTINUE)))
+        except (OSError, AttributeError, SyntaxError):
+            _LAUNCH = ""
+    return len(_fold(line)) > 20 and _fold(line) in _LAUNCH
+
+
+_LAUNCH = None
 
 
 def unsaid(run_dir, sid=None):
-    """Lines under now.md's Instructions the user never wrote in this chat: a reading passed off as their words."""
+    """Lines under now.md's Instructions the user never wrote in a chat of this run: a reading passed off as their
+    words."""
     told = _told(run_dir)
-    said = _said(sid or os.environ.get("HERMES_SESSION_ID", "")) if told else None
+    said = _said(sid or os.environ.get("HERMES_SESSION_ID", ""), run_dir) if told else None
     return [line for line in told if _fold(line) not in said] if said is not None else []
 
 
@@ -547,27 +585,48 @@ def unsourced(run_dir, sid=None):
     spec = {k: v for k, v in _spec(run_dir).items() if k[0] in "RC"}
     if not spec:
         return []
-    said = _said(sid or os.environ.get("HERMES_SESSION_ID", ""))
+    said = _said(sid or os.environ.get("HERMES_SESSION_ID", ""), run_dir)
     out = []
     for ident, line in spec.items():
-        quote = re.search(r'from:\s*"([^"]+)"', line)
-        if not quote or (said is not None and _fold(quote.group(1)) not in said):
+        quote = re.search(r'from:\s*"((?:[^"\\]|\\.)+)"', line)  # the user's own quotes come escaped: \"
+        if not quote or (said is not None and _fold(quote.group(1).replace('\\"', '"')) not in said):
             out.append(ident)
     return out
 
 
-def _said(sid):
-    """Everything the user wrote in this chat and the chats it was compacted from, whitespace folded; None
-    outside a Hermes chat (nothing to check against)."""
+def _chats(run_dir):
+    """The chats that ran this run: its `chats` record (`active`) and the chats registered on it now."""
+    try:
+        ids = (Path(run_dir) / "chats").read_text().split()
+    except OSError:
+        ids = []
+    run = str(Path(run_dir).resolve())
+    for rec in (hermes_root() / "cpipe" / "active").glob("*.json"):
+        try:
+            if json.loads(rec.read_text()).get("run_dir") == run and rec.stem not in ids:
+                ids.append(rec.stem)
+        except (OSError, ValueError):
+            pass
+    return ids
+
+
+def _said(sid, run_dir=None):
+    """Everything the user wrote in this chat, in every other chat of this run (a run continued in a new chat), and
+    the chats each was compacted from, whitespace folded; None outside a Hermes chat (nothing to check against)."""
     db_path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "state.db"
     if not (sid and db_path.is_file()):
         return None
-    said = []
+    said, seen = [], set()
     db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        for each in _lineage(sid, db):
-            said += [str(c) for (c,) in db.execute(
-                "SELECT content FROM messages WHERE session_id = ? AND role = 'user' AND content IS NOT NULL", (each,))]
+        for chat in [sid, *(_chats(run_dir) if run_dir else [])]:
+            for each in _lineage(chat, db):
+                if each in seen:
+                    continue
+                seen.add(each)
+                said += [str(c) for (c,) in db.execute(
+                    "SELECT content FROM messages WHERE session_id = ? AND role = 'user' AND content IS NOT NULL",
+                    (each,))]
     finally:
         db.close()
     return _fold(" ".join(said))
