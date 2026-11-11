@@ -589,7 +589,7 @@ Only `cpipe:run` is registered; the steps are files inside it, so they never sho
 
 | # | Step | Does | File |
 |---|---|---|---|
-| 1 | Set up | Finds the repository and base, creates the worktree, starts the run log, removes merged cpipe worktrees, finds the checks, and starts the installs and the baseline in a base worktree in the background | `steps/setup.md` |
+| 1 | Set up | Finds the repository and base, moves a chat that is in no project into your project that holds the repository, creates the worktree, starts the run log, removes merged cpipe worktrees, finds the checks, and starts the installs and the baseline in a base worktree in the background | `steps/setup.md` |
 | 2 | Explore | Reads the project's instructions, learnings and lessons, maps entrances, exits, guards and today's behavior, runs the premortem, reproduces a bug | `steps/plan.md` |
 | 3 | Design | States, flow, copy, accessibility and edge cases of anything user-facing; for a look change, a visual direction and a mockup the build and QA are held to | `steps/design.md` |
 | 4 | Decide | Settles open questions as assumptions with a one-line reason each | `steps/plan.md` |

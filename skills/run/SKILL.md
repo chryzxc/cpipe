@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.45.1
+version: 4.47.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -407,7 +407,8 @@ and prints data and a verdict, and you act on what it prints:
   run, so the run's rules, the user's instructions and the open items stay pinned in this chat's system
   prompt whatever a compaction drops, and `gate` and the watcher check the run. `/cpipe` marks the chat's run as
   started; until `active` registers its folder, every turn is told to set it up and register it, and nothing else
-  counts.
+  counts. A `project:` line it prints names the user's project that holds the repository while this chat is in
+  none: move this chat into it before anything else (`steps/setup.md`, This chat's project), on a continue too.
 - `port <source> <base> [--repo <source repository>]`: each line the source change (a commit, or `<from>..<to>`)
   adds that this tree's diff from the base does not contain, by file, the code's before the tests'
   (`playbooks/port.md`).

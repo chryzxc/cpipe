@@ -527,7 +527,42 @@ def active(run_dir, done=False):
         # Its launcher is gone and a chat picked the run up: the dispatcher leaves the lane to it (lanes()).
         (lane.parent / "taken").write_text(sid + "\n")
         out += f"\nlane {lane.parent}: taken over by this chat; the dispatcher posts this run's report.md"
+    if not os.environ.get("CPIPE_LANE") and (line := _project(run_dir, sid)):
+        out += "\n" + line
     return out
+
+
+def _within(path, folder):
+    return bool(path and folder) and (path == folder or path.startswith(folder.rstrip("/") + "/"))
+
+
+def _project(run_dir, sid):
+    """A `project:` line when this chat sits in none of the user's projects and one holds the run's repository
+    (setup.md, This chat's project); a lane is filed by its launcher. Read-only, silent on anything missing."""
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    try:
+        common = subprocess.run(["git", "-C", str(run_dir), "rev-parse", "--path-format=absolute",
+                                 "--git-common-dir"], capture_output=True, text=True, timeout=10).stdout.strip()
+        repo = str(Path(common).parent) if common else ""
+        db = sqlite3.connect(f"file:{home / 'projects.db'}?mode=ro", uri=True, timeout=1)
+        try:
+            folders = db.execute("SELECT p.name, f.path FROM projects p JOIN project_folders f ON f.project_id = p.id"
+                                 " WHERE p.archived = 0 UNION SELECT name, primary_path FROM projects"
+                                 " WHERE archived = 0 AND primary_path IS NOT NULL").fetchall()
+        finally:
+            db.close()
+        db = sqlite3.connect(f"file:{home / 'state.db'}?mode=ro", uri=True, timeout=1)
+        try:
+            row = db.execute("SELECT cwd, git_repo_root FROM sessions WHERE id = ?", (sid,)).fetchone() or ("", "")
+        finally:
+            db.close()
+    except (OSError, sqlite3.Error, subprocess.SubprocessError):
+        return ""
+    if any(_within(p, f) for p in row if p for _, f in folders):
+        return ""  # already in a project, whichever it is
+    holds = sorted((len(f), name) for name, f in folders if _within(repo, f))
+    return (f"project: this chat is in no project, and project '{holds[-1][1]}' holds {repo}: move this chat into it"
+            " with your tool for the user's projects (steps/setup.md, This chat's project)") if holds else ""
 
 
 def _fold(text):

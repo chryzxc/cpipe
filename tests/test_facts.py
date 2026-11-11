@@ -533,3 +533,31 @@ def test_rounds_count_since_the_latest_plan(tmp_path):
     assert "build at its cap of 3" in line and "review at" not in line
     (tmp_path / "new" / "logs").mkdir(parents=True)
     assert facts.rounds(tmp_path / "new").startswith("Rounds since the start: build 0")
+
+
+def test_active_names_the_project_that_holds_the_repository(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    os.system(f"git -C {repo} init -q")
+    (repo / ".git" / "cpipe").mkdir()
+    run = repo / ".git" / "cpipe"
+    (run / "now.md").touch()
+    db = sqlite3.connect(home / "projects.db")
+    db.executescript("CREATE TABLE projects (id TEXT, name TEXT, primary_path TEXT, archived INTEGER);"
+                     "CREATE TABLE project_folders (project_id TEXT, path TEXT);"
+                     f"INSERT INTO projects VALUES ('p1', 'Repo', '{repo.resolve()}', 0), ('p2', 'Other', '/elsewhere', 0);")
+    db.commit()
+    db = sqlite3.connect(home / "state.db")
+    db.executescript("CREATE TABLE sessions (id TEXT, parent_session_id TEXT, cwd TEXT, git_repo_root TEXT);"
+                     "INSERT INTO sessions VALUES ('s1', NULL, '', NULL), ('s2', NULL, '/elsewhere/x', NULL);")
+    db.commit()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    assert "project 'Repo' holds" in facts.active(run)
+    monkeypatch.setenv("HERMES_SESSION_ID", "s2")  # already in a project: it stays there
+    assert "project:" not in facts.active(run)
+    monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    monkeypatch.setenv("CPIPE_LANE", str(tmp_path))  # a lane is filed by its launcher
+    assert "project:" not in facts.active(run)
