@@ -192,18 +192,17 @@ A task that names several issues (issue numbers or links, or a list of unrelated
 several deliveries, never one. Each issue gets its own branch, worktree, run log and commit, and its own pull
 request when pull requests are asked for, each branched from the base, not from another delivery. Run them one
 after another, each through the whole flow to its report before the next starts. The roles' sessions carry over
-from one delivery to the next (`roles.md`, Follow-ups), so a builder reads the codebase once per run, not once
-per issue. When the user asks for them in parallel, run at most two side by side, each lane with its own
-sessions, and only issues in different areas of the code: one that turns out to change the same files as a
-running one waits for it. A notification moves only the delivery it names: read that delivery's `now.md`, not
-the others'. Each run log names the others (`Delivery 2 of 3; others: <branches>`). No combined or integration
-branch unless the user asks for one: each delivery is verified, reviewed and merged on its own, and one whose
-base moved is updated onto it (`steps/publish.md`, Merge).
+from one delivery to the next (`roles.md`, Follow-ups), so a builder reads the codebase once per run, not once per
+issue. When the user asks for them in parallel, in their own words or with `--parallel`, they run as lanes
+(below), never side by side in this chat. Each run log names the others (`Delivery 2 of 3; others: <branches>`).
+No combined or integration branch unless the user asks for one: each delivery is verified, reviewed and merged on
+its own, and one whose base moved is updated onto it (`steps/publish.md`, Merge).
 Deliver two issues together only when one cannot work without the other (the same root cause or the same lines)
 or the user asked for a single pull request, and record why in Approach.
 
-With `--parallel` at the start of the task, each issue is delivered in a background session of its own instead,
-up to four at once, and this chat only starts them and posts their reports:
+With `--parallel` at the start of the task, or parallel asked in words (mid-run included), each issue is delivered
+in a background session of its own instead, up to four at once, one issue included, and this chat is only their
+status monitor: it starts them and posts their status and reports, and a delivery it was running becomes a lane:
 `skill_view(name='cpipe:run', file_path='parallel.md')`. A session started from a lane's brief follows the same
 file, In a lane.
 

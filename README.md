@@ -252,9 +252,8 @@ the final word are never handed to anyone else.
 
 A task with several issues becomes one delivery per issue, each with its own branch, worktree, commit and pull
 request, run one after another and reported together. The role sessions carry over from one delivery to the
-next, so the codebase is explored once per run. When you ask for parallel, at most two run side by side,
-each with its own sessions, and only issues in different areas of the code. Issues ship together only when one
-cannot work without the other.
+next, so the codebase is explored once per run. When you ask for parallel, each issue runs in a lane of its own
+(In parallel). Issues ship together only when one cannot work without the other.
 
 ## Core concepts
 
@@ -280,8 +279,8 @@ step.
 - **Re-entry.** The run log is the graph's state. **continue**, a completion notification or a restart re-enters
   at the first unfinished step or unmet instruction. The report closes the run: a plain message after it is
   ordinary chat work, and only `/cpipe` re-enters, at the plan for the follow-up only.
-- **One graph per delivery.** Several issues run as several graphs, one after another (at most two in parallel
-  when you ask), sharing the role sessions.
+- **One graph per delivery.** Several issues run as several graphs, one after another, sharing the role sessions,
+  or one lane each when you ask for parallel.
 
 ### Loop engineering
 
@@ -711,11 +710,13 @@ minutes counts as a failed role. The run only ever touches cards it created.
 ### In parallel
 
 Without a flag, the issues of one task are delivered in the chat, one after another, so the role sessions carry
-over and two issues that belong together can share a delivery. With `/cpipe-parallel <issues>`, each issue gets
-a lane: a session of its own in the background, started in the issue's repository, so Hermes files it under that
-repository's project and lists it with your chats (role sessions stay hidden). The chat only starts
-lanes, posts a line each time a lane's step changes (at most every five minutes, nothing when none did), posts each
-lane's report as it arrives, and writes a summary once every lane has reported.
+over and two issues that belong together can share a delivery. With `/cpipe-parallel <issues>`, or when you ask
+for parallel in words, each issue gets a lane, one issue included: a session of its own in the background, started
+in the issue's repository, so Hermes files it under that repository's project and lists it with your chats (role
+sessions stay hidden). The chat is only a status monitor and delivers nothing itself: a delivery it was already
+running becomes a lane that continues its run. It starts lanes, posts a line each time a lane's step changes (at
+most every five minutes, nothing when none did), posts each lane's report as it arrives, and writes a summary once
+every lane has reported.
 
 - The chat finds each issue's repository once and hands it to the lane. When the chat is not in that repository,
   a candidate counts only when its own remote holds the branch the task branches from; the task's issues decide
@@ -960,8 +961,8 @@ done inside the run, and the run continues in the same reply. Setting up your ow
 "bypass the password locally") is done right away in the chat, the way you said.
 
 **Several issues in one task?**
-Each issue is its own delivery with its own branch, worktree and commit, run one after another (or at most two
-in parallel when you ask, for issues in different areas) and reported together. The role sessions carry over
+Each issue is its own delivery with its own branch, worktree and commit, run one after another (or one lane each
+when you ask for parallel) and reported together. The role sessions carry over
 between deliveries, so the code is read once per run.
 
 **Which languages and frameworks does it support?**

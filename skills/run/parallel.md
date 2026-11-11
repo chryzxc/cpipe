@@ -1,15 +1,21 @@
 # cpipe: deliveries in parallel (`--parallel`)
 
-When the task message starts with `--parallel`, each issue (`cpipe:run`, One issue, one delivery) is delivered in
-a session of its own, a lane, running in the background. This chat is the dispatcher: it starts the lanes, posts
-each lane's report as it arrives and writes the summary. It never runs a step, reads a lane's code, plan or
-worktree, or waits on anything but the lanes. One issue in a `--parallel` task is delivered in this chat as usual.
+When the task message starts with `--parallel`, or the user asks for issues in parallel in their own words, each
+issue (`cpipe:run`, One issue, one delivery) is delivered in a session of its own, a lane, running in the
+background. This chat is the dispatcher and only a status monitor: it starts the lanes, posts their status lines
+and each lane's report as it arrives, and writes the summary. It never delivers an issue itself, one issue
+included, never runs a step, reads a lane's code, plan or worktree, or waits on anything but the lanes.
+
+A delivery this chat was already running when parallel is asked (the user asks for more issues alongside it, or
+for parallel mid-run) becomes a lane too: its brief names its run folder, and the lane continues that run. From
+then on this chat registers the batch, not the run, and never touches that run's worktree or role steps again.
 
 ## In this chat
 
 1. **Batch.** Split the task into its issues. Find each issue's repository (usually one for all) as
    `steps/setup.md`, Set up, step 1 says, with its checks when this chat is not in it; it is the only step file
    the dispatcher reads, and a lane never looks for its repository again.
+   Work this chat was doing on a delivery (a review, a fix, a port) is an issue of the batch, with its run folder.
    The batch folder is `<Hermes root>/cpipe/lanes/<YYYYMMDD-HHMMSS>/`.
    Write its `now.md`: `## Instructions` with the user's instructions word for word (Run log), then
    `## Lanes` with each lane's number, issue and repository (its top-level path). Register it:
@@ -21,6 +27,8 @@ worktree, or waits on anything but the lanes. One issue in a `--parallel` task i
      The Hermes root: `<root>`. Lane folder: `<lane dir>`. Repository: `<its repository>`. Run it
      unattended to the report: this is my last message, so never stop to ask or wait.
    - The issue in full: its number or link and everything the user said about it.
+   - For a delivery this chat had started: `Run folder: <run dir>. Continue that run (continue.md): its finished
+     steps stay done, and a role step it left running is waited on, never started again.`
    - The user's instructions, word for word, every one that applies to all issues (push, pull request, merge).
    - The other lanes: `Lane <n> of <total>; others: <their issues>`.
 3. **Start.** Who runs a lane is this chat's own profile and model: the command `chat` prints (Facts). The time
@@ -66,7 +74,8 @@ The brief names a lane folder: this session delivers that one issue through the 
 these differences.
 
 - **Register.** Once the run log exists, write the run folder's path to `<lane dir>/run`: the dispatcher reads the
-  current step from its `now.md`, and the run's rules stay pinned in this session from it.
+  current step from its `now.md`, and the run's rules stay pinned in this session from it. A brief that names a run
+  folder: write it there first, run `active <run dir>`, then continue that run (`continue.md`).
 - **Wait on each step.** This session ends when a turn ends, and no notification wakes it, and Hermes cuts any one
   tool call off after a few minutes, a foreground command included, while the command itself goes on. So run each
   role step (`roles.md`, Run) and other long work (installs, the baseline) in the background, and wait on it with
