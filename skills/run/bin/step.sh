@@ -16,5 +16,9 @@ python3 "$(dirname "$0")/cpipe.py" brief "$r" "$w" "$role" "$n" $again $bare >"$
   { echo "exit 2 (no query: see the line above)" >>"$log"; tail -n 30 "$log"; exit 2; }
 CPIPE_RUN="$r" CPIPE_STEP="$role" perl "$(dirname "$0")/limit.pl" "$limit" hermes "$@" -Q \
   --query-file "$q" --in "$w" $run --max-turns "$turns" >"$log" 2>&1
-echo "exit $?" >>"$log"; tail -n 30 "$log"
+status=$?
+echo "exit $status" >>"$log"; tail -n 30 "$log"
 python3 "$(dirname "$0")/cpipe.py" rounds "$r"
+diagnostic=$?
+[ "$status" -ne 0 ] && exit "$status"
+exit "$diagnostic"

@@ -193,6 +193,20 @@ def test_a_turn_cannot_end_on_a_question_while_the_gate_has_work(tmp_path, monke
     assert cpipe._unfinished(session_id="s1", final_response=ask) is None
 
 
+def test_checklist_progress_resets_streak(tmp_path):
+    path = tmp_path / "track.json"
+    path.write_text('[{"id":"T1","status":"open"}]')
+    assert cpipe._progress(tmp_path, "FIX: R1", "fix") == 1
+    path.write_text('[ { "id": "T1", "status": "open" } ]')
+    assert cpipe._progress(tmp_path, "FIX: R1", "fix") == 2
+    path.write_text('[{"id":"T1","status":"done"}]')
+    assert cpipe._progress(tmp_path, "FIX: R1", "fix") == 1
+    path.write_text('{invalid')
+    assert cpipe._progress(tmp_path, "FIX: R1", "fix") == 2
+    path.unlink()
+    assert cpipe._progress(tmp_path, "FIX: R1", "fix") == 3
+
+
 def test_the_watcher_queues_the_next_turn_until_the_run_is_done(tmp_path, monkeypatch):
     import sys, types
     sys.modules.setdefault("gateway", types.ModuleType("gateway"))

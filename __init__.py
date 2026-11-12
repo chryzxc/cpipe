@@ -382,18 +382,22 @@ def _nudge(reply, verdict):
 def _progress(run, verdict, ask, seen=None):
     """How many nudges in a row found the run as it is now (gate and checklist unchanged), this one included."""
     import hashlib
-    try:
-        track = (run / "track.md").read_text() if run else ""
-    except OSError:
-        track = ""
-    mark = hashlib.sha1(f"{verdict}\n{track}\n{ask}".encode()).hexdigest()
     seen = seen or run / "watch.txt"
     try:
-        last, n = seen.read_text().split()
-        n = int(n) + 1 if last == mark else 1
+        previous = seen.read_text().split()
+        last, count = previous[:2]
+        prior_track = previous[2] if len(previous) > 2 else ""
+        count = int(count)
     except (OSError, ValueError):
-        n = 1
-    seen.write_text(f"{mark} {n}")
+        last, count, prior_track = "", 0, ""
+    try:
+        track = json.dumps(json.loads((run / "track.json").read_text()), sort_keys=True) if run else ""
+        track_hash = hashlib.sha1(track.encode()).hexdigest()
+    except (OSError, ValueError):
+        track_hash = prior_track or hashlib.sha1(b"").hexdigest()
+    mark = hashlib.sha1(f"{verdict}\n{track_hash}\n{ask}".encode()).hexdigest()
+    n = count + 1 if last == mark else 1
+    seen.write_text(f"{mark} {n} {track_hash}")
     return n
 
 
