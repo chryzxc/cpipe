@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.47.0
+version: 4.48.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -153,9 +153,9 @@ at a time, whatever it watches. Once nothing long runs, stop it with your proces
 next tool call; a tick that arrives with nothing running gets no line and no next tick.
 
 **Turn limits.** A turn has a cap on replies that call tools, so a long run can end its turn mid-step. Spend
-replies, not calls: put independent tool calls (reads, briefs, checks to start) together in one reply. Calls in one
-reply run in the order given, so each sees what the ones before it wrote: a brief and the command that starts its
-profile go out in one reply, never the start after the brief's result. Long work
+replies, not calls: put independent tool calls (reads, ready checks to start) together in one reply. A batch may
+run concurrently: write a brief before launching its reader, and wait for any input a call depends on. Short
+facts and bookkeeping run in the foreground, without a background job and its completion wake. Long work
 (installs, checks, profiles, anything that can take over a minute: a tool call is cut off after a few minutes)
 runs in the background with a completion notification: when a turn ends early, the
 next notification starts a new turn and the run picks up there. A turn that ends with nothing running has no
@@ -400,8 +400,9 @@ and prints data and a verdict, and you act on what it prints:
 - `report <run dir>`: the report's skeleton with its facts filled in; `report <run dir> --check`: `PASS` when
   `<run dir>/report.md` keeps those facts and has every section and cell written, else `FIX` with what is wrong
   (`steps/report.md`, Report).
-- `cost <run dir> <worktree>`: the run's tokens, total and per profile and model, with the cached share, read-only
-  from every profile's session store (`steps/report.md`, Cost).
+- `cost <run dir> <worktree> --start`: capture private usage baselines before role work; later calls add only
+  missing baselines. `cost <run dir> <worktree>` reads measured deltas per profile, model, provider and task,
+  with coverage warnings. Without capture it labels legacy lifetime counters (`steps/report.md`, Cost).
 - `active <run dir>` once the run log exists (`report <run dir> --check` closes it when it passes, and
   `active <run dir> --done` when the user ends the run, with the chats it was compacted from): registers this chat's
   run, so the run's rules, the user's instructions and the open items stay pinned in this chat's system
@@ -528,8 +529,8 @@ that already failed is never repeated.
 - A profile's "done" is a claim until you have checked it yourself.
 
 **Cost**
-- Every reply resends the chat: fewer replies and a smaller chat are the saving. Wait by ending the turn, never
-  by polling (Waiting ends the turn).
+- Consume the completion reply already returned; read a narrow reply file only when it points there. Do not
+  reload logs, `now.md` or the plan just to acknowledge it. Update state at the actual step transition (Run log).
 - With a build profile, this chat never reads the project's code, and reads `plan.md` only by the sections it
   needs: the planner or the builder explores it once per run (`roles.md`, How the work is split). Without one,
   read once, in explore; after it, read code only as the diff and the lines a finding or a failure names.

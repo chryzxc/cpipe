@@ -160,6 +160,9 @@ pages to learn the command line.
    end with), writes them in its own run log, and gives the resumed session its new run dir in the brief, which
    holds only the new request and what changed since. With deliveries in parallel, each lane has its own sessions.
    `sh <skill dir>/bin/step.sh <run dir> <worktree> <role> <round> <run budget> <limit> <who> --resume <session id> [--reasoning <effort>]`
+   Before a resumed role works in this run, run `cost <run dir> <worktree> --start` (Facts): it adds missing
+   baselines without replacing existing ones. The launcher records the profile and resume identity beside
+   the session footer, so reporting does not guess ownership from a working directory.
    A resumed session keeps the run budget it started with (the script leaves the flag off), so the limit (the
    follow-up's budget plus 300) is what holds it to its own budget.
    A new session reads the code again from nothing, tens of replies; start one only when the resume fails, the next

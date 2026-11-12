@@ -8,6 +8,15 @@ if [ "$1" = hermes ]; then shift  # written out, so the chat's UI shows the hand
 elif [ "$1" = -p ]; then prof=$2; shift 2; set -- -p "$prof" chat "$@"; else set -- chat "$@"; fi
 # A resumed session keeps the run budget it started with and refuses the flag, so only a new one gets it
 case " $* " in *" --resume "*) again=--resume run= ;; *) again= run="--run-budget $budget" ;; esac
+profile=default
+home=${HERMES_HOME%/}
+case "$home" in */profiles/*) profile=${home##*/} ;; esac
+if [ "$1" = -p ]; then profile=$2; fi
+resume=new previous=
+for arg in "$@"; do
+  [ "$previous" = --resume ] && resume=$arg
+  previous=$arg
+done
 # Only a role with no profile of the user's runs on this chat's model (`cpipe.py chat`, with -m): it gets the stance
 case " $* " in *" -m "*) bare=--bare ;; *) bare= ;; esac
 case $role in build) turns=150 ;; plan) turns=120 ;; *) turns=60 ;; esac
@@ -17,6 +26,8 @@ python3 "$(dirname "$0")/cpipe.py" brief "$r" "$w" "$role" "$n" $again $bare >"$
 CPIPE_RUN="$r" CPIPE_STEP="$role" perl "$(dirname "$0")/limit.pl" "$limit" hermes "$@" -Q \
   --query-file "$q" --in "$w" $run --max-turns "$turns" >"$log" 2>&1
 status=$?
+printf 'cpipe_profile: %s\n' "$profile" >>"$log"
+printf 'cpipe_resume: %s\n' "$resume" >>"$log"
 echo "exit $status" >>"$log"; tail -n 30 "$log"
 python3 "$(dirname "$0")/cpipe.py" rounds "$r"
 diagnostic=$?

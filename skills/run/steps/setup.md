@@ -54,6 +54,9 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    in a worktree an earlier run delivered (its `cpipe/` run dir is there) carries that run's instructions and
    spec lines into `now.md` too, word for word: they are still the user's, and its goal is still the goal. Then
    register the run (`cpipe:run`, Facts: `active <run dir>`) and add this step's Done when to `track.json`.
+   Before role work, run `python3 <skill dir>/bin/cpipe.py cost <run dir> <worktree> --start` to capture
+   usage baselines. It reads counters and writes one private `usage-start.json` in the run dir; never commit it.
+   If capture fails, record partial coverage and keep working; measurement is not a delivery gate.
 6. **Tidy up.** Remove this repository's finished cpipe worktrees so they do not fill the disk. A repository can
    have dozens of worktrees and branches, so never list them into the chat; this prints only the candidates:
    ```sh

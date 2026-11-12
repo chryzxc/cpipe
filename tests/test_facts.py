@@ -434,6 +434,32 @@ def test_a_spec_question_waits_only_when_nothing_else_is_left(tmp_path, monkeypa
     assert facts.gate(run).startswith("PASS")
 
 
+def test_cost_capture_subtracts_earlier_usage(tmp_path, monkeypatch):
+    root, tree, run = tmp_path / "h", tmp_path / "wt", tmp_path / "run"
+    root.mkdir(); tree.mkdir(); run.mkdir()
+    db = sqlite3.connect(root / "state.db")
+    db.execute("CREATE TABLE sessions (id, profile_name, model, input_tokens, "
+               "output_tokens, cache_read_tokens, cwd, started_at)")
+    db.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?)",
+               ("chat", "", "test-model", 100, 10, 900, str(tree), 0))
+    db.commit()
+    monkeypatch.setenv("HERMES_HOME", str(root))
+    monkeypatch.setenv("HERMES_SESSION_ID", "chat")
+    (run / "chats").write_text("chat\n")
+    facts.cost(run, tree, start=True)
+    before = (run / "usage-start.json").read_bytes()
+    facts.cost(run, tree, start=True)
+    assert (run / "usage-start.json").read_bytes() == before
+    db.execute("UPDATE sessions SET input_tokens=120, output_tokens=15, "
+               "cache_read_tokens=1080 WHERE id='chat'")
+    db.commit(); db.close()
+    text = facts.cost(run, tree)
+    assert "since capture" in text.lower()
+    cells = [cell.strip() for line in text.splitlines() if "this chat" in line
+             for cell in line.split("|")]
+    assert all(str(n) in cells for n in (20, 180, 5))
+
+
 def test_cost_counts_tokens_per_profile_and_model(tmp_path, monkeypatch):
     import sqlite3
     root, tree, run = tmp_path / "h", tmp_path / "wt", tmp_path / "run"
@@ -455,8 +481,9 @@ def test_cost_counts_tokens_per_profile_and_model(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_SESSION_ID", "chat")
     out = facts.cost(run, tree).splitlines()
     assert out[:2] == ["| Who | Model | Tokens | Cached |", "|---|---|---|---|"]
-    assert out[2:] == ["| @builder | terra | 10k | 90% |", "| this chat | sol | 1k | 90% |",
-                       "| **Total** |  | 11k | 90% |"]
+    assert out[2:-1] == ["| @builder | terra | 10k | 90% |", "| this chat | sol | 1k | 90% |",
+                        "| **Total** |  | 11k | 90% |"]
+    assert 'legacy/lifetime selection, not exact run usage' in out[-1]
 
 
 def test_ci_reads_through_passing_errors(tmp_path):

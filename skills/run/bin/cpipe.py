@@ -15,7 +15,7 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py rounds <run dir>
   python3 cpipe.py lanes <batch dir> [--at-once <n>] [--report <lane>]
   python3 cpipe.py step <lane dir>
-  python3 cpipe.py cost <run dir> <worktree>
+  python3 cpipe.py cost <run dir> <worktree> [--start]
   python3 cpipe.py port <source commit or from..to> <base> [--repo <source repository>]
 """
 
@@ -461,9 +461,227 @@ def _tokens(n):
     return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k"
 
 
-def cost(run_dir, worktree):
-    """Tokens of this run as a table per profile and model: every session of every profile's store that worked in the
-    worktree since the run dir was made, and this chat's session (its whole count). Read-only."""
+COUNTERS = ("input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "api_call_count")
+
+
+def _usage_members(run_dir, coordinators=()):
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    profile = home.name if home.parent.name == "profiles" else "default"
+    sid = os.environ.get("HERMES_SESSION_ID", "")
+    chats = Path(run_dir) / "chats"
+    ids = chats.read_text().split() if chats.is_file() else []
+    if sid:
+        ids.append(sid)
+    enrolled = {tuple(pair) for pair in coordinators}
+    known = {ident for _, ident in enrolled}
+    enrolled.update((profile, ident) for ident in ids if ident == sid or ident not in known)
+    members = set(enrolled)
+    warnings, fresh = [], set()
+    for log in (Path(run_dir) / "logs").glob("*.txt"):
+        try:
+            text = log.read_text(errors="replace")
+            profiles = re.findall(r"^cpipe_profile: ([\w-]+)\s*$", text, re.M)
+            sessions = re.findall(r"^session_id: (\S+)\s*$", text, re.M)
+            if profiles and profiles[-1] != "unknown" and sessions:
+                pair = (profiles[-1], sessions[-1])
+                members.add(pair)
+                if re.search(r"^cpipe_resume: new\s*$", text, re.M):
+                    fresh.add(pair)
+            else:
+                warnings.append("role launch identity incomplete")
+        except OSError:
+            warnings.append("role launch identity unreadable")
+    return members, enrolled, warnings, fresh
+
+
+def _usage_read(tree, members):
+    """Read-only, transaction-consistent counters per store; candidates are not run membership."""
+    root = hermes_root()
+    stores, warnings = {}, []
+    for path in [root / "state.db", *sorted(root.glob("profiles/*/state.db"))]:
+        profile = "default" if path == root / "state.db" else path.parent.name
+        stamp = time.time()
+        try:
+            db = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=1)
+            try:
+                db.execute("BEGIN")
+                columns = {r[1] for r in db.execute("PRAGMA table_info(sessions)")}
+                if not {"id", "cwd", "started_at", "model"} <= columns:
+                    raise sqlite3.DatabaseError("unsupported session schema")
+                missing = [name for name in COUNTERS if name not in columns]
+                names = ("id", "cwd", "started_at", "model", "parent_session_id", *COUNTERS)
+                fields = ", ".join(name if name in columns else "NULL AS " + name for name in names)
+                ids = [ident for who, ident in members if who == profile]
+                where = "cwd = ? OR substr(cwd, 1, ?) = ?"
+                args = [tree, len(tree) + 1, tree + "/"]
+                if ids:
+                    where += " OR id IN (" + ",".join("?" for _ in ids) + ")"
+                    args += ids
+                found = db.execute("SELECT " + fields + " FROM sessions WHERE " + where, args).fetchall()
+                ledger_columns = {r[1] for r in db.execute("PRAGMA table_info(session_model_usage)")}
+                ledger_ok = {"session_id", "model", "task", "billing_provider", *COUNTERS} <= ledger_columns
+                sessions = {}
+                for ident, cwd, started, model, parent, *counts in found:
+                    rows = {}
+                    if ledger_ok:
+                        for m, provider, task, *values in db.execute(
+                                "SELECT model,billing_provider,task," + ",".join(COUNTERS) +
+                                " FROM session_model_usage WHERE session_id = ?", (ident,)):
+                            key = json.dumps([m or "?", provider or "?", task or "main"])
+                            previous = rows.setdefault(key, [0] * len(COUNTERS))
+                            for i, value in enumerate(values):
+                                previous[i] += int(value or 0)
+                    source = "ledger" if rows else "session"
+                    if not rows:
+                        rows[json.dumps([model or "?", "unknown", "unseparated"])] = [int(n or 0) for n in counts]
+                    sessions[ident] = {"started": started or 0, "parent": parent, "source": source,
+                                       "rows": rows, "missing": missing if source == "session" else []}
+                stores[profile] = {"captured": stamp, "sessions": sessions}
+            finally:
+                db.close()
+        except (sqlite3.Error, ValueError, OSError, TypeError):
+            warnings.append(profile + ": store unavailable or unsupported")
+    return stores, warnings
+
+
+def _usage_snapshot(path, tree):
+    data = json.loads(path.read_text())
+    if data["version"] != 2 or data["worktree"] != tree:
+        raise ValueError("capture belongs to a different worktree or schema")
+    if not isinstance(data["stores"], dict) or not isinstance(data["coordinators"], list):
+        raise ValueError("invalid capture")
+    import math
+    def timestamp(value):
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 253402300799:
+            raise ValueError("invalid timestamp")
+    timestamp(data["captured"])
+    if (not isinstance(data["errors"], list) or any(not isinstance(s, str) for s in data["errors"]) or
+            any(not isinstance(pair, list) or len(pair) != 2 or
+                any(not isinstance(s, str) for s in pair) for pair in data["coordinators"])):
+        raise ValueError("invalid identities or coverage")
+    for store in data["stores"].values():
+        timestamp(store["captured"])
+        for session in store["sessions"].values():
+            timestamp(session["captured"])
+            if session["source"] not in ("ledger", "session") or not isinstance(session["missing"], list):
+                raise ValueError("invalid counter source")
+            if any(name not in COUNTERS for name in session["missing"]):
+                raise ValueError("invalid missing counter")
+            for key, values in session["rows"].items():
+                labels = json.loads(key)
+                if not isinstance(labels, list) or len(labels) != 3 or any(not isinstance(s, str) for s in labels) or len(values) != len(COUNTERS):
+                    raise ValueError("invalid counter row")
+                if any(not isinstance(n, int) or n < 0 for n in values):
+                    raise ValueError("invalid counters")
+    return data
+
+
+def cost(run_dir, worktree, start=False):
+    """Read usage, or explicitly capture counters. Never starts models or changes their settings."""
+    tree = str(Path(worktree).resolve())
+    snapshot = Path(run_dir) / "usage-start.json"
+    data = None
+    if snapshot.exists():
+        try:
+            data = _usage_snapshot(snapshot, tree)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return "Partial coverage: capture is unreadable or belongs to a different worktree/schema; preserved unchanged"
+    if not start and data is None:
+        return _legacy_cost(run_dir, worktree) + "\nCoverage: legacy/lifetime selection, not exact run usage; capture with cost --start for future work"
+    members, coordinators, warnings, fresh = _usage_members(run_dir, data["coordinators"] if data else ())
+    current, errors = _usage_read(tree, members)
+    warnings += errors
+    if start:
+        import tempfile
+        before = json.dumps(data, sort_keys=True) if data else ""
+        if data is None:
+            data = {"version": 2, "worktree": tree, "captured": min((s["captured"] for s in current.values()), default=time.time()), "stores": {},
+                    "coordinators": [], "errors": []}
+        data["coordinators"] = sorted([list(pair) for pair in set(map(tuple, data["coordinators"])) | coordinators])
+        for profile, store in current.items():
+            baseline = data["stores"].setdefault(profile, {"captured": store["captured"], "sessions": {}})
+            for ident, session in store["sessions"].items():
+                if ident not in baseline["sessions"]:
+                    captured = dict(session, captured=store["captured"])
+                    if ((profile, ident) in fresh and not session["parent"] and
+                            session["started"] >= baseline["captured"]):
+                        captured.update(rows={}, captured=baseline["captured"])
+                    baseline["sessions"][ident] = captured
+        data["errors"] = sorted(set(data["errors"] + warnings))
+        if before != json.dumps(data, sort_keys=True):
+            fd, temp = tempfile.mkstemp(prefix=".usage-start-", dir=Path(run_dir))
+            try:
+                with os.fdopen(fd, "w") as out:
+                    json.dump(data, out, sort_keys=True)
+                    out.write("\n")
+                os.replace(temp, snapshot)
+            finally:
+                if os.path.exists(temp):
+                    os.unlink(temp)
+        return "Usage capture saved; existing baselines preserved. Capture before work, including resumed roles." + (
+            " Partial coverage: " + "; ".join(data["errors"]) if data["errors"] else "")
+    assert data is not None
+    warnings += data["errors"]
+    rows = {}
+    for profile, ident in sorted(members):
+        store = current.get(profile)
+        session = store["sessions"].get(ident) if store else None
+        if session is None:
+            warnings.append(profile + ": session/store unavailable")
+            continue
+        captured_store = data["stores"].get(profile)
+        baseline = captured_store["sessions"].get(ident) if captured_store else None
+        if baseline is None:
+            if session["parent"]:
+                warnings.append(profile + ": inherited counters uncertain; missing baseline")
+                continue
+            if not captured_store or session["started"] < captured_store["captured"] or (profile, ident) not in fresh:
+                warnings.append(profile + ": missing baseline")
+                continue
+            baseline = {"source": session["source"], "rows": {}, "captured": captured_store["captured"]}
+        if baseline["captured"] > captured_store["captured"]:
+            warnings.append("some session baselines start later; earlier usage excluded")
+        if baseline["source"] != session["source"] or not set(baseline["rows"]) <= set(session["rows"]):
+            warnings.append(profile + ": counter source/model changed or rows disappeared")
+            continue
+        if session["source"] == "session":
+            warnings.append(profile + ": legacy session counters; model history and auxiliary usage unseparated")
+        missing = set(session["missing"]) | set(baseline.get("missing", []))
+        if missing:
+            warnings.append(profile + ": missing counter fields " + ", ".join(sorted(missing)))
+        deltas = {key: [n - old for n, old in zip(values, baseline["rows"].get(key, [0] * len(COUNTERS)))]
+                  for key, values in session["rows"].items()}
+        if any(n < 0 for values in deltas.values() for n in values):
+            warnings.append(profile + ": counter reset")
+            continue
+        who = "this chat" if (profile, ident) in coordinators else "@" + profile
+        for key, values in deltas.items():
+            group = (who, *json.loads(key))
+            counts = rows.setdefault(group, [0] * len(COUNTERS))
+            for i, n in enumerate(values):
+                counts[i] = None if COUNTERS[i] in missing or counts[i] is None else counts[i] + n
+    if not members:
+        warnings.append("no verified run identities")
+    start_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(data["captured"]))
+    end_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    lines = [f"Usage since capture: {start_at} to {end_at} (excludes work before each session baseline).",
+             "| Who | Model | Provider | Task | Non-cached input | Cache reads | Cache writes | Output | Calls |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    for labels, values in sorted(rows.items()):
+        cells = [str("?" if cell is None else cell).replace("|", "\\|").replace("\n", " ")
+                 for cell in (*labels, *values)]
+        lines.append("| " + " | ".join(cells) + " |")
+    if rows:
+        total = ["?" if any(r[i] is None for r in rows.values()) else sum(r[i] for r in rows.values())
+                 for i in range(len(COUNTERS))]
+        lines.append("| **Total** | | | | " + " | ".join(map(str, total)) + " |")
+    lines.append("Coverage: " + ("partial; " + "; ".join(sorted(set(warnings))) if warnings else
+                 "measured deltas for recorded run identities; main and auxiliary task rows separate") +
+                 ". Not a provider bill or quota debit.")
+    return "\n".join(lines)
+
+
+def _legacy_cost(run_dir, worktree):
     st = Path(run_dir).stat()
     since = getattr(st, "st_birthtime", st.st_ctime)
     tree, sid = str(Path(worktree).resolve()), os.environ.get("HERMES_SESSION_ID", "")
@@ -930,7 +1148,7 @@ def main(argv):
     elif cmd == "rounds":
         print(rounds(args[0]))
     elif cmd == "cost":
-        print(cost(args[0], args[1]))
+        print(cost(args[0], args[1], "--start" in args))
     elif cmd == "step":
         print(_now_step(Path(args[0])))
     elif cmd == "port":

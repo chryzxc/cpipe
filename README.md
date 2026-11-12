@@ -777,7 +777,11 @@ so it reads the same way every time. It is short, one line per row, and complete
   rounds as arrows back, and retries, interruptions and stalls in red. The run folder also gets `run-graph.html`,
   which shows the flow and a timeline per role in any browser. A chat app that renders structured views (graphs,
   workflows) gets the run graph as one of those instead of a chart's source.
-- **Cost:** minutes, then a table of tokens with the cached share: each profile and model, and the total.
+- **Cost:** minutes and measured usage since capture, by profile, model, provider and task: non-cached input,
+  cache reads, cache writes, output and calls. Model-ledger rows separate main and auxiliary tasks without
+  double counting. Setup captures private baselines; resumed roles keep their existing baselines. Missing
+  attribution is marked partial, and older runs without capture are labeled lifetime selection, not exact run
+  usage. Counters are not a provider bill or a claim of token savings.
 - **Details:** one line: branch, commit, pull request, files, skills, learnings.
 
 When Needs attention holds work for later, the report ends with a yes-or-no question for each separate piece of

@@ -175,17 +175,18 @@ only one sensible way.
 **Run graph**: what happened in the whole run, drawn (Run graph below): a structured view when the chat offers
 one, else the flow chart.
 
-**Cost**: what the delivery spent, as a table: `Time:` the minutes from the run log's first to last row, then
-the table `cost <run dir> <worktree>` prints (`cpipe:run`, Facts), with each Who given its steps in front of the
-profile (`build @builder`, `review @reviewer`), so it also says who did each step on which model:
+**Cost**: `Time:` the minutes from the run log's first to last row, then the entire output of
+`cost <run dir> <worktree>` (`cpipe:run`, Facts), including its interval and coverage notes. Give each Who
+its steps in front of the profile (`build @builder`, `review @reviewer`). Keep the exact non-cached input,
+cache-read, cache-write, output and call columns. Main and auxiliary task rows are separate; the total includes
+both, without adding session counters on top of the model ledger.
 
-| Who | Model | Tokens | Cached |
-|---|---|---|---|
-| build @builder | gpt-6.1-terra | 1.9M | 93% |
-| this chat | gpt-6.1-sol | 0.8M | 88% |
-| **Total** |  | 3.1M | 91% |
-
-When it finds no sessions, the tokens are left out, never guessed.
+Capture happens in setup, before role work. Older runs without capture print **legacy/lifetime selection,
+not exact run usage**. Missing baselines, uncertain inherited counters, unavailable stores and counter resets
+stay **partial**; never replace a gap with zero or remove its warning. Session-counter fallback cannot separate
+model history or auxiliary tasks and says so. A later baseline excludes earlier work in that session. These
+are recorded usage counters, not a provider bill, quota debit or proof of savings. Leave unavailable usage
+out, never guess it. None of these telemetry gaps holds the delivery.
 
 **Details**: one line: the branch, the commit SHA and subject, the pull request link, `git diff --stat` in a few
 words, the user skills used, the learnings written, and `run-graph.html`.
