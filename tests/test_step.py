@@ -74,3 +74,20 @@ def test_diagnostics_do_not_hide_child_failure(tmp_path, child, expected):
                             env=env, text=True, capture_output=True, timeout=20)
     assert result.returncode == expected
     assert f'exit {child}' in result.stdout
+
+
+def test_wait_returns_once_every_step_log_has_its_exit_line(tmp_path):
+    (tmp_path / 'logs').mkdir()
+    done, late = tmp_path / 'logs/review-1.txt', tmp_path / 'logs/security-1.txt'
+    done.write_text('the reply\nsession_id: a\nexit 0\n')
+    late.write_text('working\n')
+    gave_up = subprocess.run(['sh', str(ROOT / 'skills/run/bin/wait.sh'), str(tmp_path), '1', str(done), str(late)],
+                             text=True, capture_output=True, timeout=20)
+    assert gave_up.returncode == 3 and gave_up.stdout.strip() == f'still running: {late}'
+    wait = subprocess.Popen(['sh', str(ROOT / 'skills/run/bin/wait.sh'), str(tmp_path), '60', str(done), str(late)],
+                            text=True, stdout=subprocess.PIPE)
+    with pytest.raises(subprocess.TimeoutExpired):
+        wait.wait(timeout=2)  # security still runs
+    late.write_text('working\nsession_id: b\nexit 2 (no query: see the line above)\n')
+    out, _ = wait.communicate(timeout=20)
+    assert 'the reply' in out and 'exit 2 (no query' in out and out.rstrip().splitlines()[-1].startswith('Rounds')

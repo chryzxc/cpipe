@@ -724,8 +724,9 @@ every lane has reported.
   a candidate counts only when its own remote holds the branch the task branches from; the task's issues decide
   between candidates that do.
 - Up to four lanes run at once (name another number in the task); the rest start as lanes finish.
-- A lane runs each role step in the background and waits on it with the process tool, five minutes per wait, so
-  a long step is never cut off by Hermes' limit on one tool call and a lane spends one short reply per wait.
+- A lane runs each role step in the background and waits on it with one foreground command of up to 390 seconds
+  (`bin/wait.sh`), so a long step is never cut off by Hermes' limit on one tool call and a lane spends one short
+  reply per wait, whatever terminal timeout the user's config sets.
 - A lane that stops before its report (a turn or time limit, a crash) is resumed in its own session; one that
   stopped within five minutes waits ten before it is resumed.
 - Steering for a lane goes to its `inbox.md`, which the lane reads at each step.

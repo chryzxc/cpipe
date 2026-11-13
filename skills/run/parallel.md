@@ -76,13 +76,15 @@ these differences.
 - **Register.** Once the run log exists, write the run folder's path to `<lane dir>/run`: the dispatcher reads the
   current step from its `now.md`, and the run's rules stay pinned in this session from it. A brief that names a run
   folder: write it there first, run `active <run dir>`, then continue that run (`continue.md`).
-- **Wait on each step.** This session ends when a turn ends, and no notification wakes it, and Hermes cuts any one
-  tool call off after a few minutes, a foreground command included, while the command itself goes on. So run each
-  role step (`roles.md`, Run) and other long work (installs, the baseline) in the background, and wait on it with
-  your process tool's wait, 300 seconds at a time, until it exits. A wait that ends with the process still running,
-  or that Hermes cut off, means wait again: the step is still working, so never start it again, hand its work to
-  another role or go on without its result. It ends on its own at its time limit. No ⏳ wait lines and no progress
-  tick: a turn ends only on the report or the pause message.
+- **Wait on each step.** This session ends when a turn ends, and no notification wakes it. So run each role step
+  (`roles.md`, Run) and other long work (installs, the baseline) in the background, then wait on the role steps
+  with one foreground command: `sh <skill dir>/bin/wait.sh <run dir> 390 <run dir>/logs/<role>-<n>.txt ...`, every
+  step you wait on, with a terminal timeout of 420 seconds (Hermes cuts any one tool call off at about 7 minutes).
+  It returns once they have all exited, with each log's end and the round counts, or after 390 seconds with
+  `still running: <log>`. Other long work you wait on with your process tool's wait. A wait that ends with a step
+  still running, or that Hermes cut off, means wait again: the step is still working, so never start it again,
+  hand its work to another role or go on without its result. It ends on its own at its time limit. No ⏳ wait
+  lines and no progress tick: a turn ends only on the report or the pause message.
 - **Steering.** At the start of each step, read `<lane dir>/inbox.md`. A line not yet in `now.md` is the user's
   steering (`cpipe:run`, Unattended): add it to `now.md` and act on it.
 - **Approvals.** A lane is a one-shot session: Hermes asks no one and blocks a command that needs an approval at
