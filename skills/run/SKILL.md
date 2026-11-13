@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.48.0
+version: 4.49.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -496,12 +496,13 @@ that already failed is never repeated.
 - Each round closes more than it opens. A round whose fix led to new findings, twice in a row, or a fix that
   breaks working behavior: go back to the last green tree and take the narrower approach (`steps/review.md`,
   When fixes fight). Looping is for the goal, not for every finding a reviewer can raise beside it.
-- **Rounds.** `step.sh` ends with the run's round counts since the latest plan (`cpipe.py rounds`). A role it
-  names at its cap gets no further round under this plan. Build at 3 (since the last plan or review): the
-  approach is not closing, so re-plan (`steps/plan.md`, step 5) before another build brief, unless all that is
-  left is a failing check or compile error of the last round. Review at 2 and security at 3: their open findings
-  are fixed and proven by their tests, or listed as **consider**, with no further review. A re-plan starts a new
-  count; it never grows the design to answer a finding the user's words do not carry.
+- **Rounds.** `step.sh` ends with the run's round counts (`cpipe.py rounds`). A role it names at its cap gets
+  no further round. Build at 3 (since the last plan or review): the approach is not closing, so re-plan
+  (`steps/plan.md`, step 5) before another build brief, unless all that is left is a failing check or compile
+  error of the last round. Review at 2 and security at 3 count over the whole run, so a re-plan never buys
+  another review: their open findings are fixed and proven by their tests, or listed as **consider**, with no
+  further review. A re-plan starts a new build count only; it never grows the design to answer a finding the
+  user's words do not carry.
 
 ## Guard rails
 
@@ -509,8 +510,10 @@ that already failed is never repeated.
 - Work only in the delivery worktree. Never edit the user's own checkout, other branches or other worktrees; the
   exceptions are the base worktree set up adds for the baseline and removing cpipe's own merged worktrees there
   (`steps/setup.md`).
-- Change only what the plan's scope names. If the scope must grow, say so in one line and note it in the run log.
-  A scope or "smallest fix" bounds what changes beside the goal, never the goal: what the goal needs is in scope.
+- Stick to the scope: change only what the plan's scope names. If the scope must grow, say so in one line and note
+  it in the run log. A scope or "smallest fix" bounds what changes beside the goal, never the goal: what the goal
+  needs is in scope. A fix that takes a large refactor is a follow-up delivery in the report, never this run's
+  (`steps/review.md`, A large refactor is its own delivery).
 - Format and lint-fix only the lines the change touches. Never reformat files or the repository, even when the
   formatter's baseline is red, unless the task asks for it.
 

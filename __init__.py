@@ -11,10 +11,12 @@ from pathlib import Path
 SKILL = Path(__file__).parent / "skills" / "run" / "SKILL.md"
 
 # The user's standing answer to "may I go beyond the named fix?": a model asks it however the skill words its rules.
-SCOPE = ("Whatever the goal needs inside the worktree is authorized, a larger change or another design than the fix "
-         "the task names included: never ask me for scope. A limit I wrote myself (only these PRs, only this screen) "
-         "still holds: what lies outside it goes to the report. Only credentials, destructive actions, what leaves this "
-         "machine beyond what I asked for, and the approvals Hermes asks are mine.")
+SCOPE = ("Stick to the task's scope and never ask me for it: what the task needs inside the worktree is authorized. "
+         "What it does not need (a problem the code already had, hardening beside the fix, a reviewer's extra "
+         "\"should\") and a fix that takes a large refactor go to the report as a follow-up delivery, never into "
+         "this run. A limit I wrote myself (only these PRs, only this screen) holds the same way. Only credentials, "
+         "destructive actions, what leaves this machine beyond what I asked for, and the approvals Hermes asks are "
+         "mine.")
 START = ("Load the skill cpipe:run with skill_view (without skill_view, read {skill} with your file tool) and follow "
          "it to deliver this task: its files decide how the work is done, whichever profile this chat is. The "
          "Hermes root: {root}. Run it to the report without stopping: ask me only spec questions (cpipe:run, spec.md), "

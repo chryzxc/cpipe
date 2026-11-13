@@ -556,8 +556,9 @@ def test_rounds_count_since_the_latest_plan(tmp_path):
         q.write_text("x")
         os.utime(q, (1000 + t, 1000 + t))
     line = facts.rounds(tmp_path)
-    assert line.startswith("Rounds since plan 2: build 4 (3 since the last plan or review), review 1, security 1")
-    assert "build at its cap of 3" in line and "review at" not in line
+    assert line.startswith("Rounds since plan 2: build 4 (3 since the last plan or review). "
+                           "In the whole run: review 3, security 2, qa 0.")
+    assert "build at its cap of 3" in line and "review at its cap of 2" in line and "security at" not in line
     (tmp_path / "new" / "logs").mkdir(parents=True)
     assert facts.rounds(tmp_path / "new").startswith("Rounds since the start: build 0")
 

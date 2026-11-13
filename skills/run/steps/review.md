@@ -122,10 +122,18 @@ evidence. Without a build profile, read each finding against the code yourself.
 | **noted** | Minor or stylistic | List it in the report. |
 | **dismissed** | Wrong: the code already handles it | Write the evidence (file, line, test) in the run log. |
 
-The scope is the goal, not the files the plan listed. A finding that shows the change does not yet do what the
-goal says is **act**, wherever its fix lands: a guard that can be bypassed, a race between the new check and the
-write it protects, a path or caller the fix misses. Add the files and paths it needs to the plan. **consider** is
-for problems the goal does not cover: pre-existing behavior the change leaves as it was, unrelated code.
+Stick to the scope: the task the user gave, not the files the plan listed and not everything near it. A finding
+that shows the change does not yet do what the task says is **act**, wherever its fix lands: a guard the actor it
+stops can get past, a path or caller the task names that the fix misses. Add the files and paths it needs to the
+plan. A race between the new check and the write it protects is **act** only when that actor can win it with
+their own requests; one that needs another user's write at the same moment (a relink, an admin edit) is
+**consider**. **consider** is for problems the task does not cover: pre-existing behavior the change leaves as it
+was, unrelated code, hardening beside the fix.
+
+**A large refactor is its own delivery.** A fix that needs a refactor (a new transaction, lock or fence layer,
+moving shared logic, rewriting how several modules work together) or touches code well past the task's own
+paths is not done in this run, even for an **act** finding: take the smallest change that meets the task, and
+list the refactor as a follow-up delivery in the report, with the finding, the files and the change it needs.
 A problem the old code already had, in the same form, is **consider** even right beside the change: a
 check-then-write race the old code had on the same data, a hole in a path the goal does not name (a delete path
 in a task about reads). The goal is met when the change does what it says and breaks nothing; hardening the
@@ -183,10 +191,11 @@ merged in, so the reviewer reviews no other pull request's work. Nothing to act 
 
 Brief every **act** finding as a fix at its cause (`steps/build.md`, Root cause), never as "fix it if it fits the
 scope" or "investigate": the builder is not the one who decides it is out of scope. A builder that answers it cannot
-be fixed in scope (the fix needs other files, other write paths, a shared lock or a conditional write) gets the same
-finding back at once, with those paths added to the plan and the approach it named as the one to build. It stays
-open only when the fix needs what this run cannot do: a change in another repository or service, a migration of live
-data, access or credentials it does not have. Then it leads the report with what was tried and the fix it needs.
+be fixed in scope (the fix needs other files, other write paths or a conditional write) gets the same finding back
+at once, with those paths added to the plan and the approach it named as the one to build, unless that approach is a
+large refactor (A large refactor is its own delivery, above): then it goes to the report. It stays open only when
+the fix needs what this run cannot do: a change in another repository or service, a migration of live data, access
+or credentials it does not have. Then it leads the report with what was tried and the fix it needs.
 
 **When fixes fight.** A fix that breaks today's behavior, with no change found that keeps both after one more
 approach: the working behavior wins, unless that fix is the goal itself. Restore the files of the last verify
@@ -217,7 +226,7 @@ review: their tests and the checks are their proof.
 - The reviewer reads; it never edits the code. The builder (or you, without a build profile) makes every fix.
 - Brief the reviewer with facts (goal, acceptance, diff, check states), not your reasoning or your verdict. A
   delta brief is the diff and the earlier findings to confirm; it never adds topics of its own (scale, fairness,
-  hostile load, data growth) for the reviewer to look for.
+  hostile load, data growth) for the reviewer to look for, and never asks for what else remains in the code.
 - Never dismiss a finding without evidence in the run log, and never dismiss a security finding by judgment
   alone.
 - Never widen the goal to satisfy a reviewer: a problem the goal does not cover is **consider**. A regression

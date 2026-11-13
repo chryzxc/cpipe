@@ -956,11 +956,12 @@ def brief(run_dir, worktree, role, round_, resume=False, card=False, bare=False)
         path = path.with_name(f"brief-{role}.md")
     return head + "\n" + path.read_text()
 
-ROUND_CAPS = {"build": 3, "review": 2, "security": 3}  # SKILL.md, Rounds: build counts since the last plan or review
+ROUND_CAPS = {"build": 3, "review": 2, "security": 3}  # SKILL.md, Rounds: build since the last plan or review, the rest per run
 
 
 def rounds(run_dir):
-    """The role rounds since the latest plan round, from logs/query-<role>-<n>.md in launch order."""
+    """Build rounds since the latest plan round and review, security and QA rounds over the whole run (a re-plan
+    never buys another review), from logs/query-<role>-<n>.md in launch order."""
     runs = []
     for q in (Path(run_dir) / "logs").glob("query-*-*.md"):
         if m := re.fullmatch(r"query-(\w+)-(\d+)\.md", q.name):
@@ -968,13 +969,14 @@ def rounds(run_dir):
     runs.sort()
     plans = [i for i, (_, _, role) in enumerate(runs) if role == "plan"]
     since = runs[plans[-1] + 1:] if plans else runs
-    count = {role: sum(r == role for *_, r in since) for role in ("build", "review", "security", "qa")}
+    count = {role: sum(r == role for *_, r in (since if role == "build" else runs))
+             for role in ("build", "review", "security", "qa")}
     builds = 0
     for *_, role in since:
         builds = 0 if role == "review" else builds + (role == "build")
     head = f"plan {runs[plans[-1]][1]}" if plans else "the start"
-    line = (f"Rounds since {head}: build {count['build']} ({builds} since the last plan or review), "
-            f"review {count['review']}, security {count['security']}, qa {count['qa']}.")
+    line = (f"Rounds since {head}: build {count['build']} ({builds} since the last plan or review). "
+            f"In the whole run: review {count['review']}, security {count['security']}, qa {count['qa']}.")
     full = [f"{role} at its cap of {cap}" for role, cap in ROUND_CAPS.items()
             if (builds if role == "build" else count[role]) >= cap]
     return line + (" At the cap (SKILL.md, Rounds): " + "; ".join(full) + "." if full else "")

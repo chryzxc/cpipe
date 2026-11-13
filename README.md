@@ -300,7 +300,7 @@ scope: whatever the goal needs inside the worktree is authorized, and a limit yo
 | Build: change, narrow test, keep or undo | One change at a time; never two unverified changes stacked |
 | A failing check, back to build | 3 attempts per approach, each a different idea; then a new approach |
 | QA failures, back to build | Fix and re-run the failed items until they pass; a new idea after 3 rounds |
-| Review, back to build | 2 rounds: one full review, one delta review of the fixes; a fix after that is proven by its test and the checks (plus a security delta) |
+| Review, back to build | 2 rounds: one full review, one delta review of the fixes; a fix after that is proven by its test and the checks (plus a security delta). Review and security rounds count over the whole run, so a re-plan never starts them again |
 | Fixes for checks, conflicts, the cleanup | No review or QA round; the last verify is their proof |
 | No progress | 3 rounds in a row: change the approach and loop again |
 | Build rounds | 3 since the last plan or review: re-plan before another, so a fix that keeps growing is cut back early. Each step prints the run's round counts, and a role at its cap gets no further round |
@@ -510,8 +510,10 @@ A security finding is never dismissed without evidence, and an open one leads th
 
 A finding is not a requirement: what the goal needs comes from your words and the spec. A reviewer's "should"
 (bounded work everywhere, fairness under any load, volumes the project does not have) is fixed only for a concrete
-case the project really has; otherwise it is **consider** and offered as follow-up work. A fix never grows into a
-new subsystem you did not ask for, and a later `/cpipe` in the same worktree carries the earlier run's
+case the project really has; otherwise it is **consider** and offered as follow-up work. The run sticks to the
+task's scope: a problem the code already had, hardening beside the fix, and a fix that takes a large refactor (a
+new transaction or lock layer, logic moved across modules) are follow-up deliveries in the report. A fix never
+grows into a new subsystem you did not ask for, and a later `/cpipe` in the same worktree carries the earlier run's
 instructions and spec, so a review before merge checks the change against them instead of growing it.
 
 A port, backport or replay of named pull requests or commits measures against its source: a problem the source
