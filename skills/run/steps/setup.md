@@ -20,8 +20,8 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
    it came from often names the repository or base. Fetch the base so it is current, and from here on the base is
    the fetched remote branch (`origin/<base>`), never a local branch of that name, which can be days behind it.
    **This chat's project.** `active <run dir>` (step 5, Run log) prints a `project:` line when this chat (not a
-   lane: its launcher already files it) is in none of the user's projects (named workspaces) and one holds the
-   repository. Then switch this chat into that project with your tool for the user's projects, so the delivery
+   lane: it is the dispatcher's sub-agent) is in none of the user's projects (named workspaces) and one holds
+   the repository. Then switch this chat into that project with your tool for the user's projects, so the delivery
    shows under it; a continue in a new chat does the same. A chat already in a project stays there, whichever it
    is. Only an existing project: never create one, and with no such line or no such tool, go on as you are. Paths
    stay absolute, so nothing else changes.

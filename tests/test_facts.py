@@ -4,6 +4,7 @@ import json
 import re
 import os
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -211,14 +212,23 @@ def test_active_registers_this_chat(tmp_path, monkeypatch):
     home = tmp_path / "profiles" / "p"
     home.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(home / "state.db")
-    db.executescript("CREATE TABLE sessions (id TEXT, parent_session_id TEXT);"
-                     "INSERT INTO sessions VALUES ('s2', 's1'), ('s1', NULL);")
+    db.executescript("CREATE TABLE sessions (id TEXT, parent_session_id TEXT, model_config TEXT);"
+                     "INSERT INTO sessions (id, parent_session_id) VALUES ('s2', 's1'), ('s1', NULL);")
     db.commit()
     db.close()
     facts.active(tmp_path / "run")
     monkeypatch.setenv("HERMES_SESSION_ID", "s2")
     facts.active(tmp_path / "run", done=True)
     assert not (tmp_path / "cpipe/active/s1.json").exists()
+    db = sqlite3.connect(home / "state.db")  # a --parallel lane: a sub-agent of chat s2
+    db.execute("""INSERT INTO sessions VALUES ('lane', 's2', '{"_delegate_from": "s2"}')""")
+    db.commit()
+    db.close()
+    facts.active(tmp_path / "run")
+    monkeypatch.setenv("HERMES_SESSION_ID", "lane")
+    facts.active(tmp_path / "run")
+    facts.active(tmp_path / "run", done=True)
+    assert (tmp_path / "cpipe/active/s2.json").exists() and not (tmp_path / "cpipe/active/lane.json").exists()
 
 
 def test_chat_flags_follow_this_chats_profile_model_and_switched_provider(tmp_path, monkeypatch):
@@ -239,9 +249,9 @@ def test_chat_flags_follow_this_chats_profile_model_and_switched_provider(tmp_pa
 def test_an_instruction_the_user_never_wrote_holds_the_gate_and_every_brief(tmp_path, monkeypatch):
     """A reading of an answer ("disclose the gap") written as the user's words would let a role stop short."""
     db = sqlite3.connect(tmp_path / "state.db")
-    db.execute("CREATE TABLE sessions (id TEXT, parent_session_id TEXT)")
+    db.execute("CREATE TABLE sessions (id TEXT, parent_session_id TEXT, model_config TEXT)")
     db.execute("CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT)")
-    db.executemany("INSERT INTO sessions VALUES (?, ?)", [("s1", None), ("s2", "s1")])
+    db.executemany("INSERT INTO sessions (id, parent_session_id) VALUES (?, ?)", [("s1", None), ("s2", "s1")])
     db.executemany("INSERT INTO messages VALUES (?, ?, ?)", [
         ("s1", "user", "Fix it and do an incremental\ncommit"), ("s2", "user", "Just use what is current now"),
         ("s2", "assistant", "Disclose the gap")])
@@ -265,9 +275,9 @@ def test_an_instruction_the_user_never_wrote_holds_the_gate_and_every_brief(tmp_
 def test_a_run_continued_in_a_new_chat_keeps_the_users_words_of_the_first(tmp_path, monkeypatch):
     """The second chat's gate rejected every instruction and spec quote the user wrote in the first one."""
     db = sqlite3.connect(tmp_path / "state.db")
-    db.execute("CREATE TABLE sessions (id TEXT, parent_session_id TEXT)")
+    db.execute("CREATE TABLE sessions (id TEXT, parent_session_id TEXT, model_config TEXT)")
     db.execute("CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT)")
-    db.executemany("INSERT INTO sessions VALUES (?, ?)", [("a1", None), ("b1", None)])
+    db.executemany("INSERT INTO sessions (id, parent_session_id) VALUES (?, ?)", [("a1", None), ("b1", None)])
     db.executemany("INSERT INTO messages VALUES (?, ?, ?)", [
         ("a1", "user", 'Port only #1. Remove item I2 ("no new risks").'), ("b1", "user", "continue")])
     db.commit()
@@ -322,52 +332,95 @@ def test_a_whole_loop_through_the_command_line(tmp_path):
     assert cli("gate", run).startswith("PASS") and cli("report", run).startswith("✅ Done")
 
 
-def test_lanes_start_resume_and_report(tmp_path):
-    def lane(name, log=None, pid=None):
-        d = tmp_path / name
-        d.mkdir()
+def sessions(home, *rows):
+    """A state.db of (id, parent, started, ended, end_reason, last activity, sub-agent?) rows."""
+    db = sqlite3.connect(home / "state.db")
+    db.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT, parent_session_id TEXT, started_at REAL, ended_at REAL,"
+               " end_reason TEXT, last_activity_at REAL, model_config TEXT, cwd TEXT, git_repo_root TEXT)")
+    db.executemany("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,'',NULL)",
+                   [(*r[:6], json.dumps({"_delegate_from": "chat"} if r[6] else {})) for r in rows])
+    db.commit(); db.close()
+
+
+def test_lanes_start_resume_and_report(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    now, batch = time.time(), tmp_path / "b"
+    def lane(name, session=None, run=None, started=now - 4000):
+        d = batch / name
+        d.mkdir(parents=True)
         (d / "brief.md").write_text(f"# issue {name}\nLoad the skill…\n")
-        if log is not None:
-            (d / "log.txt").write_text(log)
-        if pid:
-            (d / "pid").write_text(str(pid))
-        return d
-    run = tmp_path / "run"
-    run.mkdir()
-    (run / "now.md").write_text("## Instructions\n- merge it\n\n## Step\n6/11 Build · round 2\n")
-    (lane("1", "lane started 100\n", os.getpid()) / "run").write_text(str(run))
-    lane("2", "lane started 100\n✅ Done: fix the filter\n\nSummary\nsession_id: s2\nexit 0 4000\n")
-    lane("3", "lane started 100\n⏳ Paused by the turn limit at 6/11\nsession_id: s3\nexit 0 3000\n")
-    lane("4", "lane started 100\nsession_id: s4\nexit 1 160\n")
-    lane("5")
-    lane("6")
-    out = facts.lanes(tmp_path, at_once=4, report_of="2").splitlines()
-    assert out[0] == "1 issue 1 · running · 6/11 Build · round 2"
-    assert out[1] == "2 issue 2 · reported · ✅ Done: fix the filter"
-    assert out[2].startswith("3 issue 3 · stopped · exit 0 after 48 min · session s3")
-    assert "RESUME 3 --resume s3" in out and "RESUME 4 -w 600 --resume s4" in out
-    assert "START 5" in out and "START 6" not in out  # four at once: one running, two resuming
+        if session:
+            (d / "session").write_text(session)
+        if started:
+            (d / "started").write_text(str(started))
+        if run:
+            run.mkdir()
+            (d / "run").write_text(str(run))
+        return run
+    sessions(tmp_path, ("s1", "chat", now - 600, None, None, now - 10, True),
+             ("s2", "chat", now - 4000, now - 100, None, now - 100, True),
+             ("s3", "chat", now - 3000, now - 100, None, now - 100, True),
+             ("s4", "chat", now - 200, now - 40, None, now - 40, True),
+             ("s7", "chat", now - 4000, now - 3000, "compression", now - 3000, True),
+             ("s7b", "s7", now - 3000, None, None, now - 5, True))
+    (lane("1", "s1", tmp_path / "r1") / "now.md").write_text("## Step\n6/11 Build · round 2\n")
+    (lane("2", "s2", tmp_path / "r2") / "report.md").write_text("✅ Done: fix the filter\n\nSummary\n")
+    lane("3", "s3")
+    lane("4", "s4")
+    lane("5", started=None)
+    lane("6", started=None)
+    lane("7", "s7")  # compacted: its continuation still runs
+    lane("8", started=now - 30)  # just started: no session yet
+    out = facts.lanes(batch, at_once=5, report_of="2").splitlines()
+    assert "1 issue 1 · running · 6/11 Build · round 2" in out
+    assert "2 issue 2 · reported · ✅ Done: fix the filter" in out
+    assert "3 issue 3 · stopped · ended after 48 min" in out and "RESUME 3" in out
+    assert any(v.startswith("RESUME 4 after ") for v in out)  # stopped within minutes: waits first
+    assert "7 issue 7 · running · setting up" in out and "8 issue 8 · starting" in out
+    assert "START 5" not in out  # five at once: three running, two resuming
     assert out[-4:] == ["Report of 2:", "✅ Done: fix the filter", "", "Summary"]
-    for name in "13456":
-        (tmp_path / name / "brief.md").unlink()
-    assert facts.lanes(tmp_path).splitlines()[-1] == "DONE"
+    assert not (batch / "3" / "session").exists() and (batch / "4" / "session").exists()
+    for name in "1345678":
+        (batch / name / "brief.md").unlink()
+    assert facts.lanes(batch).splitlines()[-1] == "DONE"
+
+
+def test_delegation_note_only_for_a_pinned_sub_agent_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    config = tmp_path / "config.yaml"
+    config.write_text("model:\n  default: big\ndelegation:\n  model: small  # pinned\n  max_iterations: 400\n")
+    assert "sub-agent model small" in facts.delegation_note()
+    batch = tmp_path / "b" / "1"
+    batch.mkdir(parents=True)
+    (batch / "brief.md").write_text("# issue 1\n")
+    assert facts.lanes(batch.parent).splitlines()[0].startswith("⚠️ Lanes run on the sub-agent model small")
+    config.write_text("delegation:\n  model: small\n  backend: profile_routes\n")
+    assert facts.delegation_note() == ""
+    config.write_text("delegation:\n  model: ''\n")
+    assert facts.delegation_note() == ""
 
 
 def test_a_chat_that_continues_a_stopped_lane_takes_it_over(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    monkeypatch.setenv("HERMES_SESSION_ID", "s1")
+    now = time.time()
+    sessions(tmp_path, ("chat", None, now, None, None, now, False),
+             ("lane", "dispatcher", now - 900, None, None, now - 5, True))
     batch, run = tmp_path / "cpipe" / "lanes" / "b", tmp_path / "run"
     lane = batch / "1"
     lane.mkdir(parents=True)
     run.mkdir()
     (run / "now.md").write_text("## Step\n2/11 Explore\n")
     (lane / "brief.md").write_text("# issue 1\n")
+    (lane / "started").write_text(str(now - 900))
     (lane / "run").write_text(str(run))
-    (lane / "log.txt").write_text("lane started 100\n")  # killed: no exit line
-    (lane / "pid").write_text(str(os.getpid()))
-    assert "taken over" not in facts.active(run)  # its launcher still runs it
-    (lane / "pid").write_text("999999999")
-    assert "RESUME 1" in facts.lanes(batch)
+    monkeypatch.setenv("HERMES_SESSION_ID", "lane")
+    assert "taken over" not in facts.active(run)  # the lane registers its own run
+    assert (lane / "session").read_text().strip() == "lane"
+    monkeypatch.setenv("HERMES_SESSION_ID", "chat")
+    assert "taken over" not in facts.active(run)  # its sub-agent still runs it
+    db = sqlite3.connect(tmp_path / "state.db")
+    db.execute("UPDATE sessions SET ended_at = ? WHERE id = 'lane'", (now - 1,))
+    db.commit(); db.close()
     assert "taken over by this chat" in facts.active(run)
     assert facts.lanes(batch).splitlines() == ["1 issue 1 · taken over in its chat · 2/11 Explore", "WAIT"]
     (run / "report.md").write_text("✅ Done: issue 1\n")
@@ -427,9 +480,14 @@ def test_a_spec_question_waits_only_when_nothing_else_is_left(tmp_path, monkeypa
     lane.mkdir(parents=True)
     (lane / "brief.md").write_text("# issue 1\n")
     (lane / "run").write_text(str(run))
-    (lane / "log.txt").write_text("lane started 100\nsession_id: s1\nexit 0 3000\n")
+    (lane / "inbox.md").touch()
+    os.utime(lane / "inbox.md", (time.time() - 2000,) * 2)
+    (lane / "started").write_text(str(time.time() - 1000))  # started after its inbox was written, now gone
     assert facts.lanes(lane.parent).splitlines() == [
-        "1 issue 1 · ❓ waiting on your answer in its chat · R1: may admins edit too? · recommended: yes", "DONE"]
+        "1 issue 1 · ❓ waiting on your answer, here · R1: may admins edit too? · recommended: yes", "WAIT"]
+    (lane / "inbox.md").write_text("admins too\n")  # answered: started again
+    os.utime(lane / "inbox.md", (time.time() + 5,) * 2)
+    assert facts.lanes(lane.parent).splitlines()[-1] == "RESUME 1"
     facts.track(run, "set", [q, "done", "answered: admins too"])
     assert facts.gate(run).startswith("PASS")
 
@@ -587,5 +645,10 @@ def test_active_names_the_project_that_holds_the_repository(tmp_path, monkeypatc
     monkeypatch.setenv("HERMES_SESSION_ID", "s2")  # already in a project: it stays there
     assert "project:" not in facts.active(run)
     monkeypatch.setenv("HERMES_SESSION_ID", "s1")
-    monkeypatch.setenv("CPIPE_LANE", str(tmp_path))  # a lane is filed by its launcher
-    assert "project:" not in facts.active(run)
+    db = sqlite3.connect(home / "state.db")
+    db.executescript("ALTER TABLE sessions ADD COLUMN started_at REAL; ALTER TABLE sessions ADD COLUMN ended_at REAL;"
+                     "ALTER TABLE sessions ADD COLUMN end_reason TEXT; ALTER TABLE sessions ADD COLUMN last_activity_at REAL;"
+                     "ALTER TABLE sessions ADD COLUMN model_config TEXT;"
+                     """UPDATE sessions SET model_config = '{"_delegate_from": "chat"}' WHERE id = 's1';""")
+    db.commit(); db.close()
+    assert "project:" not in facts.active(run)  # a lane is a sub-agent of its dispatcher's chat

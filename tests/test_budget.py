@@ -137,8 +137,8 @@ def test_rules_are_pinned_only_for_a_running_session(tmp_path, monkeypatch):
     monkeypatch.delenv("CPIPE_STEP", raising=False)
     assert cpipe._pinned({"session_id": "child"}) == ""
     db = sqlite3.connect(tmp_path / "state.db")
-    db.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT)")
-    db.executemany("INSERT INTO sessions VALUES (?, ?)", [("root", None), ("child", "root")])
+    db.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, model_config TEXT)")
+    db.executemany("INSERT INTO sessions (id, parent_session_id) VALUES (?, ?)", [("root", None), ("child", "root")])
     db.commit()
     db.close()
     run = tmp_path / "run"
@@ -169,7 +169,6 @@ def test_a_turn_cannot_end_on_a_question_while_the_gate_has_work(tmp_path, monke
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.delenv("CPIPE_RUN", raising=False)
     monkeypatch.delenv("CPIPE_STEP", raising=False)
-    monkeypatch.delenv("CPIPE_LANE", raising=False)
     run = tmp_path / "run"
     run.mkdir()
     (run / "track.json").write_text(json.dumps([{"id": "verify-1", "text": "race tests pass", "status": "open",
@@ -218,7 +217,6 @@ def test_the_watcher_queues_the_next_turn_until_the_run_is_done(tmp_path, monkey
     monkeypatch.setattr(cpipe, "_gate", lambda *_: verdict["v"])
     monkeypatch.setattr(cpipe, "_waiting", lambda _: False)
     monkeypatch.delenv("CPIPE_STEP", raising=False)
-    monkeypatch.delenv("CPIPE_LANE", raising=False)
 
     class Ctx:
         text = None
@@ -292,7 +290,6 @@ def test_a_run_that_skips_registration_is_still_pinned_and_watched(tmp_path, mon
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.delenv("CPIPE_RUN", raising=False)
     monkeypatch.delenv("CPIPE_STEP", raising=False)
-    monkeypatch.delenv("CPIPE_LANE", raising=False)
     monkeypatch.setattr(cpipe, "_waiting", lambda _: False)
     chat = _Chat()
     cpipe._start(chat, "fix the clock audit")

@@ -236,8 +236,8 @@ delivery) are offered as cards on the user's task board, so they are not lost in
 the user can do (a sign-in, a setting, a profile's provider) and limits with nothing to change.
 
 Only when this chat has a clarify tool and the user's board (`hermes kanban`), and is the user's own chat: never in
-a lane (its launcher reports), or a one-shot or scheduled session (no one answers). Otherwise the report is the
-final reply, as above.
+a lane (the dispatcher posts its report), or a one-shot or scheduled session (no one answers). Otherwise the
+report is the final reply, as above.
 
 1. **Split.** One card per piece of work that can be done and shipped alone: different files, a different cause
    or a different owner are separate cards, never one card holding two. Several rows about one fix are one card.

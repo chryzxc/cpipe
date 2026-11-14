@@ -1,9 +1,10 @@
 # cpipe: deliveries in parallel (`--parallel`)
 
 When the task message starts with `--parallel`, or the user asks for issues in parallel in their own words, each
-issue (`cpipe:run`, One issue, one delivery) is delivered in a session of its own, a lane, running in the
-background. This chat is the dispatcher and only a status monitor: it starts the lanes, posts their status lines
-and each lane's report as it arrives, and writes the summary. It never delivers an issue itself, one issue
+issue (`cpipe:run`, One issue, one delivery) is delivered by a sub-agent of this chat, a lane (Hermes'
+`delegate_task`): it runs in the background, shows inside this chat, where the user opens it to watch, and stays
+out of the session list. This chat is the dispatcher and only a status monitor: it starts the lanes, posts each
+lane's report as it arrives, and writes the summary. It never delivers an issue itself, one issue
 included, never runs a step, reads a lane's code, plan or worktree, or waits on anything but the lanes.
 
 A delivery this chat was already running when parallel is asked (the user asks for more issues alongside it, or
@@ -31,38 +32,39 @@ then on this chat registers the batch, not the run, and never touches that run's
      steps stay done, and a role step it left running is waited on, never started again.`
    - The user's instructions, word for word, every one that applies to all issues (push, pull request, merge).
    - The other lanes: `Lane <n> of <total>; others: <their issues>`.
-3. **Start.** Who runs a lane is this chat's own profile and model: the command `chat` prints (Facts). The time
-   limit is 14400 seconds unless the user gave one. `lanes <batch dir>` prints the lanes and what to do
-   (`START <n>`); run every start in one reply, each in the background with a completion notification and a
-   heartbeat of 300 seconds (the lane prints a `LANE` line each time its step changes; a quiet tick is skipped):
-   `sh <skill dir>/bin/lane.sh <batch dir>/<n> <repository> <limit> <who>`, with the lane's repository from Batch:
-   a session started in it is filed by Hermes under that repository's project, and the launcher saves it as a
-   chat (role sessions stay hidden), so every lane shows in the session list there. Up to four
-   run at once (`--at-once <n>` when the user names another number); the rest are queued and start as lanes
-   finish.
+3. **Start.** `lanes <batch dir>` prints the lanes and what to do (`START <n>`), and a ⚠️ line first when the
+   lanes would not run on this chat's model: post that line as it is. Start each lane with its own
+   `delegate_task` call, all in one reply, one task each, so each lane's result comes back on its own: goal
+   `Deliver lane <n> of a cpipe --parallel batch: read <lane dir>/brief.md and follow it.` Give no profile
+   unless the user named one: the lane runs on this chat's model, and its role steps on their own profiles.
+   Hermes' delegation config sets a lane's limits (its turns and time) and how many run at once: up to four
+   (`--at-once <n>` when the user names another number, never more than Hermes' `max_concurrent_children`,
+   or Hermes runs the next one in the foreground and this chat waits on it); the rest are queued and start
+   as lanes finish.
 4. **Wait.** End the turn with `⏳ <running> lanes running, <queued> queued · each reports here · resumes on its
-   own`. A lane's notification starts the next turn.
+   own`. A lane's result starts the next turn.
 
-**A notification.** It holds `lanes <batch dir>` as the lane printed it when it ended: one line per lane, what to
-do, and the ended lane's report. A lane `taken over in its chat` is the user's: never start it again. Post
-that report as it is, under `Lane <n> · <issue>`. Then act on each verdict in the same reply: `START <n>` starts a queued lane; `RESUME <n> [-w <s>] [--resume <id>]` starts that lane again
-as in Start, with those options before the lane folder (`sh <skill dir>/bin/lane.sh -w <s> <lane dir> …
---resume <id>`), so a lane that stopped without its report (the turn limit, the time limit, a crash) goes on where it was; `WAIT` ends the
-turn on the wait line. Run `lanes <batch dir>` again before acting when the notification is not the newest
-thing in the chat. `DONE` writes the summary.
-
-**A heartbeat.** It holds the `LANE <n> · <issue> · <step>` lines a running lane printed since the last one.
-Post them as they are, one line each, and end the turn on the wait line; nothing else runs.
+**A lane's result.** Run `lanes <batch dir> --report <n>`: one line per lane, what to do, and the lane's report
+(its run's `report.md`). Post that report, else the lane's final reply as Hermes returned it, under
+`Lane <n> · <issue>`. A lane `taken over in its chat` is the user's: never start it again. Then act on each
+verdict in the same reply: `START <n>` and `RESUME <n>` start that lane as in Start (a resumed lane finds its
+run and goes on where it was: the turn limit, the time limit, a crash); `RESUME <n> after <s>` (a lane that
+stopped within minutes) starts `sleep <s>` in the background with a completion notification, whose
+notification runs `lanes` again; `WAIT` ends the turn on the wait line. Run `lanes <batch dir>` again before
+acting when the result is not the newest thing in the chat. `DONE` writes the summary.
 
 **A message from the user.** Steering for one lane (it names its issue or number) is appended to that lane's
-`inbox.md` (`printf '%s\n' '<the message>' >> <file>`, never a rewrite of a file this chat has not read), for every lane to every `inbox.md` and to the queued lanes' `brief.md`; add it to the batch's
-`now.md` too. A question about progress is answered from `lanes <batch dir>`. The user taking a lane over (to
-continue or restart it in its own chat): write `user` to `<lane dir>/taken` first, then stop the lane with your
-process tool's kill and any role step it left running (`pkill -f <its run dir>/logs/`).
-Then end the turn on the wait line.
+`inbox.md` (`printf '%s\n' '<the message>' >> <file>`, never a rewrite of a file this chat has not read), for
+every lane to every `inbox.md` and to the queued lanes' `brief.md`; add it to the batch's `now.md` too. The
+user's answer to a lane's ❓ question goes to its `inbox.md` the same way, then `lanes` starts it again. A
+question about progress is answered from `lanes <batch dir>`. The user taking a lane over (to continue or
+restart its run in a chat of their own): stop the lane (`delegate_task` with action `list` for its id, then
+action `stop`) and any role step it left running (`pkill -f <its run dir>/logs/`); the chat that registers its
+run takes the lane over. Then end the turn on the wait line.
 
-**Continue** (or a restart): `active <batch dir>`, then `lanes <batch dir>` and act on its verdicts: a lane whose
-process is gone is resumed, so a notification that never came loses nothing.
+**Continue** (or a restart): `active <batch dir>`, then `lanes <batch dir>` and act on its verdicts. Hermes stops
+every lane with this chat (`/stop`, `/new`, the app closing): each shows as stopped and is resumed, so a result
+that never came loses nothing.
 
 **Summary.** When `lanes` prints `DONE`: one status line for the batch, `✅ Done: <n> deliveries` or
 `⚠️ Done except: <what is left, per lane>`, then one line per lane, `<n> <issue> · <its status line> · <its pull
@@ -70,13 +72,14 @@ request or branch>`, then `active <batch dir> --done`. The lanes' own reports ar
 
 ## In a lane
 
-The brief names a lane folder: this session delivers that one issue through the whole flow of `cpipe:run`, with
-these differences.
+The brief names a lane folder: this sub-agent delivers that one issue through the whole flow of `cpipe:run`,
+with these differences.
 
-- **Register.** Once the run log exists, write the run folder's path to `<lane dir>/run`: the dispatcher reads the
-  current step from its `now.md`, and the run's rules stay pinned in this session from it. A brief that names a run
-  folder: write it there first, run `active <run dir>`, then continue that run (`continue.md`).
-- **Wait on each step.** This session ends when a turn ends, and no notification wakes it. So run each role step
+- **Register.** Once the run log exists, write the run folder's path to `<lane dir>/run` and run
+  `active <run dir>`: the dispatcher reads this session and the current step from them, and the run's rules stay
+  pinned in this session. A lane folder that already has a `run` (the lane was started again), or a brief that
+  names a run folder: write it there, run `active <run dir>` first, then continue that run (`continue.md`).
+- **Wait on each step.** A sub-agent ends when its turn ends, and no notification wakes it. So run each role step
   (`roles.md`, Run) and other long work (installs, the baseline) in the background, then wait on the role steps
   with one foreground command: `sh <skill dir>/bin/wait.sh <run dir> 390 <run dir>/logs/<role>-<n>.txt ...`, every
   step you wait on, with a terminal timeout of 420 seconds (Hermes cuts any one tool call off at about 7 minutes).
@@ -87,16 +90,16 @@ these differences.
   lines and no progress tick: a turn ends only on the report or the pause message.
 - **Steering.** At the start of each step, read `<lane dir>/inbox.md`. A line not yet in `now.md` is the user's
   steering (`cpipe:run`, Unattended): add it to `now.md` and act on it.
-- **Approvals.** A lane is a one-shot session: Hermes asks no one and blocks a command that needs an approval at
-  once, so no approval ever reaches the user from here. A blocked command is done the standard way (`cpipe:run`,
+- **Approvals.** Hermes asks no one for a sub-agent and denies a command that needs an approval at once, so no
+  approval ever reaches the user from here. A blocked command is done the standard way (`cpipe:run`,
   Unattended): file tools for edits, a script file, the program with its arguments; a role step's reply that one
   was blocked gets a follow-up saying that, never "run it again". Only an action that needs the user in itself
   (deleting their data, a forced push) and has no other way is left: finish the rest and name the exact command
-  in the report's `⚠️ Done except` line, with `approve it by taking this lane over in its chat`. Never the
-  needs-your-approval line in a lane: a "continue" runs one-shot again and cannot ask.
+  in the report's `⚠️ Done except` line, with `approve it by continuing this lane's run in a chat of your own`.
+  Never the needs-your-approval line in a lane: a lane started again cannot ask either.
 - **Only this issue.** Never touch another lane's branch, worktree or pull request. Before a merge, update this
   branch onto the base as it is then (`steps/publish.md`, Merge): another lane may have merged first.
-- **Taken over.** When `active` says this chat took the lane over (its launcher had stopped and the user
+- **Taken over.** When `active` says this chat took the lane over (the lane had stopped and the user
   continued it here), this is a chat like any other from then on: run and wait on role steps as `roles.md`, Run
   says. The dispatcher leaves the lane to this chat and posts the run's `report.md` (`steps/report.md`, Report).
-- **The report** is this session's final reply, in the sections of `steps/report.md`; the dispatcher posts it.
+- **The report** is this sub-agent's final reply, in the sections of `steps/report.md`; the dispatcher posts it.

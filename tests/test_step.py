@@ -17,7 +17,7 @@ def test_role_launcher_preserves_exit_status(tmp_path, status):
     binary.write_text(f'#!/bin/sh\necho session_id: fixture\nexit {status}\n')
     binary.chmod(0o755)
     env = dict(os.environ, PATH=f'{tmp_path}{os.pathsep}{os.environ["PATH"]}', HERMES_HOME=str(tmp_path))
-    for key in ('HERMES_SESSION_ID', 'CPIPE_RUN', 'CPIPE_STEP', 'CPIPE_LANE'):
+    for key in ('HERMES_SESSION_ID', 'CPIPE_RUN', 'CPIPE_STEP'):
         env.pop(key, None)
     result = subprocess.run(['sh', str(ROOT / 'skills/run/bin/step.sh'), str(run), str(tmp_path),
                              'build', '1', '10', '10', 'hermes', 'chat'],

@@ -14,7 +14,6 @@ every step and acts on what this prints (skills/run/SKILL.md). Standard library 
   python3 cpipe.py brief <run dir> <worktree> <role> <round> [--resume] [--card] [--bare]
   python3 cpipe.py rounds <run dir>
   python3 cpipe.py lanes <batch dir> [--at-once <n>] [--report <lane>]
-  python3 cpipe.py step <lane dir>
   python3 cpipe.py cost <run dir> <worktree> [--start]
   python3 cpipe.py port <source commit or from..to> <base> [--repo <source repository>]
 """
@@ -724,7 +723,7 @@ def active(run_dir, done=False):
     path = hermes_root() / "cpipe" / "active" / f"{sid}.json"
     if done:
         # The plugin finds a run through the chats this one was compacted from, so each of their records goes.
-        for each in _lineage(sid):
+        for each in _lineage(sid, forks=False):
             for suffix in (".json", ".watch"):
                 path.with_name(each + suffix).unlink(missing_ok=True)
         return f"run closed for {sid}"
@@ -739,13 +738,20 @@ def active(run_dir, done=False):
         with chats.open("a") as f:
             f.write(sid + "\n")
     out = f"run registered for {sid}"
+    me = _session(sid)
+    chat = bool(me and me["chat"])  # else a --parallel lane: a sub-agent of the dispatcher (parallel.md)
     for lane in (hermes_root() / "cpipe" / "lanes").glob("*/*/run"):
-        if lane.read_text().strip() not in (run_dir, run) or _alive(lane.parent):
+        if lane.read_text().strip() not in (run_dir, run):
             continue
-        # Its launcher is gone and a chat picked the run up: the dispatcher leaves the lane to it (lanes()).
-        (lane.parent / "taken").write_text(sid + "\n")
-        out += f"\nlane {lane.parent}: taken over by this chat; the dispatcher posts this run's report.md"
-    if not os.environ.get("CPIPE_LANE") and (line := _project(run_dir, sid)):
+        own = _session(_read(lane.parent / "session"))
+        if chat and own and own["running"] and not own["chat"]:
+            continue  # its sub-agent still runs it
+        # The dispatcher reads the lane's state from this session (lanes()); a chat that picked a stopped lane's
+        # run up takes the lane over, and the dispatcher leaves it to that chat.
+        (lane.parent / "session").write_text(sid + "\n")
+        if chat:
+            out += f"\nlane {lane.parent}: taken over by this chat; the dispatcher posts this run's report.md"
+    if (chat or not me) and (line := _project(run_dir, sid)):
         out += "\n" + line
     return out
 
@@ -885,8 +891,9 @@ def _said(sid, run_dir=None):
     return _fold(" ".join(said))
 
 
-def _lineage(sid, db=None):
-    """This chat and the chats it was compacted from (a compaction continues the chat under a new id)."""
+def _lineage(sid, db=None, forks=True):
+    """This chat and the chats it was compacted from (a compaction continues the chat under a new id). A sub-agent's
+    (a --parallel lane's) goes on to the chat that started it, where the user wrote, unless `forks` is False."""
     ids = []
     try:
         own = db is None
@@ -896,8 +903,9 @@ def _lineage(sid, db=None):
         try:
             while sid and sid not in ids:
                 ids.append(sid)
-                row = db.execute("SELECT parent_session_id FROM sessions WHERE id = ?", (sid,)).fetchone()
-                sid = row and row[0]
+                row = db.execute("SELECT parent_session_id, model_config FROM sessions WHERE id = ?",
+                                 (sid,)).fetchone()
+                sid = row and (forks or '"_delegate_from"' not in (row[1] or "")) and row[0]
         finally:
             if own:
                 db.close()
@@ -982,47 +990,54 @@ def rounds(run_dir):
     return line + (" At the cap (SKILL.md, Rounds): " + "; ".join(full) + "." if full else "")
 
 
-REPORT_LINE = re.compile(r"^(?:✅ Done|⚠️? Done except|✅ Approved|⚠️? Changes needed)", re.M)
-QUICK = 300  # a lane that stopped this soon after its start waits before it is resumed
+QUICK = 300  # a lane that ended this soon after it started is resumed only this long after its end
+STARTING = 900  # a lane started this recently that has registered no session yet is still starting
+STALE = 1800  # a lane session silent this long is gone: Hermes stopped without ending it
 
 
-def _segment(lane):
-    """The lane's last session in log.txt: (its text, seconds it ran or None while running, exit code)."""
+def _session(sid):
+    """A session as Hermes recorded it, followed through its compactions, from whichever profile's store has it:
+    {id, started, ended, running, chat} (chat: the user's own chat, not a sub-agent), or None."""
+    root = hermes_root()
+    cols = "id, started_at, ended_at, end_reason, last_activity_at, model_config"
+    for path in [root / "state.db", *sorted(root.glob("profiles/*/state.db"))]:
+        if not (sid and path.is_file()):
+            continue
+        try:
+            db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1)
+            try:
+                row, seen = db.execute(f"SELECT {cols} FROM sessions WHERE id = ?", (sid,)).fetchone(), set()
+                while row and row[2] and row[3] == "compression" and row[0] not in seen:
+                    seen.add(row[0])
+                    row = db.execute(f"SELECT {cols} FROM sessions WHERE parent_session_id = ? "
+                                     "ORDER BY started_at DESC LIMIT 1", (row[0],)).fetchone() or row
+            finally:
+                db.close()
+        except sqlite3.Error:
+            continue
+        if not row:
+            continue
+        try:
+            sub = bool(json.loads(row[5] or "{}").get("_delegate_from"))
+        except (ValueError, AttributeError):
+            sub = False
+        heard = row[4] or row[1] or 0
+        return {"id": row[0], "started": row[1] or 0, "ended": row[2], "chat": not sub,
+                "running": row[2] is None and time.time() - heard < STALE}
+    return None
+
+
+def _read(path):
     try:
-        log = (lane / "log.txt").read_text(errors="replace")
+        return path.read_text().strip()
     except OSError:
-        return None, None, None
-    seg = log[log.rfind("lane started "):]
-    start = re.match(r"lane started (\d+)", seg)
-    end = re.search(r"^exit (\d+) (\d+)\s*\Z", seg, re.M)
-    if not end:
-        return seg, None, None
-    ran = int(end.group(2)) - int(start.group(1)) if start else 0
-    return seg, ran, int(end.group(1))
-
-
-def _lane_report(lane, seg):
-    """The lane's run's report.md (check_report), else the report in its log."""
-    try:
-        return (Path((lane / "run").read_text().strip()) / "report.md").read_text().strip()
-    except OSError:
-        return _report(seg)
-
-
-def _report(seg):
-    """The lane's final reply from its first report line, without the session footer."""
-    found = REPORT_LINE.search(seg or "")
-    if not found:
         return ""
-    return re.split(r"^(?:session_id: |exit \d+ )", seg[found.start():], flags=re.M)[0].strip()
 
 
-def _alive(lane):
-    try:
-        os.kill(int((lane / "pid").read_text()), 0)
-        return True
-    except (OSError, ValueError):
-        return False
+def _lane_report(lane):
+    """The report.md of the lane's run (check_report)."""
+    run = _read(lane / "run")
+    return _read(Path(run) / "report.md") if run else ""
 
 
 def _now_step(lane):
@@ -1044,42 +1059,68 @@ def _asking(lane, sid):
     return verdict[5:] if verdict.startswith("ASK: ") else ""
 
 
+def delegation_note():
+    """A warning for the dispatcher when its lanes would not run on its own model: Hermes' default delegation with
+    `delegation.model` set runs every sub-agent on that model (parallel.md, Start)."""
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    block = re.search(r"(?ms)^delegation:[ \t]*\n(.*?)(?=^\S|\Z)", _read(home / "config.yaml") + "\n")
+
+    def key(name):
+        found = block and re.search(rf"(?m)^  {name}:[ \t]*(.*)$", block.group(1))
+        return found.group(1).split("#")[0].strip().strip("'\"") if found else ""
+    if key("backend") not in ("", "default") or not key("model"):
+        return ""
+    return (f"⚠️ Lanes run on the sub-agent model {key('model')} (delegation.model in config.yaml), not on this "
+            "chat's model: for this chat's model, switch to Advanced Delegation's profile routes "
+            "(`hermes delegation config`).")
+
+
 def lanes(batch, at_once=4, report_of=None):
-    """Each lane of a --parallel batch with its state, then what to do: START, RESUME, WAIT or DONE."""
+    """Each lane of a --parallel batch with its state, then what to do: START, RESUME, WAIT or DONE. A START or
+    RESUME it prints is recorded as started: the dispatcher runs it in the same reply (parallel.md, Start)."""
     batch = Path(batch)
-    rows, todo, running, queued = [], [], 0, []
+    rows, todo, running, queued, now = [], [], 0, [], time.time()
     for lane in sorted((p for p in batch.iterdir() if (p / "brief.md").exists()), key=lambda p: (len(p.name), p.name)):
         issue = (lane / "brief.md").read_text().splitlines()[0].lstrip("# ").strip()
-        seg, ran, code = _segment(lane)
-        sid = re.findall(r"^session_id: (\S+)", seg or "", re.M)
-        if seg is None:
-            state = "queued"
-            queued.append(lane.name)
-        elif ran is None and _alive(lane):
-            state = f"running · {_now_step(lane)}"
-            running += 1
-        elif _lane_report(lane, seg):
-            state = "reported · " + _lane_report(lane, seg).splitlines()[0]
-        elif sid and _asking(lane, sid[-1]):
-            state = "❓ waiting on your answer in its chat · " + _asking(lane, sid[-1])
-        elif (lane / "taken").exists():
+        s = _session(_read(lane / "session"))
+        started = float(_read(lane / "started") or 0) or None
+        ask = "" if s and s["running"] else _asking(lane, s and s["id"])
+        if _lane_report(lane):
+            state = "reported · " + _lane_report(lane).splitlines()[0]
+        elif s and s["chat"]:  # the user continued its run in a chat of their own: theirs from then on
             state = f"taken over in its chat · {_now_step(lane)}"
             running += 1
+        elif s and s["running"]:
+            state = f"running · {_now_step(lane)}"
+            running += 1
+        elif started is None:
+            state = "queued"
+            queued.append(lane.name)
+        elif not s and now - started < STARTING:
+            state = "starting"
+            running += 1
+        elif ask and (not (lane / "inbox.md").exists() or (lane / "inbox.md").stat().st_mtime < ((s and s["ended"]) or started)):
+            state = "❓ waiting on your answer, here · " + ask
         else:
-            how = f"exit {code} after {ran // 60} min" if ran is not None else "its process is gone"
-            state = f"stopped · {how}" + (f" · session {sid[-1]}" if sid else " · never started")
-            wait = f" -w {QUICK * 2}" if ran is not None and ran < QUICK else ""
-            todo.append(f"RESUME {lane.name}{wait}" + (f" --resume {sid[-1]}" if sid else ""))
+            ran = s["ended"] - s["started"] if s and s["ended"] else None
+            how = f"ended after {int(ran) // 60} min" if ran is not None else "its session is gone"
+            state = f"stopped · {how}" if s else "stopped · never registered a session"
+            wait = int(s["ended"] + 2 * QUICK - now) if ran is not None and ran < QUICK else 0
+            todo.append(f"RESUME {lane.name}" + (f" after {wait}" if wait > 0 else ""))
         rows.append(f"{lane.name} {issue} · {state}")
     free = max(at_once - running - len(todo), 0)
     todo += [f"START {name}" for name in queued[:free]]
+    for verdict in todo:
+        name = verdict.split()[1]
+        if " after " not in verdict:
+            (batch / name / "started").write_text(f"{now:.0f}\n")
+            (batch / name / "session").unlink(missing_ok=True)
+    note = delegation_note() if any(" after " not in t for t in todo) else ""
     if not todo:
-        todo = ["WAIT"] if running or queued else ["DONE"]
-    out = rows + todo
-    if report_of:
-        report = _lane_report(batch / report_of, _segment(batch / report_of)[0])
-        if report:
-            out += ["", f"Report of {report_of}:", report]
+        todo = ["WAIT"] if running or queued or any("❓" in r for r in rows) else ["DONE"]
+    out = ([note] if note else []) + rows + todo
+    if report_of and (report := _lane_report(batch / report_of)):
+        out += ["", f"Report of {report_of}:", report]
     return "\n".join(out)
 
 
@@ -1151,8 +1192,6 @@ def main(argv):
         print(rounds(args[0]))
     elif cmd == "cost":
         print(cost(args[0], args[1], "--start" in args))
-    elif cmd == "step":
-        print(_now_step(Path(args[0])))
     elif cmd == "port":
         opt = dict(zip(args[2::2], args[3::2]))
         print(port(args[0], args[1], opt.get("--repo")))

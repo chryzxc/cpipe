@@ -713,30 +713,34 @@ minutes counts as a failed role. The run only ever touches cards it created.
 
 Without a flag, the issues of one task are delivered in the chat, one after another, so the role sessions carry
 over and two issues that belong together can share a delivery. With `/cpipe-parallel <issues>`, or when you ask
-for parallel in words, each issue gets a lane, one issue included: a session of its own in the background, started
-in the issue's repository, so Hermes files it under that repository's project and lists it with your chats (role
-sessions stay hidden). The chat is only a status monitor and delivers nothing itself: a delivery it was already
-running becomes a lane that continues its run. It starts lanes, posts a line each time a lane's step changes (at
-most every five minutes, nothing when none did), posts each lane's report as it arrives, and writes a summary once
-every lane has reported.
+for parallel in words, each issue gets a lane, one issue included: a Hermes sub-agent of the chat
+(`delegate_task`), which runs in the background, shows inside the chat, where you open it to watch its activity,
+and stays out of the session list (role sessions stay hidden too). The chat is only a status monitor and delivers
+nothing itself: a delivery it was already running becomes a lane that continues its run. It starts lanes, posts
+each lane's report as it arrives, and writes a summary once every lane has reported.
 
 - The chat finds each issue's repository once and hands it to the lane. When the chat is not in that repository,
   a candidate counts only when its own remote holds the branch the task branches from; the task's issues decide
   between candidates that do.
-- Up to four lanes run at once (name another number in the task); the rest start as lanes finish.
+- Up to four lanes run at once (name another number in the task, at most Hermes' `max_concurrent_children`); the
+  rest start as lanes finish. Hermes' delegation config sets each lane's turns and time
+  (`delegation.max_iterations`, `delegation.child_timeout_seconds`).
+- A lane runs on the model Hermes gives sub-agents. When that is a pinned `delegation.model` rather than the
+  chat's own, the chat posts a ⚠️ reminder at the start: with Advanced Delegation's profile routes and no default
+  profile, lanes run on the chat's model. The reminder never stops the batch.
 - A lane runs each role step in the background and waits on it with one foreground command of up to 390 seconds
   (`bin/wait.sh`), so a long step is never cut off by Hermes' limit on one tool call and a lane spends one short
   reply per wait, whatever terminal timeout the user's config sets.
-- A lane that stops before its report (a turn or time limit, a crash) is resumed in its own session; one that
-  stopped within five minutes waits ten before it is resumed.
+- A lane that stops before its report (a turn or time limit, a crash, the chat stopped) is started again and
+  continues its run from its files; one that stopped within five minutes waits ten before it is resumed.
 - Steering for a lane goes to its `inbox.md`, which the lane reads at each step.
-- A lane that stopped can be continued by hand in its own chat: that chat takes the lane over, the dispatcher no
-  longer starts it, and its report goes to the lane's `report.md`, which the dispatcher posts. To take over a lane
-  that still runs, tell the dispatcher: it marks the lane taken, then stops it and the role steps it started.
-- Lanes and role steps are one-shot sessions, where Hermes asks no one for an approval and blocks the command at
-  once. They edit with file tools and run scripts from files, so nothing needs one; a blocked command is done that
-  way instead of retried. An action that needs you in itself is named in the lane's report, and you approve it by
-  taking the lane over in its chat, where Hermes can ask.
+- A lane's run can be continued by hand in a chat of your own: that chat takes the lane over, the dispatcher no
+  longer starts it, and posts the run's `report.md`. To take over a lane that still runs, tell the dispatcher: it
+  stops the sub-agent and the role steps it started.
+- Lanes and role steps run where Hermes asks no one for an approval and blocks the command at once. They edit
+  with file tools and run scripts from files, so nothing needs one; a blocked command is done that way instead of
+  retried. An action that needs you in itself is named in the lane's report, and you approve it by continuing the
+  lane's run in a chat of your own, where Hermes can ask.
 - `cpipe.py lanes <batch dir>` reads each lane's state from its files, so a lost notification loses nothing:
   `/cpipe-continue` picks every lane up again.
 - Heavy jobs (installs, large test runs, builds) from all lanes take turns on the machine.
@@ -914,10 +918,9 @@ cpipe/
     ├── learning.md       where learnings live, how they are read, written and retired
     ├── contract.md       the rules pinned in the system prompt while a run is going
     ├── bin/cpipe.py      facts: check results, comparison, checklist, gate, report skeleton
-    ├── parallel.md       --parallel: one background session per issue, reporting to the chat
+    ├── parallel.md       --parallel: one sub-agent per issue, reporting to the chat
     ├── header.md         the working rules in front of every role brief; a stance for a role with no profile
     ├── bin/step.sh       runs one role session from its brief, under the time limit
-    ├── bin/lane.sh       runs one --parallel lane in its own session, under the time limit
     ├── bin/limit.pl      the time limit and low priority of every background job
     ├── bin/tick.sh       the progress tick of a long wait
     ├── run-graph.html    page template that draws the run graph

@@ -51,7 +51,7 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 |---|---|
 | `/cpipe <task>` | start a run |
 | `/cpipe-spec <task>` | first work out the spec with you (choices to pick from), then it delivers on its own |
-| `/cpipe-parallel <issues>` | several issues, each in its own background session, reporting here |
+| `/cpipe-parallel <issues>` | several issues, each in a sub-agent of this chat, reporting here |
 | `/cpipe-kanban <task>` | role steps go to your profiles as cards on your Hermes kanban board |
 | `/cpipe-continue [<note>]` | pick up a run that stopped, at its first unfinished step (or just: continue) |
 | `/cpipe-restart [<step>]` | redo the run from that step (default: explore) on its own roles |
@@ -80,7 +80,7 @@ answer is asked as ❓ while the work goes on. Nothing is pushed unless you aske
 
 Quiet with no ⏳? `/cpipe-continue`"""
 
-LANES = "\n- **Lanes:** each issue in its own background session, up to 4 at once, each reporting here"
+LANES = "\n- **Lanes:** each issue in a sub-agent of this chat (open it from the chat to watch), up to 4 at once"
 SPEC = "\n- **Spec:** first worked out with your plan profile, here in this chat; then the run builds on its own"
 BOARD = "\n- **Board:** role steps run as cards on your Hermes kanban board"
 
@@ -110,7 +110,7 @@ and fixed as a follow-up."""
 # Each mode is its own command, so the composer lists it; it reaches _start as the word the skill reads.
 COMMANDS = {
     "spec": ("--spec", "<task>", "Work out the spec with you first, then deliver it unattended"),
-    "parallel": ("--parallel", "<issues>", "Deliver several issues at once, each in its own background session"),
+    "parallel": ("--parallel", "<issues>", "Deliver several issues at once, each in a sub-agent of this chat"),
     "kanban": ("--kanban", "<task>", "Deliver a task with role steps as cards on your kanban board"),
     "continue": ("--continue", "[<note>]", "Pick up this chat's stopped cpipe run at its first unfinished step"),
     "restart": ("--restart", "[<step>]", "Redo this chat's cpipe run from a step (default: explore)"),
@@ -151,16 +151,26 @@ UNREGISTERED = ("FIX: no run folder is registered for this chat, so nothing chec
                 "(steps/setup.md) and register it, `python3 {skill}/bin/cpipe.py active <run dir>`, then go on.")
 
 
+def _forked(config):
+    """True for a sub-agent's session (delegate_task): its own, not a continuation of the chat that started it."""
+    try:
+        return bool(json.loads(config or "{}").get("_delegate_from"))
+    except (ValueError, AttributeError):
+        return False
+
+
 def _lineage(session_id, hops=50):
-    """This session and the ones it was compacted from: a compaction continues the chat under a new id."""
+    """This session and the ones it was compacted from: a compaction continues the chat under a new id. A
+    sub-agent's chain ends at its own first session (a --parallel lane registers its own run)."""
     ids, sid = [], session_id
     try:
         db = sqlite3.connect(f"file:{_home() / 'state.db'}?mode=ro", uri=True, timeout=1)
         try:
             while sid and sid not in ids and len(ids) < hops:
                 ids.append(sid)
-                row = db.execute("SELECT parent_session_id FROM sessions WHERE id = ?", (sid,)).fetchone()
-                sid = row[0] if row else None
+                row = db.execute("SELECT parent_session_id, model_config FROM sessions WHERE id = ?",
+                                 (sid,)).fetchone()
+                sid = row[0] if row and not _forked(row[1]) else None
         finally:
             db.close()
     except sqlite3.Error:
@@ -168,16 +178,24 @@ def _lineage(session_id, hops=50):
     return ids or ([session_id] if session_id else [])
 
 
+def _subagent(session_id):
+    """True when this session is a sub-agent's, a --parallel lane's among them (parallel.md)."""
+    try:
+        db = sqlite3.connect(f"file:{_home() / 'state.db'}?mode=ro", uri=True, timeout=1)
+        try:
+            row = db.execute("SELECT model_config FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return False
+    return bool(row) and _forked(row[0])
+
+
 def _run_dir(info):
-    """The run this session works on: CPIPE_RUN for a step's own session, the run a --parallel lane wrote to its
-    lane folder (bin/lane.sh), else the chat's registered run."""
+    """The run this session works on: CPIPE_RUN for a step's own session, else the run the chat (or a --parallel
+    lane, a sub-agent of its dispatcher) registered."""
     if os.environ.get("CPIPE_RUN"):
         return Path(os.environ["CPIPE_RUN"])
-    if os.environ.get("CPIPE_LANE"):
-        try:
-            return Path((Path(os.environ["CPIPE_LANE"]) / "run").read_text().strip())
-        except OSError:
-            return None
     active = _root() / "cpipe" / "active"
     if not active.is_dir():
         return None
@@ -308,13 +326,26 @@ def _waiting(session_id):
     return bool(gather_background_processes(owner_task_id=session_id or None))
 
 
-def _gate(run, session_id):
-    """`cpipe.py gate` on the run: the facts decide what is left, not the chat's last reply."""
+def _facts():
     import importlib.util
     spec = importlib.util.spec_from_file_location("cpipe_facts", SKILL.parent / "bin" / "cpipe.py")
     facts = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(facts)
-    return facts.gate(run, str(session_id or "") or None)
+    return facts
+
+
+def _gate(run, session_id):
+    """`cpipe.py gate` on the run: the facts decide what is left, not the chat's last reply."""
+    return _facts().gate(run, str(session_id or "") or None)
+
+
+def _lanes_line():
+    """The start message's lanes line, with the warning when the lanes would not run on this chat's model."""
+    try:
+        note = _facts().delegation_note()
+    except Exception:
+        note = ""
+    return LANES + (f"\n- {note}" if note else "")
 
 
 def _version():
@@ -408,8 +439,8 @@ def _watch(ctx, session_id="", user_message="", assistant_response="", conversat
     with the run unfinished and nothing running to wake it, it queues the next turn, the way Hermes' goal loop
     continues one, with the gate's facts and a check of the last reply. A turn the user stopped is left alone."""
     try:
-        if os.environ.get("CPIPE_STEP") or os.environ.get("CPIPE_LANE"):
-            return  # a role's session ends on its step; a stopped lane is resumed by its dispatcher
+        if os.environ.get("CPIPE_STEP") or _subagent(session_id):
+            return  # a role's session ends on its step; a lane (a sub-agent) is resumed by its dispatcher
         message = _text(user_message)
         if not message.startswith(MARKS) and not message.startswith("[cpipe") and HALT.search(message[:200]):
             return
@@ -711,7 +742,7 @@ def _start(ctx, raw):
             return STARTED.format(task=_short(brief), flow=FLOW, team=_team(),
                                   budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned(),
                                   rules=_rules_line(),
-                                  extra=(LANES if "--parallel" in flags else "") + (SPEC if "--spec" in flags else "")
+                                  extra=(_lanes_line() if "--parallel" in flags else "") + (SPEC if "--spec" in flags else "")
                                   + (BOARD if kanban else ""))
         reason = "the chat did not accept the message"
     except Exception as exc:

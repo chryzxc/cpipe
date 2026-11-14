@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.49.2
+version: 4.50.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -204,10 +204,10 @@ or the user asked for one pull request for all of them in so many words, and rec
 PR" or "open PRs" for several issues asks for a pull request per issue, never a combined one.
 
 With `--parallel` at the start of the task, or parallel asked in words (mid-run included), each issue is delivered
-in a background session of its own instead, up to four at once, one issue included, and this chat is only their
+in a sub-agent of this chat instead (a lane), up to four at once, one issue included, and this chat is only their
 status monitor: it starts them and posts their status and reports, and a delivery it was running becomes a lane:
-`skill_view(name='cpipe:run', file_path='parallel.md')`. A session started from a lane's brief follows the same
-file, In a lane.
+`skill_view(name='cpipe:run', file_path='parallel.md')`. A sub-agent started from a lane's brief follows the
+same file, In a lane.
 
 ## Flow
 
@@ -375,7 +375,7 @@ own (each write is a reply that resends this whole chat). It is what you read to
 
 Questions with an exact answer are answered by `bin/cpipe.py` beside this file, never by judgment. Run it as
 `python3 <skill dir>/bin/cpipe.py <command> …` from the worktree (`<skill dir>`: this file's folder, which the start
-message names; `bin/` also holds the time limit, the progress tick and the role and lane launchers); it reads files
+message names; `bin/` also holds the time limit, the progress tick and the role launcher); it reads files
 and prints data and a verdict, and you act on what it prints:
 
 - `results <run dir>/results/<check>.<tree>.json <junit|jest|tsc|eslint|lines> <files>`: a check's results from
