@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.49.1
+version: 4.49.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -38,7 +38,9 @@ within it (`steps/design.md`), and leave the gap open only when the user says so
 requests), what the change must respect (keep the client's behavior, follow an existing rule) and how to finish (push, open a pull request, merge when a
 condition holds). Write each one word for word in the run log and under `Instructions:` in `now.md` the moment it
 arrives: only what the user wrote, never your reading of it (that goes in the run log). `gate` and `brief` refuse
-a line the user never wrote, since every role takes these lines as settled. Check every plan, decision, fix and report against them. Where an instruction differs from a default
+a line the user never wrote, since every role takes these lines as settled. One they did write that is refused
+(their message did not reach the chat's history) still binds the run: move it from `now.md` to the run log with
+their words and carry it out, never drop it or go back on it. Check every plan, decision, fix and report against them. Where an instruction differs from a default
 in these files, the instruction wins. Only the Safety guard rails still apply, and an instruction to push, open a
 pull request or merge gives the permission they ask for.
 
@@ -198,7 +200,8 @@ issue. When the user asks for them in parallel, in their own words or with `--pa
 No combined or integration branch unless the user asks for one: each delivery is verified, reviewed and merged on
 its own, and one whose base moved is updated onto it (`steps/publish.md`, Merge).
 Deliver two issues together only when one cannot work without the other (the same root cause or the same lines)
-or the user asked for a single pull request, and record why in Approach.
+or the user asked for one pull request for all of them in so many words, and record why in Approach. "Create a
+PR" or "open PRs" for several issues asks for a pull request per issue, never a combined one.
 
 With `--parallel` at the start of the task, or parallel asked in words (mid-run included), each issue is delivered
 in a background session of its own instead, up to four at once, one issue included, and this chat is only their
