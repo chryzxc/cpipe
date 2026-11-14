@@ -34,8 +34,10 @@ then on this chat registers the batch, not the run, and never touches that run's
    - The other lanes: `Lane <n> of <total>; others: <their issues>`.
 3. **Start.** `lanes <batch dir>` prints the lanes and what to do (`START <n>`), and a ⚠️ line first when the
    lanes would not run on this chat's model: post that line as it is. Start each lane with its own
-   `delegate_task` call, all in one reply, one task each, so each lane's result comes back on its own: goal
-   `Deliver lane <n> of a cpipe --parallel batch: read <lane dir>/brief.md and follow it.` Give no profile
+   `delegate_task` call, all in one reply, one task each, so each lane's result comes back on its own. The goal's
+   first line names the lane wherever Hermes lists it (its title, the sub-agent's row): `Lane <n> · <the issue in
+   one line, under 60 characters>`, then on the next line `Deliver lane <n> of a cpipe --parallel batch: read
+   <lane dir>/brief.md and follow it.` Give no profile
    unless the user named one: the lane runs on this chat's model, and its role steps on their own profiles.
    Hermes' delegation config sets a lane's limits (its turns and time) and how many run at once: up to four
    (`--at-once <n>` when the user names another number, never more than Hermes' `max_concurrent_children`,

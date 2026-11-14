@@ -714,10 +714,10 @@ minutes counts as a failed role. The run only ever touches cards it created.
 Without a flag, the issues of one task are delivered in the chat, one after another, so the role sessions carry
 over and two issues that belong together can share a delivery. With `/cpipe-parallel <issues>`, or when you ask
 for parallel in words, each issue gets a lane, one issue included: a Hermes sub-agent of the chat
-(`delegate_task`), which runs in the background, shows inside the chat, where you open it to watch its activity,
-and stays out of the session list (role sessions stay hidden too). The chat is only a status monitor and delivers
-nothing itself: a delivery it was already running becomes a lane that continues its run. It starts lanes, posts
-each lane's report as it arrives, and writes a summary once every lane has reported.
+(`delegate_task`) named `Lane <n> · <issue>`, which runs in the background, shows inside the chat, where you open
+it to watch its activity, and stays out of the session list (role sessions stay hidden too). The chat is only a
+status monitor and delivers nothing itself: a delivery it was already running becomes a lane that continues its
+run. It starts lanes, posts each lane's report as it arrives, and writes a summary once every lane has reported.
 
 - The chat finds each issue's repository once and hands it to the lane. When the chat is not in that repository,
   a candidate counts only when its own remote holds the branch the task branches from; the task's issues decide
