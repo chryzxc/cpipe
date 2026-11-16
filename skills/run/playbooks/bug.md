@@ -16,6 +16,14 @@
    data); ask why until the answer is in the code, not the symptom. Before editing a function, search every
    caller: one guard in the shared path beats one per caller. Search for the same mistake elsewhere (copied
    code, the same pattern) and fix or list each one.
+   **Works here, fails there.** A bug seen on another machine, account or fresh install and not here usually
+   lives in what differs between the two, not in the code path both run. List each difference and make it a
+   hypothesis: what the app finds installed (tools, packages, models, runtimes it detects, or falls back
+   without), settings and stored state (a first launch's defaults against the values this machine has kept or
+   migrated), the build (released, signed, sandboxed or packaged against a development build), the versions of
+   the system and dependencies, hardware and devices, permissions, locale and network. Read the code that checks
+   each one (its detection, its fallback, what it does when the thing is missing) and trace the failing setup's
+   values through it from a clean state: a temporary home, profile or settings store, never the user's own.
 3. **Write the failing test** that captures the bug, on the surface where it showed up. Run it and see it fail
    for the right reason (an assertion, not an import error). Record the RED output.
 4. **Fix it** with the smallest change the evidence justifies. Every line traces to the root cause; "might help"
