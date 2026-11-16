@@ -212,7 +212,7 @@ single report at the end:
 — 3/11 Design · skipped: no screen changes
 ✅ 5/11 Plan · 11 min · 4 build steps, 1 assumption, 2 learnings applied
 6/11 Build · @builder · tests first, then the change
-⏳ 6/11 Build · waiting on @builder · done by 14:40 · resumes on its own
+⏳ 6/11 Build · waiting on @builder · done by 2:40 PM · resumes on its own
 ✅ 6/11 Build · 14 min · 2 files, 3 new tests RED → GREEN
 ✅ 7/11 Verify · 6 min · lint, types, 415 tests, build pass
 ⚠️ 9/11 Review · @reviewer failed to start (provider error) · running it in this chat

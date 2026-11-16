@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.50.2
+version: 4.50.3
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -133,7 +133,7 @@ costs a full reply each time you look: never poll, sleep, list processes or call
 When a profile or check this run started is running with a completion notification and nothing in the run can move
 until it finishes, end the turn with exactly this line, the time being when its time limit ends:
 `⏳ <n>/11 <Step> · waiting on <who or what> · done by <clock time> · resumes on its own`, such as
-`⏳ 8/11 QA · waiting on @tester's checks · done by 12:29 · resumes on its own`. Never a line of your own:
+`⏳ 8/11 QA · waiting on @tester's checks · done by 12:29 PM · resumes on its own`. Never a line of your own:
 without the time and the resume note a wait looks like a stop. Its
 notification starts the next turn. With nothing running, a reply without a tool call ends the turn on nothing, so
 end a turn only on such a wait, a needed approval (above), the pause message, the `❓` waiting-on-your-answer
@@ -227,7 +227,7 @@ report table you show the user, since the chat links an `@name` to its bot:
 - results that arrive while other work runs (a reviewer's findings, a check's result): their own step's line,
   `✅ 9/11 Review · @security · 3 findings to fix`, `⚠️ 7/11 Verify · related tests timed out · retrying narrower`;
 - several things running at once: one ⏳ line for the step that ends last, naming the others
-  (`⏳ 9/11 Review · waiting on @reviewer, @security and the server tests · done by 21:49 · resumes on its own`);
+  (`⏳ 9/11 Review · waiting on @reviewer, @security and the server tests · done by 9:49 PM · resumes on its own`);
 - a wait and its progress: the ⏳ lines below.
 
 Every line you post while the run is going, after a compaction too, is one of these: never free text such as
@@ -236,8 +236,9 @@ Every line you post while the run is going, after a compaction too, is one of th
 Icons mark a state and nothing else: ✅ done, ⏳ waiting, ⚠️ a problem, ❌ failed. No other emoji anywhere the
 user reads (status lines, pause message, report), and none for decoration.
 
-A clock time is the user's local time as `HH:MM`, without a time zone. Post each line once: a turn that resumes
-after a wait never repeats the ⏳ line it ended on. Each step's instructions are a file in this skill: load it with
+A clock time is the user's local time on a 12-hour clock with AM or PM (`9:25 PM`), without a time zone. Post
+each line once: a turn that resumes after a wait never repeats the ⏳ line it ended on. Each step's
+instructions are a file in this skill: load it with
 `skill_view(name='cpipe:run', file_path='steps/<name>.md')` when you reach a step you do in this chat, not
 before; a step a profile does needs only `roles.md` here, and the profile loads its own file. Never work a step
 from memory, and never load a file whose text is still in the context: load it again only when its text is gone
