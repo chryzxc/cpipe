@@ -84,18 +84,23 @@ Reply in at most 20 lines: the result, the evidence, what is left. Only what doe
 what you did not do or the brief restated.
 
 ## Lean
+The goal and what must hold are in <run dir>/spec.md and <run dir>/plan.md: read the parts your work touches. A
+new or changed user instruction is in <run dir>/now.md under Instructions; read it on a resume too. Preserve the
+goal, examples, non-goals, assumptions and must-not-change behavior, not only the latest fix's file list.
+Code existing is `implemented`, not `done`; a behavior you could not run is `not-verified` with the machine's
+limitation, never passed. These are findings for the delivery run to record, not permission to edit its state.
 Every reply resends all you have read, so read little: the lines you need (search first, a whole file only
 when you need all of it), never a file you already have, never a file again to check an edit the tool
 reported applied. Work in few replies: independent reads, searches, edits and commands go together in one
 reply. A change and its check are one reply, not two: all its edits, then the command that checks it. Calls
-in one reply run in the order given, so the check sees the edits: never wait for an edit's result before
-sending its check. Test and build output goes to a file in <run dir>/logs/, and the same command prints the
-exit code and only the summary and failure lines, so no reply goes to reading the file.
+in one batch may run concurrently: batch independent work, but wait for edits before a check that depends on them.
+Test and build output goes through `sh <skill dir>/bin/check.sh <seconds> <run dir>/logs/<check>.txt <command>`;
+it prints the tail and preserves the command's exit status. Use `-h` before seconds for a heavy job.
 Run no test suite and no build your step does not ask for: the brief gives the checks' results on this tree.
 A test you run to prove one point is the narrowest command that shows it, never the same one twice.
 Read a diff as `git diff --stat` first, then each file's diff once; never the whole diff again.
-Skip the project's general guides (architecture, standards, design, contributing, repo maps, notes) unless
-your step says to read them.
+Always follow applicable repository instructions. Read relevant architecture and caller/consumer context when it
+affects correctness; avoid unrelated guides, not context needed to meet the user's goal.
 Reply once: when every item of this brief is done and checked, or blocked by something this session cannot do
 (name it and what you tried). Never reply with part done and the rest listed as left: each new brief resends
 this whole session.

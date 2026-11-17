@@ -132,7 +132,8 @@ def test_a_new_file_with_the_bases_own_setup_errors_is_baseline(tmp_path):
     assert len(c["baseline"]) == 2
 
 
-def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path):
+def test_track_needs_evidence_and_the_gate_orders_its_verdicts(tmp_path, monkeypatch):
+    monkeypatch.delenv("HERMES_SESSION_ID", raising=False)
     a = facts.track(tmp_path, "add", ["verify", "related", "tests", "pass"])
     b = facts.track(tmp_path, "add", ["report", "merge", "approved"])
     assert facts.track(tmp_path, "add", ["verify", "related", "tests", "pass"]) == a
@@ -435,7 +436,7 @@ def test_brief_puts_the_header_in_front(tmp_path):
     assert "- merge it if no regressions" in first and "## Step" not in first
     assert f"{tmp_path}/review-reply.md" in first and first.endswith("this whole session.\n\nReview this change.\n")
     again = facts.brief(str(tmp_path), "/wt", "review", 1, resume=True)
-    assert again.startswith("Every reply resends") and "Work only in" not in again
+    assert again.startswith("The goal and what must hold are in") and "Work only in" not in again
     assert facts.brief(str(tmp_path), "/wt", "review", 1, card=True).startswith("Card from a delivery run.")
     assert "You review code" not in first  # a profile of the user's works by its own setup
     bare = facts.brief(str(tmp_path), "/wt", "review", 1, bare=True)

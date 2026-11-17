@@ -84,7 +84,7 @@ background, so whoever explores (`steps/plan.md`) starts at once and the build n
 8. **Background work.** Start one background command with a completion notification that does the rest, one
    command after the other, each under the time limit (below) with its output and exit code in its own file, each
    one heavy
-   (`perl <skill dir>/bin/limit.pl -h <seconds> <command> > logs/<name>.txt 2>&1; echo "exit $?" >> logs/<name>.txt`):
+   (`sh <skill dir>/bin/check.sh -h <seconds> <run dir>/logs/<name>.txt <command>`):
    1. the install in the worktree (step 4), then `touch logs/install.done`;
    2. the **base worktree**: `git worktree add --detach "$(mktemp -d)/base" <base commit>`, the env files step 4
       copied, and the same install there; its own install, since dependencies linked from the delivery worktree

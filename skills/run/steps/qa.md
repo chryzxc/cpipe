@@ -82,6 +82,12 @@ tree.
 Record each item in the run log as **pass**, **fail** or **not run here**, with the evidence: the command and its
 output, the request and response, a screenshot path.
 
+Keep the user's outcome separate from its mechanism: removing a layout request proves that request is gone,
+not that scrolling is smooth. Each acceptance item needs its actual test, action or before/after result.
+Tell the delivery run which items are only `implemented`, which are verified (`done`), and which are
+`not-verified` with `machine: <limitation>`. Try the project's safe local/test setup before declaring that limit.
+A stand-in can support implementation evidence but cannot silently close a real-surface criterion.
+
 - **fail:** it goes to the fix round with the review's **act** findings (`steps/review.md`, section 3): the
   builder writes its Cause line, reproduces it with a test that fails for that cause, then fixes it at the shared
   point (`steps/build.md`, Root cause). If the plan did not foresee it, write a learning (`learning.md` beside

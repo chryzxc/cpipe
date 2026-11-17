@@ -227,8 +227,9 @@ def test_the_watcher_queues_the_next_turn_until_the_run_is_done(tmp_path, monkey
 
     def turn(reply, user="go"):
         ctx = Ctx()
+        started.extend([{"role": "user", "content": user}, {"role": "assistant", "content": reply}])
         cpipe._watch(ctx, session_id="s", user_message=user, assistant_response=reply,
-                     conversation_history=started + [{"role": "assistant", "content": reply}])
+                     conversation_history=started)
         return ctx.text
 
     assert "Do the next item" in turn("I could not finish R1, here is a summary.")

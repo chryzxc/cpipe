@@ -29,7 +29,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-STATUSES = ("open", "done", "skip", "user")
+STATUSES = ("open", "implemented", "done", "not-verified", "skip", "user")
 # What only the user may do (SKILL.md, Unattended): how the code should behave, or which fix, is never one
 USER_KINDS = ("credentials", "destructive", "external", "approval", "answer")
 NOT_USER = ("{} is the loop's work, not the user's: `user` is only for " + ", ".join(USER_KINDS) +
@@ -264,6 +264,8 @@ def track(run_dir, action, args):
             raise SystemExit(NOT_ASK.format(ident))
         if status == "skip" and not _kind(evidence, SKIP_KINDS):
             raise SystemExit(NOT_SKIP.format(ident))
+        if status == "not-verified" and not _kind(evidence, ("machine",)):
+            raise SystemExit(f"{ident}: not-verified needs `machine: <what this machine cannot run>`")
         match = [i for i in items if i["id"] == ident]
         if not match:
             raise SystemExit(f"no item {ident}")
@@ -274,7 +276,8 @@ def track(run_dir, action, args):
     else:
         step = args[0] if args else None
         return "\n".join(f"{i['id']} [{i['status']}] {i['text']}" for i in items
-                         if i["status"] == "open" and (step is None or i["step"] == step)) or "nothing open"
+                         if i["status"] in ("open", "implemented") and
+                         (step is None or i["step"] == step)) or "nothing open"
     _track_path(run_dir).write_text(json.dumps(items, indent=1) + "\n")
     return result
 
@@ -288,6 +291,7 @@ def _ci_bucket(ci):
 
 
 CI_RUNNING = ("pending", "in_progress", "queued")
+CI_PASSED = {"pass", "success", "neutral", "skipping", "skipped"}
 CI_TRIES = 10  # ponytail: consecutive failed reads before the wait says so; a GitHub blip (401, 502) passes well within
 
 
@@ -335,8 +339,12 @@ def gate(run_dir, sid=None):
     for i in items:
         if i.get("step") == "instruction" and _launch_text(i["text"]):  # cpipe's run text, tracked as if the user's
             continue
-        if i["status"] == "open" or (i["status"] != "user" and not i["evidence"]):
+        if i["status"] in ("open", "implemented") or (i["status"] != "user" and not i["evidence"]):
             fix.append(f"{i['id']} {i['text']}")
+        elif i["status"] not in STATUSES:
+            fix.append(f"{i['id']}: unknown checklist status {i['status']}")
+        elif i["status"] == "not-verified" and not _kind(i["evidence"], ("machine",)):
+            fix.append(f"{i['id']}: not-verified needs `machine: <what this machine cannot run>`")
         elif i["status"] == "user" and not _for_user(i["evidence"]):
             fix.append(f"{NOT_USER.format(i['id'])}: {i['text']}")
         elif i["status"] == "skip" and not _kind(i["evidence"], SKIP_KINDS):
@@ -376,6 +384,8 @@ def gate(run_dir, sid=None):
             fix.append(f"CI {ci.get('name')}: {bucket}")
         elif bucket in CI_RUNNING:
             wait.append(f"CI {ci.get('name')}")
+        elif bucket not in CI_FAILED | CI_PASSED:
+            fix.append(f"CI {ci.get('name')}: unknown state {bucket or '(empty)'}")
     if fix:
         return "FIX: " + " | ".join(fix)
     if wait:
@@ -384,14 +394,24 @@ def gate(run_dir, sid=None):
         return "ASK: " + " | ".join(ask)
     if user:
         return "NEEDS-USER: " + " | ".join(user)
-    return "PASS: every item done with evidence, no new failure, CI green"
+    ci_checks = _load(d / "ci.json")  # say what was read: a run that never read CI must not claim it is green
+    ci_note = ("CI not recorded" if ci_checks is None else "CI has no checks" if not ci_checks
+               else "CI has baseline failures" if any(_ci_bucket(c) in CI_FAILED for c in ci_checks)
+               else "CI complete (includes workflow skips)" if any(_ci_bucket(c) != "pass" and
+                    _ci_bucket(c) != "success" for c in ci_checks) else "CI green")
+    return f"PASS: checklist settled with evidence or an explicit exception, no new failure, {ci_note}"
 
 
 def report(run_dir):
     """The report's skeleton with the facts filled in; the model writes only the <...> cells (steps/report.md)."""
     verdict = gate(run_dir)
     items = _items(run_dir)
-    status = ("✅ Done: <goal>" if verdict.startswith("PASS")
+    # A requirement this machine could not run was implemented, not verified: the status line says so
+    unverified = [i["id"] for i in items if i["status"] == "not-verified" or
+                  (i["status"] == "skip" and _kind(i["evidence"], ("machine",)))]
+    status = (f"⚠️ Done except not verified here ({', '.join(unverified)}): <goal>"
+              if verdict.startswith("PASS") and unverified
+              else "✅ Done: <goal>" if verdict.startswith("PASS")
               else "⚠️ Done except " + verdict.split(": ", 1)[1] + ": <goal>" if verdict.startswith("NEEDS-USER")
               else f"not ready to report, the run waits on your answer: {verdict[5:]}" if verdict.startswith("ASK")
               else f"not ready to report, the loop has work: {verdict}")
@@ -406,7 +426,9 @@ def report(run_dir):
         for i in _traced(items, ident):
             mark = "✅" if i["status"] == "done" else "⚠️"
             checks.append(f"{mark} {i['text']} · {i['evidence'] or 'open'}")
-    attention = [f"| {i['text']} | {i['evidence']} | <recommended> |" for i in items if i["status"] in ("user", "skip")]
+    checks += [f"⚠️ {i['id']} {i['text']} · {i['evidence']}" for i in items if i["id"] in unverified]
+    attention = [f"| {i['text']} | {i['evidence']} | <recommended> |" for i in items
+                 if i["status"] in ("user", "skip", "not-verified")]
     parts = [status, "", "<Summary>", "", "## Test it", "App: <URL or command, worktree>",
              "| # | What to check | How | Expected |", "", "## Before and after",
              "| # | What | Before | After | QA |", ""]

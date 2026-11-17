@@ -67,7 +67,8 @@ is never improvised silently: record the correction (what was wrong, what instea
    never read again a file whose text you already have or that you just patched. Independent reads and searches go
    together in one reply. Test output goes to a file beside the run log (`logs/build-<test>.txt`, never in the
    worktree), and the same command prints only what you need from it, so no reply goes to reading the file:
-   `<test> > <log> 2>&1; echo "exit $?"; grep -E '<the runner's summary and failure lines>' <log> | tail -40`.
+   `sh <skill dir>/bin/check.sh <seconds> <run dir>/logs/build-<test>.txt <test command>`.
+   It prints the tail and returns the test's own exit status; never pipe a test into a display filter.
 9. **Write in few calls.** Every reply resends the whole session, so a round of one small edit per reply costs
    many times the same edits sent together. A new file, test file included, is written whole in one call; several
    tests or hunks for one file go in one edit (a multi-hunk patch when the file tool takes one); the edits of

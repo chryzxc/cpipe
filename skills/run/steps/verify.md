@@ -57,7 +57,8 @@ request's CI runs it. Run each check only where it proves something:
 - **No duplicates.** A subset the related tests already run (a regression script, a focused file) is not run
   beside them.
 - **The project's commands only.** Run each check with the project's own command and its reporter flag. No
-  wrapper scripts, gates, harnesses, preloads, environment patches, manifests or receipts around it (`cpipe.py`
+  custom wrapper scripts, gates, harnesses, preloads, environment patches, manifests or receipts around it (`check.sh`
+  only captures output/status under the existing time limit; `cpipe.py`
   only reads the files it writes), and no test runs on other trees
   (another base, both heads, a combined branch) to prove parity: the by-name comparison with the baseline, plus
   the one base check under New failures, is the proof.
@@ -71,9 +72,11 @@ request's CI runs it. Run each check only where it proves something:
   format checks can run alongside.
 - **In the background.** The related tests and the build run in the background with their output in a file
   (`logs/verify-<check>.txt`) and a completion notification, under the time limit (`steps/setup.md`, Time
-  limit): `perl <skill dir>/bin/limit.pl -h <seconds> <command>`, twice the check's time on the base and at least 5
-  minutes. A foreground command is cut off after a few minutes and its result is lost; one without a limit can
-  hang the run.
+  limit): `sh <skill dir>/bin/check.sh -h <seconds> <run dir>/logs/verify-<check>.txt <command>`, twice the check's time on
+  the base and at least 5 minutes. It writes the log and an `exit <code>` line and exits with the check's own
+  status. Never put a pipe (`| tail`, `| grep`) after a check: the pipe's status replaces the check's, and a
+  failing check then reads as passed. A foreground command is cut off after a few minutes and its result is lost;
+  one without a limit can hang the run.
 - **Same tree, same result.** Write the tree id beside each result. It is the content of the files, so a commit
   does not change it:
   `t=$(mktemp); cp "$(git rev-parse --git-path index)" "$t"; GIT_INDEX_FILE=$t git add -A; GIT_INDEX_FILE=$t git write-tree; rm -f "$t"`.

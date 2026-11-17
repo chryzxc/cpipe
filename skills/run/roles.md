@@ -199,6 +199,13 @@ The checks decide, not a reply, and with a build profile you check without readi
 
 ## When a role fails
 
+First distinguish delivery from execution. A session id in the log proves a session started, not that the task
+completed: its outcome may be unknown. Resume it with a delta brief, never send the whole task into a second
+session because the transport reply was lost. With
+no session id and a command error, correct the invocation; with a gateway/provider error and no session id,
+retry the launch once only. A retry is not a new build/review round. Never spend watcher turns repeating the
+same failed launch or shortening a brief to treat an infrastructure failure.
+
 The profile does not exist, the command errors, it returns nothing usable, or it broke a rule in the brief: try once
 more with a shorter role part (the header is the launcher's), then run it on this chat's own profile and model (Run,
 above), and only when that fails too, do the step yourself in this chat. If it timed out, do not retry: go to the
@@ -210,3 +217,7 @@ the moment it happens, before the next brief. In the run log, write one line for
 <who instead>`. The report's Needs attention has a row for every `Problem:` line. A failed plan profile's steps go
 to the build profile when there is one: its first brief explores and plans as it does without a plan profile, and
 this chat still never reads the code. A role failing is never a reason to stop the run.
+
+For a transport failure, that retry is the single retry above, not another pair. A failed fallback goes directly
+to work in this chat (or the builder for a failed planner), keeping the same acceptance contract and all QA and
+independent review requirements. Do not change model/provider settings or retry a session that is still running.

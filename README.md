@@ -886,6 +886,15 @@ Never:
 
 ## How it is built
 
+The main skill keeps the flow, user contract and safety rules in context. Detailed waiting/recovery procedures
+and helper syntax load from `lifecycle.md` and `facts.md` when needed. Role follow-ups reuse their session and
+read the current acceptance contract and instructions rather than starting exploration again.
+
+Checks can use `bin/check.sh` to save full logs and print a short tail while preserving the actual exit status.
+The checklist distinguishes code that is `implemented` from an outcome verified as `done`. A `not-verified`
+item requires a concrete machine limitation and stays visible in the final report as an exception; missing CI
+records are not reported as green. These distinctions do not remove QA or independent review.
+
 ```mermaid
 flowchart LR
     U["You"] -->|"/cpipe task"| P["__init__.py<br/>registers the skill and the command"]
@@ -911,6 +920,8 @@ cpipe/
 ├── AGENTS.md             rules for changing cpipe
 └── skills/run/
     ├── SKILL.md          the flow, unattended rules, run log, limits, guard rails
+    ├── lifecycle.md      detailed waits, steering, notifications and turn-limit recovery, loaded when needed
+    ├── facts.md          helper syntax and evidence rules, loaded when needed
     ├── roles.md          handing steps to profiles
     ├── kanban.md         --kanban: role steps as cards on the board
     ├── spec.md           the spec: your words and plan, ❓ questions, --spec, proof per line
@@ -921,6 +932,7 @@ cpipe/
     ├── parallel.md       --parallel: one sub-agent per issue, reporting to the chat
     ├── header.md         the working rules in front of every role brief; a stance for a role with no profile
     ├── bin/step.sh       runs one role session from its brief, under the time limit
+    ├── bin/check.sh      captures a check's log and returns its real exit status
     ├── bin/limit.pl      the time limit and low priority of every background job
     ├── bin/tick.sh       the progress tick of a long wait
     ├── run-graph.html    page template that draws the run graph

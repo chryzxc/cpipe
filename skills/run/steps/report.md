@@ -1,5 +1,8 @@
 # cpipe: the report step
 
+A requirement recorded `not-verified` (or legacy `skip` with `machine:` evidence) is not verified here: `report` opens
+with `⚠️ Done except not verified here (<ids>)`, never `✅ Done`, and the Needs attention table names each one.
+
 Step 11 of `cpipe:run`. The commit, the pull request and the merge come first, from `steps/publish.md`;
 this file finishes the run and writes the report.
 

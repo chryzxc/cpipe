@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.50.3
+version: 4.51.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -63,130 +63,23 @@ of the run's own work (commit, push, merge): the run does it after the role repl
 
 ## Unattended: the task is the last message
 
-The user sends the task and waits for the report. Never stop to ask: no plan approval, no "should I". The one
-question the run puts to the user is a spec question, where the user's words and the code disagree and nothing
-settles it (`skill_view(name='cpipe:run', file_path='spec.md')`): posted as a `❓` line while the run keeps
-working on its recommended answer, and waited on only when nothing else is left. Never call a tool that waits for
-the user (a clarify or question tool, a command that needs the user's approval): it halts the run until they
-answer. Use another way, or skip that part and report it: the board offer after the report is the one clarify
-call outside `--spec` (`steps/report.md`, Board offer). With `--spec`, the plan profile works out the spec
-with the user first, its own way, its questions put to the user with the clarify tool (`spec.md`, --spec).
-Write commands that need no approval: read and edit files with your file tools
-(read, search, patch, write), and run one program with its arguments, never `execute_code`, inline code
-(`python -c`, `node -e`), `sh -c`, heredocs or `if`/`;` chains; a script you need goes in a file you then run.
-A command blocked because no one can be asked (a one-shot or scheduled session: "runs without a user present")
-was never put to the user: do the same work the standard way above, never run it again as it was, and never
-pass it on as the user's approval. Only an approval Hermes asked the user in this chat, refused or timed out,
-is the user's to give: do every part of the run that does not need it, never reach the same result another
-way, and end the turn with this line:
-`⚠️ <n>/11 <Step> · needs your approval: <what the command does> · say continue to be asked again`.
-Every choice is yours:
+Do the work without plan-approval waits. Decide reversible ambiguities from the user's words and the code;
+record assumptions. Only unresolved spec questions use `spec.md`; keep working while they are open. Only
+credentials, destructive actions, unrequested external actions and approvals Hermes actually asked are the user's.
+Never bypass a denied or timed-out approval, or ask the user to install, debug or test what you can do yourself.
+Use file tools to edit and single programs with arguments to run; no inline code or approval-seeking shell chains.
 
-- **Open questions** (which base, which of two behaviors, a product detail, how old data or another role should
-  be treated): decide from the user's instructions first, then the request, the code, the project's history and
-  the conversation. Pick the most likely and reversible answer, record it as an assumption, and keep going. One
-  that changes what the user would see, with nothing to settle it, is also a spec question (`spec.md`).
-- **Things only the user may do**, unless the user asked for them: credentials or secrets, anything destructive,
-  and anything that leaves this machine (push, pull request, merge, deploy, messages). Never do them. Skip that
-  part, finish everything else, and name it in the report's `⚠️ Done except` status line. How the code should
-  behave is never one of them: that is an open question.
-- **A security problem in code this change does not touch:** finish the rest and lead the report with it. A
-  problem this change causes is fixed in this change.
+A stop, cancel, `/cpipe-stop` or instruction not to use cpipe ends the run immediately: close it with
+`active <run dir> --done`, stop its own jobs, and handle the request directly without the workflow. Otherwise,
+mid-run messages steer this task: preserve their exact instructions and continue with a tool call. Ignore
+unrelated board notifications. A role or check failing is work to recover, not a new approval or stopping point.
 
-A push, pull request or merge happens only when the user asks for one; a task to fix an existing pull request or
-make it right asks for a push to it (`playbooks/review.md`). A message from the user mid-run is steering, not a stop
-(unless it ends the run, below): add its instructions to `now.md`, answer it in one line in the same reply as the
-run's next tool call, and go on as Continue says. Never end the turn on the answer: the run only resumes from a turn
-that is still working, and a message that cut off a turn means that turn's work is undone. A request to do something
-now (edit the pull request, change its title, merge, look at a file) is steering too, however it is worded and
-whatever context blocks the chat adds to it: do it as part of the run, then make the run's next tool call in the
-same reply; a reply that only reports the result stops the run. A question about the run ("is it done?") is handled
-the same way while any instruction is unmet. Steering that adds work (another bug, another behavior) is either added
-to the plan as numbered steps with their acceptance criteria, or, when it is a different problem, kept for a
-follow-up after the report; say which in that line and note it in the run log. Steering that asks to reproduce or
-try a behavior (in a browser, an emulator, a simulator or on a device) is QA's work (`steps/qa.md`): give it to the
-QA profile in a brief of its own, running alongside the build, never in this chat, whose every reply resends the
-whole chat; its result comes back as a QA reply. Steering that sets up the user's own local testing (start or
-restart the app, a test login, a temporary local-only edit such as skipping a password check) is not a change to
-deliver: do it yourself in this chat at once, the way the user said and no bigger, never through a role and never
-wrapped in setup they did not ask for (another database, a bootstrap script, network blocks). Keep a temporary edit
-out of every commit: note its file and line in `now.md`, name it in each later build brief as never to be staged,
-check `git diff --cached` before each commit, and revert it once the user and QA are done with it.
-
-**The user ends the run.** One message is not steering: one that tells you to stop or cancel the run, or not to
-use cpipe ("don't use cpipe", "do it without cpipe"), or `/cpipe-stop`. It ends the run now, whatever step it is
-at and whatever the gate says: close it (`active <run dir> --done`, Facts), kill the background processes the run
-started (its step, tick and limit commands) and add `stopped by the user` to the run log. Then do what the message
-asks directly, as After the report says, with no run steps, roles, briefs, reviews or report. A notification from
-the stopped run is ignored, and a later plain "continue" continues the user's own work; only `/cpipe-continue`
-reopens the run: its message starts "Continue the cpipe run in this chat", and you follow it, whatever the user
-typed after it.
-
-**Notes that are not for this run.** The chat can receive text mid-run that is neither the user nor this task: a
-note on a kanban card, a board digest, another card's crash or status. If it names no card this run created (run
-log), it is not for this run: do not look it up, act on it or ask about it. Post
-`ignored: <what it was>, not from this run` with your next tool call and continue. The task in the run log is the
-task; nothing that arrives mid-run replaces it.
-
-**Waiting ends the turn.** A reply without a tool call ends your turn. Every reply resends the whole chat, so a wait
-costs a full reply each time you look: never poll, sleep, list processes or call the process tool's wait in a loop.
-When a profile or check this run started is running with a completion notification and nothing in the run can move
-until it finishes, end the turn with exactly this line, the time being when its time limit ends:
-`⏳ <n>/11 <Step> · waiting on <who or what> · done by <clock time> · resumes on its own`, such as
-`⏳ 8/11 QA · waiting on @tester's checks · done by 12:29 PM · resumes on its own`. Never a line of your own:
-without the time and the resume note a wait looks like a stop. Its
-notification starts the next turn. With nothing running, a reply without a tool call ends the turn on nothing, so
-end a turn only on such a wait, a needed approval (above), the pause message, the `❓` waiting-on-your-answer
-lines when `gate` says `ASK` (`spec.md`), or the report. A wait line with
-nothing of this chat's running comes back to you as unfinished. Progress updates go in
-the same reply as your next tool call. Without completion notifications, wait on that one process id with your
-process tool. Whatever you wait on ends on its own: every install, build, test and profile, yours too when you build
-yourself, runs under `limit.pl` (`steps/setup.md`, Time limit), so a hang still ends it, its notification still
-comes and it never slows the user's machine.
-
-**Progress while waiting.** A wait that can last past 10 minutes (a profile, the build) gets a tick beside it:
-`sh <skill dir>/bin/tick.sh <run dir> <worktree>` in the background with a completion notification
-(`steps/setup.md`, Progress tick). It sleeps 10 minutes, then prints what changed: the diff's size and the newest
-logs with their last line. When it wakes the run and the work still runs, post one line from its output alone,
-read nothing else, and start the next tick in the same reply:
-`⏳ <n>/11 <Step> · <m> min in · <what changed> · done by <clock time>`, the change such as
-`4 files changed (+180 −12), 71 tests pass` or `the suite's log silent for 9 min`. One tick runs
-at a time, whatever it watches. Once nothing long runs, stop it with your process tool in the same reply as your
-next tool call; a tick that arrives with nothing running gets no line and no next tick.
-
-**Turn limits.** A turn has a cap on replies that call tools, so a long run can end its turn mid-step. Spend
-replies, not calls: put independent tool calls (reads, ready checks to start) together in one reply. A batch may
-run concurrently: write a brief before launching its reader, and wait for any input a call depends on. Short
-facts and bookkeeping run in the foreground, without a background job and its completion wake. Long work
-(installs, checks, profiles, anything that can take over a minute: a tool call is cut off after a few minutes)
-runs in the background with a completion notification: when a turn ends early, the
-next notification starts a new turn and the run picks up there. A turn that ends with nothing running has no
-notification to resume it, so start the next long piece of work before a stretch of short steps. Do not start a
-timer or look for a tool to make one; the progress tick is the only one. When the cap ends the turn (a message
-asks for a final summary without tools), the final reply is this pause message and nothing else:
-
-```
-⏳ Paused by the turn limit at <n>/11 <step>, not finished: <goal>
-Done: <what this turn finished, in one line>
-Next: <the exact next action>, then <what is left until every instruction is met>
-Decided: <each open question or unexplained result: the decision the next turn acts on, and why>
-Resumes: when <what is running> finishes | on its own (nothing is running)
-```
-
-Leave out `Decided` when nothing is open. An open item is never only "unresolved" or "cause unknown": it carries
-the decision, made the way `steps/report.md` (Finish before reporting) makes it. The pause message is not the
-report. A notification after the report gets one line: `cpipe: already reported (<status line>), nothing left to
-do.` The report is the message written from `steps/report.md` once every instruction is met or has its reason.
-
-**A notification resumes the run.** A completion notification (a check, a profile), or a new turn that starts
-with a note that the last one hit its limit, is never a cue for a status reply. While the run log has unfinished
-steps or `now.md` an unmet instruction, say `Resuming at <n>/11 <step>: <what woke the run>` and continue
-there with a tool call in the same reply. When a notice says how much of the turn's iteration budget is used,
-write the next step in `now.md` first, so the next turn picks it up, and start that step's long work in the
-background if it has any.
-
-The user hands over tasks; you are the builder. Never ask the user to fix, install, configure, run, debug or review
-anything, and never end with "fix the cause and say continue". If you can do it, do it.
+Load `lifecycle.md` **when first handling a wait, notification, steering, approval failure or turn limit** for
+the exact progress, pause and resume procedure. Do not load it at startup or again while it is in context.
+Long work has a time limit and a native completion notification; batch independent short calls. Never poll.
+End a waiting turn only with a job running to wake it and the line
+`⏳ <n>/11 <Step> · waiting on <who or what> · done by <clock time> · resumes on its own`.
+Progress ticks, when needed for a wait over ten minutes, follow `lifecycle.md`; never start a separate timer.
 
 ## One issue, one delivery
 
@@ -374,55 +267,21 @@ own (each write is a reply that resends this whole chat). It is what you read to
 
 ## Facts
 
-Questions with an exact answer are answered by `bin/cpipe.py` beside this file, never by judgment. Run it as
-`python3 <skill dir>/bin/cpipe.py <command> …` from the worktree (`<skill dir>`: this file's folder, which the start
-message names; `bin/` also holds the time limit, the progress tick and the role launcher); it reads files
-and prints data and a verdict, and you act on what it prints:
+Use `python3 <skill dir>/bin/cpipe.py <command> …` from the worktree for exact answers, never judgment.
+Load `facts.md` **before first using a helper whose syntax or evidence rules are not in context**, not at startup.
+`active` registers the run and pins its rules and instructions; `cost --start` captures usage before role work.
+`results` reads runner output; `compare` classifies every failure by name; `track` records conditions and proof.
+`gate` says FIX (do the work), WAIT (a running job), SPEC/ASK (spec questions), NEEDS-USER (their action) or PASS
+(the checklist is settled). `ci` waits outside the model; `report --check` verifies the filled report and closes
+the run. `brief`, `rounds`, `port` and `lanes` supply role queries, counts, parity and parallel-run facts.
 
-- `results <run dir>/results/<check>.<tree>.json <junit|jest|tsc|eslint|lines> <files>`: a check's results from
-  the runner's machine-readable output (`<tree>` is `base`, `head`, `base-alone` or `head-alone`), so a cut-off
-  log never decides anything (`steps/verify.md`, Names from the runner).
-- `compare <run dir> <check>`: every failing name on the delivery as **new**, **baseline**, **flaky** or a rerun
-  to do (`rerun-head`: run it alone on the delivery; `rerun-base`: run it on the base). Never undecided: do the
-  reruns and compare again.
-- `track <run dir> add <step> <text>`, `set <id> done|skip|user <evidence>`, `open [<step>]`: the checklist in
-  `track.json`. When a step starts, add its Done when items, one per condition; each instruction in `now.md`
-  the moment it arrives (step `instruction`, its words; `gate` holds until each is on); at the report each merge
-  condition. An item closes only with its evidence (a result, a file, a count):
-  `done` when met, `skip` only as `n/a: <why it does not exist in this change>` or `machine: <what this machine
-  cannot run>` and never for a user's instruction, `user` for what only the user may do, its evidence starting
-  with its kind: `credentials:`, `destructive:`, `external:` (push, pull
-  request, merge, deploy, messages) or `approval:` (one Hermes asked the user, refused or timed out), or a
-  spec question `answer: <R or C id of spec.md>: <question>` (`spec.md`). `track` and
-  `gate` refuse any other: which fix, the scope or how the code behaves is the run's to decide. Unclear, "not established" or "inconclusive" stays open and is work for the loop.
-- `gate <run dir>`: the run's verdict. `FIX: …` is the loop's next work; `WAIT: …` ends the turn on a wait line;
-  `SPEC: …` the spec is still drafted with the user (`spec.md`, --spec);
-  `ASK: …` is only the user's answers left: end the turn on the `❓` waiting lines (`spec.md`);
-  `NEEDS-USER: …` is what only the user may do; `PASS` means every condition holds: merge when asked, then report.
-- `ci <run dir> <pull request>`: waits for the pull request's CI, saving `results/ci.json` on every read and
-  reading through GitHub's passing errors; a `WAIT: CI …` turn ends only with it running (`steps/publish.md`).
-- `report <run dir>`: the report's skeleton with its facts filled in; `report <run dir> --check`: `PASS` when
-  `<run dir>/report.md` keeps those facts and has every section and cell written, else `FIX` with what is wrong
-  (`steps/report.md`, Report).
-- `cost <run dir> <worktree> --start`: capture private usage baselines before role work; later calls add only
-  missing baselines. `cost <run dir> <worktree>` reads measured deltas per profile, model, provider and task,
-  with coverage warnings. Without capture it labels legacy lifetime counters (`steps/report.md`, Cost).
-- `active <run dir>` once the run log exists (`report <run dir> --check` closes it when it passes, and
-  `active <run dir> --done` when the user ends the run, with the chats it was compacted from): registers this chat's
-  run, so the run's rules, the user's instructions and the open items stay pinned in this chat's system
-  prompt whatever a compaction drops, and `gate` and the watcher check the run. `/cpipe` marks the chat's run as
-  started; until `active` registers its folder, every turn is told to set it up and register it, and nothing else
-  counts. A `project:` line it prints names the user's project that holds the repository while this chat is in
-  none: move this chat into it before anything else (`steps/setup.md`, This chat's project), on a continue too.
-- `port <source> <base> [--repo <source repository>]`: each line the source change (a commit, or `<from>..<to>`)
-  adds that this tree's diff from the base does not contain, by file, the code's before the tests'
-  (`playbooks/port.md`).
-- `lanes <batch dir> [--at-once <n>] [--report <lane>]`: each lane of a `--parallel` batch as queued, running,
-  reported or stopped, then what to do: `START`, `RESUME`, `WAIT` or `DONE` (`parallel.md`).
-
-Long command output goes to a file beside the run log (`logs/<step>-<check>.txt`); read the result lines or the
-tail, not the whole output. A command you wait for prints them itself (`grep` the summary and failures, `tail`),
-so no reply goes to reading the file. The run log names the file.
+Every user instruction and Done when goes on the checklist. `implemented` means code exists but proof is still
+owed: it stays open. `done` means the outcome was verified, not just its implementation. `not-verified` needs
+`machine: <what this machine cannot run>` and appears as an exception in the report, never a successful proof.
+`skip` is only `n/a:` or legacy `machine:`; never drop an instruction or weaken a test. `user` is only for an
+action reserved for them, with evidence; unresolved behavior questions stay work or use the sourced spec procedure.
+Long checks use `bin/check.sh`: it saves full output and returns the actual exit status, with a short tail.
+Never pipe a check into a display filter and mistake the filter's exit code for the check's.
 
 ## After a compaction
 

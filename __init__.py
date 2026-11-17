@@ -249,7 +249,8 @@ def _pinned(info):
         if told:
             parts.append(told)
         try:
-            items = [i for i in json.loads((run / "track.json").read_text()) if i.get("status") == "open"]
+            items = [i for i in json.loads((run / "track.json").read_text())
+                     if i.get("status") in ("open", "implemented")]
         except (OSError, ValueError):
             items = []
         if items:
@@ -457,13 +458,24 @@ def _watch(ctx, session_id="", user_message="", assistant_response="", conversat
         ask = _nudge(_text(assistant_response), verdict)
         if not ask:
             return
+        # A repeated hook callback is not a new turn. Keep the recovery budget for actual turns, not duplicates.
+        import hashlib
+        event_path = run / "watch-event.txt" if run else _root() / "cpipe" / "active" / f"{session_id}.event"
+        track = (run / "track.json").read_text() if run and (run / "track.json").exists() else ""
+        event = hashlib.sha256(json.dumps([session_id, len(conversation_history or []), message,
+                                          _text(assistant_response), verdict, track]).encode()).hexdigest()
+        if event_path.exists() and event_path.read_text() == event:
+            return
         n = _progress(run, verdict, ask, None if run else _root() / "cpipe" / "active" / f"{session_id}.watch")
         if n > GIVE_UP:
             return
         hint = ASKS["stuck"].format(n=n) if n >= STUCK_AT else ASKS[ask]
         from gateway.session_context import get_session_env
         key = get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or None
-        ctx.inject_message(WATCH.format(verdict=_short(verdict, 1500), ask=hint), role="user", session_key=key)
+        accepted = ctx.inject_message(WATCH.format(verdict=_short(verdict, 1500), ask=hint),
+                                      role="user", session_key=key)
+        if accepted is not False:
+            event_path.write_text(event)
     except Exception:  # a hook never breaks a session
         return
 
