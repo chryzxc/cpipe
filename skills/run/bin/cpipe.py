@@ -325,6 +325,8 @@ def ci(run_dir, pr, every=30, tries=CI_TRIES, run=subprocess.run, sleep=time.sle
 
 def gate(run_dir, sid=None):
     """SPEC while the spec is drafted, then FIX before WAIT before ASK before NEEDS-USER: the loop's own work first. PASS only when nothing is left."""
+    if any((p / "brief.md").exists() for p in Path(run_dir).iterdir()):  # a --parallel batch: its lanes decide
+        return _batch_gate(run_dir)
     if _drafting(run_dir):  # --spec: the user and the planner are still working out what to build
         return "SPEC: the plan profile is working out the spec with the user (spec.md, --spec)"
     fix, wait, ask, user = [], [], [], []
@@ -1097,9 +1099,21 @@ def delegation_note():
             "(`hermes delegation config`).")
 
 
-def lanes(batch, at_once=4, report_of=None):
+def _batch_gate(batch):
+    """gate() of a --parallel batch (parallel.md): lanes to start are FIX, running lanes WAIT, all reported PASS."""
+    out = lanes(batch, record=False).splitlines()
+    act = [line for line in out if re.match(r"(START|RESUME) \d+$", line)]
+    if act:
+        return "FIX: " + ", ".join(act) + " (parallel.md, A lane's result)"
+    if out[-1] == "DONE":
+        return "PASS"
+    return "WAIT: lanes " + ", ".join(line for line in out if re.match(r"\d+ ", line) and " · reported" not in line)
+
+
+def lanes(batch, at_once=4, report_of=None, record=True):
     """Each lane of a --parallel batch with its state, then what to do: START, RESUME, WAIT or DONE. A START or
-    RESUME it prints is recorded as started: the dispatcher runs it in the same reply (parallel.md, Start)."""
+    RESUME it prints is recorded as started: the dispatcher runs it in the same reply (parallel.md, Start).
+    record=False only reads (the batch's gate)."""
     batch = Path(batch)
     rows, todo, running, queued, now = [], [], 0, [], time.time()
     for lane in sorted((p for p in batch.iterdir() if (p / "brief.md").exists()), key=lambda p: (len(p.name), p.name)):
@@ -1134,7 +1148,7 @@ def lanes(batch, at_once=4, report_of=None):
     todo += [f"START {name}" for name in queued[:free]]
     for verdict in todo:
         name = verdict.split()[1]
-        if " after " not in verdict:
+        if record and " after " not in verdict:
             (batch / name / "started").write_text(f"{now:.0f}\n")
             (batch / name / "session").unlink(missing_ok=True)
     note = delegation_note() if any(" after " not in t for t in todo) else ""

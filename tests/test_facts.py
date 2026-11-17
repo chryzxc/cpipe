@@ -653,3 +653,24 @@ def test_active_names_the_project_that_holds_the_repository(tmp_path, monkeypatc
                      """UPDATE sessions SET model_config = '{"_delegate_from": "chat"}' WHERE id = 's1';""")
     db.commit(); db.close()
     assert "project:" not in facts.active(run)  # a lane is a sub-agent of its dispatcher's chat
+
+
+def test_a_batch_gate_reads_its_lanes_without_starting_them(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    now, batch = time.time(), tmp_path / "b"
+    sessions(tmp_path, ("s1", "chat", now - 600, None, None, now - 10, True))
+    for name in ("1", "2"):
+        (batch / name).mkdir(parents=True)
+        (batch / name / "brief.md").write_text(f"# issue {name}\n")
+    (batch / "1" / "session").write_text("s1")
+    (batch / "1" / "started").write_text(str(now - 600))
+    assert facts.gate(batch) == "FIX: START 2 (parallel.md, A lane's result)"
+    assert not (batch / "2" / "started").exists()  # only the dispatcher's own `lanes` records a start
+    (batch / "2" / "run").write_text(str(tmp_path / "r2"))
+    (tmp_path / "r2").mkdir()
+    (tmp_path / "r2" / "report.md").write_text("✅ Done: issue 2\n")
+    assert facts.gate(batch) == "WAIT: lanes 1 issue 1 · running · setting up"
+    (tmp_path / "r1").mkdir()
+    (tmp_path / "r1" / "report.md").write_text("✅ Done: issue 1\n")
+    (batch / "1" / "run").write_text(str(tmp_path / "r1"))
+    assert facts.gate(batch) == "PASS"

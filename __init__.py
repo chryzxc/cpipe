@@ -318,8 +318,14 @@ IDLE_WAIT = ("[cpipe] This turn ends on a ⏳ wait, but nothing this chat starte
 
 
 def _waiting(session_id):
-    """True when this chat has a background process running: its completion notification starts the next turn
-    (the same snapshot Hermes' own goal loop waits on)."""
+    """True when this chat has a background process or a sub-agent (a --parallel lane) running: its completion
+    notification starts the next turn (the same snapshots Hermes' own goal loop and delegation use)."""
+    try:
+        from tools.delegate_tool_registry import list_active_subagents
+        if session_id and any(a.get("owner_agent_session_id") == session_id for a in list_active_subagents()):
+            return True
+    except ImportError:
+        pass
     try:
         from hermes_cli.goals import gather_background_processes
     except ImportError:  # a host without the snapshot: take the ⏳ line at its word
