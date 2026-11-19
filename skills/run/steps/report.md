@@ -170,8 +170,9 @@ consumers, from the flow map: `3 routes, 1 nightly job`); **Rollback**, how to u
 running app`) and its weakest spot (`the export path is covered by tests only`), and the past record
 (`learning.md` beside `cpipe:run`, Confidence).
 
-**Approach**: the choices a reviewer would question and every assumption made for an open question, at most
-four rows: **Choice** the approach or assumption; **Why** the deciding fact (from the code, the request or a
+**Approach**: the choices a reviewer would question, every assumption made for an open question and every
+`Decided:` line of the run log (`cpipe:run`, Decide on your own), at most six rows:
+**Choice** the approach or assumption; **Why** the deciding fact (from the code, the request or a
 lesson); **Instead of** the alternative not taken and the problem it would have caused. Omit when the change had
 only one sensible way.
 

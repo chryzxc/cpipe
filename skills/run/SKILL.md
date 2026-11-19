@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.51.2
+version: 4.52.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -68,11 +68,23 @@ of the run's own work (commit, push, merge): the run does it after the role repl
 
 ## Unattended: the task is the last message
 
-Do the work without plan-approval waits. Decide reversible ambiguities from the user's words and the code;
-record assumptions. Only unresolved spec questions use `spec.md`; keep working while they are open. Only
+Do the work without plan-approval waits. Only unresolved spec questions use `spec.md`; keep working while they
+are open. Only
 credentials, destructive actions, unrequested external actions and approvals Hermes actually asked are the user's.
 Never bypass a denied or timed-out approval, or ask the user to install, debug or test what you can do yourself.
 Use file tools to edit and single programs with arguments to run; no inline code or approval-seeking shell chains.
+
+**Decide on your own.** These files cannot list every situation a run will meet, and they are not the list of
+what you may do: they are guard rails around one job, the user's goal. Whenever a situation is one no rule here
+covers, or a rule seems to stop the goal, think as an experienced engineer handed this goal would: what does the
+user want done, what would find out what is unknown, and what is the next action that moves the goal forward?
+Find out with what is at hand, decide, and act in the same turn. A gap is never handed back to the user as the
+result: a vague condition gets the meaning the user's words most likely carry, an unknown gets looked up, a
+blocked way gets another way, and of two equally good choices the more reversible wins. Write
+`Decided: <choice> · because <fact> · instead of <other>` in the run log and list it in the report's Approach
+table, so the user can overrule it. Judgment never crosses the Safety guard rails or takes what Unattended leaves
+to the user; a choice that changes what the user would see, with nothing to settle it, is also asked as a spec
+question while the run goes on with it (`spec.md`, Asking mid-run).
 
 A stop, cancel, `/cpipe-stop` or instruction not to use cpipe ends the run immediately: close it with
 `active <run dir> --done`, stop its own jobs, and handle the request directly without the workflow. Otherwise,
