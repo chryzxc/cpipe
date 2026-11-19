@@ -178,6 +178,9 @@ def test_the_report_waits_for_the_loop(tmp_path, monkeypatch):
     put(tmp_path, "unit.head.json", passed=["a"])
     out = facts.report(tmp_path)
     assert out.startswith("✅ Done") and "✅ unit: 1 pass, 0 baseline, 0 new" in out
+    assert "## Decided on my own" not in out
+    (tmp_path / "run.md").write_text("09:10 Decided: skipped the security job · because the workflow disables it\n")
+    assert "- skipped the security job: the workflow disables it" in facts.report(tmp_path)
     assert facts.check_report(tmp_path).startswith("FIX: write the report")
     (tmp_path / "report.md").write_text("Merged PR #5.\n\nProof\n- 95 passed\n")
     bad = facts.check_report(tmp_path)

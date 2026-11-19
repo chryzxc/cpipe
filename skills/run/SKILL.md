@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.52.0
+version: 4.52.1
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -80,9 +80,10 @@ covers, or a rule seems to stop the goal, think as an experienced engineer hande
 user want done, what would find out what is unknown, and what is the next action that moves the goal forward?
 Find out with what is at hand, decide, and act in the same turn. A gap is never handed back to the user as the
 result: a vague condition gets the meaning the user's words most likely carry, an unknown gets looked up, a
-blocked way gets another way, and of two equally good choices the more reversible wins. Write
-`Decided: <choice> · because <fact> · instead of <other>` in the run log and list it in the report's Approach
-table, so the user can overrule it. Judgment never crosses the Safety guard rails or takes what Unattended leaves
+blocked way gets another way, and of two equally good choices the more reversible wins. Write each one in the
+run log as `Decided: <what you did or skipped> · because <the fact>` (`Decided: left the security job out of the
+proof · because the workflow disables it for every pull request`); the report lists each one, so the user can
+overrule it. Judgment never crosses the Safety guard rails or takes what Unattended leaves
 to the user; a choice that changes what the user would see, with nothing to settle it, is also asked as a spec
 question while the run goes on with it (`spec.md`, Asking mid-run).
 

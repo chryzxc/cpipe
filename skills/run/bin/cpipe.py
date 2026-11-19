@@ -436,6 +436,11 @@ def report(run_dir):
              "| # | What | Before | After | QA |", ""]
     if attention:
         parts += ["## Needs attention", "| What | Why it matters | Recommended |", *attention, ""]
+    log = Path(run_dir) / "run.md"
+    decided = [line.split("Decided:", 1)[1].strip() for line in
+               (log.read_text().splitlines() if log.exists() else []) if "Decided:" in line]
+    if decided:  # each call the run made on its own, for the user to overrule (cpipe:run, Decide on your own)
+        parts += ["## Decided on my own", *[f"- {d.replace(' · because ', ': ')} <in plain words>" for d in decided], ""]
     parts += ["## Proof", *checks, "<Tests, QA, Review and Steps lines>", "", "## Where to look", "| Where | Why |", "",
               "Risk: <blast radius> · Rollback: <how> · Confidence: <what it rests on; the weak spot>", "",
               "## Approach", "| Choice | Why | Instead of |", "", "## Run graph", "<the flow chart>", "",

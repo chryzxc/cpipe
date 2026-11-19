@@ -70,6 +70,9 @@ App: <URL or command, worktree>
 ## Needs attention
 | What | Why it matters | Recommended |
 
+## Decided on my own
+- <what was done or skipped>: <the fact behind it>
+
 ## Proof
 <one line per kind of proof>
 
@@ -170,9 +173,14 @@ consumers, from the flow map: `3 routes, 1 nightly job`); **Rollback**, how to u
 running app`) and its weakest spot (`the export path is covered by tests only`), and the past record
 (`learning.md` beside `cpipe:run`, Confidence).
 
-**Approach**: the choices a reviewer would question, every assumption made for an open question and every
-`Decided:` line of the run log (`cpipe:run`, Decide on your own), at most six rows:
-**Choice** the approach or assumption; **Why** the deciding fact (from the code, the request or a
+**Decided on my own**: every `Decided:` line of the run log (`cpipe:run`, Decide on your own), one plain
+sentence each, in the user's terms: what you did, chose or skipped, and the fact that made it the call (`Skipped
+the security job: the workflow disables it for every pull request.`, `Opened the trigger to signed-in super
+administrators only: no client calls it.`, `Tested on synthetic data: the real service needs credentials.`).
+Never capped and never merged into Approach. Omit when there are none.
+
+**Approach**: the choices a reviewer would question and every assumption made for an open question, at most
+four rows: **Choice** the approach or assumption; **Why** the deciding fact (from the code, the request or a
 lesson); **Instead of** the alternative not taken and the problem it would have caused. Omit when the change had
 only one sensible way.
 
