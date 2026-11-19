@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.51.1
+version: 4.51.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -48,7 +48,12 @@ An instruction that settles a question is its answer. When a finding is one an i
 way the instruction says, for example a change that rejects what the user said must keep working. Never hold it
 for a decision, a policy or an approval the user already gave. The run is finished when every instruction is
 met. An instruction stays unmet only for a reason the report names: something only the user may do, or
-something this machine cannot do; until then the run loops (Limits).
+something this machine cannot do; until then the run loops (Limits). Wanting more proof is neither: before naming
+anything as what holds an instruction, look it up with what is at hand (a skipped job's workflow condition, the
+config, scheduler and deploy files, the history of the lines, the logs, the other repositories it names), and
+carry the instruction out on what the evidence shows. What is still unknown after that (a deployed setup, a caller
+outside every repository) goes under Risk; it holds the instruction only when one of the user's own conditions
+names it.
 
 **The user's rules.** The user can keep standing rules for cpipe runs, and only cpipe, one `- ` line each, like
 `cpipe.yaml`: `<Hermes root>/cpipe/rules.md` for every run, `$HERMES_HOME/cpipe/rules.md` for a profile's own

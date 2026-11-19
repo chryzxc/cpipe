@@ -66,10 +66,12 @@ ends (a build round once its verify passes), before the next thing starts. Never
 profile for it, and never park it on a command that was blocked: say when in the reply,
 `⏳ 11/11 Report · draft pull request after this round's verify · by <clock time>`, and open it then.
 
-## Merge (only when asked)
+## Merge or mark ready (only when asked)
 
 When the user asked for a merge, with or without a condition ("merge it if there are no regressions"), merge
-each delivery once these hold, each one an item in `track.json` (`cpipe:run`, Facts) and `gate` says `PASS`:
+each delivery once these hold, each one an item in `track.json` (`cpipe:run`, Facts) and `gate` says `PASS`. The
+same conditions decide an instruction to mark a pull request ready, undraft it or get it ready to merge ("undraft
+the ones that are okay to merge"): mark each one ready once they hold, and leave the merge to the user:
 - every check is pass or baseline on the committed tree (`compare` for each check: no new name, no rerun left);
 - every must-not-change item has its proof;
 - no open **act** finding and no failing QA item;
@@ -97,7 +99,9 @@ Mark the draft ready (`gh pr ready`). That can start the CI checks again, so wai
 after a push (Pull request), and merge only when they pass or are baseline, with the method the repository's recent
 merges used (`gh pr merge --squash`, `--merge` or `--rebase`). Then confirm on the remote that it is merged. A
 condition that fails is work, not a stop: fix it, verify, and check again, round after round (`cpipe:run`,
-Limits), then merge. A report that says "not merged" while every condition above holds is a mistake: merge.
+Limits), then merge. A report that says "not merged" while every condition above holds is a mistake: merge. For
+an instruction to mark it ready, the wait for its CI after `gh pr ready` ends it; a draft left while every
+condition holds is the same mistake.
 
 Updating a pushed branch: merge the fetched base (`git merge origin/<base>`) into it, as the hosting service's
 update button does; only a branch never pushed is rebased. Never rebase a pushed branch and then merge its old
