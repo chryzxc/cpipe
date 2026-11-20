@@ -517,8 +517,9 @@ def _roles():
     return rows + [("everything else", "this chat's model")]
 
 
-def _team():
-    rows = (f"| {s} | {p if ' ' in p else '@' + p} |" for s, p in _roles())  # a profile shows as its @bot
+def _team(chat_model=False):
+    mine = " on this chat's model" if chat_model else ""  # --chat-model: each profile, this run on the chat's model
+    rows = (f"| {s} | {p if ' ' in p else '@' + p + mine} |" for s, p in _roles())  # a profile shows as its @bot
     return "\n".join(["| Step | Runs on |", "|---|---|", *rows])
 
 
@@ -673,9 +674,10 @@ def _list(rules, path):
 
 
 def _flags(task):
-    """Leading --parallel, --kanban, --spec and --budget <tier>, in any order; returns (flags, budget, rest, error)."""
+    """Leading --parallel, --kanban, --spec, --chat-model and --budget <tier>, in any order; returns (flags, budget,
+    rest, error)."""
     flags, budget, words = set(), None, task.split()
-    while words and words[0] in ("--parallel", "--kanban", "--spec", "--budget"):
+    while words and words[0] in ("--parallel", "--kanban", "--spec", "--chat-model", "--budget"):
         flag = words.pop(0)
         if flag != "--budget":
             flags.add(flag)
@@ -719,7 +721,7 @@ def _short(text, n=100):
 
 
 # Text input often turns a typed "--" into a dash: "—restart" is still the flag.
-DASHED = re.compile(r"(?<!\S)[—–](?=(parallel|kanban|spec|budget|continue|restart|rules)\b)")
+DASHED = re.compile(r"(?<!\S)[—–](?=(parallel|kanban|spec|chat-model|budget|continue|restart|rules)\b)")
 
 
 def _start(ctx, raw):
@@ -757,7 +759,7 @@ def _start(ctx, raw):
                 return RESTARTED.format(step=rest.split()[0] if rest.split() else "explore")
             if resume:
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
-            return STARTED.format(task=_short(brief), flow=FLOW, team=_team(),
+            return STARTED.format(task=_short(brief), flow=FLOW, team=_team("--chat-model" in flags),
                                   budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned(),
                                   rules=_rules_line(),
                                   extra=(_lanes_line() if "--parallel" in flags else "") + (SPEC if "--spec" in flags else "")

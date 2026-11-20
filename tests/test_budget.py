@@ -13,6 +13,7 @@ def test_flags_in_any_order():
     assert cpipe._flags("fix --budget small") == (set(), None, "fix --budget small", None)
     assert cpipe._flags("--spec --budget small fix it") == ({"--spec"}, "small", "fix it", None)
     assert cpipe._flags("--budget huge fix it")[3]
+    assert cpipe._flags("--chat-model --parallel fix it") == ({"--chat-model", "--parallel"}, None, "fix it", None)
 
 
 def test_setter_keeps_roles_and_replaces_budget(tmp_path, monkeypatch):
@@ -38,6 +39,7 @@ def test_one_profile_explores(tmp_path, monkeypatch):
     (tmp_path / "cpipe.yaml").write_text("roles:\n  explore: a\n  review: d\n")
     assert cpipe._team().splitlines()[2:] == ["| explore | @a |", "| review | @d |",
                                               "| everything else | this chat's model |"]
+    assert cpipe._team(True).splitlines()[2] == "| explore | @a on this chat's model |"
 
 
 def test_every_profile_shares_the_roots_file(tmp_path, monkeypatch):

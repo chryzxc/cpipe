@@ -703,6 +703,14 @@ Save a default with `/cpipe-budget <tier>` (it writes `budget: <tier>` in `cpipe
 reasons at its own setting. The budget only applies to the profile runs cpipe starts: your chat keeps its own
 reasoning setting, no Hermes setting changes, and kanban cards take no reasoning setting.
 
+### This chat's model
+
+`--chat-model` at the start of a task (`/cpipe --chat-model <task>`), or asking for it in words, runs every
+profile on the model and provider of the chat that started the run, for that run only. Each role keeps its own
+profile, with its skills, rules and tools, and its own session; only the model changes, passed to each profile
+run as `-m` and `--provider`. The roles file, the profiles and Hermes' settings stay as they are, so the next
+run uses each profile's own model again. Kanban cards run on their profile's own model.
+
 ### On the kanban board
 
 With `/cpipe-kanban <task>`, each handed-over step becomes a card assigned to its profile and run by the board's

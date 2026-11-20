@@ -248,6 +248,7 @@ def test_chat_flags_follow_this_chats_profile_model_and_switched_provider(tmp_pa
     assert facts.chat() == "hermes -p builder chat -m model-a --provider prov-a"
     monkeypatch.setenv("HERMES_SESSION_ID", "s2")
     assert facts.chat() == "hermes -p builder chat -m model-b --provider prov-b"
+    assert facts.chat("forge") == "hermes -p forge chat -m model-b --provider prov-b"
 
 
 def test_an_instruction_the_user_never_wrote_holds_the_gate_and_every_brief(tmp_path, monkeypatch):

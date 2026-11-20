@@ -947,8 +947,10 @@ UNTRACKED = "instruction not on the checklist: {} (track add instruction <its wo
 UNSAID = "instruction not in the user's words: {} (write only what they wrote; your reading goes in the run log)"
 
 
-def chat():
-    """The `hermes chat` command that runs a step on this chat's own profile, model and provider."""
+def chat(profile=None):
+    """The `hermes chat` command that runs a step on this chat's own profile, model and provider; with a profile,
+    on that profile (its skills, rules and tools) with this chat's model and provider, for this invocation only
+    (roles.md, This chat's model)."""
     sid = os.environ.get("HERMES_SESSION_ID", "")
     home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
     if not sid:
@@ -961,11 +963,12 @@ def chat():
         db.close()
     if not row:
         raise SystemExit(f"session {sid} not found in {home / 'state.db'}")
-    profile, model, provider, config = row
+    _, model, provider, config = row
     try:
         provider = json.loads(config or "{}").get("provider") or provider  # a /model switch stores it here
     except ValueError:
         pass
+    profile = profile or row[0]
     flags = ["hermes", f"-p {profile}"] if profile else ["hermes"]
     flags += ["chat"] + ([f"-m {model}"] if model else [])
     flags += [f"--provider {provider}"] if provider else []
@@ -1243,7 +1246,7 @@ def main(argv):
     elif cmd == "active":
         print(active(args[0], "--done" in args))
     elif cmd == "chat":
-        print(chat())
+        print(chat(args[0] if args else None))
     elif cmd == "brief":
         print(brief(*args[:4], "--resume" in args, "--card" in args, "--bare" in args), end="")
     elif cmd == "rounds":

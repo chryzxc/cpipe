@@ -36,6 +36,14 @@ over `budget:` in the file. Write it in the run log and end the roles line with 
 pass no effort: each profile reasons at its own setting. On the board, cards take no reasoning setting: say
 `budget not applied on the board`. The budget never changes this chat's own reasoning or any Hermes setting.
 
+**This chat's model.** With `--chat-model` at the start of the task, or the user asking in words for the
+profiles to use this chat's model for this work, every role still runs on its own profile, with that profile's
+skills, rules and tools and in a session of its own, as the flow says, only on this chat's model and provider
+(Run, below). It holds for this run alone: the roles file, the profiles and every Hermes setting stay as they
+are, and a later run without it uses each profile's own model again. End the roles line with
+`· on this chat's model`. On the board, a card runs on its profile's own model: say `this chat's model not
+applied on the board`.
+
 ## How the work is split
 
 A run costs its replies times the context each one resends. This chat resends its whole history with every reply;
@@ -136,7 +144,9 @@ pages to learn the command line.
    them. Never type the `hermes chat` command yourself. `<who>` is `hermes -p <profile> chat`, written out so the
    chat's UI shows the handoff to that profile, or for a role without one, the output of
    `python3 <skill dir>/bin/cpipe.py chat` (this chat's profile, model and provider, so a step never runs on a
-   weaker model). The launcher sets `CPIPE_RUN` and `CPIPE_STEP`, which pin the run's rules, the user's
+   weaker model). With this chat's model asked for (This chat's model, above), a role with a profile gets the
+   output of `python3 <skill dir>/bin/cpipe.py chat <profile>` instead, on every run and resume. The launcher
+   sets `CPIPE_RUN` and `CPIPE_STEP`, which pin the run's rules, the user's
    instructions and the open checklist items in the session's system prompt, so they hold through a compaction
    there too (in a profile with the cpipe plugin enabled; elsewhere the brief is the only copy).
    `--reasoning` only when a budget is set (Budget, above), on every run and resume. Run budgets in seconds: a
