@@ -13,7 +13,7 @@ def test_flags_in_any_order():
     assert cpipe._flags("fix --budget small") == (set(), None, "fix --budget small", None)
     assert cpipe._flags("--spec --budget small fix it") == ({"--spec"}, "small", "fix it", None)
     assert cpipe._flags("--budget huge fix it")[3]
-    assert cpipe._flags("--same --parallel fix it") == ({"--same", "--parallel"}, None, "fix it", None)
+    assert cpipe._flags("--inherit --parallel fix it") == ({"--inherit", "--parallel"}, None, "fix it", None)
 
 
 def test_setter_keeps_roles_and_replaces_budget(tmp_path, monkeypatch):

@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.54.1
+version: 4.54.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -252,7 +252,7 @@ the file does not name are done as the flow says without them. Either way, tell 
 each step. When the task message starts with `--kanban`, the named profiles get their steps as cards on the user's
 kanban board (`roles.md`, On the board); without a roles file there is nothing to hand over, so say that in the
 roles line and continue. A `--budget <tier>` at the start of the task, or `budget:` in the file, sets how hard the
-profiles reason (`roles.md`, Budget), and `--same` runs each profile on this chat's model for this run
+profiles reason (`roles.md`, Budget), and `--inherit` runs each profile on this chat's model for this run
 only (`roles.md`, This chat's model). A plan profile explores and plans in its own session and the builder
 builds from its plan; without one, the builder does the reading and planning too. This chat never reads the
 project's code (`roles.md`, How the work is split): it runs the flow, the checks and the facts, and stays small,

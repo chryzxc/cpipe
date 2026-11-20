@@ -164,7 +164,7 @@ In any Hermes chat, inside or near the repository:
 | `/cpipe <task>` | Delivers the task unattended and reports back in the same chat |
 | `/cpipe-parallel <issues>` | Each issue delivered in its own background session, up to four at once, each reporting back here |
 | `/cpipe-kanban <task>` | The same, with the role steps handed to your profiles as cards on your kanban board |
-| `/cpipe-same <task>` | The same, with every bot on this chat's model for this run only |
+| `/cpipe-inherit <task>` | The same, with every profile inheriting this chat's model and provider for this run only |
 | `/cpipe-spec <task>` | Your plan profile works out the spec with you first, its questions shown as choices to pick; then the run delivers it unattended |
 | `/cpipe-budget [<tier>\|off]` | Shows the default budget, or saves or clears it in `cpipe.yaml` |
 | `/cpipe-continue [<note>]` | Picks up a run that stopped, at its first unfinished step; **continue** in the chat does the same |
@@ -704,9 +704,9 @@ Save a default with `/cpipe-budget <tier>` (it writes `budget: <tier>` in `cpipe
 reasons at its own setting. The budget only applies to the profile runs cpipe starts: your chat keeps its own
 reasoning setting, no Hermes setting changes, and kanban cards take no reasoning setting.
 
-### This chat's model
+### Inherit the chat's model
 
-`/cpipe-same <task>` (or `--same` at the start of a task), or asking for it in words, runs every
+`/cpipe-inherit <task>` (or `--inherit` at the start of a task), or asking for it in words, runs every
 profile on the model and provider of the chat that started the run, for that run only. Each role keeps its own
 profile, with its skills, rules and tools, and its own session; only the model changes, passed to each profile
 run as `-m` and `--provider`. The roles file, the profiles and Hermes' settings stay as they are, so the next

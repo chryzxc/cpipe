@@ -53,7 +53,7 @@ USAGE = f"""**cpipe** delivers a coding task unattended in this chat and reports
 | `/cpipe-spec <task>` | first work out the spec with you (choices to pick from), then it delivers on its own |
 | `/cpipe-parallel <issues>` | several issues, each in a sub-agent of this chat, reporting here |
 | `/cpipe-kanban <task>` | role steps go to your profiles as cards on your Hermes kanban board |
-| `/cpipe-same <task>` | the same flow, every bot on this chat's model for this run only |
+| `/cpipe-inherit <task>` | start a run whose profiles inherit this chat's model, for this run only |
 | `/cpipe-continue [<note>]` | pick up a run that stopped, at its first unfinished step (or just: continue) |
 | `/cpipe-restart [<step>]` | redo the run from that step (default: explore) on its own roles |
 | `/cpipe-feedback <text>` | a problem you found after the report: recorded, reproduced and fixed |
@@ -113,7 +113,7 @@ COMMANDS = {
     "spec": ("--spec", "<task>", "Work out the spec with you first, then deliver it unattended"),
     "parallel": ("--parallel", "<issues>", "Deliver several issues at once, each in a sub-agent of this chat"),
     "kanban": ("--kanban", "<task>", "Deliver a task with role steps as cards on your kanban board"),
-    "same": ("--same", "<task>", "Deliver a task with every bot on this chat's model, for this run only"),
+    "inherit": ("--inherit", "<task>", "Start a run whose profiles inherit this chat's model, for this run only"),
     "continue": ("--continue", "[<note>]", "Pick up this chat's stopped cpipe run at its first unfinished step"),
     "restart": ("--restart", "[<step>]", "Redo this chat's cpipe run from a step (default: explore)"),
     "feedback": ("feedback", "<what you found>", "Report a problem found after a cpipe run: reproduced and fixed"),
@@ -520,7 +520,7 @@ def _roles():
 
 
 def _team(chat_model=False):
-    mine = " on this chat's model" if chat_model else ""  # --same: each profile, this run on the chat's model
+    mine = " on this chat's model" if chat_model else ""  # --inherit: each profile, this run on the chat's model
     rows = (f"| {s} | {p if ' ' in p else '@' + p + mine} |" for s, p in _roles())  # a profile shows as its @bot
     return "\n".join(["| Step | Runs on |", "|---|---|", *rows])
 
@@ -676,10 +676,10 @@ def _list(rules, path):
 
 
 def _flags(task):
-    """Leading --parallel, --kanban, --spec, --same and --budget <tier>, in any order; returns (flags, budget,
+    """Leading --parallel, --kanban, --spec, --inherit and --budget <tier>, in any order; returns (flags, budget,
     rest, error)."""
     flags, budget, words = set(), None, task.split()
-    while words and words[0] in ("--parallel", "--kanban", "--spec", "--same", "--budget"):
+    while words and words[0] in ("--parallel", "--kanban", "--spec", "--inherit", "--budget"):
         flag = words.pop(0)
         if flag != "--budget":
             flags.add(flag)
@@ -723,7 +723,7 @@ def _short(text, n=100):
 
 
 # Text input often turns a typed "--" into a dash: "—restart" is still the flag.
-DASHED = re.compile(r"(?<!\S)[—–](?=(parallel|kanban|spec|same|budget|continue|restart|rules)\b)")
+DASHED = re.compile(r"(?<!\S)[—–](?=(parallel|kanban|spec|inherit|budget|continue|restart|rules)\b)")
 
 
 def _start(ctx, raw):
@@ -761,7 +761,7 @@ def _start(ctx, raw):
                 return RESTARTED.format(step=rest.split()[0] if rest.split() else "explore")
             if resume:
                 return RESUMED.format(note=f'\nYour note: "{_short(rest)}"' if rest else "")
-            return STARTED.format(task=_short(brief), flow=FLOW, team=_team("--same" in flags),
+            return STARTED.format(task=_short(brief), flow=FLOW, team=_team("--inherit" in flags),
                                   budget=_budget_line(budget or _saved_budget(), kanban), learned=_learned(),
                                   rules=_rules_line(),
                                   extra=(_lanes_line() if "--parallel" in flags else "") + (SPEC if "--spec" in flags else "")

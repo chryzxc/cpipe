@@ -31,7 +31,7 @@ then on this chat registers the batch, not the run, and never touches that run's
    - For a delivery this chat had started: `Run folder: <run dir>. Continue that run (continue.md): its finished
      steps stay done, and a role step it left running is waited on, never started again.`
    - The user's instructions, word for word, every one that applies to all issues (push, pull request, merge),
-     and `--same` when the task has it (`roles.md`, This chat's model).
+     and `--inherit` when the task has it (`roles.md`, This chat's model).
    - The other lanes: `Lane <n> of <total>; others: <their issues>`.
 3. **Start.** `lanes <batch dir>` prints the lanes and what to do (`START <n>`), and a ⚠️ line first when the
    lanes would not run on this chat's model: post that line as it is. Start each lane with its own
