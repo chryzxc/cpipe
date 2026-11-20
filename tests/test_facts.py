@@ -249,6 +249,12 @@ def test_chat_flags_follow_this_chats_profile_model_and_switched_provider(tmp_pa
     monkeypatch.setenv("HERMES_SESSION_ID", "s2")
     assert facts.chat() == "hermes -p builder chat -m model-b --provider prov-b"
     assert facts.chat("forge") == "hermes -p forge chat -m model-b --provider prov-b"
+    db = sqlite3.connect(tmp_path / "state.db")
+    db.execute("INSERT INTO sessions VALUES ('s3', 'builder', 'model-c', 'prov-c', '{\"service_tier\": \"priority\"}')")
+    db.commit(); db.close()
+    monkeypatch.setenv("HERMES_SESSION_ID", "s3")
+    assert facts.chat() == "hermes -p builder chat -m model-c --provider prov-c"  # its own speed already
+    assert facts.chat("forge") == "hermes -p forge chat -m model-c --provider prov-c --service-tier priority"
 
 
 def test_an_instruction_the_user_never_wrote_holds_the_gate_and_every_brief(tmp_path, monkeypatch):

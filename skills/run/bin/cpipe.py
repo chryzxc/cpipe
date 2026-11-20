@@ -965,13 +965,16 @@ def chat(profile=None):
         raise SystemExit(f"session {sid} not found in {home / 'state.db'}")
     _, model, provider, config = row
     try:
-        provider = json.loads(config or "{}").get("provider") or provider  # a /model switch stores it here
+        config = json.loads(config or "{}")
     except ValueError:
-        pass
+        config = {}
+    provider = config.get("provider") or provider  # a /model switch stores it here
     profile = profile or row[0]
     flags = ["hermes", f"-p {profile}"] if profile else ["hermes"]
     flags += ["chat"] + ([f"-m {model}"] if model else [])
     flags += [f"--provider {provider}"] if provider else []
+    tier = config.get("service_tier")  # this chat's speed (/fast), carried with its model (roles.md, Inherit)
+    flags += [f"--service-tier {tier}"] if tier and profile != row[0] else []
     return " ".join(flags)
 
 

@@ -38,9 +38,9 @@ pass no effort: each profile reasons at its own setting. On the board, cards tak
 
 **This chat's model.** With `--inherit` at the start of the task, or the user asking in words for the
 profiles to use this chat's model for this work, every role still runs on its own profile, with that profile's
-skills, rules and tools and in a session of its own, as the flow says, only on this chat's model and provider
-(Run, below). It holds for this run alone: the roles file, the profiles and every Hermes setting stay as they
-are, and a later run without it uses each profile's own model again. End the roles line with
+skills, rules and tools and in a session of its own, as the flow says, only on this chat's model, provider and
+speed (`/fast`; Run, below). It holds for this run alone: the roles file, the profiles and every Hermes setting
+stay as they are, and a later run without it uses each profile's own model again. End the roles line with
 `· on this chat's model`. On the board, a card runs on its profile's own model: say `this chat's model not
 applied on the board`.
 

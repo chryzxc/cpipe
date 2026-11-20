@@ -91,3 +91,20 @@ def test_wait_returns_once_every_step_log_has_its_exit_line(tmp_path):
     late.write_text('working\nsession_id: b\nexit 2 (no query: see the line above)\n')
     out, _ = wait.communicate(timeout=20)
     assert 'the reply' in out and 'exit 2 (no query' in out and out.rstrip().splitlines()[-1].startswith('Rounds')
+
+
+def test_a_profile_on_the_chats_model_gets_its_speed_and_no_stance(tmp_path):
+    run = tmp_path / 'run'; run.mkdir()
+    (run / 'now.md').write_text('## Instructions\n## Step\nBuild\n')
+    (run / 'brief-build-1.md').write_text('Test brief')
+    binary = tmp_path / 'hermes'
+    binary.write_text('#!/bin/sh\necho "tier=$HERMES_SERVICE_TIER args=$*"\necho session_id: fixture\n')
+    binary.chmod(0o755)
+    env = dict(os.environ, PATH=f'{tmp_path}{os.pathsep}{os.environ["PATH"]}', HERMES_HOME=str(tmp_path / 'home'))
+    env.pop('HERMES_SERVICE_TIER', None)
+    result = subprocess.run(['sh', str(ROOT / 'skills/run/bin/step.sh'), str(run), str(tmp_path), 'build', '1',
+                             '10', '10', 'hermes', '-p', 'forge', 'chat', '-m', 'm1', '--provider', 'p1',
+                             '--service-tier', 'priority'], env=env, text=True, capture_output=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    assert 'tier=priority args=-p forge chat -m m1 --provider p1 -Q' in result.stdout
+    assert 'Floor' not in (run / 'logs' / 'query-build-1.md').read_text()  # header.md's stance: only a bare role

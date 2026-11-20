@@ -709,8 +709,9 @@ reasoning setting, no Hermes setting changes, and kanban cards take no reasoning
 `/cpipe-inherit <task>` (or `--inherit` at the start of a task), or asking for it in words, runs every
 profile on the model and provider of the chat that started the run, for that run only. Each role keeps its own
 profile, with its skills, rules and tools, and its own session; only the model changes, passed to each profile
-run as `-m` and `--provider`. The roles file, the profiles and Hermes' settings stay as they are, so the next
-run uses each profile's own model again. Kanban cards run on their profile's own model.
+run as `-m` and `--provider`, with the chat's speed (`/fast`) as `HERMES_SERVICE_TIER` (a Hermes that does not
+read it runs the profile at its own speed). The roles file, the profiles and Hermes' settings stay as they are,
+so the next run uses each profile's own model again. Kanban cards run on their profile's own model.
 
 ### On the kanban board
 
