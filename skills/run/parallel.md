@@ -59,7 +59,12 @@ acting when the result is not the newest thing in the chat. `DONE` writes the su
 `inbox.md` (`printf '%s\n' '<the message>' >> <file>`, never a rewrite of a file this chat has not read), for
 every lane to every `inbox.md` and to the queued lanes' `brief.md`; add it to the batch's `now.md` too. The
 user's answer to a lane's ❓ question goes to its `inbox.md` the same way, then `lanes` starts it again. A
-question about progress is answered from `lanes <batch dir>`. The user taking a lane over (to continue or
+question about progress is answered from `lanes <batch dir>` with its figures (the step, the minutes, the plans
+and builds) and the time left, never "I can't confirm". **Monitor.** Each reply this chat posts runs `lanes`
+first. A lane it marks `⚠️ looping` gets, once, a line in its `inbox.md`: `Looping: change the strategy now
+(SKILL.md, Looping), commit and push what is verified, and tell me the new strategy and its time.`, and one line
+to the user: `⚠️ Lane <n> is looping (<plans> plans, <builds> builds, <minutes> min): told it to change the
+strategy`. The user taking a lane over (to continue or
 restart its run in a chat of their own): stop the lane (`delegate_task` with action `list` for its id, then
 action `stop`) and any role step it left running (`pkill -f <its run dir>/logs/`); the chat that registers its
 run takes the lane over. Then end the turn on the wait line.

@@ -376,11 +376,11 @@ def test_lanes_start_resume_and_report(tmp_path, monkeypatch):
     lane("7", "s7")  # compacted: its continuation still runs
     lane("8", started=now - 30)  # just started: no session yet
     out = facts.lanes(batch, at_once=5, report_of="2").splitlines()
-    assert "1 issue 1 · running · 6/11 Build · round 2" in out
+    assert "1 issue 1 · running · 6/11 Build · round 2 · 0 min · plans 0, builds 0" in out
     assert "2 issue 2 · reported · ✅ Done: fix the filter" in out
     assert "3 issue 3 · stopped · ended after 48 min" in out and "RESUME 3" in out
     assert any(v.startswith("RESUME 4 after ") for v in out)  # stopped within minutes: waits first
-    assert "7 issue 7 · running · setting up" in out and "8 issue 8 · starting" in out
+    assert "7 issue 7 · running · setting up · 0 min" in out and "8 issue 8 · starting" in out
     assert "START 5" not in out  # five at once: three running, two resuming
     assert out[-4:] == ["Report of 2:", "✅ Done: fix the filter", "", "Summary"]
     assert not (batch / "3" / "session").exists() and (batch / "4" / "session").exists()
@@ -621,6 +621,11 @@ def test_rounds_count_since_the_latest_plan(tmp_path):
     assert line.startswith("Rounds since plan 2: build 4 (3 since the last plan or review). "
                            "In the whole run: review 3, security 2, qa 0.")
     assert "build at its cap of 3" in line and "review at its cap of 2" in line and "security at" not in line
+    assert "Plans 2, builds 6 in all." in line and "LOOPING" not in line
+    for t, name in enumerate(["plan-3", "plan-4"]):
+        (logs / f"query-{name}.md").write_text("x")
+        os.utime(logs / f"query-{name}.md", (2000 + t, 2000 + t))
+    assert "LOOPING: 3 re-plans and 6 builds" in facts.rounds(tmp_path)
     (tmp_path / "new" / "logs").mkdir(parents=True)
     assert facts.rounds(tmp_path / "new").startswith("Rounds since the start: build 0")
 
@@ -672,7 +677,7 @@ def test_a_batch_gate_reads_its_lanes_without_starting_them(tmp_path, monkeypatc
     (batch / "2" / "run").write_text(str(tmp_path / "r2"))
     (tmp_path / "r2").mkdir()
     (tmp_path / "r2" / "report.md").write_text("✅ Done: issue 2\n")
-    assert facts.gate(batch) == "WAIT: lanes 1 issue 1 · running · setting up"
+    assert facts.gate(batch) == "WAIT: lanes 1 issue 1 · running · setting up · 0 min"
     (tmp_path / "r1").mkdir()
     (tmp_path / "r1" / "report.md").write_text("✅ Done: issue 1\n")
     (batch / "1" / "run").write_text(str(tmp_path / "r1"))

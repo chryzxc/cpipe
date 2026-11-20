@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.52.1
+version: 4.53.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -384,6 +384,16 @@ that already failed is never repeated.
   another review: their open findings are fixed and proven by their tests, or listed as **consider**, with no
   further review. A re-plan starts a new build count only; it never grows the design to answer a finding the
   user's words do not carry.
+- **Looping.** Re-plans that keep the same strategy are the loop itself: `rounds` says `LOOPING` after the
+  third. Knowing it is looping, stop the small rounds and think as an engineer would whose last hours went
+  nowhere: what did every round have in common (the same files, the same obstacle, the same kind of brief), and
+  which strategy for the whole job removes that (start again from a clean base instead of patching a tangled
+  tree, take the source change whole and adapt it instead of reconciling it piece by piece, do it in this chat
+  instead of briefing again, or cut the scope to what the user's words need). Commit and push what is already
+  verified when the user asked for pushes, write `Decided: <the new strategy> · because <what the loop had in
+  common>`, and post it to the user in one line with the time it needs. Then go on with that strategy. A
+  strategy that loops too ends with the report: what is done and pushed, what is left and why, and what you
+  would try next, so the user decides; the run never grinds on in rounds the user cannot see.
 
 ## Guard rails
 

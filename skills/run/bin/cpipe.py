@@ -993,6 +993,7 @@ def brief(run_dir, worktree, role, round_, resume=False, card=False, bare=False)
         path = path.with_name(f"brief-{role}.md")
     return head + "\n" + path.read_text()
 
+REPLANS = 2  # SKILL.md, Looping: a third re-plan is a loop, not a new approach
 ROUND_CAPS = {"build": 3, "review": 2, "security": 3}  # SKILL.md, Rounds: build since the last plan or review, the rest per run
 
 
@@ -1016,6 +1017,11 @@ def rounds(run_dir):
             f"In the whole run: review {count['review']}, security {count['security']}, qa {count['qa']}.")
     full = [f"{role} at its cap of {cap}" for role, cap in ROUND_CAPS.items()
             if (builds if role == "build" else count[role]) >= cap]
+    builds_all = sum(r == "build" for *_, r in runs)
+    line += f" Plans {len(plans)}, builds {builds_all} in all."
+    if len(plans) > REPLANS:  # SKILL.md, Looping: re-plans that keep the strategy are the loop itself
+        line += (f" LOOPING: {len(plans) - 1} re-plans and {builds_all} builds have not closed it; change the "
+                 "strategy, not its details (SKILL.md, Looping).")
     return line + (" At the cap (SKILL.md, Rounds): " + "; ".join(full) + "." if full else "")
 
 
@@ -1079,6 +1085,17 @@ def _now_step(lane):
     return found.group(1).strip() if found else "running"
 
 
+def _lane_rounds(lane):
+    """` · plans <n>, builds <n>`, with the LOOPING line when the lane's run is looping (rounds), or nothing."""
+    try:
+        line = rounds((lane / "run").read_text().strip())
+    except OSError:
+        return ""
+    found = re.search(r" Plans (\d+), builds (\d+) in all\.", line)
+    loop = " · ⚠️ looping: change the strategy (SKILL.md, Looping)" if "LOOPING" in line else ""
+    return f" · plans {found[1]}, builds {found[2]}{loop}" if found else ""
+
+
 def _asking(lane, sid):
     """The lane's open questions when its gate says ASK: it waits for the user, never resumed around them."""
     try:
@@ -1131,8 +1148,8 @@ def lanes(batch, at_once=4, report_of=None, record=True):
         elif s and s["chat"]:  # the user continued its run in a chat of their own: theirs from then on
             state = f"taken over in its chat · {_now_step(lane)}"
             running += 1
-        elif s and s["running"]:
-            state = f"running · {_now_step(lane)}"
+        elif s and s["running"]:  # with its time and rounds, so a progress answer has the figures (parallel.md)
+            state = f"running · {_now_step(lane)} · {int(now - (lane / 'brief.md').stat().st_mtime) // 60} min" + _lane_rounds(lane)
             running += 1
         elif started is None:
             state = "queued"
