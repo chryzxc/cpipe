@@ -404,9 +404,9 @@ def gate(run_dir, sid=None):
     return f"PASS: checklist settled with evidence or an explicit exception, no new failure, {ci_note}"
 
 
-def report(run_dir):
+def report(run_dir, sid=None):
     """The report's skeleton with the facts filled in; the model writes only the <...> cells (steps/report.md)."""
-    verdict = gate(run_dir)
+    verdict = gate(run_dir, sid)
     items = _items(run_dir)
     # A requirement this machine could not run was implemented, not verified: the status line says so
     unverified = [i["id"] for i in items if i["status"] == "not-verified" or
@@ -452,10 +452,10 @@ def report(run_dir):
 REPORT_PARTS = ("## Test it", "## Proof", "## Run graph", "Risk: ", "## Cost", "Details: ")
 
 
-def check_report(run_dir):
+def check_report(run_dir, *, sid=None, close=True):
     """Whether <run dir>/report.md is the report: the skeleton's status and Proof facts kept, every <…> written."""
     path = Path(run_dir) / "report.md"
-    skeleton = report(run_dir)
+    skeleton = report(run_dir, sid)
     if skeleton.startswith("not ready"):
         return "FIX: " + skeleton
     try:
@@ -468,13 +468,13 @@ def check_report(run_dir):
     problems = [] if text.lstrip().startswith(status) else [f"the first line is not the status line `{status[0]}…`"]
     problems += [f"missing `{part.strip()}`" for part in REPORT_PARTS
                  if not re.search(rf"^{re.escape(part)}", text, re.M)]
-    proof = skeleton.split("## Proof\n", 1)[1].split("\n<", 1)[0].splitlines()
+    proof = skeleton.split("## Proof\n", 1)[1].split("<Tests, QA, Review and Steps lines>", 1)[0].splitlines()
     problems += [f"Proof line changed or missing: {line}" for line in proof if line not in text]
     problems += [f"unwritten cell {cell}" for cell in sorted(set(re.findall(r"<[^<>\n]+>", skeleton))) if cell in text]
     if problems:
         return "FIX: " + "; ".join(problems)
     # The run ends with its report: close it for this chat, so a later message is the user's own work.
-    closed = "; the run is closed for this chat" if os.environ.get("HERMES_SESSION_ID") else ""
+    closed = "; the run is closed for this chat" if close and os.environ.get("HERMES_SESSION_ID") else ""
     if closed:
         active(run_dir, done=True)
     return f"PASS: post {path} word for word as the final reply{closed}"
@@ -1075,10 +1075,18 @@ def _read(path):
         return ""
 
 
-def _lane_report(lane):
-    """The report.md of the lane's run (check_report)."""
-    run = _read(lane / "run")
-    return _read(Path(run) / "report.md") if run else ""
+def _lane_report(lane, sid):
+    """A report is final only if it covers the current instructions and passes the lane's own gate."""
+    if not (run := _read(lane / "run")):
+        return ""
+    path, inbox = Path(run) / "report.md", lane / "inbox.md"
+    try:
+        text = _read(path)
+        if not text or (_read(inbox) and inbox.stat().st_mtime_ns > path.stat().st_mtime_ns):
+            return ""
+        return text if check_report(run, sid=sid, close=False).startswith("PASS:") else ""
+    except (OSError, SystemExit, KeyError, ValueError, sqlite3.Error):
+        return ""
 
 
 def _now_step(lane):
@@ -1144,13 +1152,19 @@ def lanes(batch, at_once=4, report_of=None, record=True):
     record=False only reads (the batch's gate)."""
     batch = Path(batch)
     rows, todo, running, queued, now = [], [], 0, [], time.time()
+    requested_report = ""
     for lane in sorted((p for p in batch.iterdir() if (p / "brief.md").exists()), key=lambda p: (len(p.name), p.name)):
         issue = (lane / "brief.md").read_text().splitlines()[0].lstrip("# ").strip()
-        s = _session(_read(lane / "session"))
+        sid = _read(lane / "session")
+        s = _session(sid)
+        if s:
+            sid = s["id"]
+        ended = s["ended"] if s else None
         started = float(_read(lane / "started") or 0) or None
-        ask = "" if s and s["running"] else _asking(lane, s and s["id"])
-        if _lane_report(lane):
-            state = "reported · " + _lane_report(lane).splitlines()[0]
+        if text := _lane_report(lane, sid):
+            state = "reported · " + text.splitlines()[0]
+            if lane.name == report_of:
+                requested_report = text
         elif s and s["chat"]:  # the user continued its run in a chat of their own: theirs from then on
             state = f"taken over in its chat · {_now_step(lane)}"
             running += 1
@@ -1163,13 +1177,14 @@ def lanes(batch, at_once=4, report_of=None, record=True):
         elif not s and now - started < STARTING:
             state = "starting"
             running += 1
-        elif ask and (not (lane / "inbox.md").exists() or (lane / "inbox.md").stat().st_mtime < ((s and s["ended"]) or started)):
+        elif (ask := _asking(lane, sid)) and (
+                not (lane / "inbox.md").exists() or (lane / "inbox.md").stat().st_mtime < (ended or started)):
             state = "❓ waiting on your answer, here · " + ask
         else:
-            ran = s["ended"] - s["started"] if s and s["ended"] else None
+            ran = ended - s["started"] if s and ended else None
             how = f"ended after {int(ran) // 60} min" if ran is not None else "its session is gone"
             state = f"stopped · {how}" if s else "stopped · never registered a session"
-            wait = int(s["ended"] + 2 * QUICK - now) if ran is not None and ran < QUICK else 0
+            wait = int(ended + 2 * QUICK - now) if ended and ran is not None and ran < QUICK else 0
             todo.append(f"RESUME {lane.name}" + (f" after {wait}" if wait > 0 else ""))
         rows.append(f"{lane.name} {issue} · {state}")
     free = max(at_once - running - len(todo), 0)
@@ -1183,8 +1198,8 @@ def lanes(batch, at_once=4, report_of=None, record=True):
     if not todo:
         todo = ["WAIT"] if running or queued or any("❓" in r for r in rows) else ["DONE"]
     out = ([note] if note else []) + rows + todo
-    if report_of and (report := _lane_report(batch / report_of)):
-        out += ["", f"Report of {report_of}:", report]
+    if requested_report:
+        out += ["", f"Report of {report_of}:", requested_report]
     return "\n".join(out)
 
 

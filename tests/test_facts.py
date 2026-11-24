@@ -76,6 +76,15 @@ def closed(run):
     facts.track(run, "set", [facts.track(run, "add", ["verify", "related", "tests", "pass"]), "done", "41 pass"])
 
 
+def lane_report(run):
+    closed(run)
+    put(run, "unit.base.json", passed=["a"])
+    put(run, "unit.head.json", passed=["a"])
+    report = run / "report.md"
+    report.write_text(re.sub(r"<[^<>\n]+>", "x", facts.report(run)))
+    return report
+
+
 def test_missing_state_never_passes(tmp_path):
     """A run from before the checklist, or one that lost it, has proven nothing."""
     assert "no checklist" in facts.gate(tmp_path) and "no check results" in facts.gate(tmp_path)
@@ -375,7 +384,7 @@ def test_lanes_start_resume_and_report(tmp_path, monkeypatch):
              ("s7", "chat", now - 4000, now - 3000, "compression", now - 3000, True),
              ("s7b", "s7", now - 3000, None, None, now - 5, True))
     (lane("1", "s1", tmp_path / "r1") / "now.md").write_text("## Step\n6/11 Build · round 2\n")
-    (lane("2", "s2", tmp_path / "r2") / "report.md").write_text("✅ Done: fix the filter\n\nSummary\n")
+    report = lane_report(lane("2", "s2", tmp_path / "r2")).read_text()
     lane("3", "s3")
     lane("4", "s4")
     lane("5", started=None)
@@ -384,12 +393,12 @@ def test_lanes_start_resume_and_report(tmp_path, monkeypatch):
     lane("8", started=now - 30)  # just started: no session yet
     out = facts.lanes(batch, at_once=5, report_of="2").splitlines()
     assert "1 issue 1 · running · 6/11 Build · round 2 · 0 min · plans 0, builds 0" in out
-    assert "2 issue 2 · reported · ✅ Done: fix the filter" in out
+    assert "2 issue 2 · reported · ✅ Done: x" in out
     assert "3 issue 3 · stopped · ended after 48 min" in out and "RESUME 3" in out
     assert any(v.startswith("RESUME 4 after ") for v in out)  # stopped within minutes: waits first
     assert "7 issue 7 · running · setting up · 0 min" in out and "8 issue 8 · starting" in out
     assert "START 5" not in out  # five at once: three running, two resuming
-    assert out[-4:] == ["Report of 2:", "✅ Done: fix the filter", "", "Summary"]
+    assert "\n".join(out).endswith("Report of 2:\n" + report)
     assert not (batch / "3" / "session").exists() and (batch / "4" / "session").exists()
     for name in "1345678":
         (batch / name / "brief.md").unlink()
@@ -434,8 +443,8 @@ def test_a_chat_that_continues_a_stopped_lane_takes_it_over(tmp_path, monkeypatc
     db.commit(); db.close()
     assert "taken over by this chat" in facts.active(run)
     assert facts.lanes(batch).splitlines() == ["1 issue 1 · taken over in its chat · 2/11 Explore", "WAIT"]
-    (run / "report.md").write_text("✅ Done: issue 1\n")
-    assert facts.lanes(batch, report_of="1").splitlines()[:2] == ["1 issue 1 · reported · ✅ Done: issue 1", "DONE"]
+    lane_report(run)
+    assert facts.lanes(batch, report_of="1").splitlines()[:2] == ["1 issue 1 · reported · ✅ Done: x", "DONE"]
 
 
 def test_brief_puts_the_header_in_front(tmp_path):
@@ -683,9 +692,51 @@ def test_a_batch_gate_reads_its_lanes_without_starting_them(tmp_path, monkeypatc
     assert not (batch / "2" / "started").exists()  # only the dispatcher's own `lanes` records a start
     (batch / "2" / "run").write_text(str(tmp_path / "r2"))
     (tmp_path / "r2").mkdir()
-    (tmp_path / "r2" / "report.md").write_text("✅ Done: issue 2\n")
+    lane_report(tmp_path / "r2")
     assert facts.gate(batch) == "WAIT: lanes 1 issue 1 · running · setting up · 0 min"
     (tmp_path / "r1").mkdir()
-    (tmp_path / "r1" / "report.md").write_text("✅ Done: issue 1\n")
+    lane_report(tmp_path / "r1")
     (batch / "1" / "run").write_text(str(tmp_path / "r1"))
     assert facts.gate(batch) == "PASS"
+
+
+@pytest.mark.parametrize("change", ["open merge", "new instruction", "unchecked report"])
+def test_a_batch_resumes_a_lane_with_a_stale_report(tmp_path, monkeypatch, change):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_SESSION_ID", "dispatcher")
+    batch, run = tmp_path / "batch", tmp_path / "run"
+    lane = batch / "1"
+    lane.mkdir(parents=True)
+    run.mkdir()
+    (lane / "brief.md").write_text("# issue 1\n")
+    (lane / "run").write_text(str(run))
+    (lane / "started").write_text("1\n")
+    (batch / "now.md").touch()
+    facts.active(batch)
+    report = lane_report(run)
+    assert facts.gate(batch) == "PASS"
+    active = tmp_path / "cpipe/active/dispatcher.json"
+    assert active.exists()  # checking a lane's report must not close the batch
+    (batch / "report.md").write_text(re.sub(r"<[^<>\n]+>", "x", facts.report(batch)))
+
+    item = None
+    if change == "open merge":
+        item = facts.track(run, "add", ["publish", "verify requested merge"])
+    elif change == "new instruction":
+        os.utime(report, (1, 1))
+        (lane / "inbox.md").write_text("Merge into the corrected target branch.\n")
+    else:
+        report.write_text("✅ Done: issue 1\n")
+
+    assert facts.gate(batch).startswith("FIX: RESUME 1")
+    assert facts.check_report(batch).startswith("FIX: not ready to report")
+    assert active.exists()
+    out = facts.lanes(batch, report_of="1", record=False).splitlines()
+    assert out[-1] == "RESUME 1" and "Report of 1:" not in out
+
+    if item:
+        facts.track(run, "set", [item, "done", "merge confirmed on target"])
+    lane_report(run)
+    assert facts.lanes(batch, record=False).splitlines()[-1] == "DONE"
+    assert facts.check_report(batch).startswith("PASS:")
+    assert not active.exists()
