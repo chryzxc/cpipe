@@ -751,6 +751,8 @@ def _start(ctx, raw):
         sid = get_session_env("HERMES_SESSION_ID") or ""
         text = (CONTINUE.format(skill=SKILL, root=_root(), version=_version(), verdict=_verdict(sid)) if resume
                 else (SPEC_START if "--spec" in flags else START).format(skill=SKILL, root=_root()))
+        if not resume and kanban and "--parallel" in flags:
+            text += "Parallel board mode: pass --kanban to every lane as described in parallel.md.\n\n"
         if ctx.inject_message(text + task, role="user",
                               session_key=key):
             if not resume and first.lower() != "feedback" and "--parallel" not in flags and sid:

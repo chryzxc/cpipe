@@ -19,7 +19,10 @@ then on this chat registers the batch, not the run, and never touches that run's
    Work this chat was doing on a delivery (a review, a fix, a port) is an issue of the batch, with its run folder.
    The batch folder is `<Hermes root>/cpipe/lanes/<YYYYMMDD-HHMMSS>/`.
    Write its `now.md`: `## Instructions` with the user's instructions word for word (Run log), then
-   `## Lanes` with each lane's number, issue and repository (its top-level path). Register it:
+   `## Lanes` with each lane's number, issue and repository (its top-level path). When the task also has
+   `--kanban`, record board mode and the selected board in a separate `## Execution mode` section (not under
+   Instructions). `/cpipe-parallel --kanban <issues>` and `/cpipe-kanban --parallel <issues>` mean the same thing.
+   Register it:
    `active <batch dir>` (`cpipe:run`, Facts).
 2. **Lanes.** One folder per issue, `<batch dir>/<n>/`, numbered from 1, each with an empty `inbox.md` and a
    `brief.md` that starts with `# <the issue in one line>` and then says, in this order:
@@ -32,6 +35,8 @@ then on this chat registers the batch, not the run, and never touches that run's
      steps stay done, and a role step it left running is waited on, never started again.`
    - The user's instructions, word for word, every one that applies to all issues (push, pull request, merge),
      and `--inherit` when the task has it (`roles.md`, This chat's model).
+   - For a board-mode batch: `Execution mode: --kanban; board: <board>`. Tell every lane to load `kanban.md` and
+     use that board for named role steps. Keep the same mode and board in the brief on restart or resume.
    - The other lanes: `Lane <n> of <total>; others: <their issues>`.
 3. **Start.** `lanes <batch dir>` prints the lanes and what to do (`START <n>`), and a ⚠️ line first when the
    lanes would not run on this chat's model: post that line as it is. Start each lane with its own
@@ -83,11 +88,16 @@ request or branch>`, then `active <batch dir> --done`. The lanes' own reports ar
 The brief names a lane folder: this sub-agent delivers that one issue through the whole flow of `cpipe:run`,
 with these differences.
 
+- **Board mode.** Read it from the brief even on resume and keep it in the run's `now.md` outside Instructions.
+  For named roles, follow `kanban.md`, not the direct profile launcher. The lane stays in charge of verification,
+  publication and its report. Each role card belongs to this lane and uses its worktree. The dispatcher chat
+  remains the batch monitor; it does not create the role cards. A pre-existing source card is not a role card.
 - **Register.** Once the run log exists, write the run folder's path to `<lane dir>/run` and run
   `active <run dir>`: the dispatcher reads this session and the current step from them, and the run's rules stay
   pinned in this session. A lane folder that already has a `run` (the lane was started again), or a brief that
   names a run folder: write it there, run `active <run dir>` first, then continue that run (`continue.md`).
-- **Wait on each step.** A sub-agent ends when its turn ends, and no notification wakes it. So run each role step
+- **Wait on each step.** A sub-agent ends when its turn ends, and no notification wakes it. In board mode,
+  use the in-lane wait in `kanban.md` for cards. For directly launched roles, run each role step
   (`roles.md`, Run) and other long work (installs, the baseline) in the background, then wait on the role steps
   with one foreground command: `sh <skill dir>/bin/wait.sh <run dir> 390 <run dir>/logs/<role>-<n>.txt ...`, every
   step you wait on, with a terminal timeout of 420 seconds (Hermes cuts any one tool call off at about 7 minutes).

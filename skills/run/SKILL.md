@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Deliver a code task unattended: plan, test, build, review."
-version: 4.55.1
+version: 4.55.2
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -117,7 +117,8 @@ PR" or "open PRs" for several issues asks for a pull request per issue, never a 
 With `--parallel` at the start of the task, or parallel asked in words (mid-run included), each issue is delivered
 in a sub-agent of this chat instead (a lane), up to four at once, one issue included, and this chat is only their
 status monitor: it starts them and posts their status and reports, and a delivery it was running becomes a lane:
-`skill_view(name='cpipe:run', file_path='parallel.md')`. A sub-agent started from a lane's brief follows the
+`skill_view(name='cpipe:run', file_path='parallel.md')`. With both `--parallel` and `--kanban`, each lane sends
+its named role steps to the board. A sub-agent started from a lane's brief follows the
 same file, In a lane.
 
 ## Flow
@@ -249,7 +250,7 @@ If the roles file exists, it names a Hermes profile for some of the roles in the
 named profiles as `skill_view(name='cpipe:run', file_path='roles.md')` describes. Build, QA and review always run in
 a session of their own: without a profile for them, on this chat's own profile and model (`roles.md`). Other roles
 the file does not name are done as the flow says without them. Either way, tell the user once at the start who does
-each step. When the task message starts with `--kanban`, the named profiles get their steps as cards on the user's
+each step. With a leading `--kanban` flag or a parallel lane brief in board mode, the named profiles get their steps as cards on the user's
 kanban board (`roles.md`, On the board); without a roles file there is nothing to hand over, so say that in the
 roles line and continue. A `--budget <tier>` at the start of the task, or `budget:` in the file, sets how hard the
 profiles reason (`roles.md`, Budget), and `--inherit` runs each profile on this chat's model for this run
